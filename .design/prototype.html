@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Baafoo Web 控制台 — UI 框架原型 (Vue 3 + Element Plus)</title>
+<title>Baafoo Web 控制台 — UI 框架原型 v1.4 (Vue 3 + Element Plus)</title>
 <style>
 /* ===== Design Tokens ===== */
 :root {
@@ -35,8 +35,7 @@
   --sidebar-w: 220px;
   --statusbar-h: 32px;
 }
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
+* { margin:0; padding:0; box-sizing: border-box; }
 body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary); background: var(--bg-page); }
 
 /* ===== Layout ===== */
@@ -51,15 +50,11 @@ body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary);
 .app-header .logo { font-size: 18px; font-weight: 700; color: var(--color-primary); margin-right: 32px; letter-spacing: 1px; }
 .app-header .logo span { color: var(--text-regular); font-weight: 400; font-size: 13px; margin-left: 4px; }
 .app-header .header-right { margin-left: auto; display: flex; align-items: center; gap: 16px; }
-.header-right .mode-select { display: flex; align-items: center; gap: 6px; font-size: 13px; }
-.header-right .mode-select select {
-  border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 4px 8px;
-  font-size: 13px; color: var(--text-primary); background: #fff; cursor: pointer;
-}
 .agent-status { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-regular); }
 .agent-indicator { width: 8px; height: 8px; border-radius: 50%; background: var(--color-success); }
 .agent-indicator.off { background: var(--color-info); }
 .agent-count { font-weight: 600; color: var(--color-success); }
+.env-badge { font-size: 11px; padding: 1px 6px; border-radius: 10px; background: #ECF5FF; color: var(--color-primary); margin-left: 8px; }
 
 /* Body */
 .app-body { display: flex; flex: 1; overflow: hidden; }
@@ -97,12 +92,13 @@ body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary);
 .app-statusbar .port-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px; }
 .port-dot.on { background: var(--color-success); }
 .port-dot.off { background: var(--color-info); }
+.app-statusbar .spacer { margin-left: auto; }
 
 /* ===== Page Components ===== */
 .page-title { font-size: 20px; font-weight: 600; margin-bottom: 20px; color: var(--text-primary); }
 
 /* Stat Cards */
-.stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+.stat-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 24px; }
 .stat-card {
   background: #fff; border-radius: var(--radius-lg); padding: 20px;
   box-shadow: var(--shadow-card); display: flex; align-items: center; gap: 16px;
@@ -115,6 +111,7 @@ body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary);
 .stat-card .card-icon.green { background: #F0F9EB; color: var(--color-success); }
 .stat-card .card-icon.orange { background: #FDF6EC; color: var(--color-warning); }
 .stat-card .card-icon.purple { background: #F4F0FE; color: #8B7CF6; }
+.stat-card .card-icon.teal { background: #E6FAFF; color: #13C2C2; }
 .stat-card .card-value { font-size: 28px; font-weight: 700; color: var(--text-primary); }
 .stat-card .card-label { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
 
@@ -151,11 +148,17 @@ body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary);
 .protocol-tag.http { background: #ECF5FF; color: var(--color-primary); }
 .protocol-tag.tcp { background: #F0F9EB; color: var(--color-success); }
 .protocol-tag.pulsar { background: #FDF6EC; color: var(--color-warning); }
+.protocol-tag.kafka { background: #F4F0FE; color: #8B7CF6; }
+.env-tag {
+  display: inline-block; padding: 0 5px; border-radius: 8px; font-size: 10px;
+  background: #E6F7FF; border: 1px solid #91D5FF; color: #1890FF; margin: 1px;
+}
 .status-code { font-weight: 600; }
 .status-code.s200 { color: var(--color-success); }
 .status-code.s404 { color: var(--color-warning); }
+.status-code.s500 { color: var(--color-danger); }
 
-/* Rules Page */
+/* Toolbar */
 .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .toolbar .btn {
   padding: 8px 16px; border-radius: var(--radius-md); font-size: 13px; border: none; cursor: pointer;
@@ -165,8 +168,11 @@ body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary);
 .toolbar .btn-primary:hover { background: var(--color-primary-light); }
 .toolbar .btn-default { background: #fff; color: var(--text-regular); border: 1px solid var(--border-color); }
 .toolbar .btn-default:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.toolbar .btn-success { background: var(--color-success); color: #fff; }
+.toolbar .btn-success:hover { opacity: 0.85; }
 .toolbar .spacer { flex: 1; }
 
+/* Protocol Tabs */
 .protocol-tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 2px solid var(--border-light); }
 .protocol-tabs .tab {
   padding: 10px 20px; font-size: 14px; cursor: pointer; color: var(--text-secondary);
@@ -179,6 +185,14 @@ body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary);
   font-size: 11px; margin-left: 4px; color: var(--text-secondary);
 }
 .protocol-tabs .tab.active .tab-badge { background: #ECF5FF; color: var(--color-primary); }
+
+/* Environment Filter */
+.env-filter { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.env-filter label { font-size: 13px; color: var(--text-secondary); }
+.env-filter select {
+  border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 4px 8px;
+  font-size: 13px; color: var(--text-primary); background: #fff; cursor: pointer;
+}
 
 /* Rule cards view */
 .rule-list { display: flex; flex-direction: column; gap: 8px; }
@@ -211,7 +225,7 @@ body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary);
 .toggle input:checked + .slider:before { transform: translateX(18px); }
 
 /* ===== Status Page ===== */
-.status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+.status-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 24px; }
 .status-card {
   background: #fff; border-radius: var(--radius-lg); padding: 16px;
   box-shadow: var(--shadow-card); display: flex; align-items: center; gap: 12px;
@@ -222,7 +236,7 @@ body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary);
 .status-card .status-label { font-size: 13px; color: var(--text-secondary); }
 .status-card .status-port { font-weight: 700; font-size: 16px; color: var(--text-primary); }
 
-.metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+.metrics-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 24px; }
 .metric-item { background: #fff; padding: 16px; border-radius: var(--radius-lg); box-shadow: var(--shadow-card); }
 .metric-item .metric-value { font-size: 24px; font-weight: 700; color: var(--text-primary); }
 .metric-item .metric-label { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
@@ -262,6 +276,7 @@ body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary);
   padding: 6px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-md);
   font-size: 13px; background: #fff; outline: none;
 }
+
 .condition-block {
   background: var(--bg-page); border-radius: var(--radius-md); padding: 12px; margin-bottom: 8px;
   border: 1px solid var(--border-light);
@@ -290,14 +305,61 @@ body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary);
 .badge.enabled { background: #F0F9EB; color: var(--color-success); }
 .badge.disabled { background: #F4F4F5; color: var(--color-info); }
 
-/* Notification */
-.page-watermark {
-  position: fixed; top: 60px; right: 20px; background: #fff; border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg); padding: 10px 16px; font-size: 12px; color: var(--text-secondary);
-  box-shadow: var(--shadow-card); z-index: 999; display: flex; align-items: center; gap: 8px;
+/* ===== Recording Cards ===== */
+.rec-card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.rec-card {
+  background: #fff; border-radius: var(--radius-lg); padding: 16px; box-shadow: var(--shadow-card);
 }
-.page-watermark .nav-link { color: var(--color-primary); cursor: pointer; text-decoration: none; }
-.page-watermark .nav-link:hover { text-decoration: underline; }
+.rec-card .rec-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; display: flex; justify-content: space-between; }
+.rec-card .rec-meta { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+.rec-card .rec-proto { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+.rec-card .rec-actions { display: flex; gap: 8px; }
+
+/* ===== Environment Management Page (NEW) ===== */
+.env-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+.env-card {
+  background: #fff; border-radius: var(--radius-lg); padding: 20px;
+  box-shadow: var(--shadow-card); border: 2px solid transparent; transition: all 0.15s;
+}
+.env-card.active { border-color: var(--color-primary); }
+.env-card .env-name { font-size: 18px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
+.env-card .env-desc { font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; }
+.env-card .env-mode {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 600; margin-bottom: 12px;
+}
+.env-mode.stub { background: #F0F9EB; color: var(--color-success); }
+.env-mode.passthrough { background: #ECF5FF; color: var(--color-primary); }
+.env-mode.record { background: #FDF6EC; color: var(--color-warning); }
+.env-mode.record-and-stub { background: #F4F0FE; color: #8B7CF6; }
+.env-card .env-meta { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+.env-card .env-agents { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-light); }
+.env-card .env-agents-title { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 600; }
+.env-card .env-agent-item { font-size: 12px; color: var(--text-regular); padding: 2px 0; font-family: var(--font-code); }
+.env-card .env-actions { display: flex; gap: 8px; margin-top: 16px; }
+
+.mode-select-inline { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+.mode-select-inline label { font-size: 13px; color: var(--text-secondary); }
+.mode-select-inline select {
+  border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 6px 12px;
+  font-size: 13px; color: var(--text-primary); background: #fff; cursor: pointer;
+}
+
+/* ===== Agent Table ===== */
+.agent-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.agent-table th {
+  text-align: left; padding: 10px 12px; color: var(--text-secondary); font-weight: 500;
+  border-bottom: 1px solid var(--border-light); font-size: 12px;
+}
+.agent-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-light); }
+.agent-table tr:hover td { background: #F5F7FA; }
+.agent-mode-tag {
+  display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 500;
+}
+.agent-mode-tag.stub { background: #F0F9EB; color: var(--color-success); }
+.agent-mode-tag.passthrough { background: #ECF5FF; color: var(--color-primary); }
+.agent-mode-tag.record { background: #FDF6EC; color: var(--color-warning); }
+.agent-mode-tag.record-and-stub { background: #F4F0FE; color: #8B7CF6; }
 
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
@@ -307,6 +369,8 @@ body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary);
   .editor-layout { grid-template-columns: 1fr; }
   .status-grid { grid-template-columns: repeat(2, 1fr); }
   .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+  .rec-card-grid { grid-template-columns: 1fr; }
+  .env-grid { grid-template-columns: 1fr; }
 }
 </style>
 </head>
@@ -318,18 +382,9 @@ body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary);
   <header class="app-header">
     <div class="logo">Baafoo<span>挡板控制台</span></div>
     <div class="header-right">
-      <div class="mode-select">
-        全局模式:
-        <select>
-          <option value="stub" selected>挡板 (Stub)</option>
-          <option value="passthrough">透传 (Passthrough)</option>
-          <option value="record">录制 (Record)</option>
-          <option value="record-and-stub">录制+挡板</option>
-        </select>
-      </div>
       <div class="agent-status">
         <span class="agent-indicator" title="Agent 已连接"></span>
-        Agent 已连接 <span class="agent-count">(3)</span>
+        Agent 已连接 <span class="agent-count">(5)</span>
       </div>
     </div>
   </header>
@@ -354,6 +409,10 @@ body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary);
           <a href="#" onclick="showPage('rules')" id="nav-rules-pulsar">Pulsar<span class="badge">2</span></a>
           <a href="#" onclick="showPage('rules')" id="nav-rules-jms">JMS<span class="badge">2</span></a>
         </li>
+        <li class="section-title">环境</li>
+        <li><a href="#" onclick="showPage('environments')" id="nav-environments">
+          <span class="icon">🌐</span> 环境管理
+        </a></li>
         <li class="section-title">监控</li>
         <li><a href="#" onclick="showPage('logs')" id="nav-logs">
           <span class="icon">📜</span> 请求日志
@@ -382,7 +441,10 @@ body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary);
     <span><span class="port-dot on"></span> Kafka:9002</span>
     <span><span class="port-dot on"></span> Pulsar:9003</span>
     <span><span class="port-dot off"></span> JMS:9004</span>
-    <span style="margin-left:auto;">规则: 23 条 | 请求: 1,247 | 命中率: 94.2%</span>
+    <span class="spacer"></span>
+    <span>规则: 23 条 | 今日请求: 1,247 | 命中率: 94.2%</span>
+    <span>|</span>
+    <span>环境: <strong>3 个活跃</strong></span>
   </footer>
 </div>
 
@@ -399,6 +461,7 @@ function showPage(name) {
   switch(name) {
     case 'dashboard': main.innerHTML = pages.dashboard(); break;
     case 'rules': main.innerHTML = pages.rules(); break;
+    case 'environments': main.innerHTML = pages.environments(); break;
     case 'logs': main.innerHTML = pages.logs(); break;
     case 'recordings': main.innerHTML = pages.recordings(); break;
     case 'status': main.innerHTML = pages.status(); break;
@@ -410,12 +473,12 @@ function showPage(name) {
 pages.dashboard = () => `
   <h1 class="page-title">控制台首页</h1>
 
-  <!-- Stat Cards -->
+  <!-- Stat Cards (5 cards) -->
   <div class="stat-cards">
     <div class="stat-card">
       <div class="card-icon blue">🔌</div>
       <div>
-        <div class="card-value">3</div>
+        <div class="card-value">5</div>
         <div class="card-label">活跃 Agent 连接</div>
       </div>
     </div>
@@ -438,6 +501,13 @@ pages.dashboard = () => `
       <div>
         <div class="card-value">2.3 ms</div>
         <div class="card-label">平均响应延迟 (P50)</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="card-icon teal">🌐</div>
+      <div>
+        <div class="card-value">3</div>
+        <div class="card-label">活跃环境</div>
       </div>
     </div>
   </div>
@@ -484,7 +554,7 @@ pages.dashboard = () => `
     <div class="recent-title">最近请求</div>
     <table class="data-table">
       <thead><tr>
-        <th>时间</th><th>协议</th><th>请求摘要</th><th>规则</th><th>状态</th><th>耗时</th>
+        <th>时间</th><th>协议</th><th>请求摘要</th><th>规则</th><th>状态</th><th>耗时</th><th>环境</th>
       </tr></thead>
       <tbody>
         <tr>
@@ -494,6 +564,7 @@ pages.dashboard = () => `
           <td>get-user-success</td>
           <td><span class="status-code s200">200</span></td>
           <td>2ms</td>
+          <td><span class="env-tag">ft-1</span></td>
         </tr>
         <tr>
           <td>22:45:01.120</td>
@@ -502,6 +573,7 @@ pages.dashboard = () => `
           <td>tcp-login-resp</td>
           <td><span class="status-code s200">匹配</span></td>
           <td>1ms</td>
+          <td><span class="env-tag">ft-2</span></td>
         </tr>
         <tr>
           <td>22:45:00.998</td>
@@ -510,6 +582,7 @@ pages.dashboard = () => `
           <td>pulsar-order-ev</td>
           <td><span class="status-code s200">投递</span></td>
           <td>5ms</td>
+          <td><span class="env-tag">ft-1</span></td>
         </tr>
         <tr>
           <td>22:45:00.850</td>
@@ -518,14 +591,16 @@ pages.dashboard = () => `
           <td style="color:var(--color-warning);">(未匹配)</td>
           <td><span class="status-code s404">404</span></td>
           <td>0ms</td>
+          <td><span class="env-tag">ft-3</span></td>
         </tr>
         <tr>
           <td>22:44:59.720</td>
           <td><span class="protocol-tag http">HTTP</span></td>
-          <td style="font-family:var(--font-code);font-size:12px;">GET /api/products?type=V</td>
+          <td style="font-family:var(--font-code);font-size:12px;">GET /api/products?type=VIP</td>
           <td>get-products</td>
           <td><span class="status-code s200">200</span></td>
           <td>3ms</td>
+          <td><span class="env-tag">ft-1</span></td>
         </tr>
       </tbody>
     </table>
@@ -544,7 +619,7 @@ pages.rules = () => `
     <input class="form-input" placeholder="🔍 搜索规则..." style="width:240px;">
   </div>
 
-  <!-- Protocol Tabs -->
+  <!-- Protocol Tabs (no environment filter — rules are global) -->
   <div class="protocol-tabs">
     <div class="tab active">HTTP <span class="tab-badge">12</span></div>
     <div class="tab">TCP <span class="tab-badge">4</span></div>
@@ -553,9 +628,10 @@ pages.rules = () => `
     <div class="tab">JMS <span class="tab-badge">2</span></div>
   </div>
 
-  <!-- Rule List -->
+  <!-- Rule List (no env column — rules are global) -->
   <div class="rule-list">
     <div class="rule-item">
+      <div class="rule-checkbox"><input type="checkbox"></div>
       <div class="rule-info">
         <div class="rule-id">get-user-success</div>
         <div class="rule-match">GET /api/users/{id} → 200 OK (VIP 用户返回折扣价、普通用户返回原价)</div>
@@ -570,6 +646,7 @@ pages.rules = () => `
       </div>
     </div>
     <div class="rule-item">
+      <div class="rule-checkbox"><input type="checkbox"></div>
       <div class="rule-info">
         <div class="rule-id">create-order-by-type</div>
         <div class="rule-match">POST /api/orders → 201 Created (按 orderType 返回不同优先级)</div>
@@ -584,6 +661,7 @@ pages.rules = () => `
       </div>
     </div>
     <div class="rule-item">
+      <div class="rule-checkbox"><input type="checkbox"></div>
       <div class="rule-info">
         <div class="rule-id">create-order-timeout</div>
         <div class="rule-match">POST /api/orders → READ_TIMEOUT (模拟超时异常)</div>
@@ -598,9 +676,10 @@ pages.rules = () => `
       </div>
     </div>
     <div class="rule-item">
+      <div class="rule-checkbox"><input type="checkbox"></div>
       <div class="rule-info">
-        <div class="rule-id">get-products</div>
-        <div class="rule-match">GET /api/products → 200 OK (按 Query 参数 type 返回不同列表)</div>
+        <div class="rule-id">login-resp</div>
+        <div class="rule-match">TCP 01 02 03 → 固定字节响应</div>
       </div>
       <div class="rule-actions" style="margin-right:12px;">
         <span class="badge enabled">启用</span>
@@ -614,23 +693,162 @@ pages.rules = () => `
   </div>
 `;
 
+pages.environments = () => `
+  <h1 class="page-title">环境管理</h1>
+  <p style="font-size:13px;color:var(--text-secondary);margin-bottom:20px;">
+    Agent 在启动时通过配置文件 <code style="background:#F5F7FA;padding:1px 4px;border-radius:3px;">baafoo-agent.yml</code> 中的 <code style="background:#F5F7FA;padding:1px 4px;border-radius:3px;">environment</code> 字段声明所属环境。
+    Server 端按环境维度管理模式（stub / passthrough / record / record-and-stub）。规则全局共享，对所有 stub 模式的环境生效。
+  </p>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <button class="btn btn-primary" onclick="alert('创建环境对话框')">+ 创建环境</button>
+    <span class="spacer"></span>
+    <input class="form-input" placeholder="🔍 搜索环境..." style="width:200px;">
+  </div>
+
+  <!-- Environment Cards -->
+  <div class="env-grid">
+    <!-- ft-1: stub mode -->
+    <div class="env-card active">
+      <div class="env-name">ft-1</div>
+      <div class="env-desc">功能测试环境 1 — 订单服务挡板</div>
+      <div class="env-mode stub">🎯 挡板模式 (Stub)</div>
+      <div class="env-meta">Server: localhost:9000</div>
+      <div class="env-meta">创建时间: 2026-05-20 10:00</div>
+      <div class="env-agents">
+        <div class="env-agents-title">已连接 Agent (2)</div>
+        <div class="env-agent-item">🟢 order-service-dev — 192.168.1.101:8080</div>
+        <div class="env-agent-item">🟢 user-service-dev — 192.168.1.102:8080</div>
+      </div>
+      <div class="env-actions">
+        <button class="btn btn-default" style="font-size:12px;" onclick="alert('切换模式对话框')">切换模式</button>
+        <button class="btn btn-default" style="font-size:12px;color:var(--color-danger);">删除</button>
+      </div>
+    </div>
+
+    <!-- ft-2: passthrough mode -->
+    <div class="env-card">
+      <div class="env-name">ft-2</div>
+      <div class="env-desc">集成测试环境 2 — 直通下游</div>
+      <div class="env-mode passthrough">➡️ 透传模式 (Passthrough)</div>
+      <div class="env-meta">Server: localhost:9000</div>
+      <div class="env-meta">创建时间: 2026-05-22 14:30</div>
+      <div class="env-agents">
+        <div class="env-agents-title">已连接 Agent (1)</div>
+        <div class="env-agent-item">🟢 integration-test — 192.168.2.101:8080</div>
+      </div>
+      <div class="env-actions">
+        <button class="btn btn-default" style="font-size:12px;" onclick="alert('切换模式对话框')">切换模式</button>
+        <button class="btn btn-default" style="font-size:12px;color:var(--color-danger);">删除</button>
+      </div>
+    </div>
+
+    <!-- ft-3: record mode -->
+    <div class="env-card">
+      <div class="env-name">ft-3</div>
+      <div class="env-desc">录制环境 3 — 流量录制中</div>
+      <div class="env-mode record">🎥 录制模式 (Record)</div>
+      <div class="env-meta">Server: localhost:9000</div>
+      <div class="env-meta">创建时间: 2026-05-25 09:00</div>
+      <div class="env-agents">
+        <div class="env-agents-title">已连接 Agent (1)</div>
+        <div class="env-agent-item">🟢 recorder-agent — 192.168.3.101:8080</div>
+      </div>
+      <div class="env-actions">
+        <button class="btn btn-default" style="font-size:12px;" onclick="alert('切换模式对话框')">切换模式</button>
+        <button class="btn btn-default" style="font-size:12px;color:var(--color-danger);">删除</button>
+      </div>
+    </div>
+
+    <!-- ft-4: record-and-stub mode -->
+    <div class="env-card">
+      <div class="env-name">ft-4</div>
+      <div class="env-desc">回归测试环境 4 — 录制+挡板</div>
+      <div class="env-mode record-and-stub">🎯🎥 录制+挡板 (Record-and-Stub)</div>
+      <div class="env-meta">Server: localhost:9000</div>
+      <div class="env-meta">创建时间: 2026-05-27 16:00</div>
+      <div class="env-agents">
+        <div class="env-agents-title">已连接 Agent (1)</div>
+        <div class="env-agent-item">🔴 暂无 Agent 连接</div>
+      </div>
+      <div class="env-actions">
+        <button class="btn btn-default" style="font-size:12px;" onclick="alert('切换模式对话框')">切换模式</button>
+        <button class="btn btn-default" style="font-size:12px;color:var(--color-danger);">删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Environments Table View -->
+  <div class="recent-card" style="margin-top:24px;">
+    <div class="recent-title">环境列表（表格视图）</div>
+    <table class="data-table">
+      <thead><tr>
+        <th>环境名称</th><th>描述</th><th>模式</th><th>Agent 数</th><th>创建时间</th><th>操作</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>ft-1</strong></td>
+          <td style="font-size:12px;color:var(--text-secondary);">功能测试环境 1</td>
+          <td><span class="agent-mode-tag stub">挡板</span></td>
+          <td>2</td>
+          <td style="font-size:12px;">2026-05-20 10:00</td>
+          <td><span class="action-link">编辑</span> · <span class="action-link">切换模式</span> · <span class="action-link danger">删除</span></td>
+        </tr>
+        <tr>
+          <td><strong>ft-2</strong></td>
+          <td style="font-size:12px;color:var(--text-secondary);">集成测试环境 2</td>
+          <td><span class="agent-mode-tag passthrough">透传</span></td>
+          <td>1</td>
+          <td style="font-size:12px;">2026-05-22 14:30</td>
+          <td><span class="action-link">编辑</span> · <span class="action-link">切换模式</span> · <span class="action-link danger">删除</span></td>
+        </tr>
+        <tr>
+          <td><strong>ft-3</strong></td>
+          <td style="font-size:12px;color:var(--text-secondary);">录制环境 3</td>
+          <td><span class="agent-mode-tag record">录制</span></td>
+          <td>1</td>
+          <td style="font-size:12px;">2026-05-25 09:00</td>
+          <td><span class="action-link">编辑</span> · <span class="action-link">切换模式</span> · <span class="action-link danger">删除</span></td>
+        </tr>
+        <tr>
+          <td><strong>ft-4</strong></td>
+          <td style="font-size:12px;color:var(--text-secondary);">回归测试环境 4</td>
+          <td><span class="agent-mode-tag record-and-stub">录制+挡板</span></td>
+          <td>0</td>
+          <td style="font-size:12px;">2026-05-27 16:00</td>
+          <td><span class="action-link">编辑</span> · <span class="action-link">切换模式</span> · <span class="action-link danger">删除</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+`;
+
 pages.logs = () => `
   <h1 class="page-title">请求日志</h1>
 
   <div class="toolbar">
     <select class="form-select"><option>全部协议</option><option>HTTP</option><option>TCP</option><option>Kafka</option><option>Pulsar</option></select>
-    <select class="form-select"><option>全部规则</option></select>
+    <select class="form-select"><option>全部规则</option><option>已匹配</option><option>未匹配</option></select>
+    <!-- Environment filter (NEW) -->
+    <select class="form-select">
+      <option value="">全部环境</option>
+      <option value="ft-1">ft-1</option>
+      <option value="ft-2">ft-2</option>
+      <option value="ft-3">ft-3</option>
+      <option value="ft-4">ft-4</option>
+    </select>
     <select class="form-select"><option>最近 1 小时</option><option>最近 30 分钟</option><option>最近 24 小时</option></select>
     <input class="form-input" placeholder="🔍 搜索请求摘要..." style="width:200px;">
     <span class="spacer"></span>
     <button class="btn btn-default">导出 HAR</button>
-    <button class="btn btn-primary" style="background:var(--color-success);">自动刷新: ON</button>
+    <button class="btn btn-success" style="background:var(--color-success);">自动刷新: ON</button>
   </div>
 
   <div class="recent-card">
     <table class="data-table">
       <thead><tr>
-        <th>时间</th><th>协议</th><th>请求摘要</th><th>匹配规则</th><th>状态</th><th>耗时</th><th>操作</th>
+        <th>时间</th><th>协议</th><th>请求摘要</th><th>匹配规则</th><th>状态</th><th>耗时</th><th>环境</th><th>操作</th>
       </tr></thead>
       <tbody>
         <tr>
@@ -638,6 +856,7 @@ pages.logs = () => `
           <td style="font-family:var(--font-code);font-size:12px;">GET /api/users/123</td>
           <td>get-user-success</td>
           <td><span class="status-code s200">200</span></td><td>2ms</td>
+          <td><span class="env-tag">ft-1</span></td>
           <td><span class="action-link">详情</span></td>
         </tr>
         <tr>
@@ -645,13 +864,7 @@ pages.logs = () => `
           <td style="font-family:var(--font-code);font-size:12px;">01 02 03 00 05 ...</td>
           <td>tcp-login-resp</td>
           <td><span class="status-code s200">匹配</span></td><td>1ms</td>
-          <td><span class="action-link">详情</span></td>
-        </tr>
-        <tr>
-          <td>22:45:00.998</td><td><span class="protocol-tag pulsar">Pulsar</span></td>
-          <td style="font-family:var(--font-code);font-size:12px;">topic:order-events / sub:my-sub</td>
-          <td>pulsar-order-ev</td>
-          <td><span class="status-code s200">投递</span></td><td>5ms</td>
+          <td><span class="env-tag">ft-2</span></td>
           <td><span class="action-link">详情</span></td>
         </tr>
         <tr style="background:#FFF9EB;">
@@ -659,6 +872,7 @@ pages.logs = () => `
           <td style="font-family:var(--font-code);font-size:12px;">POST /api/refunds</td>
           <td style="color:var(--color-warning);">(未匹配)</td>
           <td><span class="status-code s404">404</span></td><td>0ms</td>
+          <td><span class="env-tag">ft-3</span></td>
           <td><span class="action-link">详情</span></td>
         </tr>
         <tr>
@@ -666,20 +880,7 @@ pages.logs = () => `
           <td style="font-family:var(--font-code);font-size:12px;">GET /api/products?type=VIP</td>
           <td>get-products</td>
           <td><span class="status-code s200">200</span></td><td>3ms</td>
-          <td><span class="action-link">详情</span></td>
-        </tr>
-        <tr>
-          <td>22:44:58.510</td><td><span class="protocol-tag http">HTTP</span></td>
-          <td style="font-family:var(--font-code);font-size:12px;">POST /api/orders</td>
-          <td>create-order-by-type</td>
-          <td><span class="status-code s200">201</span></td><td>2ms</td>
-          <td><span class="action-link">详情</span></td>
-        </tr>
-        <tr>
-          <td>22:44:57.800</td><td><span class="protocol-tag tcp">TCP</span></td>
-          <td style="font-family:var(--font-code);font-size:12px;">FF 00 01 05 ...</td>
-          <td>tcp-query-resp</td>
-          <td><span class="status-code s200">匹配</span></td><td>1ms</td>
+          <td><span class="env-tag">ft-1</span></td>
           <td><span class="action-link">详情</span></td>
         </tr>
       </tbody>
@@ -698,46 +899,40 @@ pages.recordings = () => `
     <span style="font-size:12px; color:var(--text-secondary);">保留策略: 7天 或 500MB</span>
   </div>
 
-  <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:16px;">
-    <div class="stat-card" style="display:block;">
-      <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-        <span style="font-weight:700;font-size:14px;">Session: rec-001</span>
-        <span style="font-size:12px; color:var(--color-success);">● 录制中</span>
-      </div>
-      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">05-28 20:00 ~ 现在</div>
-      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">HTTP (85%) · TCP (15%)</div>
-      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">大小: 45MB · 请求: 2,340 条</div>
-      <div style="display:flex;gap:8px;">
+  <div class="rec-card-grid">
+    <div class="rec-card">
+      <div class="rec-title">Session: rec-001 <span style="font-size:12px; color:var(--color-success);">● 录制中</span></div>
+      <div class="rec-meta">05-28 20:00 ~ 现在</div>
+      <div class="rec-meta">环境: <span class="env-tag">ft-1</span></div>
+      <div class="rec-proto">HTTP (85%) · TCP (15%)</div>
+      <div class="rec-meta">大小: 45MB · 请求: 2,340 条</div>
+      <div class="rec-actions">
         <button class="btn btn-primary" style="font-size:12px;">生成规则</button>
         <button class="btn btn-default" style="font-size:12px;">回放</button>
         <button class="btn btn-default" style="font-size:12px;color:var(--color-danger);">删除</button>
       </div>
     </div>
 
-    <div class="stat-card" style="display:block;">
-      <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-        <span style="font-weight:700;font-size:14px;">Session: rec-002</span>
-        <span style="font-size:12px; color:var(--color-info);">⏸ 已停止</span>
-      </div>
-      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">05-28 18:30 ~ 05-28 19:45</div>
-      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">TCP (100%)</div>
-      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">大小: 120MB · 请求: 8,900 条</div>
-      <div style="display:flex;gap:8px;">
+    <div class="rec-card">
+      <div class="rec-title">Session: rec-002 <span style="font-size:12px; color:var(--color-info);">⏸ 已停止</span></div>
+      <div class="rec-meta">05-28 18:30 ~ 05-28 19:45</div>
+      <div class="rec-meta">环境: <span class="env-tag">ft-2</span></div>
+      <div class="rec-proto">TCP (100%)</div>
+      <div class="rec-meta">大小: 120MB · 请求: 8,900 条</div>
+      <div class="rec-actions">
         <button class="btn btn-primary" style="font-size:12px;">生成规则</button>
         <button class="btn btn-default" style="font-size:12px;">回放</button>
         <button class="btn btn-default" style="font-size:12px;color:var(--color-danger);">删除</button>
       </div>
     </div>
 
-    <div class="stat-card" style="display:block;">
-      <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-        <span style="font-weight:700;font-size:14px;">Session: rec-003</span>
-        <span style="font-size:12px; color:var(--color-info);">⏸ 已停止</span>
-      </div>
-      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">05-27 09:00 ~ 05-27 18:00</div>
-      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">HTTP (60%) · Kafka (40%)</div>
-      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">大小: 155MB · 请求: 12,400 条</div>
-      <div style="display:flex;gap:8px;">
+    <div class="rec-card">
+      <div class="rec-title">Session: rec-003 <span style="font-size:12px; color:var(--color-info);">⏸ 已停止</span></div>
+      <div class="rec-meta">05-27 09:00 ~ 05-27 18:00</div>
+      <div class="rec-meta">环境: <span class="env-tag">ft-3</span></div>
+      <div class="rec-proto">HTTP (60%) · Kafka (40%)</div>
+      <div class="rec-meta">大小: 155MB · 请求: 12,400 条</div>
+      <div class="rec-actions">
         <button class="btn btn-primary" style="font-size:12px;">生成规则</button>
         <button class="btn btn-default" style="font-size:12px;">回放</button>
         <button class="btn btn-default" style="font-size:12px;color:var(--color-danger);">删除</button>
@@ -756,25 +951,23 @@ pages.status = () => `
     <div class="status-card"><span class="status-dot online"></span><div><div class="status-label">Kafka</div><div class="status-port">9002 监听中</div></div></div>
     <div class="status-card"><span class="status-dot online"></span><div><div class="status-label">Pulsar</div><div class="status-port">9003 监听中</div></div></div>
     <div class="status-card"><span class="status-dot offline"></span><div><div class="status-label">JMS</div><div class="status-port">9004 未启动</div></div></div>
-    <div class="status-card"><span class="status-dot online"></span><div><div class="status-label">Consul 集成</div><div class="status-port">DNS + API 模式</div></div></div>
   </div>
 
   <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;">系统指标</h3>
   <div class="metrics-grid">
-    <div class="metric-item"><div class="metric-value">3</div><div class="metric-label">Agent 连接数</div></div>
-    <div class="metric-item"><div class="metric-value">23</div><div class="metric-label">规则总数</div></div>
+    <div class="metric-item"><div class="metric-value">5</div><div class="metric-label">Agent 连接数</div></div>
+    <div class="metric-item"><div class="metric-value">23</div><div class="metric-label">规则总数（全局共享）</div></div>
     <div class="metric-item"><div class="metric-value">1,247</div><div class="metric-label">今日请求总数</div></div>
     <div class="metric-item"><div class="metric-value">2.3 ms</div><div class="metric-label">平均延迟 (P50)</div></div>
-    <div class="metric-item"><div class="metric-value">94.2%</div><div class="metric-label">规则命中率</div></div>
-    <div class="metric-item"><div class="metric-value">2d 4h 32m</div><div class="metric-label">Server 运行时间</div></div>
+    <div class="metric-item"><div class="metric-value">3</div><div class="metric-label">活跃环境数</div></div>
   </div>
 
   <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;">版本与配置</h3>
   <div class="version-card">
     <div class="version-row"><span class="version-key">Server 版本</span><span class="version-val">v1.0.0</span></div>
     <div class="version-row"><span class="version-key">Java 版本</span><span class="version-val">1.8.0_352 (Oracle Corporation)</span></div>
-    <div class="version-row"><span class="version-key">Agent 版本</span><span class="version-val">v1.0.0</span></div>
-    <div class="version-row"><span class="version-key">配置文件</span><span class="version-val">/etc/baafoo/config/stub-rules.yml</span></div>
+    <div class="version-row"><span class="version-key">Agent 配置路径</span><span class="version-val">/etc/baafoo/baafoo-agent.yml</span></div>
+    <div class="version-row"><span class="version-key">规则文件</span><span class="version-val">/etc/baafoo/stub-rules.yml（全局共享）</span></div>
     <div class="version-row"><span class="version-key">日志级别</span><span class="version-val">INFO</span></div>
     <div class="version-row"><span class="version-key">录制数据路径</span><span class="version-val">/var/baafoo/recordings/ (320MB)</span></div>
   </div>
@@ -802,6 +995,7 @@ function showEditor() {
             <span class="form-label">描述</span>
             <input class="form-input" value="获取用户信息 - VIP/NORMAL 返回不同响应">
           </div>
+          <!-- NOTE: environments field removed — rules are global, not per-environment -->
         </div>
 
         <div class="form-section">
@@ -833,9 +1027,9 @@ function showEditor() {
               <span class="form-label">Header Value</span><input class="form-input" value="VIP">
             </div>
             <div class="form-row">
-              <span class="form-label">响应 Body</span>
-              <textarea class="form-textarea" style="min-height:50px;">{"id": "{{path.id}}", "name": "Mock VIP User", "discount": 0.8}</textarea>
-            </div>
+                <span class="form-label">响应 Body</span>
+                <textarea class="form-textarea" style="min-height:50px;">{"id": "{{path.id}}", "name": "Mock VIP User", "discount": 0.8}</textarea>
+              </div>
           </div>
           <div class="condition-block">
             <div class="cond-header">
@@ -871,11 +1065,12 @@ function showEditor() {
         </div>
       </div>
 
-      <!-- Right: YAML Preview -->
+      <!-- Right: YAML Preview (no environments field) -->
       <div class="editor-preview">
-<span class="yaml-comment"># HTTP 挡板规则</span>
+<span class="yaml-comment"># HTTP 挡板规则（全局共享，无 environments 字段）</span>
 <span class="yaml-key">http</span>:
   - <span class="yaml-key">id</span>: <span class="yaml-string">get-user-success</span>
+    <span class="yaml-comment"># environments 字段已移除 — 规则对 stub 模式环境全局生效</span>
     <span class="yaml-key">request</span>:
       <span class="yaml-key">method</span>: <span class="yaml-string">GET</span>
       <span class="yaml-key">path</span>: <span class="yaml-string">/api/users/{id}</span>
@@ -896,7 +1091,7 @@ function showEditor() {
           <span class="yaml-key">status</span>: <span class="yaml-number">200</span>
           <span class="yaml-key">body</span>: <span class="yaml-string">|</span>
             <span class="yaml-string">{"id":"{{path.id}}","detail":"full"}</span>
-      - <span class="yaml-key">response</span>:  <span class="yaml-comment"># 默认</span>
+      - <span class="yaml-key">response</span>: <span class="yaml-comment"># 默认响应</span>
           <span class="yaml-key">status</span>: <span class="yaml-number">200</span>
           <span class="yaml-key">body</span>: <span class="yaml-string">|</span>
             <span class="yaml-string">{"id":"{{path.id}}",</span>
@@ -904,9 +1099,6 @@ function showEditor() {
             <span class="yaml-string"> "status":"active"}</span>
           <span class="yaml-key">delay</span>: <span class="yaml-number">50</span>
       </div>
-    </div>
-    <div style="text-align:center;margin-top:12px;font-size:12px;color:var(--text-secondary);">
-      编辑区域为 <strong>表单左侧 + YAML 实时预览右侧</strong> 双栏布局。修改表单时右侧 YAML 实时刷新。
     </div>
   `;
 }

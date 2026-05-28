@@ -1,11 +1,11 @@
 # Baafoo Web 控制台 — 前端界面框架设计
 
-> **文档状态**：v1.1  
-> **关联文档**：[概念设计说明书 v0.4](../.concepts/baafoo-concept-design.md) | [产品需求文档 v1.2](../.prd/baafoo-prd.md)  
+> **文档状态**：v1.4  
+> **关联文档**：[概念设计说明书 v0.5](../.concepts/baafoo-concept-design.md) | [产品需求文档 v1.4](../.prd/baafoo-prd.md)  
 > **目标读者**：前端开发工程师、UI 设计师  
 > **技术栈**：Vue 3 + Element Plus + Pinia + Axios + ECharts  
-> **最后更新**：2026-05-28  
-> **变更摘要**：v1.1 — 技术栈升级为 Vue 3 + Element Plus + Pinia；静态资源约束调整为 2MB（gzip 后约 700KB）；统一 Server 技术栈为 Netty；确定 WebSocket 为实时日志推送方案；组件文件改为 .vue SFC；新增错误边界与离线处理设计
+> **最后更新**：2026-05-29  
+> **变更摘要**：v1.4 — 修复跨文档一致性：统一 record-and-stub 模式命名；环境声明方式统一为配置文件；Header 模式指示灯语义修正；离线处理描述修正；stores 目录清理
 
 ---
 
@@ -13,7 +13,7 @@
 
 ### 1.1 产品定位
 
-Baafoo Web 控制台是 Baafoo Server 内嵌的单页应用（SPA），通过可视化界面管理挡板规则、查看请求日志、管理录制数据和监控系统状态。控制台通过 Baafoo Server 的 REST API 获取数据，无需独立后端服务。
+Baafoo Web 控制台是 Baafoo Server 内嵌的单页应用（SPA），通过可视化界面管理挡板规则、查看请求日志、管理录制数据、管理测试环境和监控系统状态。控制台通过 Baafoo Server 的 REST API 获取数据，无需独立后端服务。
 
 ### 1.2 访问方式
 
@@ -27,6 +27,7 @@ Baafoo Web 控制台是 Baafoo Server 内嵌的单页应用（SPA），通过可
 2. **即时响应**：所有操作通过 REST API 完成，规则修改 < 500ms 生效
 3. **协议感知**：UI 需适应 HTTP / TCP / Kafka / Pulsar / JMS 五种协议的差异化配置
 4. **开发者友好**：快捷键支持、YAML 实时预览、表单校验即时反馈
+5. **环境感知**：UI 需支持环境管理（环境是 Agent 的属性）、环境维度模式切换、按环境过滤日志/录制
 
 ---
 
@@ -36,20 +37,20 @@ Baafoo Web 控制台是 Baafoo Server 内嵌的单页应用（SPA），通过可
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  HEADER BAR — Logo + 全局模式切换 + Agent 连接状态指示灯       │
-├────────────┬─────────────────────────────────────────────────┤
-│            │                                                 │
-│  SIDEBAR   │               MAIN CONTENT AREA                │
-│            │                                                 │
+│  HEADER BAR — Logo + 全局模式指示灯 + Agent 连接状态       │
+├─────────────┬────────────────────────────────────────────────┤
+│             │                                                 │
+│  SIDEBAR  │               MAIN CONTENT AREA                │
+│             │                                                 │
 │  · 规则管理 │   ┌─────────────────────────────────────────┐  │
 │  · 请求日志 │   │                                         │  │
 │  · 录制管理 │   │         Page-specific Content           │  │
+│  · 环境管理 │   │                                         │  │
 │  · 系统状态 │   │                                         │  │
-│            │   │                                         │  │
-│            │   └─────────────────────────────────────────┘  │
-│            │                                                 │
-├────────────┴─────────────────────────────────────────────────┤
-│  STATUS BAR — Server 版本 + 规则总数 + 请求速率               │
+│             │   └─────────────────────────────────────────┘  │
+│             │                                                 │
+├─────────────┴────────────────────────────────────────────────┤
+│  STATUS BAR — Server 版本 + 规则总数 + 请求速率 + 活跃环境数     │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -87,6 +88,8 @@ Baafoo Web 控制台是 Baafoo Server 内嵌的单页应用（SPA），通过可
 /logs/:requestId          → 请求详情
 /recordings               → 录制管理
 /recordings/:sessionId    → 录制详情
+/environments             → 环境管理（新增）
+/environments/:name      → 环境详情（查看该环境下 Agent 列表）
 /status                   → 系统状态
 ```
 
@@ -104,9 +107,13 @@ App.vue
 │   ├── LogDetailPage.vue     # 请求详情
 │   ├── RecordingsPage.vue    # 录制管理
 │   ├── RecordingDetailPage.vue # 录制详情
+│   ├── EnvironmentsPage.vue  # 环境管理（新增）
+│   ├── EnvironmentDetailPage.vue # 环境详情（新增）
 │   └── StatusPage.vue        # 系统状态
 └── BaafooStatusBar.vue       # 全局底栏
 ```
+
+---
 
 ## 4. 组件树与页面详设
 
@@ -116,21 +123,23 @@ App.vue
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ [Baafoo Logo]    模式: [挡板 ▼]    ● Agent 已连接 (3)       │
+│ [Baafoo Logo]    模式指示灯: ● stub    ● Agent 已连接 (3)       │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 | 元素 | 类型 | 说明 |
 |---|---|---|
 | Logo | 静态文本/图标 | "Baafoo" + 产品图标，点击回到首页 |
-| 全局模式切换 | el-select | stub / passthrough / record / record-and-stub，切换后弹出确认对话框 |
+| 全局模式指示灯 | 状态指示灯 + 文本 | 显示**最近操作的环境模式**（用户在环境管理页面切换某环境模式后，此处显示该环境的当前模式）；绿色● = stub，灰色● = passthrough，蓝色● = record，紫色● = record-and-stub |
 | Agent 连接指示 | 状态指示灯 + 数字 | 绿色● = 有活跃连接，灰色● = 无连接；数字表示连接数 |
+
+> **设计说明**：Header 不再有"全局模式切换"下拉，因为模式是**按环境维度**控制的，不是全局的。模式切换在"环境管理"页面按环境操作。
 
 #### 4.1.2 BaafooSidebar.vue — 侧边导航
 
 ```
 ┌──────────────┐
-│ 📊 控制台首页 │  ← el-menu-item
+│ 🏠 控制台首页 │  ← el-menu-item
 │ 📋 规则管理   │  ← 可展开子菜单（按协议）
 │   · HTTP     │
 │   · TCP      │
@@ -139,6 +148,7 @@ App.vue
 │   · JMS      │
 │ 📜 请求日志   │
 │ 🎬 录制管理   │
+│ 🏢 环境管理   │  ← 新增
 │ ⚙ 系统状态   │
 └──────────────┘
 ```
@@ -148,6 +158,7 @@ App.vue
 - 规则管理为 el-submenu，默认展开
 - 每个协议标签旁显示该协议的规则数量 badge
 - Sidebar 可收缩（el-menu `collapse`），收缩态仅显示图标
+- **新增"环境管理"入口**，与规则管理、请求日志、录制管理、系统状态并列
 
 #### 4.1.3 BaafooStatusBar.vue — 全局底栏
 
@@ -155,6 +166,7 @@ App.vue
 ┌──────────────────────────────────────────────────────────────┐
 │ Server v1.0.0  │  HTTP: 9000 ↑  TCP: 9001 ↑  Kafka: 9002 ↑  │
 │ 规则: 23 条    │  Pulsar: 9003 ↑  JMS: 9004 —              │
+│ 活跃环境: 3     │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -163,6 +175,7 @@ App.vue
 | Server 版本 | 从 `/api/health` 获取 |
 | 端口状态 | ↑ 绿色 = 监听中，— 灰色 = 未启动，✕ 红色 = 异常 |
 | 规则总数 | 从 `/api/rules` count |
+| 活跃环境数 | 从 `/api/environments` 统计有活跃 Agent 的环境数量 |
 
 ---
 
@@ -170,16 +183,16 @@ App.vue
 
 #### 4.2.1 DashboardPage.vue — 控制台首页
 
-**页面布局**：上排 4 个统计卡片 + 下排 2 个图表（左右分栏）
+**页面布局**：上排 5 个统计卡片 + 下排 2 个图表（左右分栏）
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │  控制台首页                                                  │
 │                                                              │
-│ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐        │
-│ │ 活跃连接  │ │ 今日请求  │ │ 规则命中  │ │ 平均延迟  │        │
-│ │    3     │ │  1,247   │ │  94.2%   │ │  2.3 ms  │        │
-│ └──────────┘ └──────────┘ └──────────┘ └──────────┘        │
+│ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
+│ │ 活跃连接  │ │ 今日请求  │ │ 规则命中  │ │ 平均延迟  │ │ 活跃环境  │
+│ │    3     │ │  1,247   │ │  94.2%   │ │  2.3 ms  │ │    3     │
+│ └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘
 │                                                              │
 │ ┌─────────────────────┐ ┌─────────────────────┐             │
 │ │   请求趋势（折线图）  │ │ 协议分布（饼图）     │             │
@@ -197,7 +210,8 @@ App.vue
 **组件树**：
 ```
 DashboardPage.vue
-├── StatCard.vue × 4          # 统计卡片（props: title, value, icon, color）
+├── StatCard.vue × 5          # 统计卡片（props: title, value, icon, color）
+│   └── 第 5 张卡片："活跃环境"，value 来自 useEnvStore().activeEnvCount
 ├── RequestTrendChart.vue     # ECharts 折线图
 ├── ProtocolPieChart.vue      # ECharts 饼图
 └── RecentRequestsTable.vue   # el-table，支持点击跳转日志详情
@@ -208,6 +222,7 @@ DashboardPage.vue
 - 请求趋势：`GET /api/stats/trend?period=1h`
 - 协议分布：`GET /api/stats/protocols`
 - 最近请求：`GET /api/logs?limit=20`
+- 活跃环境：`GET /api/environments` 汇总有活跃 Agent 的环境数量
 
 ---
 
@@ -217,25 +232,29 @@ DashboardPage.vue
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  规则管理                                    [+ 新建规则] [导入] [导出]   │
-│                                                              │
+│  规则管理                          [+ 新建规则] [导入] [导出]   │
+│                                                                  │
 │  [HTTP 12] [TCP 4] [Kafka 3] [Pulsar 2] [JMS 2]             │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────────┐│
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────────────┐│
 │  │ 🔍 搜索规则...                            协议: [全部 ▼] ││
-│  └──────────────────────────────────────────────────────────┘│
-│                                                              │
-│  ┌──────────────────────────────────────────────────────────┐│
+│  └──────────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────────────┐│
 │  │ # │ 规则ID       │ 匹配条件            │ 状态 │ 操作     ││
 │  ├───┼──────────────┼─────────────────────┼──────┼─────────┤│
-│  │ 1 │ get-user     │ GET /api/users/{id} │ ✅启用│ 编辑 禁用 删除│
-│  │ 2 │ create-order │ POST /api/orders    │ ✅启用│ 编辑 禁用 删除│
-│  │ 3 │ login-reset  │ TCP 01 02 03 → ... │ ⏸禁用│ 编辑 启用 删除│
-│  └──────────────────────────────────────────────────────────┘│
-│                                                              │
+│  │ 1 │ get-user     │ GET /api/users/{id} │ ✅启用│ 编辑 禁用 删除││
+│  │ 2 │ create-order │ POST /api/orders    │ ✅启用│ 编辑 禁用 删除││
+│  │ 3 │ login-reset  │ TCP 01 02 03 → ... │ ⏸禁用│ 编辑 启用 删除││
+│  └──────────────────────────────────────────────────────────────────┘│
+│                                                                  │
 │  < 1 2 3 ... 5 >  共 23 条规则                              │
-└──────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────┘
 ```
+
+> **设计变更说明（v1.3）**：
+> - **移除**了顶部的"环境选择器"（旧设计是"规则按环境过滤"）
+> - **原因**：新设计下规则是**全局共享**的，不按环境区分。规则是否生效取决于 Agent 所属环境的模式（stub 模式下才拦截）
 
 **交互细节**：
 - 新建规则：弹出协议选择对话框（5 种协议卡片），选择后跳转对应编辑器
@@ -275,17 +294,17 @@ RulesPage.vue
 │  路径: [/api/users/{id}]   │  │     request:              │ │
 │                            │  │       method: GET         │ │
 │  ── 匹配条件（可添加多条）──│  │       path: /api/users/..│ │
-│  ┌─ 条件 1 ───────────────┐│  │     response:             │ │
-│  │ 条件类型: [Header ▼]   ││  │       status: 200         │ │
-│  │ 键: [X-User-Level    ] ││  │       body: |            │ │
-│  │ 值: [VIP             ] ││  │         {"id": "{{path..│ │
-│  │              [删除条件] ││  │                         │ │
-│  └────────────────────────┘│  └───────────────────────────┘ │
-│  [+ 添加匹配条件]           │                                 │
-│                            │                                 │
-│  响应配置                   │                                 │
-│  状态码: [200]              │                                 │
-│  响应头: ┌ Key ──┬ Value ─┐│                                 │
+│  ┌─ 条件 1 ──────────────┐│  │     responses:            │ │
+│  │ 条件类型: [Header ▼]   ││  │       - condition:        │ │
+│  │ 键: [X-User-Level    ] ││  │           header:       │ │
+│  │ 值: [VIP             ] ││  │             X-User...  │ │
+│  │              [删除条件] ││  │         response:       │ │
+│  └────────────────────────┘│  │           status: 200   │ │
+│  [+ 添加匹配条件]           │  │           body: |        │ │
+│                            │  │             {"id": ...   │ │
+│  响应配置                   │  │                         │ │
+│  状态码: [200]              │  │                         │ │
+│  响应头: ┌ Key ──┬ Value ─┐│  └───────────────────────────┘ │
 │         │Content │ app/json││                                 │
 │         └───────┴────────┘│                                 │
 │  Body: ┌──────────────────┐│                                 │
@@ -298,6 +317,10 @@ RulesPage.vue
 │  异常模拟: [无 ▼]           │                                 │
 └────────────────────────────┴─────────────────────────────────┘
 ```
+
+> **设计变更说明（v1.3）**：
+> - **移除**了"环境多选器"（旧设计是"选择规则生效环境，不选则所有环境生效"）
+> - **原因**：新设计下规则是**全局共享**的，没有 `environments` 字段。规则是否生效取决于 Agent 所属环境的模式。
 
 **协议差异表单**：
 
@@ -313,7 +336,7 @@ RulesPage.vue
 ```
 RuleEditorPage.vue
 ├── EditorToolbar.vue          # 返回 + 标题 + 保存/取消
-├── RuleBasicInfo.vue          # 规则 ID、描述
+├── RuleBasicInfo.vue          # 规则 ID、描述（移除环境选择）
 ├── ProtocolSpecificForm.vue   # 按协议路由到子组件
 │   ├── HttpRuleForm.vue       # HTTP 表单
 │   │   ├── MatchConditionList.vue  # 动态条件列表
@@ -323,7 +346,7 @@ RuleEditorPage.vue
 │   ├── KafkaRuleForm.vue      # Kafka 表单
 │   ├── PulsarRuleForm.vue     # Pulsar 表单
 │   └── JmsRuleForm.vue        # JMS 表单
-└── YamlPreview.vue            # 右侧实时 YAML 预览
+└── YamlPreview.vue            # 右侧实时 YAML 预览（移除 environments 字段）
 ```
 
 ---
@@ -336,22 +359,28 @@ RuleEditorPage.vue
 ┌──────────────────────────────────────────────────────────────┐
 │  请求日志                                      [导出 HAR] [自动刷新: ON]  │
 │                                                              │
-│  协议: [全部 ▼]  规则: [全部 ▼]  时间: [最近 1 小时 ▼]  🔍 [搜索...]  │
+│  环境: [全部 ▼]  协议: [全部 ▼]  规则: [全部 ▼]  时间: [最近 1 小时 ▼]  🔍 [搜索...]  │
 │                                                              │
-│  ┌──────────────────────────────────────────────────────────┐│
+│  ┌──────────────────────────────────────────────────────────────────┐│
 │  │ 时间         │ 协议  │ 请求摘要          │ 规则      │ 状态 │ 耗时  ││
-│  ├──────────────┼───────┼───────────────────┼───────────┼──────┼──────┤│
+│  ├─────────────┼─────────┼───────────────────┼───────────┼──────┼──────┤│
 │  │ 22:45:01.234 │ HTTP  │ GET /api/users/.. │ get-user  │ 200  │ 2ms  ││
 │  │ 22:45:01.120 │ TCP   │ 01 02 03 ...      │ tcp-login │ 匹配 │ 1ms  ││
 │  │ 22:45:00.998 │ Pulsar│ order-events      │ pulsar-ev │ 投递 │ 5ms  ││
 │  │ 22:45:00.850 │ HTTP  │ POST /api/orders  │ (未匹配)  │ 404  │ 0ms  ││
-│  └──────────────────────────────────────────────────────────┘│
+│  └──────────────────────────────────────────────────────────────────┘│
 │                                                              │
-│  < 1 2 3 ... 12 >  共 1,247 条日志                          │
-└──────────────────────────────────────────────────────────────┘
+│  < 1 2 3 ... 12 >  共 1,247 条日志                              │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
+> **设计变更说明（v1.3）**：
+> - **新增**"环境过滤器"（下拉选择环境）
+> - **原因**：日志是 Agent 产生的，Agent 有环境属性。按环境过滤日志可以只查看某个测试环境下 Agent 产生的请求。
+
 **交互细节**：
+- **环境过滤器**：新增下拉选择器，选项为 `全部` / `ft-1` / `ft-2` / `ft-3` / ...（动态从 Server 获取已注册环境列表）
+- 选择特定环境后，日志表格仅显示该环境下 Agent 产生的日志
 - 自动刷新：el-switch，开启时每 3 秒轮询追加新日志
 - 未匹配请求高亮（浅黄色背景行），提示用户添加规则
 - 点击行展开详情抽屉（el-drawer），展示完整请求/响应内容
@@ -360,7 +389,8 @@ RuleEditorPage.vue
 **组件树**：
 ```
 LogsPage.vue
-├── LogFilterBar.vue           # 协议/规则/时间范围/搜索
+├── LogFilterBar.vue           # 环境/协议/规则/时间范围/搜索
+│   └── EnvironmentFilter.vue  # 环境过滤器（新增）
 ├── LogTable.vue               # el-table，支持虚拟滚动（大量数据）
 │   └── UnmatchedRowHighlight  # 未匹配行高亮样式
 └── LogDetailDrawer.vue        # el-drawer 请求/响应详情
@@ -378,8 +408,11 @@ LogsPage.vue
 ┌──────────────────────────────────────────────────────────────┐
 │  录制管理                      磁盘占用: 320MB / 500MB (64%)  │
 │                                                              │
+│  环境: [全部 ▼]                                              │
+│                                                              │
 │  ┌──────────────────────┐ ┌──────────────────────┐          │
 │  │ Session: rec-001     │ │ Session: rec-002     │          │
+│  │ 环境: ft-1          │ │ 环境: ft-2          │          │
 │  │ 时间: 05-28 20:00    │ │ 时间: 05-28 18:30    │          │
 │  │      ~ 05-28 22:00   │ │      ~ 05-28 19:45   │          │
 │  │ 协议: HTTP (85%)     │ │ 协议: TCP            │          │
@@ -395,10 +428,15 @@ LogsPage.vue
 └──────────────────────────────────────────────────────────────┘
 ```
 
+> **设计变更说明（v1.3）**：
+> - **新增**"环境过滤器"（下拉选择环境）
+> - **原因**：录制是 Agent 完成的，Agent 有环境属性。按环境过滤录制可以只查看某个测试环境下 Agent 的录制数据。
+
 **组件树**：
 ```
 RecordingsPage.vue
 ├── RecordingStatsBar.vue     # 磁盘占用进度条
+├── EnvironmentFilter.vue     # 环境过滤器（新增）
 ├── SessionCardList.vue       # 网格布局的 SessionCard
 │   └── SessionCard.vue       # 单个 Session 卡片
 │       └── SessionActions.vue # 生成规则 / 回放 / 删除
@@ -407,7 +445,84 @@ RecordingsPage.vue
 
 ---
 
-#### 4.2.6 StatusPage.vue — 系统状态
+#### 4.2.6 EnvironmentsPage.vue — 环境管理（新增）
+
+**页面布局**：环境卡片列表 + 环境详情抽屉
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  环境管理                                    [+ 创建环境]          │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────────┐│
+│  │ 环境名称  │ 当前模式  │ 活跃 Agent 数  │ 描述         │ 操作     ││
+│  ├──────────┼───────────┼────────────────┼─────────────┼──────────┤│
+│  │ ft-1      │ ● stub    │ 3              │ FT-1 挡板自测│ 查看 编辑 ││
+│  │ ft-2      │ ○ passthrough │ 2              │ FT-2 透传联调│ 查看 编辑 ││
+│  │ ft-3      │ ● record  │ 1              │ FT-3 录制环境│ 查看 编辑 ││
+│  └──────────────────────────────────────────────────────────┘│
+│                                                              │
+│  < 1 2 3 >  共 3 个环境                                  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**交互细节**：
+
+1. **创建环境**：
+   - 点击"+ 创建环境"按钮 → 弹出创建对话框
+   - 填写：环境名称（如 `ft-4`）、初始模式（默认 `passthrough`）、描述（可选）
+   - 提交后调用 `POST /api/environments`
+
+2. **模式切换**：
+   - 点击"编辑"按钮 → 弹出编辑对话框
+   - 可以切换模式（stub / passthrough / record / record-and-stub）
+   - 切换后，Server 通过控制通道向该环境下所有 Agent 下发模式切换指令
+   - **即时生效**，无需重启 Agent
+
+3. **查看环境详情**：
+   - 点击"查看"按钮 → 打开详情抽屉（或跳转到 `/environments/:name`）
+   - 展示该环境下所有活跃 Agent 的列表（PID、应用名、连接时间、状态）
+
+4. **删除环境**：
+   - 仅允许删除**无活跃 Agent**的环境
+   - 删除前需确认
+
+**组件树**：
+```
+EnvironmentsPage.vue
+├── EnvToolbar.vue            # 顶部操作栏（创建环境按钮）
+├── EnvTable.vue              # el-table 环境列表
+│   └── EnvRowActions.vue    # 每行操作按钮组（查看/编辑/删除）
+├── EnvCreateDialog.vue       # 创建环境对话框
+├── EnvEditDialog.vue        # 编辑环境对话框（含模式切换）
+└── EnvDetailDrawer.vue      # 环境详情抽屉（Agent 列表）
+    └── AgentList.vue         # Agent 列表表格
+```
+
+---
+
+#### 4.2.7 EnvironmentDetailPage.vue — 环境详情（新增）
+
+**页面布局**：环境基本信息 + Agent 列表
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  ← 返回环境列表              环境: ft-1                    │
+├────────────────────────────┬─────────────────────────────────┤
+│  基本信息                   │  Agent 列表                     │
+│  环境名称: ft-1            │                                 │
+│  当前模式: ● stub         │  ┌───────────────────────────┐ │
+│  描述: FT-1 挡板自测环境 │  │ PID  │ 应用名   │ 连接时间   │ │
+│  活跃 Agent 数: 3        │  ├─────┼──────────┼────────────┤ │
+│                            │  │ 1234 │ my-app   │ 10:00:00   │ │
+│  [切换模式]                │  │ 1235 │ my-app   │ 10:05:00   │ │
+│  [编辑]                   │  │ 1236 │ my-app   │ 10:10:00   │ │
+│  [删除环境]               │  └───────────────────────────┘ │
+└────────────────────────────┴─────────────────────────────────┘
+```
+
+---
+
+#### 4.2.8 StatusPage.vue — 系统状态
 
 **页面布局**：端口状态 + 系统指标 + 配置信息
 
@@ -426,9 +541,10 @@ RecordingsPage.vue
 │  │ 今日请求总数: 1,247      平均延迟: 2.3 ms               │ │
 │  │ 规则命中率: 94.2%        录制数据: 320MB / 500MB         │ │
 │  │ Server 运行时间: 2d 4h 32m                              │ │
+│  │ 活跃环境数: 3                                             │ │
 │  └─────────────────────────────────────────────────────────┘ │
 │                                                              │
-│  ┌─ 版本与配置 ────────────────────────────────────────────┐ │
+│  ┌─ 版本与配置 ──────────────────────────────────────────────┐ │
 │  │ Baafoo Server: v1.0.0                                   │ │
 │  │ Java: 1.8.0_352 (Oracle Corporation)                    │ │
 │  │ 配置文件: /etc/baafoo/stub-rules.yml                    │ │
@@ -441,7 +557,7 @@ RecordingsPage.vue
 ```
 StatusPage.vue
 ├── PortStatusPanel.vue       # 端口状态网格
-├── SystemMetricsPanel.vue    # 系统指标
+├── SystemMetricsPanel.vue    # 系统指标（含活跃环境数）
 └── VersionInfoPanel.vue      # 版本与配置
 ```
 
@@ -454,39 +570,53 @@ StatusPage.vue
 ```
 开发者访问 http://localhost:9000/__baafoo__/
     │
-    ├── 首次使用 ──→ Dashboard 空白引导 ──→ "创建第一条规则" CTA
+    ├── 首次使用 ─→ Dashboard 空白引导 ─→ "创建第一条规则" CTA
     │
     └── 日常使用
         │
         ├── 规则管理
         │   ├── 新建规则 → 选协议 → 表单填写 → YAML 预览 → 保存 → 立即生效
-        │   ├── 编辑规则 → 表单修改 → 保存 → 立即生效
+        │   ├── 编辑规则 → 修改 → 保存 → 立即生效
         │   ├── 禁用/启用 → el-switch → API 调用 → 即时反馈
         │   └── 拖拽排序 → vuedraggable → API 更新优先级
         │
         ├── 请求日志
+        │   ├── 按环境过滤 → 选择环境下拉 → 仅显示该环境日志
         │   ├── 实时监控 → 自动刷新 ON → 滚动查看 → 点击展开详情
         │   └── 问题排查 → 未匹配高亮 → 一键生成规则模板
         │
         ├── 录制管理
+        │   ├── 按环境过滤 → 选择环境下拉 → 仅显示该环境录制
         │   ├── 查看 session → 生成回放规则 → 自动填充编辑器
         │   └── 清理过期数据 → 手动删除 / 自动清理策略
+        │
+        ├── 环境管理（新增）
+        │   ├── 创建环境 → 填写名称/模式/描述 → 提交 → Server 注册环境
+        │   ├── 切换模式 → 选择环境 → 切换模式 → Server 下发到该环境下所有 Agent
+        │   ├── 查看 Agent 列表 → 点击环境 → 查看该环境下所有 Agent
+        │   └── 删除环境 → 仅允许删除无活跃 Agent 的环境
         │
         └── 系统状态
             └── 监控端口 → 发现异常 → 查看日志排查
 ```
 
-### 5.2 全局模式切换流程
+### 5.2 环境模式切换流程（新增）
 
 ```
-用户点击 Header 全局模式下拉 → 选择新模式
+开发者在 Agent 配置文件声明所属环境：
+# baafoo-agent.yml
+environment: ft-1
+
+Agent 启动后注册到 Server，上报 environment: "ft-1"
+Server 根据环境配置下发模式（如 stub）
+
+在 Web 控制台：
     │
-    ├── stub → 确认弹窗："切换后所有挡板规则将生效，确认？" → API 调用 → Agent 热加载
-    ├── passthrough → 确认弹窗："切换后所有请求透传至真实下游，确认？"
-    ├── record → 确认弹窗："切换后所有请求透传并自动录制，确认？"
-    └── record-and-stub → 同上
-        │
-        └── API 返回成功后，Header 指示灯和 Status Bar 同步刷新
+    ├── 环境管理 → 环境列表 → 点击"编辑" → 切换模式 → 提交
+    │   → Server 立即通过控制通道向 ft-1 环境下所有 Agent 下发模式切换指令
+    │   → Agent 无需重启，自动开始拦截（或停止拦截）
+    │
+    └── Agent 配置文件修改 environment 字段 → 重启 Agent → 注册到新环境
 ```
 
 ---
@@ -549,8 +679,8 @@ StatusPage.vue
 | `--radius-sm` | 2px | 标签、badge |
 | `--radius-md` | 4px | 按钮、输入框、表格 |
 | `--radius-lg` | 8px | 卡片、对话框 |
-| `--shadow-card` | `0 2px 12px 0 rgba(0,0,0,0.06)` | 卡片阴影 |
-| `--shadow-dropdown` | `0 2px 12px 0 rgba(0,0,0,0.10)` | 下拉菜单阴影 |
+| `--shadow-card` | `0 2px 12px 0 rgba(0,0,0,.06)` | 卡片阴影 |
+| `--shadow-dropdown` | `0 2px 12px 0 rgba(0,0,0,.10)` | 下拉菜单阴影 |
 
 ### 6.5 图标系统
 
@@ -562,6 +692,7 @@ StatusPage.vue
 | 规则管理 | `el-icon-s-order` |
 | 请求日志 | `el-icon-document` |
 | 录制管理 | `el-icon-video-camera` |
+| 环境管理 | `el-icon-office-building` |
 | 系统状态 | `el-icon-setting` |
 | HTTP 协议 | `el-icon-link` |
 | TCP 协议 | `el-icon-connection` |
@@ -600,14 +731,15 @@ baafoo-console/                          # 独立前端工程目录
 │   ├── router/
 │   │   └── index.js                     # 路由配置
 │   ├── stores/                          # Pinia 状态管理
-│   │   ├── mode.js                      # 全局模式状态
 │   │   ├── rules.js                     # 规则列表状态
-│   │   └── agents.js                    # Agent 连接状态
+│   │   ├── agents.js                    # Agent 连接状态
+│   │   └── environments.js              # 环境管理状态
 │   ├── api/
 │   │   └── index.js                     # Axios 实例 + API 方法封装
 │   ├── composables/                     # 组合式函数
 │   │   ├── useWebSocket.js             # WebSocket 连接管理
-│   │   └── useAutoRefresh.js           # 自动刷新逻辑
+│   │   ├── useAutoRefresh.js           # 自动刷新逻辑
+│   │   └── useEnvironments.js          # 环境管理组合式函数
 │   ├── components/
 │   │   ├── BaafooHeader.vue
 │   │   ├── BaafooSidebar.vue
@@ -625,6 +757,8 @@ baafoo-console/                          # 独立前端工程目录
 │       ├── LogDetailPage.vue
 │       ├── RecordingsPage.vue
 │       ├── RecordingDetailPage.vue
+│       ├── EnvironmentsPage.vue         # 新增
+│       ├── EnvironmentDetailPage.vue    # 新增
 │       └── StatusPage.vue
 └── dist/                                # 构建输出，复制到 baafoo-server/src/main/resources/webapp/
 ```
@@ -644,24 +778,47 @@ const api = {
   getTrend:      (period)          => axios.get(`${API_BASE}/stats/trend`, { params: { period } }),
   getProtocols:  ()                => axios.get(`${API_BASE}/stats/protocols`),
 
-  // 规则管理
-  getRules:      (protocol)        => axios.get(`${API_BASE}/rules`, { params: { protocol } }),
+  // 环境管理（重设计）
+  getEnvironments: ()                => axios.get(`${API_BASE}/environments`),
+  createEnvironment: (data)          => axios.post(`${API_BASE}/environments`, data),
+  updateEnvironment: (name, data)   => axios.put(`${API_BASE}/environments/${name}`, data),
+  deleteEnvironment: (name)         => axios.delete(`${API_BASE}/environments/${name}`),
+  getEnvAgents:     (name)         => axios.get(`${API_BASE}/environments/${name}/agents`),
+
+  // 规则管理（移除 environments 参数）
+  getRules:      (protocol)         => axios.get(`${API_BASE}/rules`, { 
+    params: { 
+      protocol 
+    } 
+  }),
   createRule:    (rule)            => axios.post(`${API_BASE}/rules`, rule),
   updateRule:    (id, rule)        => axios.put(`${API_BASE}/rules/${id}`, rule),
   deleteRule:    (id)              => axios.delete(`${API_BASE}/rules/${id}`),
   importRules:   (file)            => { /* FormData upload */ },
-  exportRules:   (format)          => axios.get(`${API_BASE}/rules/export`, { params: { format } }),
+  exportRules:   (format)          => axios.get(`${API_BASE}/rules/export`, { 
+    params: { 
+      format
+    } 
+  }),
 
   // Agent 管理
   getAgents:     ()                => axios.get(`${API_BASE}/agents`),
 
-  // 请求日志
+  // 请求日志（新增 environment 参数）
   getLogs:       (params)          => axios.get(`${API_BASE}/logs`, { params }),
   getLogDetail:  (id)              => axios.get(`${API_BASE}/logs/${id}`),
-  exportHar:     ()                => axios.get(`${API_BASE}/logs/export/har`),
+  exportHar:     (environment)     => axios.get(`${API_BASE}/logs/export/har`, { 
+    params: { 
+      environment: environment || undefined 
+    } 
+  }),
 
-  // 录制管理
-  getRecordings: ()                => axios.get(`${API_BASE}/recordings`),
+  // 录制管理（新增 environment 参数）
+  getRecordings: (environment)     => axios.get(`${API_BASE}/recordings`, { 
+    params: { 
+      environment: environment || undefined 
+    } 
+  }),
   deleteRecording: (sessionId)     => axios.delete(`${API_BASE}/recordings/${sessionId}`),
   generateRule:  (sessionId)       => axios.post(`${API_BASE}/recordings/${sessionId}/generate-rule`),
 };
@@ -670,42 +827,70 @@ const api = {
 ### 7.4 全局状态管理（Pinia）
 
 ```javascript
-// stores/mode.js — 全局模式状态
+// stores/environments.js — 环境管理状态（重设计）
 import { defineStore } from 'pinia';
 
-export const useModeStore = defineStore('mode', {
+export const useEnvStore = defineStore('environments', {
   state: () => ({
-    currentMode: 'stub',
-    agentCount: 0,
-    serverConnected: true,
+    environments: [],           // 所有已注册的环境列表
+    currentFilter: 'all',      // 当前过滤的环境（'all' 表示全部）
   }),
-  actions: {
-    async switchMode(mode) {
-      await api.updateConfig({ mode });
-      this.currentMode = mode;
+  getters: {
+    activeEnvCount: (state) => {
+      // 统计有活跃 Agent 的环境数量
+      return state.environments.filter(env => env.agentCount > 0).length;
     },
-    setServerConnected(connected) {
-      this.serverConnected = connected;
+    envOptions: (state) => {
+      return [
+        { label: '全部', value: 'all' },
+        ...state.environments.map(env => ({ label: env.name, value: env.name }))
+      ];
+    },
+  },
+  actions: {
+    async fetchEnvironments() {
+      const { data } = await api.getEnvironments();
+      this.environments = data;
+    },
+    async createEnvironment(data) {
+      await api.createEnvironment(data);
+      await this.fetchEnvironments();
+    },
+    async updateEnvironment(name, data) {
+      await api.updateEnvironment(name, data);
+      await this.fetchEnvironments();
+    },
+    async deleteEnvironment(name) {
+      await api.deleteEnvironment(name);
+      await this.fetchEnvironments();
+    },
+    setCurrentFilter(filter) {
+      this.currentFilter = filter;
     },
   },
 });
 
-// stores/agents.js — Agent 连接状态
-export const useAgentStore = defineStore('agents', {
+// stores/rules.js — 规则列表状态（移除 environments 相关逻辑）
+export const useRuleStore = defineStore('rules', {
   state: () => ({
-    agents: [],
+    rules: [],
+    loading: false,
   }),
-  getters: {
-    activeCount: (state) => state.agents.filter(a => a.status === 'online').length,
-  },
   actions: {
-    async fetchAgents() {
-      const { data } = await api.getAgents();
-      this.agents = data;
+    async fetchRules(protocol) {
+      this.loading = true;
+      const { data } = await api.getRules(protocol);
+      this.rules = data;
+      this.loading = false;
     },
+    // ... 其他 actions
   },
 });
 ```
+
+> **变更说明**：
+> - `stores/environments.js`：从"规则环境过滤"改为"环境管理"
+> - `stores/rules.js`：移除 `environments` 相关逻辑
 
 ### 7.5 实时日志推送（WebSocket）
 
@@ -754,9 +939,7 @@ export function useLogStream() {
 axios.interceptors.response.use(
   (response) => response,
   (error) => {
-    const modeStore = useModeStore();
     if (!error.response) {
-      modeStore.setServerConnected(false);
       ElMessage.error('Server 连接中断，请检查 Baafoo Server 是否运行');
     } else if (error.response.status === 409) {
       ElMessage.warning('规则已被他人修改，请刷新后重试');
@@ -766,15 +949,6 @@ axios.interceptors.response.use(
     return Promise.reject(error);
   }
 );
-
-// Axios 请求拦截器 — 恢复连接状态
-axios.interceptors.request.use((config) => {
-  const modeStore = useModeStore();
-  if (!modeStore.serverConnected) {
-    modeStore.setServerConnected(true);
-  }
-  return config;
-});
 ```
 
 **离线处理策略**：
@@ -785,6 +959,7 @@ axios.interceptors.request.use((config) => {
 | 网络断开 | WebSocket 断开，日志停止更新 | WebSocket 3s 自动重连 |
 | API 5xx 错误 | `ElMessage.error` 提示具体错误 | 用户手动重试 |
 | 规则并发冲突 | 409 Conflict | 提示"规则已被他人修改，请刷新后重试" |
+| 环境模式切换时序延迟 | 同一环境下多个 Agent 因控制通道延迟短暂处于不同模式 | 提示"模式切换中，部分 Agent 尚未同步，请稍候" |
 
 ---
 
@@ -797,8 +972,9 @@ axios.interceptors.request.use((config) => {
 | 保存规则 | `el-message` success "规则已保存" | API 200 后 |
 | 删除规则 | `el-message` success "规则已删除" | API 200 后 |
 | 规则启用/禁用 | `el-switch` 即时切换 + 行状态更新 | API 200 后 |
-| 模式切换 | `el-messageBox` 确认对话框 → `el-message` success | 确认 → API → 反馈 |
+| 模式切换（环境） | `el-messageBox` 确认对话框 → `el-message` success | 确认 → API → 反馈 |
 | 导入规则 | `el-message` "成功导入 N 条规则" | API 200 后 |
+| 环境切换 | `el-message` success "已切换到 {env} 环境模式" | 环境下拉选择后 |
 | 操作失败 | `el-message` error + 错误详情 | API 4xx/5xx |
 
 ### 8.2 空状态处理
@@ -810,6 +986,7 @@ axios.interceptors.request.use((config) => {
 | 无录制 | 插图 + "暂无录制数据" + "将 Agent 模式切换为 record 开始录制" |
 | 搜索无结果 | "未找到匹配的规则/日志，请调整搜索条件" |
 | 端口未启动 | 灰色状态灯 + "未配置该协议的规则" 提示 |
+| 当前环境无 Agent | 插图 + "当前环境无活跃 Agent" + "启动 Agent 并配置 environment 字段" |
 
 ### 8.3 加载状态
 
@@ -819,6 +996,7 @@ axios.interceptors.request.use((config) => {
 | 表格数据刷新 | 表格区域 `v-loading` |
 | 保存操作 | 按钮 loading 态 + 禁用 |
 | 实时日志刷新 | 静默刷新，仅更新时间戳指示器 |
+| 环境切换 | 表格区域 `v-loading` |
 
 ---
 
@@ -875,6 +1053,8 @@ const routes = [
   { path: '/logs/:requestId', component: () => import('../pages/LogDetailPage.vue') },
   { path: '/recordings',    component: () => import('../pages/RecordingsPage.vue') },
   { path: '/recordings/:sessionId', component: () => import('../pages/RecordingDetailPage.vue') },
+  { path: '/environments',          component: () => import('../pages/EnvironmentsPage.vue') },
+  { path: '/environments/:name',     component: () => import('../pages/EnvironmentDetailPage.vue') },
   { path: '/status',        component: () => import('../pages/StatusPage.vue') },
 ];
 
@@ -897,9 +1077,87 @@ export default router;
 | R-W3 | 请求日志界面 | LogsPage + LogDetailDrawer |
 | R-W4 | 录制管理界面 | RecordingsPage + SessionCard |
 | R-W5 | 系统状态界面 | StatusPage |
-| G6 | Web 控制台 80% 日常操作 | 全部页面覆盖规则管理 + 请求查看 + 模式切换 |
+| R-W6 | 测试环境管理界面 | EnvironmentsPage + EnvironmentDetailPage |
+| R-S7.3 | 测试环境管理 API | EnvironmentsPage + EnvironmentDetailPage |
+| R-C1 | Agent 配置文件（environment 字段）| EnvironmentsPage（环境列表） |
+| R-C2 | 挡板规则文件（无 environments 字段）| RuleEditorPage + YAML 预览 |
+| G6 | Web 控制台 80% 日常操作 | 全部页面覆盖规则管理 + 请求查看 + 环境管理 |
 | G7 | 接口参数化返回 | RuleEditorPage → MatchConditionList |
 
 ---
 
-*本文档为 Baafoo Web 控制台 v1.1 前端界面框架设计，供前端工程师进行组件开发和技术方案评审。*
+## 11. 实施 Checklist
+
+### 11.1 前端实施步骤
+
+1. **新增 EnvironmentsPage.vue 组件**
+   - [ ] 环境列表表格
+   - [ ] 创建环境对话框
+   - [ ] 编辑环境对话框（含模式切换）
+   - [ ] 环境详情抽屉（Agent 列表）
+   - [ ] 删除环境确认对话框
+
+2. **更新 RulesPage.vue**
+   - [ ] **移除**环境选择器（规则全局共享）
+   - [ ] 保留协议 Tab + 搜索过滤
+
+3. **更新 RuleEditorPage.vue**
+   - [ ] **移除**环境多选器（规则无 environments 字段）
+   - [ ] YAML 预览移除 environments 字段
+
+4. **更新 DashboardPage.vue**
+   - [ ] 保留"活跃环境"统计卡片
+   - [ ] 数据来源接入 useEnvStore().activeEnvCount
+
+5. **更新 LogsPage.vue**
+   - [ ] **新增**环境过滤器
+   - [ ] API 调用时传递 environment 参数
+
+6. **更新 RecordingsPage.vue**
+   - [ ] **新增**环境过滤器
+   - [ ] API 调用时传递 environment 参数
+
+7. **新增 stores/environments.js**
+   - [ ] 环境列表状态管理
+   - [ ] 环境创建/更新/删除 actions
+   - [ ] 当前过滤环境状态
+
+8. **更新 API 封装**
+   - [ ] 新增 `/api/environments` 端点
+   - [ ] 移除规则 API 的 environments 参数
+   - [ ] 新增日志/录制 API 的 environment 参数
+
+### 11.2 后端 API 实施步骤（参考）
+
+1. **新增 `/api/environments` GET 端点**
+   - [ ] 返回所有已注册的环境列表
+   - [ ] 数据来源：所有 Agent 的 environment 字段汇总
+
+2. **新增 `/api/environments` POST 端点**
+   - [ ] 创建测试环境
+   - [ ] 请求体包含 `name`、`mode`、`description`
+
+3. **新增 `/api/environments/{name}` PUT 端点**
+   - [ ] 更新环境配置（主要用于切换模式）
+   - [ ] 模式变更后，Server 立即通过控制通道向该环境下所有 Agent 下发模式切换指令
+
+4. **新增 `/api/environments/{name}` DELETE 端点**
+   - [ ] 删除测试环境
+   - [ ] 仅允许删除无活跃 Agent 的环境
+
+5. **新增 `/api/environments/{name}/agents` GET 端点**
+   - [ ] 查看指定环境下所有已注册 Agent 的状态列表
+
+6. **更新 `/api/rules` GET 端点**
+   - [ ] **移除** `environment` 查询参数（规则全局共享）
+
+7. **更新 `/api/rules` POST/PUT 端点**
+   - [ ] **移除** `environments` 字段（规则无环境属性）
+
+8. **更新 `/api/agents` GET 端点**
+   - [ ] 返回 Agent 的 environment 字段
+   - [ ] 支持按 environment 过滤
+
+---
+
+*本文档为 Baafoo v1.3 前端界面框架设计，供前端工程师进行组件开发和技术方案评审。*

@@ -1,11 +1,10 @@
 # Baafoo 挡板系统 — 产品需求文档（PRD）
 
-> **文档状态**：PRD v1.2  
+> **文档状态**：PRD v1.4  
 > **目标读者**：产品团队、工程团队、QA 团队  
-> **关联文档**：[概念设计说明书 v0.4](../.concepts/baafoo-concept-design.md)  
-> **最后更新**：2026-05-28  
-> **变更摘要**：v1.2 — 统一录制数据存储架构为 Agent 上传至 Server；统一规则 Schema 为 responses 数组；调整 G4 目标为方向性指标；新增规则冲突检测与并发编辑需求；改进 R-A3 AC-02；新增 Agent-Server 控制通道相关需求
-
+> **关联文档**：[概念设计说明书 v0.5](../.concepts/baafoo-concept-design.md)  
+> **最后更新**：2026-05-29  
+> **变更摘要**：v1.4 — 架构重构：环境是 Agent 的属性（非规则属性）；模式是环境的属性（Server 端维护，非 Agent 本地配置）；规则全局共享无 environments 字段；新增环境管理 API 与环境管理页面设计
 ---
 
 ## 1. 问题陈述
@@ -35,7 +34,7 @@
 | G4 | 开发阶段因下游依赖导致的阻塞时间显著降低 | 方向性目标 | 上线后 4 周内，使用 Baafoo 的开发者 vs 未使用的开发者，日均下游等待时间对比下降 ≥ 50%（方向性指标，受团队规模、项目阶段等多因素影响） |
 | G5 | 支持 Consul 注册中心架构，按**服务名**而非 IP 管理挡板规则 | 用户目标 | Agent 在 Consul DNS + HTTP API 两种模式下均能正确拦截 |
 | G6 | 开发人员可通过 Web 控制台完成 **80% 的日常操作**（规则管理、请求查看、模式切换），无需手动编辑 YAML | 用户目标 | Web 控制台上线后 2 周，YAML 手动编辑操作占比 ≤ 20% |
-| G7 | 同一接口可按不同请求参数返回不同 Mock 响应，覆盖 **95% 的条件分支场景** | 用户目标 | 参数化规则能表达：按路径参数 / Header / Query / Body 字段值返回不同响应 |
+| G7 | 同一接口可以按不同请求参数返回不同 Mock 响应，覆盖 **95% 的条件分支场景** | 用户目标 | 参数化规则能表达：按路径参数 / Header / Query / Body 字段值返回不同响应 |
 
 ---
 
@@ -48,6 +47,7 @@
 | N3 | **不覆盖 gRPC/HTTP2 流式 RPC** | gRPC 基于 HTTP/2 多路复用，字节码拦截复杂度显著高于 HTTP/1.1；v1 聚焦 Unary 调用 + 基础协议 |
 | N4 | **不替代生产环境流量录制** | Baafoo 定位是**开发阶段**挡板工具，不承担生产流量镜像、压力测试等职责 |
 | N5 | **不修改 Consul 注册中心的数据** | Agent 只读 Consul 查询结果，不向 Consul 写入或修改任何注册信息 |
+| N6 | **规则不按环境区分** | 规则全局共享；不同环境下规则是否生效，由 Agent 所属环境的模式决定，而非规则本身绑定环境 |
 
 ---
 
@@ -72,7 +72,7 @@
 > 作为 **后端开发人员**，我希望配置 Mock 规则后，应用对下游 REST API 的 HTTP 请求能自动返回我预设的响应（状态码、Header、Body、延迟），以便我可以在下游不可用或数据不符合预期时继续开发和自测。
 
 **US-03：配置文件热切换挡板/透传模式**
-> 作为 **后端开发人员**，我希望修改挡板配置文件后，无需重启应用即可在"挡板模式"和"透传模式"之间切换，以便我可以随时按需对比真实下游行为与挡板行为。
+> 作为 **后端开发人员**，我希望通过 Web 控制台或 API **切换环境模式**后，该环境下的所有 Agent 自动生效（无需重启应用），以便我可以随时按需对比真实下游行为与挡板行为。
 
 **US-04：TCP Socket 字节级挡板**
 > 作为 **后端开发人员**，我希望对使用私有 TCP 协议的下游服务也能配置挡板规则（按字节前缀/正则匹配请求，返回预定义字节序列），以便即便下游是二进制协议我也能独立开发。
@@ -105,6 +105,9 @@
 
 **US-13：规则导入/导出**
 > 作为 **后端开发人员 / QA 测试工程师**，我希望可以将挡板规则导出为文件（YAML/JSON），也可以从文件导入规则集，以便我能在团队成员间共享规则、在项目中版本化管理挡板配置。
+
+**US-16：多测试环境独立模式控制**
+> 作为 **QA 测试工程师 / DevOps 平台工程师**，我们的多套功能测试环境（FT-1、FT-2、FT-3）都连接同一个 Baafoo Server，我希望按测试环境维度独立控制挡板模式或透传模式（如 FT-1 走挡板自测、FT-2 走透传联调真实下游、FT-3 走录制模式），以便不同测试环境可以并行执行不同的验证策略，互不影响，无需为每套环境部署独立的挡板服务。
 
 #### P2（Future Considerations — v1 不实现但设计需预留扩展点）
 
@@ -198,7 +201,7 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 路由规则引擎根据请求目标匹配规则，决定连接的处理模式。支持两种维度匹配：**host:port 精确/通配** 和 **服务名**。服务名匹配优先级高于 host:port 匹配。规则中指定协议类型（`protocol` 字段），Agent 根据协议将连接重定向到 Server 对应端口。 |
+| **描述** | 路由规则引擎根据请求目标匹配规则，决定连接的处理模式。支持两种维度匹配：**host:port 精确/通配** 和 **服务名**。服务名匹配优先级高于 host:port 匹配。规则中指定协议类型（`protocol` 字段），Agent 根据协议将连接重定向到 Server 对应端口。规则的生效受 **Agent 所属环境的模式** 控制：**仅当 Agent 所属环境为 `stub` 模式时，路由规则才参与匹配**；环境为 `passthrough` 时 Agent 不拦截连接（等效于未安装 Agent）；环境为 `record` 或 `record-and-stub` 时，路由规则参与匹配 + 录制器工作。 |
 | **AC-01** | 精确匹配 `192.168.1.100:8080` — 正确命中 |
 | **AC-02** | 通配匹配 `*.dev:*` — 命中 `api.dev:8080`、`db.dev:5432` |
 | **AC-03** | 服务名匹配 `order-service` — 命中所有 Consul 解析到 order-service 的连接 |
@@ -206,6 +209,8 @@
 | **AC-05** | 未匹配任何规则时，默认 `passthrough`（透传） |
 | **AC-06** | 规则配置文件变化后，< 500ms 内热加载生效（基于 WatchService） |
 | **AC-07** | 规则指定 `protocol: kafka` 时，Agent 将连接重定向到 Server 的 Kafka 端口；`protocol: pulsar` 重定向到 Pulsar 端口；HTTP/TCP 协议根据默认端口映射 |
+| **AC-08** | Agent 所属环境为 `stub` 模式时，路由规则正常参与匹配；环境为 `passthrough` 模式时，Agent 不拦截连接（等效于未安装 Agent），所有请求直接透传 |
+| **AC-09** | Agent 所属环境为 `record` 或 `record-and-stub` 模式时，路由规则参与匹配 + 录制器工作 |
 
 #### R-A10：录制器 — P1
 
@@ -237,7 +242,7 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 接收被 Agent 重定向的 HTTP 请求，按规则匹配并返回 Mock 响应。请求匹配维度：`method + path + query + headers + body（JSONPath/正则）`。响应配置统一使用 `responses` 数组格式，支持同一接口按不同请求参数返回不同响应。 |
+| **描述** | 接收被 Agent 重定向的 HTTP 请求，按规则匹配并返回 Mock 响应。请求匹配维度：`method + path + query + headers + body`（JSONPath/正则）。响应配置统一使用 `responses` 数组格式，支持同一接口按不同请求参数返回不同响应。 |
 | **AC-01** | 精确路径匹配 `GET /api/users/123` 返回预设 JSON body |
 | **AC-02** | 路径参数匹配 `GET /api/users/{id}` 并使用 `{{path.id}}` 模板变量填充响应 |
 | **AC-03** | 请求 body JSONPath 匹配（如 `$.orderType == "VIP"` 返回特定响应） |
@@ -277,7 +282,7 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 模拟 Pulsar Broker 的最小协议子集（基于 Pulsar binary protocol，独立端口默认 9003）。**必须模拟 Topic Lookup 阶段**（`lookupTopic` / `getTopicsOfNamespace`），因为 Pulsar 客户端在 Producer/Consumer 创建前会先通过 Lookup 请求获取 Topic 所在 Broker 地址。Mock Broker 需在 Lookup 嘴阶段返回自身地址，引导客户端直接与 Mock Broker 交互。 |
+| **描述** | 模拟 Pulsar Broker 的最小协议子集（基于 Pulsar binary protocol，独立端口默认 9003）。**必须模拟 Topic Lookup 阶段**（`lookupTopic` / `getTopicsOfNamespace`），因为 Pulsar 客户端在 Producer/Consumer 创建前会先通过 Lookup 请求获取 Topic 所在 Broker 地址。Mock Broker 需在 Lookup 阶段返回自身地址，引导客户端直接与 Mock Broker 交互。 |
 | **AC-01** | **Lookup 阶段**：客户端发起 `lookupTopic` 请求时，Mock Broker 返回自身地址（`localhost:9003`），引导客户端后续 Producer/Consumer 连接指向 Mock Broker |
 | **AC-02** | Producer `send()` 正常返回 MessageId |
 | **AC-03** | Consumer `receive()` 按 subscription 收到预设消息序列 |
@@ -301,7 +306,7 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 提供 HTTP REST API 供外部系统或 Web 控制台管理挡板规则。 |
+| **描述** | 提供 HTTP REST API 供外部系统或 Web 控制台管理挡板规则。**规则全局共享，无 `environments` 字段**。规则是否生效取决于 Agent 的模式：仅 `stub` 模式 Agent 才参与规则匹配。 |
 | **AC-01** | `GET /api/rules` — 查看所有规则（支持按协议类型过滤：`?protocol=http`） |
 | **AC-02** | `POST /api/rules` — 新增规则 |
 | **AC-03** | `PUT /api/rules/{id}` — 更新规则 |
@@ -326,13 +331,26 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 提供 Agent 与 Server 之间的控制通道 API，支持心跳上报、规则同步、录制数据上传和模式切换指令。 |
-| **AC-01** | `POST /api/agent/register` — Agent 启动时注册，返回 `agentId`；请求体包含 `pid`、`appName`、`mode` |
+| **描述** | 提供 Agent 与 Server 之间的控制通道 API，支持心跳上报、规则同步、录制数据上传和**环境模式切换指令下发**。 |
+| **AC-01** | `POST /api/agent/register` — Agent 启动时注册，返回 `agentId` **和该 Agent 所属环境的当前模式**；请求体包含 `pid`、`appName`、`environment`（Agent 所属测试环境标识，如 `"ft-1"`，从 Agent 配置文件读取） |
 | **AC-02** | `POST /api/agent/heartbeat` — Agent 每 30s 上报心跳；心跳超时 90s 后 Server 将 Agent 标记为离线 |
-| **AC-03** | `GET /api/agent/rules` — Agent 拉取最新路由规则，响应包含 `version` 字段用于增量判断 |
-| **AC-04** | `GET /api/agent/poll?agentId=xxx` — 长轮询端点，Server 端有规则变更或模式切换指令时立即返回 |
+| **AC-03** | `GET /api/agent/rules` — Agent 拉取最新路由规则（规则全局共享，无环境过滤），响应包含 `version` 字段用于增量判断 |
+| **AC-04** | `GET /api/agent/poll?agentId=xxx` — 长轮询端点，Server 端有规则变更、**环境模式切换指令**时立即返回（含该 Agent 所属环境的当前 mode） |
 | **AC-05** | `POST /api/agent/recordings` — Agent 上传录制数据（multipart/form-data），支持分片上传 |
 | **AC-06** | `GET /api/agents` — 查看所有已注册 Agent 的状态列表（供 Web 控制台使用） |
+
+#### R-S7.3：测试环境管理 API — P0
+
+| 属性 | 内容 |
+|---|---|
+| **描述** | 提供测试环境的管理 API，支持创建环境、配置环境模式、查看环境下活跃 Agent 列表、删除环境。环境是 Server 端的概念，每个环境有独立的模式配置（`stub` / `passthrough` / `record` / `record-and-stub`）。模式变更后，Server 通过控制通道向该环境下所有 Agent 下发模式切换指令。 |
+| **AC-01** | `POST /api/environments` — 创建测试环境，请求体包含 `name`（环境标识，如 `ft-1`）、`mode`（初始模式，默认 `passthrough`）、`description`（可选） |
+| **AC-02** | `GET /api/environments` — 查看所有测试环境列表，包含环境名称、当前模式、活跃 Agent 数量 |
+| **AC-03** | `PUT /api/environments/{name}` — 更新环境配置（主要用于切换模式）；模式变更后，Server 立即通过控制通道向该环境下所有 Agent 下发模式切换指令 |
+| **AC-04** | `DELETE /api/environments/{name}` — 删除测试环境；仅允许删除无活跃 Agent 的环境 |
+| **AC-05** | `GET /api/environments/{name}/agents` — 查看指定环境下所有已注册 Agent 的状态列表 |
+| **AC-06** | Agent 注册时声明的 `environment` 在 Server 端不存在时，Server **自动创建该环境**（默认模式 `passthrough`），避免 Agent 无法启动 |
+| **AC-07** | 环境模式切换不影响规则：从 `stub` 切换到 `passthrough` 时，Agent 停止拦截；切回 `stub` 时，Agent 恢复拦截并匹配现有规则，无需重新配置 |
 
 #### R-S8：录制数据存储与清理 — P1
 
@@ -364,9 +382,9 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | Baafoo Server 内嵌 Web 控制台（默认监听端口与 HTTP Mock Handler 共用 9000 端口，路径前缀 `/__baafoo__/`），提供可视化的规则管理、请求查看和系统状态界面。 |
+| **描述** | Baafoo Server 内嵌 Web 控制台（默认监听端口与 HTTP Mock Handler 共用 9000 端口，路径前缀 `/__baafoo__/`），提供可视化的规则管理、请求查看、环境管理和系统状态界面。 |
 | **AC-01** | 访问 `http://localhost:9000/__baafoo__/` 可进入控制台首页 |
-| **AC-02** | 控制台导航栏包含：规则管理、请求日志、录制管理、系统状态 |
+| **AC-02** | 控制台导航栏包含：规则管理、请求日志、录制管理、**环境管理**、系统状态 |
 | **AC-03** | 控制台通过 Server 的 REST API 获取数据，无需独立后端 |
 | **AC-04** | 控制台支持响应式布局，桌面端和移动端均可使用 |
 
@@ -374,7 +392,7 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 在 Web 控制台中对挡板规则进行可视化的增删改查操作，取代手动编辑 YAML 文件。 |
+| **描述** | 在 Web 控制台中对挡板规则进行可视化的增删改查操作，取代手动编辑 YAML 文件。**规则全局共享，无环境过滤**；规则是否生效取决于 Agent 所属环境的模式。 |
 | **AC-01** | 规则列表页：按协议类型（HTTP / TCP / Kafka / Pulsar / JMS）分 Tab 展示，支持搜索和过滤 |
 | **AC-02** | 规则新增/编辑：表单化录入规则，HTTP 规则支持可视化配置请求匹配条件（method、path、query、header、body 匹配）和响应内容（status、headers、body、delay、fault） |
 | **AC-03** | **参数化规则编辑**：HTTP 规则编辑界面支持"添加匹配条件"和"添加响应分支"，用户可对同一接口配置多组条件-响应对，条件支持 JSONPath、Header 等匹配，响应支持模板变量 |
@@ -411,6 +429,17 @@
 | **AC-02** | 展示：请求统计 Dashboard（请求总数、命中率、平均响应时间、按协议分布） |
 | **AC-03** | 展示：录制数据磁盘占用和保留策略配置 |
 
+#### R-W6：测试环境管理界面 — P1
+
+| 属性 | 内容 |
+|---|---|
+| **描述** | 在 Web 控制台中管理多套测试环境，包括查看环境列表、切换环境模式、查看各环境下活跃 Agent 列表。 |
+| **AC-01** | 环境列表页：展示所有测试环境（环境名称、当前模式、活跃 Agent 数量、描述），支持创建新环境 |
+| **AC-02** | 模式切换：每个环境卡片上提供模式切换按钮（`stub` / `passthrough` / `record` / `record-and-stub`），点击后即时生效，Server 通过控制通道向该环境下所有 Agent 下发模式切换指令 |
+| **AC-03** | Agent 列表：点击环境卡片可展开查看该环境下所有活跃 Agent（PID、应用名、连接时间、状态） |
+| **AC-04** | 删除环境：仅允许删除无活跃 Agent 的环境，删除前需确认 |
+| **AC-05** | 导航栏新增"环境管理"入口，与规则管理、请求日志、录制管理、系统状态并列 |
+
 ---
 
 ### 5.4 配置模型
@@ -419,20 +448,21 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | YAML 格式配置文件，定义 Agent 的运行模式和路由规则。支持热加载。 |
-| **AC-01** | 支持全局 mode：`stub` / `passthrough` / `record` / `record-and-stub` |
-| **AC-02** | Server 连接配置：`server.host` + 按协议端口配置（`server.ports.http` / `server.ports.tcp` / `server.ports.kafka` / `server.ports.pulsar` / `server.ports.jms`） |
-| **AC-03** | Consul 集成配置：`consul.enabled` + `consul.interceptionMode`（`dns` / `api` / `auto`） |
-| **AC-04** | 路由规则支持 `target`（host:port 匹配）、`service`（服务名匹配）、`protocol`（协议类型，决定重定向到哪个 Server 端口）字段 |
-| **AC-05** | 每条规则可独立覆盖全局 `mode` |
+| **描述** | YAML 格式配置文件，定义 Agent 的运行参数。**注意：`mode` 字段已移除，Agent 不在本地配置模式，模式由 Server 端根据环境配置下发**。Agent 启动时从配置文件读取 `environment` 字段，向 Server 注册时上报所属环境。 |
+| **AC-01** | 支持配置 `environment` 字段：声明 Agent 所属的测试环境（如 `ft-1`、`ft-2`），Agent 启动时从配置文件读取并上传到 Server；未配置时默认为 `default` 环境 |
+| **AC-02** | Agent 注册到 Server 后，Server 根据环境配置下发模式（stub / passthrough / record），Agent 根据收到的模式决定是否拦截连接 |
+| **AC-03** | Server 连接配置：`server.host` + 按协议端口配置（`server.ports.http` / `server.ports.tcp` / `server.ports.kafka` / `server.ports.pulsar` / `server.ports.jms`） |
+| **AC-04** | Consul 集成配置：`consul.enabled` + `consul.interceptionMode`（`dns` / `api` / `auto`） |
+| **AC-05** | 路由规则支持 `target`（host:port 匹配）、`service`（服务名匹配）、`protocol`（协议类型，决定重定向到哪个 Server 端口）字段 |
 | **AC-06** | 录制配置：`recording.retentionDays`（默认 7）、`recording.maxSizeMb`（默认 500） |
 | **AC-07** | 控制通道配置：`control.heartbeatInterval`（默认 30s）、`control.heartbeatTimeout`（默认 90s） |
+| **AC-08** | **`mode` 字段已移除**：Agent 不在本地配置模式，模式由 Server 端根据环境配置下发 |
 
 #### R-C2：挡板规则文件（`stub-rules.yml`）— P0
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | YAML 格式文件，定义 Baafoo Server 的 Mock 响应规则。按协议分区（http/tcp/kafka/pulsar/jms）。 |
+| **描述** | YAML 格式文件，定义 Baafoo Server 的 Mock 响应规则。按协议分区（http/tcp/kafka/pulsar/jms）。**规则全局共享，无 `environments` 字段**。规则是否生效取决于 Agent 的模式：仅 `stub` 模式 Agent 才参与规则匹配。 |
 | **AC-01** | HTTP 规则包含：`id`、`request`（method/path/query/headers/body）、`responses`（数组，每项包含可选 `condition` + 必选 `response`），`response` 包含 status/headers/body/delay/fault。简单规则可只含一项无 `condition` 的默认响应 |
 | **AC-02** | TCP 规则包含：`id`、`request`（prefixHex/pattern/replaySession/offsetMatch）、`responses`（数组，每项包含可选 `condition` + 必选 `response`），`response` 包含 dataHex/replay |
 | **AC-03** | Kafka 规则包含：`topic`、`messages`（key/value/delay） |
@@ -489,7 +519,8 @@
 | Q4 | 是否需要支持挡板规则的导入/导出？ | **需要支持**，v1.0 即提供 REST API 和 Web 控制台的导入/导出功能，支持 YAML/JSON 格式 | R-S7, R-W2 |
 | Q5 | Pulsar Mock Broker 是否需要模拟 Lookup 阶段？ | **需要**，Mock Broker 必须模拟 `lookupTopic` 和 `getTopicsOfNamespace`，返回自身地址引导客户端直连 Mock Broker | R-S5 |
 | Q6 | Java 9+ 的模块化限制是否会导致企业安全策略拒绝？ | **不会**，评估后确认目标团队环境无此限制，`--add-opens` 参数可在开发环境正常使用 | 风险表更新 |
-| Q7 | Consul 拦截在健康检查场景下是否会造成时序竞态？ | **暂不明晰**，标记为"待实际验证"，不阻塞 P0 开发；当前 AC 中已明确 `127.0.0.1:8500` 健康检查透传，若验证发现竞态问题，在 v1.0 发布前修复 | R-A8 |
+| Q7 | Consul 拦截在健康检查场景下是否会造成时序竞态？ | **暂不明确**，标记为"待实际验证"，不阻塞 P0 开发；当前 AC 中已明确 `127.0.0.1:8500` 健康检查透传，若验证发现竞态问题，在 v1.0 发布前修复 | R-A8 |
+| **Q8** | **规则是否应该按环境区分？模式应该由谁控制？** | **规则全局共享，模式由环境控制**。环境是 Agent 的属性（启动时指定），模式是环境的属性（Server 端维护）。规则是否生效取决于 Agent 所属环境的模式。 | **架构级变更**，影响 R-A9, R-C1, R-C2, R-S7, R-W2, R-W6 |
 
 ---
 
@@ -501,7 +532,7 @@
 |---|---|---|
 | PRD 评审通过 | 待定 | 工程、QA、产品三方评审 |
 | 技术方案设计完成 | 待定 | 详细架构设计、接口定义、测试策略 |
-| v1.0 MVP 开发完成 | 待定 | P0 需求全部实现 + P1 核心需求（含 Web 控制台 + 规则导入导出） |
+| v1.0 MVP 开发完成 | 待定 | P0 需求全部实现 + P1 核心需求（含 Web 控制台 + 规则导入导出 + **环境管理**） |
 | v1.0 内部试用 | 待定 | 团队内 3-5 人试用，收集反馈 |
 | v1.0 正式发布 | 待定 | 修复试用期关键问题后发布 |
 
@@ -516,14 +547,14 @@
 
 ### 8.3 建议分阶段交付
 
-**Phase 1（v1.0 MVP）**：Agent 基础拦截（Socket + NIO + Consul）+ Server 多协议端口 + HTTP Handler（含参数化规则）+ TCP Handler + 规则管理 API（含导入导出）+ 录制数据清理策略 + 配置热加载
-**Phase 2（v1.0 完整版）**：Kafka Mock Broker（Metadata/Produce/Fetch）+ Pulsar Mock Broker（含 Lookup）+ JMS Mock Broker + 录制回放（HTTP 层）+ Web 控制台
+**Phase 1（v1.0 MVP）**：Agent 基础拦截（Socket + NIO + Consul）+ Server 多协议端口 + HTTP Handler（含参数化规则）+ TCP Handler + **环境管理 API** + 规则管理 API（含导入导出）+ 配置热加载
+**Phase 2（v1.0 完整版）**：Kafka Mock Broker（Metadata/Produce/Fetch）+ Pulsar Mock Broker（含 Lookup）+ JMS Mock Broker + 录制回放（HTTP 层）+ **Web 控制台（含环境管理页面）**
 **Phase 3（v1.5）**：Docker 镜像 + 请求日志 Dashboard 增强 + Maven 插件
 **Phase 4（v2.0）**：gRPC/WebSocket + 录制回放增强 + Eureka/Nacos 注册中心 + 规则 Git 版本管理
 
 ---
 
-## 9. 风险与缓解措施
+## 9. 风险与注意事项
 
 | 风险 | 影响 | 概率 | 缓解措施 |
 |---|---|---|---|
@@ -532,15 +563,16 @@
 | 连接池预热时机 | 部分框架在 Agent 注册前已完成连接建立 | 低 | 文档说明 Agent 必须在应用 main() 之前完成增强 |
 | TLS 证书信任 | HTTPS 场景需信任挡板自签证书 | 中 | 提供便捷的 trustAll 模式（仅开发环境） |
 | 业务代码检测绕过 | 极少数框架绕过 Socket 直接使用 JNI | 低 | 影响极小，文档说明，可通过 iptables 兜底 |
-| Consul 健康检查误判 | Agent 篡改地址后 Consul 健康检查看到的 IP 与注册不一致 | 低 | Agent 对 `127.0.0.1:8500` 的调用透传，不拦截健康检查请求 |
-| Consul SDK 版本差异 | 不同版本 Consul SDK 内部实现类名不同 | 低 | 拦截点优先使用通用 HTTP 层匹配 URL，不依赖具体 SDK 实现 |
-| Pulsar 协议复杂度 | Pulsar binary protocol 包含复杂机制 | 中 | v1 聚焦 Lookup + Producer/Consumer 核心路径；复杂特性在 v1.5 迭代 |
+| Consul 健康检查误判 | Agent 篡改地址后 Consul 健康检查看到的 IP 与注册不一致，可能误标记服务不健康 | 低 | Agent 对 `127.0.0.1:8500` 的调用透传，不拦截健康检查请求 |
+| Consul SDK 版本差异 | 不同版本 Consul SDK（Orbitz / Ecwid / Spring Cloud）内部实现类名不同 | 低 | 拦截点优先使用通用 HTTP 层匹配 URL，不依赖具体 SDK 实现 |
+| Pulsar 协议复杂度 | Pulsar binary protocol 包含 Lookup、Partitioned Topic、ManagedLedger 等复杂机制，Mock Broker 无法完整模拟 | 中 | v1 聚焦 Lookup + Producer/Consumer 核心路径；复杂特性在 v1.5 迭代 |
 | Kafka API 版本兼容 | Kafka 客户端不同版本使用不同 API 版本 | 中 | Metadata/Produce/Fetch 三个 API 覆盖 v0-v12 主流版本；未覆盖 API 返回默认响应 |
 | Consul 健康检查时序竞态 | DNS 缓存与 Agent 拦截的时序问题 | 未知 | 待实际验证；当前设计已透传健康检查，若验证发现竞态问题在 v1.0 发布前修复 |
 | **热加载竞态** | 规则热加载过程中，正在匹配的连接可能读到半加载状态 | 低 | 采用"版本号 + 原子引用替换"策略，规则对象整体替换为不可变快照 |
-| **多 Agent 实例规则冲突** | 多个 Agent 连接同一 Server 时，可能需要不同的挡板规则 | 中 | v1.0 采用全局共享规则；v1.5 规划 Agent 分组/命名空间隔离机制 |
-| **控制通道可靠性** | Agent-Server 控制通道断开时，Agent 无法获取最新规则 | 中 | Agent 本地 WatchService 作为降级方案；控制通道断开时 Agent 使用最后已知规则继续运行 |
-| ~~Java 9+ 模块化安全策略~~ | ~~`--add-opens` 可能被企业安全策略拒绝~~ | ~~中~~ | ~~已确认不存在此限制~~ **已关闭** |
+| **多 Agent 实例模式一致性** | 同一环境下的多个 Agent 可能因为控制通道延迟而短暂处于不同模式 | 低 | 可接受的最终一致性；Agent 定期长轮询保证最终同步；模式切换指令丢失时，Agent 在下次长轮询超时后获取最新模式 |
+| **控制通道可靠性** | Agent-Server 控制通道断开时，Agent 无法获取最新规则和模式切换指令 | 中 | Agent 本地 WatchService 作为降级方案；控制通道断开时 Agent 使用最后已知规则继续运行；模式切换指令通过长轮询最终一致性保证 |
+| **环境配置错误** | 开发者错误配置 `environment` 字段，导致 Agent 加入错误环境 | 中 | Web 控制台环境管理页面显示每个环境下的 Agent 列表，便于运维排查；Agent 启动时日志明确输出所属环境 |
+| **Agent 环境归属混淆** | 规则全局共享但 Agent 分属不同环境，开发者可能混淆"为什么我的规则不生效" | 中 | Web 控制台全局显示当前 Agent 所属环境；日志中明确输出 Agent 环境 + 模式；文档中明确说明"规则全局共享，是否拦截取决于环境模式" |
 
 ---
 
@@ -557,16 +589,18 @@
 | 服务名路由 | 按 Consul 注册的服务名（如 `order-service`）匹配规则 |
 | 参数化规则 | 同一接口路径下，按不同请求参数条件返回不同 Mock 响应的规则 |
 | Lookup | Pulsar 客户端在创建 Producer/Consumer 前查询 Topic 所在 Broker 地址的阶段 |
+| **环境（Environment）** | Agent 所属的测试环境标识（如 ft-1、ft-2）。**环境是 Agent 的属性**，每个环境有独立的模式配置。多套测试环境的 Agent 连接同一 Server，Server 按环境维度独立控制挡板/透传/录制模式 |
+| **模式（Mode）** | **模式是环境的属性**，由 Server 端维护。可选值：`stub`（拦截并挡板）、`passthrough`（透传不拦截）、`record`（透传并录制）、`record-and-stub`（挡板并录制） |
 
 ## 附录 B：竞品简要对比
 
-| 产品 | HTTP | TCP | Kafka | Pulsar | JMS | 零侵入 | 录制回放 | 参数化规则 | Web 控制台 | 规则导入导出 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| **Baafoo** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅（Agent） | ✅ | ✅ | ✅ | ✅ |
-| WireMock | ✅ | ❌ | ❌ | ❌ | ❌ | ✅（Proxy） | ✅ | ✅ | ✅ | ✅ |
-| Hoverfly | ✅ | ❌ | ❌ | ❌ | ❌ | ✅（Proxy） | ✅ | 🔶 | ✅ | ✅ |
-| MockServer | ✅ | ❌ | ❌ | ❌ | ❌ | ✅（Proxy） | ✅ | 🔶 | ✅ | ❌ |
-| Mountebank | ✅ | ✅ | ❌ | ❌ | ❌ | ✅（Proxy） | ✅ | 🔶 | ❌ | ❌ |
+| 产品 | HTTP | TCP | Kafka | Pulsar | JMS | 零侵入 | 录制回放 | 参数化规则 | Web 控制台 | 规则导入导出 | 多环境模式控制 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Baafoo** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅（Agent） | ✅ | ✅ | ✅ | ✅ |
+| WireMock | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅（Proxy） | ✅ | ✅ | ✅ | ❌ |
+| Hoverfly | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅（Proxy） | ✅ | 🔶 | ✅ | ❌ |
+| MockServer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅（Proxy） | ✅ | 🔶 | ❌ | ❌ |
+| Mountebank | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅（Proxy） | ✅ | 🔶 | ❌ | ❌ |
 
 ## 附录 C：默认端口分配表
 
@@ -635,6 +669,85 @@ http:
             {"orderId": "ORD-{{body.orderType}}-001", "priority": "normal"}
 ```
 
+## 附录 E：多测试环境配置与运行示例
+
+### Agent 配置文件示例（`baafoo-agent.yml`）
+
+```yaml
+# Server 连接配置
+server:
+  host: 127.0.0.1
+  ports:
+    http: 9000
+    tcp: 9001
+    kafka: 9002
+    pulsar: 9003
+    jms: 9004
+
+# 环境标识（Agent 所属的测试环境，由 Server 端配置该环境的模式）
+# 注意：mode 字段已移除，不在本地配置模式
+environment: ft-1
+
+# 控制通道配置
+control:
+  heartbeatInterval: 30s
+  heartbeatTimeout: 90s
+
+# 路由规则（规则全局共享，不按环境区分）
+# 规则是否生效取决于 Agent 所属环境的模式
+rules:
+  - target: "order-service.service.consul"
+    protocol: http
+
+  - target: "payment-service.service.consul"
+    protocol: http
+
+  - target: "kafka-cluster:9092"
+    protocol: kafka
+
+  - target: "192.168.1.100:8080"
+    protocol: http
+```
+
+### Server 端环境配置（通过 REST API 或 Web 控制台操作）
+
+```bash
+# 创建测试环境，配置模式
+curl -X POST http://localhost:9000/__baafoo__/api/environments \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "ft-1", "mode": "stub", "description": "FT-1 挡板自测环境"}'
+
+curl -X POST http://localhost:9000/__baafoo__/api/environments \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "ft-2", "mode": "passthrough", "description": "FT-2 透传联调环境"}'
+
+curl -X POST http://localhost:9000/__baafoo__/api/environments \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "ft-3", "mode": "record", "description": "FT-3 录制环境"}'
+
+# 切换 ft-2 从透传到挡板（即时生效，无需重启 Agent）
+curl -X PUT http://localhost:9000/__baafoo__/api/environments/ft-2 \
+  -H 'Content-Type: application/json' \
+  -d '{"mode": "stub"}'
+```
+
+### 运行场景示例
+
+**场景**：团队有 3 套功能测试环境，共享同一个 Baafoo Server
+
+| 测试环境 | Agent 配置 `environment` | Server 端模式 | 行为 |
+|---|---|---|---|
+| FT-1 | `ft-1` | `stub` | 所有请求被挡板拦截，返回 Mock 响应 |
+| FT-2 | `ft-2` | `passthrough` | 所有请求透传到真实下游联调 |
+| FT-3 | `ft-3` | `record` | 连接真实下游，同时录制请求/响应 |
+
+FT-1 启动：`java -javaagent:baafoo-agent.jar=config=baafoo-agent-ft1.yml -jar my-app.jar`  
+FT-2 启动：`java -javaagent:baafoo-agent.jar=config=baafoo-agent-ft2.yml -jar my-app.jar`
+
+（两个配置文件仅 `environment` 字段不同，分别为 `ft-1` 和 `ft-2`）
+
+Agent 注册时上传环境标识，Server 根据环境配置下发模式。模式切换通过 Server 端 API 或 Web 控制台操作，即时生效，无需重启任何 Agent。
+
 ---
 
-*本文档为 Baafoo v1.2 产品需求文档。需求优先级和排期将在技术方案设计阶段与工程团队对齐后确定。*
+*本文档为 Baafoo v1.4 产品需求文档。需求优先级和排期将在技术方案设计阶段与工程团队对齐后确定。*
