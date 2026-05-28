@@ -1,9 +1,10 @@
 # Baafoo 挡板系统 — 概念设计说明书
 
-> **文档状态**：概念设计草稿（v0.3）  
+> **文档状态**：概念设计（v0.4）  
 > **目标读者**：产品经理、架构师、开发负责人  
 > **最后更新**：2026-05-28  
-> **撰写目的**：为产品经理提供完整的技术背景与产品边界，便于进一步形成产品说明书及需求文档
+> **撰写目的**：为产品经理提供完整的技术背景与产品边界，便于进一步形成产品说明书及需求文档  
+> **变更摘要**：v0.4 — 端口策略由"统一端口+协议嗅探"变更为"按协议分端口"；新增 Agent-Server 控制通道设计；统一录制数据存储架构为 Agent 上传至 Server；统一规则 Schema 为 responses 数组；新增热加载竞态安全策略与多 Agent 实例隔离讨论；统一字节码增强框架为 Byte Buddy
 
 ---
 
@@ -104,13 +105,15 @@ Agent 基于 Java Instrumentation API，在 JVM 启动的 `premain` 阶段完成
 
 | 拦截目标 | 覆盖场景 | 实现方式 |
 |---|---|---|
-| `java.net.Socket#connect()` | OkHttp、Apache HttpClient、原生 Socket、JDBC | Byte Buddy 方法代理 |
-| `sun.nio.ch.SocketChannelImpl#connect()` | Netty、NIO 框架 | ASM 字节码改写 |
+| `java.net.Socket#connect()` | OkHttp、Apache HttpClient、原生 Socket、JDBC | Byte Buddy Advice 内联 |
+| `sun.nio.ch.SocketChannelImpl#connect()` | Netty、NIO 框架 | Byte Buddy Advice 内联（需 `--add-opens`） |
 | `javax.jms.ConnectionFactory#createConnection()` | ActiveMQ、RocketMQ JMS 客户端 | Byte Buddy 方法代理 |
 | `org.apache.kafka.clients.producer.KafkaProducer` / `KafkaConsumer` | Kafka 客户端 | 构造函数拦截，替换 bootstrap.servers |
-| `org.apache.pulsar.client.api.PulsarClient#builder()` + `ClientBuilder#serviceUrl()` | **TDMQ for Pulsar / Apache Pulsar** 客户端 | Byte Buddy 拦截 Builder 的 `serviceUrl()` 参数和 `build()` 方法，将 `pulsar://broker:6650` 替换为 `pulsar://localhost:9002` 指向挡板 |
+| `org.apache.pulsar.client.api.PulsarClient#builder()` + `ClientBuilder#serviceUrl()` | **TDMQ for Pulsar / Apache Pulsar** 客户端 | Byte Buddy 拦截 Builder 的 `serviceUrl()` 参数和 `build()` 方法，将 `pulsar://broker:6650` 替换为 `pulsar://localhost:9003` 指向挡板 |
 | `java.net.InetAddress#getByName()` / `getAllByName()` | **Consul DNS 模式**（8600 端口）| Byte Buddy 包裹方法，拦截 `.consul` 后缀域名的解析结果，返回挡板地址 |
 | `okhttp3.RealCall#execute()` + Consul API 路径匹配 | **Consul HTTP API** 服务发现模式 | 拦截对 Consul Agent `/v1/catalog/service/*` 的调用，篡改返回的 Address:Port |
+
+> **字节码增强框架统一说明**：所有拦截点统一使用 Byte Buddy 实现。对于 `sun.nio.ch.SocketChannelImpl` 等 JDK 内部类，采用 Byte Buddy 的 `Advice` 内联机制（而非独立的 ASM 改写），通过 `--add-opens java.base/sun.nio.ch=ALL-UNNAMED` 参数开放访问。这避免了 Byte Buddy + ASM 双框架混用带来的类加载冲突和维护成本。针对不同 JDK 版本（8/11/17）的内部类签名差异，通过运行时版本检测加载对应的 Advice 实现类来适配。
 
 **地址重写逻辑**（双入口）：
 
@@ -134,29 +137,78 @@ Agent 基于 Java Instrumentation API，在 JVM 启动的 `premain` 阶段完成
 
 ### 3.3 Baafoo Server 工作原理
 
-Baafoo Server 是一个多协议监听的 Netty 服务，通过协议嗅探自动识别入站连接类型：
+Baafoo Server **按协议分配独立监听端口**，不同协议的网络特征差异大（Kafka 二进制协议、Pulsar binary protocol、HTTP、TCP 等），独立端口消除了协议嗅探的不确定性和误判风险，同时使 Agent 端口重写逻辑更简洁明确。
+
+**默认端口分配**：
+
+| 协议 | 默认端口 | 配置键 | 说明 |
+|---|---|---|---|
+| HTTP（Mock + Web 控制台） | 9000 | `server.ports.http` | Web 控制台路径前缀 `/__baafoo__/` |
+| TCP（Raw Socket） | 9001 | `server.ports.tcp` | 非协议嗅探，独立监听 |
+| Kafka | 9002 | `server.ports.kafka` | 模拟 Metadata / Produce / Fetch |
+| Pulsar | 9003 | `server.ports.pulsar` | 含 Lookup 阶段模拟 |
+| JMS | 9004 | `server.ports.jms` | ActiveMQ Artemis 内嵌 |
+
+所有端口均可通过配置文件覆盖。未启用某协议的 Mock Broker 时（如无 Kafka 规则），对应端口不启动监听，减少资源占用。
+
+**各协议处理流程**：
 
 ```
-入站 TCP 连接
+入站 TCP 连接（按端口区分协议）
     │
-    ▼
-Protocol Detector（前 N 字节嗅探）
+    ├── HTTP 端口 (9000) ──→ HTTP Mock Handler（规则匹配 → 响应模板）
     │
-    ├── HTTP 请求 ──→ HTTP Mock Handler（规则匹配 → 响应模板）
+    ├── TCP 端口 (9001) ──→ Raw TCP Handler（字节级匹配 → 录制回放）
     │
-    ├── 私有二进制 ──→ Raw TCP Handler（字节级匹配 → 录制回放）
+    ├── Kafka 端口 (9002) ──→ Kafka Mock Broker（topic/partition 模拟）
     │
-    ├── Kafka 协议 ──→ Kafka Mock Broker（topic/partition 模拟）
+    ├── Pulsar 端口 (9003) ──→ Pulsar Mock Broker（tenant/namespace/topic 模拟）
     │
-    ├── Pulsar 协议 ──→ Pulsar Mock Broker（tenant/namespace/topic 模拟）
-    │
-    └── JMS/AMQP ──→ MQ Mock Broker（队列/主题模拟）
+    └── JMS 端口 (9004) ──→ MQ Mock Broker（队列/主题模拟）
 ```
+
+### 3.4 Agent-Server 控制通道
+
+Agent 与 Server 之间除数据通道（TCP 连接重定向）外，还需要一个轻量 HTTP 控制通道，用于以下场景：
+
+**3.4.1 控制通道职责**
+
+| 功能 | 方向 | 说明 |
+|---|---|---|
+| 心跳上报 | Agent → Server | Agent 每 30s 上报存活状态，Server 据此维护活跃 Agent 列表 |
+| 规则拉取 | Agent → Server | Agent 启动时及规则变更通知后，从 Server 拉取最新路由规则 |
+| 规则变更通知 | Server → Agent | Server 端规则变更后，通过长轮询或 WebSocket 通知 Agent 刷新 |
+| 录制数据上传 | Agent → Server | Agent 录制的请求/响应数据上传至 Server 统一存储 |
+| 模式切换指令 | Server → Agent | Web 控制台切换全局模式时，通过控制通道下发到 Agent |
+
+**3.4.2 控制通道协议**
+
+```
+Agent ──── HTTP POST /api/agent/heartbeat ────→ Server
+           Body: { agentId, pid, appName, mode, timestamp }
+
+Agent ──── HTTP GET /api/agent/rules ─────────→ Server
+           Response: { version, rules: [...] }
+
+Agent ──── HTTP POST /api/agent/recordings ───→ Server
+           Body: multipart/form-data (session metadata + recording blob)
+
+Server ─── 长轮询 /api/agent/poll?agentId=xxx ─→ Agent
+           Response: { command: "RELOAD_RULES" | "SWITCH_MODE", payload: ... }
+```
+
+**3.4.3 设计要点**
+
+- 控制通道使用 HTTP 协议，复用 Server 的 HTTP 端口（9000），路径前缀 `/api/agent/`
+- Agent 启动时向 Server 注册（`POST /api/agent/register`），获取 `agentId`
+- 心跳超时（默认 90s）后 Server 将 Agent 标记为离线，Web 控制台状态同步更新
+- 录制数据上传采用分片上传机制，避免大文件传输失败
+- Agent 本地仍保留路由规则文件的 WatchService 监听，作为 Server 不可用时的降级方案
 ---
 
-### 3.4 微服务/Consul 架构适配
+### 3.5 微服务/Consul 架构适配
 
-#### 3.4.1 问题本质
+#### 3.5.1 问题本质
 
 Consul 作为注册中心，改变了传统"硬编码 host:port"的连接模式。服务消费者不再直连固定地址，而是通过**两步**完成调用：
 
@@ -174,7 +226,7 @@ TCP 连接层：Socket.connect("10.0.1.5", 8080)
 
 如果 Agent 只在 `Socket.connect()` 层面拦截，**拿到的是已解析的 IP**，丢失了服务名语义——无法按 `order-service` 这个逻辑名称来配置挡板规则。
 
-#### 3.4.2 拦截策略：前移一个抽象层
+#### 3.5.2 拦截策略：前移一个抽象层
 
 Baafoo 的设计是**在服务发现层拦截，而非 TCP 连接层**，以保留服务名上下文。针对 Consul 的两种解析路径，分别采用对应策略：
 
@@ -212,7 +264,7 @@ public static InetAddress getByName(@Argument(0) String host,
 [{"Address":"10.0.1.5","ServicePort":8080}] → [{"Address":"127.0.0.1","ServicePort":9000}]
 ```
 
-#### 3.4.3 Socket 直连在 Consul 架构中的处理
+#### 3.5.3 Socket 直连在 Consul 架构中的处理
 
 即便部分服务使用原生 Socket 协议（非 HTTP），其连接流程依然先经过 Consul 解析。Socket 连接的地址来源于：
 
@@ -224,7 +276,7 @@ public static InetAddress getByName(@Argument(0) String host,
 
 **核心结论**：Socket 直连场景**不需要额外的协议层面处理**——只要在服务发现阶段完成地址替换，Socket 层自然连到挡板。挡板 Server 端通过协议嗅探识别为 TCP 二进制流量，走 Raw TCP Handler。
 
-#### 3.4.4 服务名路由 vs host:port 路由
+#### 3.5.4 服务名路由 vs host:port 路由
 
 Baafoo 路由表同时支持两种匹配维度：
 
@@ -236,7 +288,7 @@ Baafoo 路由表同时支持两种匹配维度：
 
 服务名匹配的优先级**高于** host:port 匹配——因为服务名语义更清晰，更贴近开发者的心智模型。
 
-#### 3.4.5 支持的注册中心
+#### 3.5.5 支持的注册中心
 
 | 注册中心 | 支持状态 | 拦截策略 |
 |---|---|---|
@@ -264,12 +316,16 @@ Baafoo 路由表同时支持两种匹配维度：
 - 支持通配符：`*.dev:*`、`192.168.1.*:3306`
 - 规则优先级：精确 > 通配 > 默认（默认透传）
 - 配置文件热重载（WatchService 监听文件变化，无需重启应用）
+- **热加载竞态安全策略**：规则切换采用"版本号 + 原子引用替换"机制——新请求读取最新版本规则，正在匹配中的旧连接继续使用旧版本规则完成处理，避免规则半加载状态下的不一致匹配。规则对象整体替换（不可变快照），而非逐字段更新。
 
 #### 4.1.3 录制器（可选）
 
-- 在 `record` 模式下，透明代理真实连接，同时复制请求/响应字节流存储
-- 存储为结构化文件（JSON metadata + 原始字节 blob），便于回放
+- 在 `record` 模式下，透明代理真实连接，同时复制请求/响应字节流暂存于 Agent 内存缓冲区
+- 缓冲区满或录制 session 结束时，Agent 通过控制通道将录制数据上传至 Server 统一存储
+- Server 端存储格式：JSON 元数据文件 + 原始字节 blob 文件，以 session ID 组织
 - 支持按 session 录制，生成 session ID
+- Server 端提供 `GET /api/recordings` API 列出所有录制 session，支持 Web 控制台管理
+- 录制数据保留策略由 Server 端配置（`recording.retentionDays` + `recording.maxSizeMb`），自动清理过期数据
 
 ### 4.2 Baafoo Server 功能模块
 
@@ -340,12 +396,21 @@ mode: stub          # stub | passthrough | record | record-and-stub
 
 server:
   host: localhost
-  port: 9000        # Baafoo Server 地址
+  ports:
+    http: 9000       # HTTP Mock + Web 控制台
+    tcp: 9001        # Raw TCP
+    kafka: 9002      # Kafka Mock Broker
+    pulsar: 9003     # Pulsar Mock Broker
+    jms: 9004        # JMS Mock Broker
 
 consul:
   enabled: true                         # 启用 Consul 集成
   interceptionMode: dns                 # dns | api | auto（自动检测）
   agentUrl: http://consul.agent:8500    # 仅 api 模式需要
+
+recording:
+  retentionDays: 7                      # 录制数据保留天数
+  maxSizeMb: 500                        # 录制数据最大磁盘占用
 
 stubs:
   # 方式一：服务名匹配（Consul 架构推荐）
@@ -354,16 +419,15 @@ stubs:
 
   - service: "payment-service"
     mode: stub
-    stubPort: 9001                      # 指向特定挡板端口
 
   # 方式二：host:port 匹配（直连架构）
   - target: "downstream-a.dev:8080"
     mode: stub
 
-  # 方式三：服务名 + 端口约束（混合）
+  # 方式三：服务名 + 协议提示（混合）
   - service: "socket-legacy-service"
     mode: stub
-    protocol: tcp                       # 协议提示给挡板 Server
+    protocol: tcp                       # 协议提示，决定重定向到哪个 Server 端口
 
   # Kafka 连接挡板
   - target: "kafka.dev:9092"
@@ -401,28 +465,40 @@ http:
     request:
       method: GET
       path: /api/users/{id}
-    response:
-      status: 200
-      headers:
-        Content-Type: application/json
-      body: |
-        {"id": "{{path.id}}", "name": "Mock User", "status": "active"}
-      delay: 50   # ms
+    responses:                          # 统一使用 responses 数组
+      - condition:
+          header:
+            X-User-Level: VIP
+        response:
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {"id": "{{path.id}}", "name": "Mock VIP User", "discount": 0.8}
+      - response:                       # 默认响应（无条件匹配）
+          status: 200
+          headers:
+            Content-Type: application/json
+          body: |
+            {"id": "{{path.id}}", "name": "Mock User", "status": "active"}
+          delay: 50   # ms
 
   - id: create-order-timeout
     request:
       method: POST
       path: /api/orders
-    response:
-      fault: READ_TIMEOUT   # 模拟超时
+    responses:
+      - response:
+          fault: READ_TIMEOUT   # 模拟超时
 
 # TCP 挡板规则示例
 tcp:
   - id: binary-protocol-login
     request:
       prefixHex: "01 02 03"   # 请求魔数
-    response:
-      dataHex: "01 02 00 00 00 01"  # 登录成功响应
+    responses:
+      - response:
+          dataHex: "01 02 00 00 00 01"  # 登录成功响应
 
 # Kafka 挡板规则示例
 kafka:
@@ -564,13 +640,16 @@ Step 5（可选）：切换回挡板模式
 | 风险 | 影响 | 缓解措施 |
 |---|---|---|
 | Bootstrap ClassLoader 隔离 | Agent 类无法访问 `java.net` 包 | 使用 `appendToBootstrapClassLoaderSearch()` |
-| JDK 内部类跨版本变更 | ASM 改写 `sun.nio.ch.*` 可能在 JDK 小版本升级时失效 | 版本检测 + 多版本适配分支 |
+| JDK 内部类跨版本变更 | Byte Buddy Advice 对 `sun.nio.ch.*` 的增强可能在 JDK 小版本升级时失效 | 运行时版本检测 + 多版本 Advice 实现类适配 |
 | 连接池预热时机 | 部分框架在 Agent 注册前已完成连接建立 | 文档说明 Agent 必须在应用 main() 之前完成增强 |
 | TLS 证书信任 | HTTPS 场景需信任挡板自签证书 | 提供便捷的 trustAll 模式（仅开发环境） |
 | 业务代码检测绕过 | 极少数框架绕过 Socket 直接使用 JNI | 影响极小，文档说明，可通过 iptables 兜底 |
 | **Consul 健康检查误判** | Agent 篡改地址后 Consul 健康检查看到的 IP 与注册不一致，可能误标记服务不健康 | Agent 对 `127.0.0.1:8500` 的调用透传，不拦截健康检查请求 |
 | **Consul SDK 版本差异** | 不同版本 Consul SDK（Orbitz / Ecwid / Spring Cloud）内部实现类名不同 | 拦截点优先使用通用 HTTP 层匹配 URL，不依赖具体 SDK 实现 |
 | **Pulsar 协议复杂度** | Pulsar binary protocol 包含 Lookup、Partitioned Topic、ManagedLedger 等复杂机制，Mock Broker 无法完整模拟 | v1.0 聚焦 Producer/Consumer 核心路径；复杂特性（事务消息、Schema/Protobuf 原生注册、Key_Shared 订阅）在 v1.5 迭代 |
+| **热加载竞态** | 规则热加载过程中，正在匹配的连接可能读到半加载状态 | 采用"版本号 + 原子引用替换"策略，规则对象整体替换为不可变快照 |
+| **多 Agent 实例规则冲突** | 多个 Agent 连接同一 Server 时，可能需要不同的挡板规则 | v1.0 采用全局共享规则；v1.5 规划 Agent 分组/命名空间隔离机制 |
+| **控制通道可靠性** | Agent-Server 控制通道断开时，Agent 无法获取最新规则 | Agent 本地 WatchService 作为降级方案；控制通道断开时 Agent 使用最后已知规则继续运行 |
 
 ---
 
@@ -581,15 +660,20 @@ baafoo/
 ├── baafoo-agent/          # JavaAgent 模块
 │   ├── src/main/java/
 │   │   ├── BaafooAgent.java          # premain 入口
-│   │   ├── transformer/              # 字节码变换器
+│   │   ├── transformer/              # 字节码变换器（统一 Byte Buddy）
 │   │   │   ├── SocketTransformer.java
 │   │   │   ├── NioChannelTransformer.java
 │   │   │   ├── ConsulDnsTransformer.java
 │   │   │   ├── ConsulApiTransformer.java
 │   │   │   ├── KafkaClientTransformer.java
 │   │   │   └── PulsarClientTransformer.java
-│   │   ├── router/                   # 路由规则引擎
-│   │   └── recorder/                 # 录制器
+│   │   ├── router/                   # 路由规则引擎（版本号+原子引用替换）
+│   │   ├── recorder/                 # 录制器（缓冲+上传）
+│   │   └── control/                  # Agent-Server 控制通道
+│   │       ├── AgentRegistration.java
+│   │       ├── HeartbeatWorker.java
+│   │       ├── RuleSyncWorker.java
+│   │       └── RecordingUploader.java
 │   └── pom.xml
 │
 ├── baafoo-server/         # 挡板服务模块
@@ -602,7 +686,13 @@ baafoo/
 │   │   │   ├── PulsarMockBroker.java
 │   │   │   └── JmsMockBroker.java
 │   │   ├── rule/                     # 规则引擎
-│   │   └── api/                      # 管理 REST API
+│   │   ├── api/                      # 管理 REST API
+│   │   ├── control/                  # Server 端控制通道处理
+│   │   │   ├── AgentRegistry.java
+│   │   │   ├── AgentHeartbeatTracker.java
+│   │   │   └── AgentCommandDispatcher.java
+│   │   ├── recording/                # 录制数据存储与清理
+│   │   └── webapp/                   # Web 控制台静态资源
 │   └── pom.xml
 │
 ├── baafoo-core/           # 公共模块（规则模型、配置解析）
@@ -617,7 +707,7 @@ baafoo/
 
 | 依赖 | 版本 | 用途 |
 |---|---|---|
-| Byte Buddy | 1.14.x | Agent 字节码增强 |
+| Byte Buddy | 1.14.x | Agent 字节码增强（统一框架，含 JDK 内部类 Advice 内联） |
 | Netty | 4.1.x | Server 网络层 |
 | SnakeYAML | 1.33 | 配置文件解析（Java 8 兼容）|
 | Jackson | 2.15.x | JSON 处理 |
@@ -628,4 +718,4 @@ baafoo/
 
 ---
 
-*本文档为概念设计草稿，详细技术规格与 UI 设计将在产品说明书阶段进一步细化。*
+*本文档为概念设计 v0.4，详细技术规格与 UI 设计将在产品说明书阶段进一步细化。*

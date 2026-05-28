@@ -1,10 +1,11 @@
 # Baafoo Web 控制台 — 前端界面框架设计
 
-> **文档状态**：v1.0  
-> **关联文档**：[概念设计说明书 v0.3](../.concepts/baafoo-concept-design.md) | [产品需求文档 v1.1](../.prd/baafoo-prd.md)  
+> **文档状态**：v1.1  
+> **关联文档**：[概念设计说明书 v0.4](../.concepts/baafoo-concept-design.md) | [产品需求文档 v1.2](../.prd/baafoo-prd.md)  
 > **目标读者**：前端开发工程师、UI 设计师  
-> **技术栈**：Vue 2 + Element UI + Axios + ECharts  
-> **最后更新**：2026-05-28
+> **技术栈**：Vue 3 + Element Plus + Pinia + Axios + ECharts  
+> **最后更新**：2026-05-28  
+> **变更摘要**：v1.1 — 技术栈升级为 Vue 3 + Element Plus + Pinia；静态资源约束调整为 2MB（gzip 后约 700KB）；统一 Server 技术栈为 Netty；确定 WebSocket 为实时日志推送方案；组件文件改为 .vue SFC；新增错误边界与离线处理设计
 
 ---
 
@@ -22,7 +23,7 @@ Baafoo Web 控制台是 Baafoo Server 内嵌的单页应用（SPA），通过可
 
 ### 1.3 设计原则
 
-1. **轻量高效**：控制台是辅助工具，不应引入复杂的前端构建链，静态资源整体 < 500KB
+1. **轻量高效**：控制台是辅助工具，不应引入复杂的前端构建链，静态资源整体 < 2MB（gzip 后约 700KB）
 2. **即时响应**：所有操作通过 REST API 完成，规则修改 < 500ms 生效
 3. **协议感知**：UI 需适应 HTTP / TCP / Kafka / Pulsar / JMS 五种协议的差异化配置
 4. **开发者友好**：快捷键支持、YAML 实时预览、表单校验即时反馈
@@ -106,8 +107,6 @@ App.vue
 │   └── StatusPage.vue        # 系统状态
 └── BaafooStatusBar.vue       # 全局底栏
 ```
-
----
 
 ## 4. 组件树与页面详设
 
@@ -578,52 +577,59 @@ StatusPage.vue
 
 | 层级 | 技术 | 版本 | 说明 |
 |---|---|---|---|
-| 框架 | Vue.js | 2.6.x | 与团队 DBaaber/Apiaano 项目一致 |
-| UI 库 | Element UI | 2.15.x | 与团队技术栈一致 |
-| 路由 | Vue Router | 3.x | Hash 模式（兼容静态文件部署） |
-| HTTP | Axios | 0.27.x | API 请求 + 拦截器 |
-| 图表 | ECharts | 5.x | Dashboard 统计图表 |
-| 拖拽 | vuedraggable | 2.24.x | 规则排序 |
-| 代码高亮 | CodeMirror | 5.x | YAML 预览（与 DBaaber 一致） |
-| 构建 | Vue CLI | 4.x | 构建为静态资源，内嵌 jar |
+| 框架 | Vue.js | 3.3.x | Composition API + `<script setup>` 语法 |
+| UI 库 | Element Plus | 2.4.x | Vue 3 生态主流 UI 库 |
+| 状态管理 | Pinia | 2.1.x | Vue 3 官方推荐状态管理，替代 Vuex |
+| 路由 | Vue Router | 4.x | Hash 模式（兼容静态文件部署） |
+| HTTP | Axios | 1.6.x | API 请求 + 拦截器 |
+| 图表 | ECharts | 5.x | Dashboard 统计图表（按需引入） |
+| 拖拽 | vuedraggable | 4.x | Vue 3 兼容版本，规则排序 |
+| 代码高亮 | CodeMirror | 6.x | YAML 预览 |
+| 构建 | Vite | 5.x | 快速构建，输出静态资源内嵌 jar |
 
 ### 7.2 目录结构
 
 ```
-baafoo-server/src/main/resources/webapp/
+baafoo-console/                          # 独立前端工程目录
 ├── index.html
-├── css/
-│   ├── app.css                  # 全局样式
-│   └── themes/
-│       └── dark.css             # 预留暗色主题
-├── js/
-│   ├── app.js                   # Vue 应用入口
-│   ├── router.js                # 路由配置
-│   ├── api.js                   # Axios 实例 + API 方法封装
+├── vite.config.js                       # Vite 构建配置
+├── package.json
+├── src/
+│   ├── main.js                          # Vue 应用入口
+│   ├── App.vue                          # 根组件
+│   ├── router/
+│   │   └── index.js                     # 路由配置
+│   ├── stores/                          # Pinia 状态管理
+│   │   ├── mode.js                      # 全局模式状态
+│   │   ├── rules.js                     # 规则列表状态
+│   │   └── agents.js                    # Agent 连接状态
+│   ├── api/
+│   │   └── index.js                     # Axios 实例 + API 方法封装
+│   ├── composables/                     # 组合式函数
+│   │   ├── useWebSocket.js             # WebSocket 连接管理
+│   │   └── useAutoRefresh.js           # 自动刷新逻辑
 │   ├── components/
-│   │   ├── BaafooHeader.js
-│   │   ├── BaafooSidebar.js
-│   │   ├── BaafooStatusBar.js
+│   │   ├── BaafooHeader.vue
+│   │   ├── BaafooSidebar.vue
+│   │   ├── BaafooStatusBar.vue
 │   │   └── common/
-│   │       ├── StatCard.js      # 统计卡片
-│   │       ├── YamlPreview.js   # YAML 预览组件
-│   │       ├── ProtocolIcon.js  # 协议图标
-│   │       └── EmptyGuide.js    # 空状态引导
+│   │       ├── StatCard.vue             # 统计卡片
+│   │       ├── YamlPreview.vue          # YAML 预览组件
+│   │       ├── ProtocolIcon.vue         # 协议图标
+│   │       └── EmptyGuide.vue           # 空状态引导
 │   └── pages/
-│       ├── DashboardPage.js
-│       ├── RulesPage.js
-│       ├── RuleEditorPage.js
-│       ├── LogsPage.js
-│       ├── LogDetailPage.js
-│       ├── RecordingsPage.js
-│       ├── RecordingDetailPage.js
-│       └── StatusPage.js
-└── vendor/                      # 第三方库（CDN 或内嵌）
-    ├── vue.min.js
-    ├── element-ui.min.js
-    ├── echarts.min.js
-    └── ...
+│       ├── DashboardPage.vue
+│       ├── RulesPage.vue
+│       ├── RuleEditorPage.vue
+│       ├── LogsPage.vue
+│       ├── LogDetailPage.vue
+│       ├── RecordingsPage.vue
+│       ├── RecordingDetailPage.vue
+│       └── StatusPage.vue
+└── dist/                                # 构建输出，复制到 baafoo-server/src/main/resources/webapp/
 ```
+
+> **构建集成**：Vite 构建输出到 `dist/` 目录，通过 Maven/Gradle 构建脚本自动复制到 `baafoo-server/src/main/resources/webapp/`，最终内嵌于 Server jar 包。
 
 ### 7.3 API 封装
 
@@ -637,7 +643,6 @@ const api = {
   getStats:      ()                => axios.get(`${API_BASE}/stats`),
   getTrend:      (period)          => axios.get(`${API_BASE}/stats/trend`, { params: { period } }),
   getProtocols:  ()                => axios.get(`${API_BASE}/stats/protocols`),
-  getSessions:   ()                => axios.get(`${API_BASE}/sessions`),
 
   // 规则管理
   getRules:      (protocol)        => axios.get(`${API_BASE}/rules`, { params: { protocol } }),
@@ -646,6 +651,9 @@ const api = {
   deleteRule:    (id)              => axios.delete(`${API_BASE}/rules/${id}`),
   importRules:   (file)            => { /* FormData upload */ },
   exportRules:   (format)          => axios.get(`${API_BASE}/rules/export`, { params: { format } }),
+
+  // Agent 管理
+  getAgents:     ()                => axios.get(`${API_BASE}/agents`),
 
   // 请求日志
   getLogs:       (params)          => axios.get(`${API_BASE}/logs`, { params }),
@@ -659,21 +667,124 @@ const api = {
 };
 ```
 
-### 7.4 全局模式切换
+### 7.4 全局状态管理（Pinia）
 
 ```javascript
-// 全局模式状态管理（简化版 Vuex 或 eventBus）
-const modeStore = {
-  currentMode: 'stub',
-  agentCount: 0,
+// stores/mode.js — 全局模式状态
+import { defineStore } from 'pinia';
 
-  async switchMode(mode) {
-    await api.updateConfig({ mode });  // 调用 Server API
-    this.currentMode = mode;
-    EventBus.$emit('mode-changed', mode);
-  }
-};
+export const useModeStore = defineStore('mode', {
+  state: () => ({
+    currentMode: 'stub',
+    agentCount: 0,
+    serverConnected: true,
+  }),
+  actions: {
+    async switchMode(mode) {
+      await api.updateConfig({ mode });
+      this.currentMode = mode;
+    },
+    setServerConnected(connected) {
+      this.serverConnected = connected;
+    },
+  },
+});
+
+// stores/agents.js — Agent 连接状态
+export const useAgentStore = defineStore('agents', {
+  state: () => ({
+    agents: [],
+  }),
+  getters: {
+    activeCount: (state) => state.agents.filter(a => a.status === 'online').length,
+  },
+  actions: {
+    async fetchAgents() {
+      const { data } = await api.getAgents();
+      this.agents = data;
+    },
+  },
+});
 ```
+
+### 7.5 实时日志推送（WebSocket）
+
+```javascript
+// composables/useWebSocket.js
+import { ref, onUnmounted } from 'vue';
+
+const WS_URL = `ws://${location.host}/__baafoo__/ws/logs`;
+
+export function useLogStream() {
+  const logs = ref([]);
+  const connected = ref(false);
+  let ws = null;
+  let reconnectTimer = null;
+
+  function connect() {
+    ws = new WebSocket(WS_URL);
+    ws.onopen = () => { connected.value = true; };
+    ws.onmessage = (event) => {
+      const entry = JSON.parse(event.data);
+      logs.value.unshift(entry);
+      if (logs.value.length > 1000) logs.value.pop();
+    };
+    ws.onclose = () => {
+      connected.value = false;
+      reconnectTimer = setTimeout(connect, 3000);
+    };
+    ws.onerror = () => { ws.close(); };
+  }
+
+  function disconnect() {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    if (ws) ws.close();
+  }
+
+  onUnmounted(disconnect);
+
+  return { logs, connected, connect, disconnect };
+}
+```
+
+### 7.6 错误边界与离线处理
+
+```javascript
+// 全局 Axios 拦截器 — api.js
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const modeStore = useModeStore();
+    if (!error.response) {
+      modeStore.setServerConnected(false);
+      ElMessage.error('Server 连接中断，请检查 Baafoo Server 是否运行');
+    } else if (error.response.status === 409) {
+      ElMessage.warning('规则已被他人修改，请刷新后重试');
+    } else if (error.response.status >= 500) {
+      ElMessage.error(`Server 错误: ${error.response.data?.message || '未知错误'}`);
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Axios 请求拦截器 — 恢复连接状态
+axios.interceptors.request.use((config) => {
+  const modeStore = useModeStore();
+  if (!modeStore.serverConnected) {
+    modeStore.setServerConnected(true);
+  }
+  return config;
+});
+```
+
+**离线处理策略**：
+
+| 场景 | 表现 | 恢复策略 |
+|---|---|---|
+| Server 重启 | API 请求失败，Header 栏显示"Server 连接中断" | Axios 拦截器检测到响应恢复后自动更新状态 |
+| 网络断开 | WebSocket 断开，日志停止更新 | WebSocket 3s 自动重连 |
+| API 5xx 错误 | `ElMessage.error` 提示具体错误 | 用户手动重试 |
+| 规则并发冲突 | 409 Conflict | 提示"规则已被他人修改，请刷新后重试" |
 
 ---
 
@@ -716,24 +827,33 @@ const modeStore = {
 ### 9.1 Server 端配置
 
 ```java
-// BaafooServer.java — 静态资源映射
-// 使用 Netty 或 Spring Boot 静态资源配置
+// BaafooServer.java — Netty 静态资源处理
+// 使用 Netty 的 HttpStaticFileServerHandler 模式
 // 路径前缀 /__baafoo__/ 映射到 classpath:/webapp/
 
-// Spring Boot 方式（如使用 Spring Boot 内嵌 Netty）:
-@Configuration
-public class WebConsoleConfig implements WebMvcConfigurer {
+public class WebConsoleHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
+    private static final String WEB_ROOT = "/webapp/";
+    private static final String PREFIX = "/__baafoo__/";
+
     @Override
-    public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        registry.addResourceHandler("/__baafoo__/**")
-                .addResourceLocations("classpath:/webapp/");
+    protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest request) {
+        String uri = request.uri();
+        if (uri.startsWith(PREFIX)) {
+            String resourcePath = WEB_ROOT + uri.substring(PREFIX.length());
+            if (resourcePath.equals(WEB_ROOT) || resourcePath.equals(WEB_ROOT + "/")) {
+                resourcePath = WEB_ROOT + "index.html";  // SPA fallback
+            }
+            serveStaticResource(ctx, request, resourcePath);
+        } else {
+            ctx.fireChannelRead(request.retain());  // 传递给 HTTP Mock Handler
+        }
     }
 
-    // SPA fallback: 所有 /__baafoo__/ 子路径回退到 index.html
-    @Override
-    public void addViewControllers(ViewControllerRegistry registry) {
-        registry.addViewController("/__baafoo__/")
-                .setViewName("forward:/webapp/index.html");
+    // SPA fallback: 所有 /__baafoo__/ 子路径（非静态资源）回退到 index.html
+    private void serveStaticResource(ChannelHandlerContext ctx, FullHttpRequest request, String path) {
+        // 1. 尝试从 classpath 加载文件
+        // 2. 若文件不存在且路径无文件扩展名，回退到 index.html
+        // 3. 设置正确的 Content-Type 和缓存头
     }
 }
 ```
@@ -741,24 +861,29 @@ public class WebConsoleConfig implements WebMvcConfigurer {
 ### 9.2 Vue Router 配置
 
 ```javascript
-// router.js — Hash 模式，适配静态文件部署
-const router = new VueRouter({
-  mode: 'hash',
-  base: '/__baafoo__/',
-  routes: [
-    { path: '/',              redirect: '/dashboard' },
-    { path: '/dashboard',     component: DashboardPage },
-    { path: '/rules',         component: RulesPage },
-    { path: '/rules/:protocol', component: RulesPage },
-    { path: '/rules/:protocol/create', component: RuleEditorPage },
-    { path: '/rules/:protocol/:id/edit', component: RuleEditorPage },
-    { path: '/logs',          component: LogsPage },
-    { path: '/logs/:requestId', component: LogDetailPage },
-    { path: '/recordings',    component: RecordingsPage },
-    { path: '/recordings/:sessionId', component: RecordingDetailPage },
-    { path: '/status',        component: StatusPage },
-  ]
+// router/index.js — Vue Router 4，Hash 模式，适配静态文件部署
+import { createRouter, createWebHashHistory } from 'vue-router';
+
+const routes = [
+  { path: '/',              redirect: '/dashboard' },
+  { path: '/dashboard',     component: () => import('../pages/DashboardPage.vue') },
+  { path: '/rules',         component: () => import('../pages/RulesPage.vue') },
+  { path: '/rules/:protocol', component: () => import('../pages/RulesPage.vue') },
+  { path: '/rules/:protocol/create', component: () => import('../pages/RuleEditorPage.vue') },
+  { path: '/rules/:protocol/:id/edit', component: () => import('../pages/RuleEditorPage.vue') },
+  { path: '/logs',          component: () => import('../pages/LogsPage.vue') },
+  { path: '/logs/:requestId', component: () => import('../pages/LogDetailPage.vue') },
+  { path: '/recordings',    component: () => import('../pages/RecordingsPage.vue') },
+  { path: '/recordings/:sessionId', component: () => import('../pages/RecordingDetailPage.vue') },
+  { path: '/status',        component: () => import('../pages/StatusPage.vue') },
+];
+
+const router = createRouter({
+  history: createWebHashHistory('/__baafoo__/'),
+  routes,
 });
+
+export default router;
 ```
 
 ---
@@ -777,4 +902,4 @@ const router = new VueRouter({
 
 ---
 
-*本文档为 Baafoo Web 控制台 v1.0 前端界面框架设计，供前端工程师进行组件开发和技术方案评审。*
+*本文档为 Baafoo Web 控制台 v1.1 前端界面框架设计，供前端工程师进行组件开发和技术方案评审。*

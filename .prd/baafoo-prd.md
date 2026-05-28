@@ -1,10 +1,10 @@
 # Baafoo 挡板系统 — 产品需求文档（PRD）
 
-> **文档状态**：PRD v1.1  
+> **文档状态**：PRD v1.2  
 > **目标读者**：产品团队、工程团队、QA 团队  
-> **关联文档**：[概念设计说明书 v0.3](../.concepts/baafoo-concept-design.md)  
+> **关联文档**：[概念设计说明书 v0.4](../.concepts/baafoo-concept-design.md)  
 > **最后更新**：2026-05-28  
-> **变更摘要**：基于开放问题决议，明确 Kafka 协议子集、端口策略、录制数据清理、规则导入导出、Pulsar Lookup 模拟等；新增 Web 控制台需求与接口参数定制返回能力
+> **变更摘要**：v1.2 — 统一录制数据存储架构为 Agent 上传至 Server；统一规则 Schema 为 responses 数组；调整 G4 目标为方向性指标；新增规则冲突检测与并发编辑需求；改进 R-A3 AC-02；新增 Agent-Server 控制通道相关需求
 
 ---
 
@@ -32,7 +32,7 @@
 | G1 | 开发人员可在 **5 分钟内** 完成挡板环境搭建，无需修改业务代码 | 用户目标 | 从零到首次拦截成功的平均耗时 ≤ 5 分钟 |
 | G2 | 覆盖团队 90% 的下游依赖协议类型（HTTP/TCP/Kafka/Pulsar/JMS）| 业务目标 | 协议覆盖矩阵中"完全支持"项 ≥ 5 种 |
 | G3 | 挡板模式与透传模式之间 **零重启** 切换 | 用户目标 | 修改配置文件后 < 500ms 生效，应用进程不重启 |
-| G4 | 开发阶段因下游依赖导致的阻塞时间降低 **70%** | 业务目标 | 上线后 4 周内，团队匿名调研中"下游阻塞"耗时下降 ≥ 70% |
+| G4 | 开发阶段因下游依赖导致的阻塞时间显著降低 | 方向性目标 | 上线后 4 周内，使用 Baafoo 的开发者 vs 未使用的开发者，日均下游等待时间对比下降 ≥ 50%（方向性指标，受团队规模、项目阶段等多因素影响） |
 | G5 | 支持 Consul 注册中心架构，按**服务名**而非 IP 管理挡板规则 | 用户目标 | Agent 在 Consul DNS + HTTP API 两种模式下均能正确拦截 |
 | G6 | 开发人员可通过 Web 控制台完成 **80% 的日常操作**（规则管理、请求查看、模式切换），无需手动编辑 YAML | 用户目标 | Web 控制台上线后 2 周，YAML 手动编辑操作占比 ≤ 20% |
 | G7 | 同一接口可按不同请求参数返回不同 Mock 响应，覆盖 **95% 的条件分支场景** | 用户目标 | 参数化规则能表达：按路径参数 / Header / Query / Body 字段值返回不同响应 |
@@ -147,8 +147,8 @@
 |---|---|
 | **描述** | 拦截 `sun.nio.ch.SocketChannelImpl#connect()` 方法，覆盖 Netty 及基于 NIO 的框架。 |
 | **AC-01** | 使用 Netty 发起的 TCP 连接同样被拦截和地址重写 |
-| **AC-02** | ASM 改写兼容 JDK 8 / 11 / 17（多版本分支） |
-| **技术约束** | 使用 ASM 直接操作字节码，需针对不同 JDK 版本维护适配分支 |
+| **AC-02** | 在 JDK 8u352 / 11.0.18 / 17.0.6 三个版本上，Netty 4.1.x 客户端发起的 TCP 连接均被正确拦截和地址重写 |
+| **技术约束** | 统一使用 Byte Buddy Advice 内联机制，通过 `--add-opens java.base/sun.nio.ch=ALL-UNNAMED` 开放访问；针对不同 JDK 版本通过运行时版本检测加载对应的 Advice 实现类 |
 
 #### R-A4：Kafka Client 拦截 — P1
 
@@ -211,11 +211,12 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 在 `record` 或 `record-and-stub` 模式下，Agent 透明代理真实连接，同时将请求和响应的原始字节复制到本地文件系统。存储格式：JSON 元数据文件 + 原始字节 blob 文件，以 session ID 组织。 |
+| **描述** | 在 `record` 或 `record-and-stub` 模式下，Agent 透明代理真实连接，同时将请求和响应的原始字节暂存于内存缓冲区。缓冲区满或录制 session 结束时，Agent 通过控制通道将录制数据上传至 Server 统一存储。Server 端存储格式：JSON 元数据文件 + 原始字节 blob 文件，以 session ID 组织。 |
 | **AC-01** | 录制模式下，应用与真实下游的交互不受影响 |
 | **AC-02** | 切换到挡板模式后，能选择录制 session 进行回放 |
 | **AC-03** | HTTP 请求录制包含：method、URL、headers、body、响应 status、响应 headers、响应 body、耗时 |
 | **AC-04** | TCP 请求录制包含：请求 bytes（hex）、响应 bytes（hex）、时间戳 |
+| **AC-05** | Agent 上传录制数据失败时（如 Server 不可用），本地暂存并在 Server 恢复后重试上传 |
 
 ---
 
@@ -236,13 +237,13 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 接收被 Agent 重定向的 HTTP 请求，按规则匹配并返回 Mock 响应。请求匹配维度：`method + path + query + headers + body（JSONPath/正则）`。响应配置：`status code + headers + body（模板变量）`。支持同一接口按不同请求参数返回不同响应。 |
+| **描述** | 接收被 Agent 重定向的 HTTP 请求，按规则匹配并返回 Mock 响应。请求匹配维度：`method + path + query + headers + body（JSONPath/正则）`。响应配置统一使用 `responses` 数组格式，支持同一接口按不同请求参数返回不同响应。 |
 | **AC-01** | 精确路径匹配 `GET /api/users/123` 返回预设 JSON body |
 | **AC-02** | 路径参数匹配 `GET /api/users/{id}` 并使用 `{{path.id}}` 模板变量填充响应 |
 | **AC-03** | 请求 body JSONPath 匹配（如 `$.orderType == "VIP"` 返回特定响应） |
 | **AC-04** | 请求 Query 参数匹配（如 `?type=detail` 返回详细响应，`?type=summary` 返回摘要响应） |
 | **AC-05** | 请求 Header 匹配（如 `X-User-Level: VIP` 返回折扣价，`X-User-Level: NORMAL` 返回原价） |
-| **AC-06** | **多规则优先级**：同一接口路径下，按规则声明顺序从上到下匹配，首个命中的规则返回对应响应；未匹配任何条件规则的请求走该接口的默认响应（如接口级 200 OK） |
+| **AC-06** | **多规则优先级**：`responses` 数组按声明顺序从上到下匹配，首个命中的条件-响应对返回对应响应；无条件匹配的默认响应（数组最后一项无 `condition` 字段）作为兜底 |
 | **AC-07** | 规则可配置响应延迟（固定/随机区间/正态分布），单位 ms |
 | **AC-08** | 支持异常模拟：`READ_TIMEOUT`（读超时）、`CONNECTION_RESET`（连接重置）、`HTTP_502` 等 |
 | **AC-09** | 未匹配到任何 HTTP 规则时，返回 404 并记录 WARN 日志 |
@@ -311,13 +312,35 @@
 | **AC-08** | `GET /api/rules/export` — 导出全部规则为 YAML/JSON 文件（`?format=yaml` 或 `?format=json`） |
 | **AC-09** | `GET /api/sessions` — 查看当前活跃的 Agent 连接会话列表 |
 
+#### R-S7.1：规则冲突检测与并发编辑 — P0
+
+| 属性 | 内容 |
+|---|---|
+| **描述** | 规则保存时进行冲突检测，防止多条规则产生歧义匹配；多人同时编辑规则时提供并发保护。 |
+| **AC-01** | 规则 ID 全局唯一，创建/导入时若 ID 重复则拒绝并返回明确错误信息 |
+| **AC-02** | 新增或修改 HTTP 规则时，Server 检测是否存在相同 `method + path` 的已有规则，若存在则返回提示："该接口路径下已有 N 条规则，请确认条件分支是否完整覆盖" |
+| **AC-03** | 规则保存时携带 `version` 字段（乐观锁），若 Server 端版本号与请求不一致，返回 409 Conflict 并提示"规则已被他人修改，请刷新后重试" |
+| **AC-04** | 规则删除前检查是否有其他规则依赖该规则（如录制回放引用），若有则提示确认 |
+
+#### R-S7.2：Agent 控制通道 API — P0
+
+| 属性 | 内容 |
+|---|---|
+| **描述** | 提供 Agent 与 Server 之间的控制通道 API，支持心跳上报、规则同步、录制数据上传和模式切换指令。 |
+| **AC-01** | `POST /api/agent/register` — Agent 启动时注册，返回 `agentId`；请求体包含 `pid`、`appName`、`mode` |
+| **AC-02** | `POST /api/agent/heartbeat` — Agent 每 30s 上报心跳；心跳超时 90s 后 Server 将 Agent 标记为离线 |
+| **AC-03** | `GET /api/agent/rules` — Agent 拉取最新路由规则，响应包含 `version` 字段用于增量判断 |
+| **AC-04** | `GET /api/agent/poll?agentId=xxx` — 长轮询端点，Server 端有规则变更或模式切换指令时立即返回 |
+| **AC-05** | `POST /api/agent/recordings` — Agent 上传录制数据（multipart/form-data），支持分片上传 |
+| **AC-06** | `GET /api/agents` — 查看所有已注册 Agent 的状态列表（供 Web 控制台使用） |
+
 #### R-S8：录制数据存储与清理 — P1
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 录制数据存储在本地文件系统，采用可配置的保留策略自动清理，避免长期录制占用大量磁盘空间。 |
-| **AC-01** | Agent 配置文件新增 `recording.retentionDays` 参数，默认值 **7 天**，表示仅保留最近 N 天的录制数据 |
-| **AC-02** | Agent 配置文件新增 `recording.maxSizeMb` 参数，默认值 **500MB**，录制数据总量超限时自动清理最旧的 session |
+| **描述** | 录制数据由 Agent 上传至 Server 统一存储在 Server 本地文件系统，采用可配置的保留策略自动清理，避免长期录制占用大量磁盘空间。 |
+| **AC-01** | Server 配置文件新增 `recording.retentionDays` 参数，默认值 **7 天**，表示仅保留最近 N 天的录制数据 |
+| **AC-02** | Server 配置文件新增 `recording.maxSizeMb` 参数，默认值 **500MB**，录制数据总量超限时自动清理最旧的 session |
 | **AC-03** | 清理策略同时生效：时间超限（> retentionDays）或容量超限（> maxSizeMb）均触发清理，先清理最旧的数据 |
 | **AC-04** | Server 端提供 `GET /api/recordings` API，列出所有录制 session 及其大小、时间范围 |
 | **AC-05** | Server 端提供 `DELETE /api/recordings/{sessionId}` API，手动删除指定录制 session |
@@ -403,14 +426,15 @@
 | **AC-04** | 路由规则支持 `target`（host:port 匹配）、`service`（服务名匹配）、`protocol`（协议类型，决定重定向到哪个 Server 端口）字段 |
 | **AC-05** | 每条规则可独立覆盖全局 `mode` |
 | **AC-06** | 录制配置：`recording.retentionDays`（默认 7）、`recording.maxSizeMb`（默认 500） |
+| **AC-07** | 控制通道配置：`control.heartbeatInterval`（默认 30s）、`control.heartbeatTimeout`（默认 90s） |
 
 #### R-C2：挡板规则文件（`stub-rules.yml`）— P0
 
 | 属性 | 内容 |
 |---|---|
 | **描述** | YAML 格式文件，定义 Baafoo Server 的 Mock 响应规则。按协议分区（http/tcp/kafka/pulsar/jms）。 |
-| **AC-01** | HTTP 规则包含：`id`、`request`（method/path/query/headers/body）、`response`（status/headers/body/delay/fault），支持**同一接口路径下配置多条规则**（不同匹配条件返回不同响应） |
-| **AC-02** | TCP 规则包含：`id`、`request`（prefixHex/pattern/replaySession/offsetMatch）、`response`（dataHex/replay） |
+| **AC-01** | HTTP 规则包含：`id`、`request`（method/path/query/headers/body）、`responses`（数组，每项包含可选 `condition` + 必选 `response`），`response` 包含 status/headers/body/delay/fault。简单规则可只含一项无 `condition` 的默认响应 |
+| **AC-02** | TCP 规则包含：`id`、`request`（prefixHex/pattern/replaySession/offsetMatch）、`responses`（数组，每项包含可选 `condition` + 必选 `response`），`response` 包含 dataHex/replay |
 | **AC-03** | Kafka 规则包含：`topic`、`messages`（key/value/delay） |
 | **AC-04** | Pulsar 规则包含：`tenant`、`namespace`、`topic`、`subscription`、`messages`（key/value/delay/properties） |
 | **AC-05** | JMS 规则包含：`type`（queue/topic）、`name`、`messages`（content/delay/redeliveryCount） |
@@ -435,7 +459,7 @@
 
 | 指标 | 测量方法 | 目标值 |
 |---|---|---|
-| 下游阻塞时间下降率 | 匿名调研对比上线前后的"因下游不可用/不稳定导致的日均等待时间" | 下降 ≥ 70% |
+| 下游阻塞时间下降率 | 匿名调研对比上线前后的"因下游不可用/不稳定导致的日均等待时间" | 下降 ≥ 50%（方向性指标） |
 | 本地自测覆盖率提升 | 对比上线前后本地测试用例中"可脱离下游独立运行"的比例 | 提升 ≥ 50% |
 | 开发周期缩短 | 对比同类需求从"开始开发"到"提测"的平均时间 | 缩短 ≥ 30% |
 | Net Promoter Score | 团队内部调研："你会向其他团队推荐 Baafoo 吗？"（0-10 分） | NPS ≥ 50 |
@@ -504,7 +528,7 @@
 | 风险 | 影响 | 概率 | 缓解措施 |
 |---|---|---|---|
 | Bootstrap ClassLoader 隔离 | Agent 类无法访问 `java.net` 包 | 中 | 使用 `appendToBootstrapClassLoaderSearch()` |
-| JDK 内部类跨版本变更 | ASM 改写 `sun.nio.ch.*` 可能在 JDK 小版本升级时失效 | 中 | 版本检测 + 多版本适配分支 |
+| JDK 内部类跨版本变更 | Byte Buddy Advice 对 `sun.nio.ch.*` 的增强可能在 JDK 小版本升级时失效 | 中 | 运行时版本检测 + 多版本 Advice 实现类适配 |
 | 连接池预热时机 | 部分框架在 Agent 注册前已完成连接建立 | 低 | 文档说明 Agent 必须在应用 main() 之前完成增强 |
 | TLS 证书信任 | HTTPS 场景需信任挡板自签证书 | 中 | 提供便捷的 trustAll 模式（仅开发环境） |
 | 业务代码检测绕过 | 极少数框架绕过 Socket 直接使用 JNI | 低 | 影响极小，文档说明，可通过 iptables 兜底 |
@@ -513,6 +537,9 @@
 | Pulsar 协议复杂度 | Pulsar binary protocol 包含复杂机制 | 中 | v1 聚焦 Lookup + Producer/Consumer 核心路径；复杂特性在 v1.5 迭代 |
 | Kafka API 版本兼容 | Kafka 客户端不同版本使用不同 API 版本 | 中 | Metadata/Produce/Fetch 三个 API 覆盖 v0-v12 主流版本；未覆盖 API 返回默认响应 |
 | Consul 健康检查时序竞态 | DNS 缓存与 Agent 拦截的时序问题 | 未知 | 待实际验证；当前设计已透传健康检查，若验证发现竞态问题在 v1.0 发布前修复 |
+| **热加载竞态** | 规则热加载过程中，正在匹配的连接可能读到半加载状态 | 低 | 采用"版本号 + 原子引用替换"策略，规则对象整体替换为不可变快照 |
+| **多 Agent 实例规则冲突** | 多个 Agent 连接同一 Server 时，可能需要不同的挡板规则 | 中 | v1.0 采用全局共享规则；v1.5 规划 Agent 分组/命名空间隔离机制 |
+| **控制通道可靠性** | Agent-Server 控制通道断开时，Agent 无法获取最新规则 | 中 | Agent 本地 WatchService 作为降级方案；控制通道断开时 Agent 使用最后已知规则继续运行 |
 | ~~Java 9+ 模块化安全策略~~ | ~~`--add-opens` 可能被企业安全策略拒绝~~ | ~~中~~ | ~~已确认不存在此限制~~ **已关闭** |
 
 ---
@@ -571,7 +598,7 @@ http:
       - condition:
           query:
             detail: "true"
-          response:
+        response:
           status: 200
           body: |
             {"id": "{{path.id}}", "name": "Mock User", "detail": "full profile data"}
@@ -610,4 +637,4 @@ http:
 
 ---
 
-*本文档为 Baafoo v1.1 产品需求文档。需求优先级和排期将在技术方案设计阶段与工程团队对齐后确定。*
+*本文档为 Baafoo v1.2 产品需求文档。需求优先级和排期将在技术方案设计阶段与工程团队对齐后确定。*
