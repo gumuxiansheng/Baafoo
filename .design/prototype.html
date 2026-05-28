@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Baafoo Web 控制台 — UI 框架原型</title>
+<style>
+/* ===== Design Tokens ===== */
+:root {
+  --color-primary: #409EFF;
+  --color-primary-light: #66B1FF;
+  --color-success: #67C23A;
+  --color-warning: #E6A23C;
+  --color-danger: #F56C6C;
+  --color-info: #909399;
+  --bg-page: #F2F3F5;
+  --bg-card: #FFFFFF;
+  --bg-sidebar: #304156;
+  --bg-sidebar-hover: #263445;
+  --bg-sidebar-active: #1D2B3A;
+  --text-primary: #303133;
+  --text-regular: #606266;
+  --text-secondary: #909399;
+  --text-sidebar: #BFCBD9;
+  --text-sidebar-active: #FFFFFF;
+  --border-color: #DCDFE6;
+  --border-light: #E4E7ED;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --shadow-card: 0 2px 12px 0 rgba(0,0,0,0.06);
+  --font-ui: "Helvetica Neue", Helvetica, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+  --font-code: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+  --header-h: 48px;
+  --sidebar-w: 220px;
+  --statusbar-h: 32px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary); background: var(--bg-page); }
+
+/* ===== Layout ===== */
+.app-layout { display: flex; flex-direction: column; height: 100vh; }
+
+/* Header */
+.app-header {
+  height: var(--header-h); background: #fff; border-bottom: 1px solid var(--border-light);
+  display: flex; align-items: center; padding: 0 20px; z-index: 100;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04); flex-shrink: 0;
+}
+.app-header .logo { font-size: 18px; font-weight: 700; color: var(--color-primary); margin-right: 32px; letter-spacing: 1px; }
+.app-header .logo span { color: var(--text-regular); font-weight: 400; font-size: 13px; margin-left: 4px; }
+.app-header .header-right { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+.header-right .mode-select { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.header-right .mode-select select {
+  border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 4px 8px;
+  font-size: 13px; color: var(--text-primary); background: #fff; cursor: pointer;
+}
+.agent-status { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-regular); }
+.agent-indicator { width: 8px; height: 8px; border-radius: 50%; background: var(--color-success); }
+.agent-indicator.off { background: var(--color-info); }
+.agent-count { font-weight: 600; color: var(--color-success); }
+
+/* Body */
+.app-body { display: flex; flex: 1; overflow: hidden; }
+
+/* Sidebar */
+.app-sidebar {
+  width: var(--sidebar-w); background: var(--bg-sidebar); flex-shrink: 0;
+  display: flex; flex-direction: column; overflow-y: auto; transition: width 0.3s;
+}
+.sidebar-menu { list-style: none; padding: 8px 0; }
+.sidebar-menu li a {
+  display: flex; align-items: center; padding: 12px 20px; color: var(--text-sidebar);
+  text-decoration: none; font-size: 14px; transition: all 0.15s; gap: 8px;
+}
+.sidebar-menu li a:hover { background: var(--bg-sidebar-hover); color: #fff; }
+.sidebar-menu li a.active { background: var(--bg-sidebar-active); color: var(--text-sidebar-active); }
+.sidebar-menu li a .icon { font-size: 16px; width: 20px; text-align: center; }
+.sidebar-menu .submenu { padding-left: 28px; }
+.sidebar-menu .submenu a { padding: 8px 20px; font-size: 13px; }
+.sidebar-menu .submenu a .badge {
+  margin-left: auto; background: rgba(255,255,255,0.15); color: var(--text-sidebar);
+  padding: 0 6px; border-radius: 10px; font-size: 11px; min-width: 20px; text-align: center;
+}
+.sidebar-menu .section-title { padding: 16px 20px 8px; font-size: 12px; color: rgba(191,203,217,0.5); letter-spacing: 1px; text-transform: uppercase; }
+
+/* Main Content */
+.app-main { flex: 1; overflow-y: auto; padding: 24px; }
+
+/* Status Bar */
+.app-statusbar {
+  height: var(--statusbar-h); background: #fff; border-top: 1px solid var(--border-light);
+  display: flex; align-items: center; padding: 0 20px; font-size: 12px; color: var(--text-secondary);
+  gap: 24px; flex-shrink: 0;
+}
+.app-statusbar .port-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px; }
+.port-dot.on { background: var(--color-success); }
+.port-dot.off { background: var(--color-info); }
+
+/* ===== Page Components ===== */
+.page-title { font-size: 20px; font-weight: 600; margin-bottom: 20px; color: var(--text-primary); }
+
+/* Stat Cards */
+.stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+.stat-card {
+  background: #fff; border-radius: var(--radius-lg); padding: 20px;
+  box-shadow: var(--shadow-card); display: flex; align-items: center; gap: 16px;
+}
+.stat-card .card-icon {
+  width: 48px; height: 48px; border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0;
+}
+.stat-card .card-icon.blue { background: #ECF5FF; color: var(--color-primary); }
+.stat-card .card-icon.green { background: #F0F9EB; color: var(--color-success); }
+.stat-card .card-icon.orange { background: #FDF6EC; color: var(--color-warning); }
+.stat-card .card-icon.purple { background: #F4F0FE; color: #8B7CF6; }
+.stat-card .card-value { font-size: 28px; font-weight: 700; color: var(--text-primary); }
+.stat-card .card-label { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+
+/* Charts Row */
+.charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+.chart-card {
+  background: #fff; border-radius: var(--radius-lg); padding: 20px;
+  box-shadow: var(--shadow-card);
+}
+.chart-card .chart-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; color: var(--text-primary); }
+.chart-placeholder {
+  height: 200px; background: var(--bg-page); border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center; color: var(--text-secondary);
+  font-size: 13px;
+}
+.chart-placeholder svg { width: 100%; height: 100%; }
+
+/* Recent Table */
+.recent-card {
+  background: #fff; border-radius: var(--radius-lg); padding: 20px; box-shadow: var(--shadow-card);
+}
+.recent-card .recent-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th {
+  text-align: left; padding: 10px 12px; color: var(--text-secondary); font-weight: 500;
+  border-bottom: 1px solid var(--border-light); font-size: 12px;
+}
+.data-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-light); }
+.data-table tr:hover td { background: #F5F7FA; }
+.data-table .protocol-tag {
+  display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px;
+  font-weight: 500;
+}
+.protocol-tag.http { background: #ECF5FF; color: var(--color-primary); }
+.protocol-tag.tcp { background: #F0F9EB; color: var(--color-success); }
+.protocol-tag.pulsar { background: #FDF6EC; color: var(--color-warning); }
+.status-code { font-weight: 600; }
+.status-code.s200 { color: var(--color-success); }
+.status-code.s404 { color: var(--color-warning); }
+
+/* Rules Page */
+.toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.toolbar .btn {
+  padding: 8px 16px; border-radius: var(--radius-md); font-size: 13px; border: none; cursor: pointer;
+  font-family: var(--font-ui); transition: all 0.15s;
+}
+.toolbar .btn-primary { background: var(--color-primary); color: #fff; }
+.toolbar .btn-primary:hover { background: var(--color-primary-light); }
+.toolbar .btn-default { background: #fff; color: var(--text-regular); border: 1px solid var(--border-color); }
+.toolbar .btn-default:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.toolbar .spacer { flex: 1; }
+
+.protocol-tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 2px solid var(--border-light); }
+.protocol-tabs .tab {
+  padding: 10px 20px; font-size: 14px; cursor: pointer; color: var(--text-secondary);
+  border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s;
+}
+.protocol-tabs .tab:hover { color: var(--color-primary); }
+.protocol-tabs .tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); font-weight: 600; }
+.protocol-tabs .tab .tab-badge {
+  display: inline-block; background: var(--bg-page); padding: 0 6px; border-radius: 10px;
+  font-size: 11px; margin-left: 4px; color: var(--text-secondary);
+}
+.protocol-tabs .tab.active .tab-badge { background: #ECF5FF; color: var(--color-primary); }
+
+/* Rule cards view */
+.rule-list { display: flex; flex-direction: column; gap: 8px; }
+.rule-item {
+  display: flex; align-items: center; background: #fff; padding: 14px 16px;
+  border-radius: var(--radius-md); border: 1px solid var(--border-light); transition: all 0.15s;
+}
+.rule-item:hover { border-color: var(--color-primary); box-shadow: var(--shadow-card); }
+.rule-item .rule-checkbox { margin-right: 12px; }
+.rule-item .rule-info { flex: 1; }
+.rule-item .rule-id { font-weight: 600; font-size: 13px; color: var(--text-primary); }
+.rule-item .rule-match { font-size: 12px; color: var(--text-secondary); margin-top: 2px; font-family: var(--font-code); }
+.rule-item .rule-actions { display: flex; gap: 8px; }
+.rule-item .action-link { color: var(--color-primary); cursor: pointer; font-size: 13px; text-decoration: none; }
+.rule-item .action-link:hover { text-decoration: underline; }
+.rule-item .action-link.danger { color: var(--color-danger); }
+
+/* Toggle switch */
+.toggle { position: relative; display: inline-block; width: 40px; height: 22px; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle .slider {
+  position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+  background: var(--color-info); border-radius: 22px; transition: 0.2s;
+}
+.toggle .slider:before {
+  position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px;
+  background: white; border-radius: 50%; transition: 0.2s;
+}
+.toggle input:checked + .slider { background: var(--color-success); }
+.toggle input:checked + .slider:before { transform: translateX(18px); }
+
+/* ===== Status Page ===== */
+.status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+.status-card {
+  background: #fff; border-radius: var(--radius-lg); padding: 16px;
+  box-shadow: var(--shadow-card); display: flex; align-items: center; gap: 12px;
+}
+.status-card .status-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.status-card .status-dot.online { background: var(--color-success); }
+.status-card .status-dot.offline { background: var(--color-info); }
+.status-card .status-label { font-size: 13px; color: var(--text-secondary); }
+.status-card .status-port { font-weight: 700; font-size: 16px; color: var(--text-primary); }
+
+.metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+.metric-item { background: #fff; padding: 16px; border-radius: var(--radius-lg); box-shadow: var(--shadow-card); }
+.metric-item .metric-value { font-size: 24px; font-weight: 700; color: var(--text-primary); }
+.metric-item .metric-label { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+
+.version-card {
+  background: #fff; border-radius: var(--radius-lg); padding: 16px; box-shadow: var(--shadow-card);
+}
+.version-card .version-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border-light); font-size: 13px; }
+.version-card .version-row:last-child { border-bottom: none; }
+.version-card .version-key { color: var(--text-secondary); }
+.version-card .version-val { color: var(--text-primary); font-weight: 500; font-family: var(--font-code); font-size: 12px; }
+
+/* Empty state */
+.empty-state { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
+.empty-state .empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.3; }
+.empty-state .empty-title { font-size: 16px; font-weight: 600; color: var(--text-regular); margin-bottom: 8px; }
+.empty-state .empty-desc { font-size: 13px; margin-bottom: 16px; }
+
+/* ===== Editor Page (dual panel) ===== */
+.editor-layout { display: grid; grid-template-columns: 1fr 360px; gap: 20px; height: calc(100vh - var(--header-h) - var(--statusbar-h) - 48px); }
+.editor-form { background: #fff; border-radius: var(--radius-lg); padding: 20px; box-shadow: var(--shadow-card); overflow-y: auto; }
+.editor-form .form-section { margin-bottom: 20px; }
+.editor-form .form-section-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border-light); }
+.editor-form .form-row { display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-start; }
+.editor-form .form-label { font-size: 13px; color: var(--text-regular); min-width: 70px; padding-top: 7px; flex-shrink: 0; }
+.editor-form .form-input {
+  flex: 1; padding: 6px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  font-size: 13px; font-family: var(--font-ui); outline: none; transition: border 0.15s;
+}
+.editor-form .form-input:focus { border-color: var(--color-primary); }
+.editor-form .form-textarea {
+  flex: 1; padding: 6px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  font-size: 13px; font-family: var(--font-code); resize: vertical; min-height: 80px; outline: none;
+}
+.editor-form .form-textarea:focus { border-color: var(--color-primary); }
+.editor-form .form-select {
+  padding: 6px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  font-size: 13px; background: #fff; outline: none;
+}
+.condition-block {
+  background: var(--bg-page); border-radius: var(--radius-md); padding: 12px; margin-bottom: 8px;
+  border: 1px solid var(--border-light);
+}
+.condition-block .cond-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.condition-block .cond-title { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+
+.editor-preview {
+  background: #1E1E1E; border-radius: var(--radius-lg); padding: 20px; color: #D4D4D4;
+  font-family: var(--font-code); font-size: 13px; line-height: 1.6; overflow-y: auto; white-space: pre;
+  box-shadow: var(--shadow-card);
+}
+.editor-preview .yaml-key { color: #9CDCFE; }
+.editor-preview .yaml-string { color: #CE9178; }
+.editor-preview .yaml-number { color: #B5CEA8; }
+.editor-preview .yaml-comment { color: #6A9955; }
+
+/* Breadcrumb */
+.breadcrumb { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); margin-bottom: 20px; }
+.breadcrumb a { color: var(--color-primary); text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+.breadcrumb .sep { color: var(--text-secondary); }
+
+/* Badge */
+.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 500; }
+.badge.enabled { background: #F0F9EB; color: var(--color-success); }
+.badge.disabled { background: #F4F4F5; color: var(--color-info); }
+
+/* Notification */
+.page-watermark {
+  position: fixed; top: 60px; right: 20px; background: #fff; border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg); padding: 10px 16px; font-size: 12px; color: var(--text-secondary);
+  box-shadow: var(--shadow-card); z-index: 999; display: flex; align-items: center; gap: 8px;
+}
+.page-watermark .nav-link { color: var(--color-primary); cursor: pointer; text-decoration: none; }
+.page-watermark .nav-link:hover { text-decoration: underline; }
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  .app-sidebar { width: 0; overflow: hidden; }
+  .stat-cards { grid-template-columns: repeat(2, 1fr); }
+  .charts-row { grid-template-columns: 1fr; }
+  .editor-layout { grid-template-columns: 1fr; }
+  .status-grid { grid-template-columns: repeat(2, 1fr); }
+  .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<div class="app-layout">
+
+  <!-- ===== HEADER ===== -->
+  <header class="app-header">
+    <div class="logo">Baafoo<span>挡板控制台</span></div>
+    <div class="header-right">
+      <div class="mode-select">
+        全局模式:
+        <select>
+          <option value="stub" selected>挡板 (Stub)</option>
+          <option value="passthrough">透传 (Passthrough)</option>
+          <option value="record">录制 (Record)</option>
+          <option value="record-and-stub">录制+挡板</option>
+        </select>
+      </div>
+      <div class="agent-status">
+        <span class="agent-indicator" title="Agent 已连接"></span>
+        Agent 已连接 <span class="agent-count">(3)</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== BODY ===== -->
+  <div class="app-body">
+
+    <!-- ===== SIDEBAR ===== -->
+    <nav class="app-sidebar">
+      <ul class="sidebar-menu">
+        <li><a href="#" onclick="showPage('dashboard')" class="active" id="nav-dashboard">
+          <span class="icon">📊</span> 控制台首页
+        </a></li>
+        <li class="section-title">规则管理</li>
+        <li><a href="#" onclick="showPage('rules')" id="nav-rules">
+          <span class="icon">📋</span> 规则管理
+        </a></li>
+        <li class="submenu">
+          <a href="#" onclick="showPage('rules')" id="nav-rules-http">HTTP<span class="badge">12</span></a>
+          <a href="#" onclick="showPage('rules')" id="nav-rules-tcp">TCP<span class="badge">4</span></a>
+          <a href="#" onclick="showPage('rules')" id="nav-rules-kafka">Kafka<span class="badge">3</span></a>
+          <a href="#" onclick="showPage('rules')" id="nav-rules-pulsar">Pulsar<span class="badge">2</span></a>
+          <a href="#" onclick="showPage('rules')" id="nav-rules-jms">JMS<span class="badge">2</span></a>
+        </li>
+        <li class="section-title">监控</li>
+        <li><a href="#" onclick="showPage('logs')" id="nav-logs">
+          <span class="icon">📜</span> 请求日志
+        </a></li>
+        <li><a href="#" onclick="showPage('recordings')" id="nav-recordings">
+          <span class="icon">🎬</span> 录制管理
+        </a></li>
+        <li><a href="#" onclick="showPage('status')" id="nav-status">
+          <span class="icon">⚙</span> 系统状态
+        </a></li>
+      </ul>
+    </nav>
+
+    <!-- ===== MAIN CONTENT ===== -->
+    <main class="app-main" id="main-content">
+      <!-- Content rendered by JS -->
+    </main>
+
+  </div>
+
+  <!-- ===== STATUS BAR ===== -->
+  <footer class="app-statusbar">
+    <span>Server v1.0.0</span>
+    <span><span class="port-dot on"></span> HTTP:9000</span>
+    <span><span class="port-dot on"></span> TCP:9001</span>
+    <span><span class="port-dot on"></span> Kafka:9002</span>
+    <span><span class="port-dot on"></span> Pulsar:9003</span>
+    <span><span class="port-dot off"></span> JMS:9004</span>
+    <span style="margin-left:auto;">规则: 23 条 | 请求: 1,247 | 命中率: 94.2%</span>
+  </footer>
+</div>
+
+<script>
+// ===== Simple SPA Router =====
+const pages = {};
+
+function showPage(name) {
+  document.querySelectorAll('.sidebar-menu a').forEach(a => a.classList.remove('active'));
+  const navEl = document.getElementById('nav-' + name);
+  if (navEl) navEl.classList.add('active');
+
+  const main = document.getElementById('main-content');
+  switch(name) {
+    case 'dashboard': main.innerHTML = pages.dashboard(); break;
+    case 'rules': main.innerHTML = pages.rules(); break;
+    case 'logs': main.innerHTML = pages.logs(); break;
+    case 'recordings': main.innerHTML = pages.recordings(); break;
+    case 'status': main.innerHTML = pages.status(); break;
+  }
+}
+
+// ===== PAGE TEMPLATES =====
+
+pages.dashboard = () => `
+  <h1 class="page-title">控制台首页</h1>
+
+  <!-- Stat Cards -->
+  <div class="stat-cards">
+    <div class="stat-card">
+      <div class="card-icon blue">🔌</div>
+      <div>
+        <div class="card-value">3</div>
+        <div class="card-label">活跃 Agent 连接</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="card-icon green">📈</div>
+      <div>
+        <div class="card-value">1,247</div>
+        <div class="card-label">今日请求总数</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="card-icon orange">🎯</div>
+      <div>
+        <div class="card-value">94.2%</div>
+        <div class="card-label">规则命中率</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="card-icon purple">⚡</div>
+      <div>
+        <div class="card-value">2.3 ms</div>
+        <div class="card-label">平均响应延迟 (P50)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-row">
+    <div class="chart-card">
+      <div class="chart-title">请求趋势（近 1 小时）</div>
+      <div class="chart-placeholder">
+        <svg viewBox="0 0 600 200">
+          <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#409EFF" stop-opacity="0.3"/><stop offset="100%" stop-color="#409EFF" stop-opacity="0.02"/></linearGradient></defs>
+          <polyline fill="none" stroke="#409EFF" stroke-width="2" points="0,120 60,100 120,110 180,80 240,90 300,60 360,70 420,50 480,55 540,40 600,30"/>
+          <polygon fill="url(#areaGrad)" points="0,200 0,120 60,100 120,110 180,80 240,90 300,60 360,70 420,50 480,55 540,40 600,30 600,200"/>
+          <line x1="0" y1="200" x2="600" y2="200" stroke="#E4E7ED" stroke-width="1"/>
+          <text x="10" y="130" fill="#909399" font-size="11">120</text>
+          <text x="10" y="90" fill="#909399" font-size="11">80</text>
+          <text x="10" y="50" fill="#909399" font-size="11">40</text>
+        </svg>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">协议分布</div>
+      <div class="chart-placeholder">
+        <svg viewBox="0 0 400 200">
+          <circle cx="150" cy="100" r="70" fill="none" stroke="#409EFF" stroke-width="28" stroke-dasharray="286 440"/>
+          <circle cx="150" cy="100" r="70" fill="none" stroke="#67C23A" stroke-width="28" stroke-dasharray="79 440" stroke-dashoffset="-286"/>
+          <circle cx="150" cy="100" r="70" fill="none" stroke="#E6A23C" stroke-width="20" stroke-dasharray="44 440" stroke-dashoffset="-365"/>
+          <circle cx="150" cy="100" r="70" fill="none" stroke="#8B7CF6" stroke-width="20" stroke-dasharray="31 440" stroke-dashoffset="-409"/>
+          <rect x="250" y="40" width="12" height="12" rx="2" fill="#409EFF"/>
+          <text x="268" y="51" fill="#606266" font-size="12">HTTP 65%</text>
+          <rect x="250" y="65" width="12" height="12" rx="2" fill="#67C23A"/>
+          <text x="268" y="76" fill="#606266" font-size="12">TCP 18%</text>
+          <rect x="250" y="90" width="12" height="12" rx="2" fill="#E6A23C"/>
+          <text x="268" y="101" fill="#606266" font-size="12">Kafka 10%</text>
+          <rect x="250" y="115" width="12" height="12" rx="2" fill="#8B7CF6"/>
+          <text x="268" y="126" fill="#606266" font-size="12">Pulsar 7%</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Requests -->
+  <div class="recent-card">
+    <div class="recent-title">最近请求</div>
+    <table class="data-table">
+      <thead><tr>
+        <th>时间</th><th>协议</th><th>请求摘要</th><th>规则</th><th>状态</th><th>耗时</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>22:45:01.234</td>
+          <td><span class="protocol-tag http">HTTP</span></td>
+          <td style="font-family:var(--font-code);font-size:12px;">GET /api/users/123</td>
+          <td>get-user-success</td>
+          <td><span class="status-code s200">200</span></td>
+          <td>2ms</td>
+        </tr>
+        <tr>
+          <td>22:45:01.120</td>
+          <td><span class="protocol-tag tcp">TCP</span></td>
+          <td style="font-family:var(--font-code);font-size:12px;">01 02 03 ... (binary)</td>
+          <td>tcp-login-resp</td>
+          <td><span class="status-code s200">匹配</span></td>
+          <td>1ms</td>
+        </tr>
+        <tr>
+          <td>22:45:00.998</td>
+          <td><span class="protocol-tag pulsar">Pulsar</span></td>
+          <td style="font-family:var(--font-code);font-size:12px;">order-events / my-sub</td>
+          <td>pulsar-order-ev</td>
+          <td><span class="status-code s200">投递</span></td>
+          <td>5ms</td>
+        </tr>
+        <tr>
+          <td>22:45:00.850</td>
+          <td><span class="protocol-tag http">HTTP</span></td>
+          <td style="font-family:var(--font-code);font-size:12px;">POST /api/orders</td>
+          <td style="color:var(--color-warning);">(未匹配)</td>
+          <td><span class="status-code s404">404</span></td>
+          <td>0ms</td>
+        </tr>
+        <tr>
+          <td>22:44:59.720</td>
+          <td><span class="protocol-tag http">HTTP</span></td>
+          <td style="font-family:var(--font-code);font-size:12px;">GET /api/products?type=V</td>
+          <td>get-products</td>
+          <td><span class="status-code s200">200</span></td>
+          <td>3ms</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+`;
+
+pages.rules = () => `
+  <h1 class="page-title">规则管理</h1>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <button class="btn btn-primary" onclick="showEditor()">+ 新建规则</button>
+    <button class="btn btn-default">📥 导入</button>
+    <button class="btn btn-default">📤 导出</button>
+    <span class="spacer"></span>
+    <input class="form-input" placeholder="🔍 搜索规则..." style="width:240px;">
+  </div>
+
+  <!-- Protocol Tabs -->
+  <div class="protocol-tabs">
+    <div class="tab active">HTTP <span class="tab-badge">12</span></div>
+    <div class="tab">TCP <span class="tab-badge">4</span></div>
+    <div class="tab">Kafka <span class="tab-badge">3</span></div>
+    <div class="tab">Pulsar <span class="tab-badge">2</span></div>
+    <div class="tab">JMS <span class="tab-badge">2</span></div>
+  </div>
+
+  <!-- Rule List -->
+  <div class="rule-list">
+    <div class="rule-item">
+      <div class="rule-info">
+        <div class="rule-id">get-user-success</div>
+        <div class="rule-match">GET /api/users/{id} → 200 OK (VIP 用户返回折扣价、普通用户返回原价)</div>
+      </div>
+      <div class="rule-actions" style="margin-right:12px;">
+        <span class="badge enabled">启用</span>
+      </div>
+      <div class="rule-actions">
+        <span class="action-link" onclick="showEditor()">编辑</span>
+        <label class="toggle"><input type="checkbox" checked><span class="slider"></span></label>
+        <span class="action-link danger">删除</span>
+      </div>
+    </div>
+    <div class="rule-item">
+      <div class="rule-info">
+        <div class="rule-id">create-order-by-type</div>
+        <div class="rule-match">POST /api/orders → 201 Created (按 orderType 返回不同优先级)</div>
+      </div>
+      <div class="rule-actions" style="margin-right:12px;">
+        <span class="badge enabled">启用</span>
+      </div>
+      <div class="rule-actions">
+        <span class="action-link" onclick="showEditor()">编辑</span>
+        <label class="toggle"><input type="checkbox" checked><span class="slider"></span></label>
+        <span class="action-link danger">删除</span>
+      </div>
+    </div>
+    <div class="rule-item">
+      <div class="rule-info">
+        <div class="rule-id">create-order-timeout</div>
+        <div class="rule-match">POST /api/orders → READ_TIMEOUT (模拟超时异常)</div>
+      </div>
+      <div class="rule-actions" style="margin-right:12px;">
+        <span class="badge disabled">禁用</span>
+      </div>
+      <div class="rule-actions">
+        <span class="action-link" onclick="showEditor()">编辑</span>
+        <label class="toggle"><input type="checkbox"><span class="slider"></span></label>
+        <span class="action-link danger">删除</span>
+      </div>
+    </div>
+    <div class="rule-item">
+      <div class="rule-info">
+        <div class="rule-id">get-products</div>
+        <div class="rule-match">GET /api/products → 200 OK (按 Query 参数 type 返回不同列表)</div>
+      </div>
+      <div class="rule-actions" style="margin-right:12px;">
+        <span class="badge enabled">启用</span>
+      </div>
+      <div class="rule-actions">
+        <span class="action-link" onclick="showEditor()">编辑</span>
+        <label class="toggle"><input type="checkbox" checked><span class="slider"></span></label>
+        <span class="action-link danger">删除</span>
+      </div>
+    </div>
+  </div>
+`;
+
+pages.logs = () => `
+  <h1 class="page-title">请求日志</h1>
+
+  <div class="toolbar">
+    <select class="form-select"><option>全部协议</option><option>HTTP</option><option>TCP</option><option>Kafka</option><option>Pulsar</option></select>
+    <select class="form-select"><option>全部规则</option></select>
+    <select class="form-select"><option>最近 1 小时</option><option>最近 30 分钟</option><option>最近 24 小时</option></select>
+    <input class="form-input" placeholder="🔍 搜索请求摘要..." style="width:200px;">
+    <span class="spacer"></span>
+    <button class="btn btn-default">导出 HAR</button>
+    <button class="btn btn-primary" style="background:var(--color-success);">自动刷新: ON</button>
+  </div>
+
+  <div class="recent-card">
+    <table class="data-table">
+      <thead><tr>
+        <th>时间</th><th>协议</th><th>请求摘要</th><th>匹配规则</th><th>状态</th><th>耗时</th><th>操作</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>22:45:01.234</td><td><span class="protocol-tag http">HTTP</span></td>
+          <td style="font-family:var(--font-code);font-size:12px;">GET /api/users/123</td>
+          <td>get-user-success</td>
+          <td><span class="status-code s200">200</span></td><td>2ms</td>
+          <td><span class="action-link">详情</span></td>
+        </tr>
+        <tr>
+          <td>22:45:01.120</td><td><span class="protocol-tag tcp">TCP</span></td>
+          <td style="font-family:var(--font-code);font-size:12px;">01 02 03 00 05 ...</td>
+          <td>tcp-login-resp</td>
+          <td><span class="status-code s200">匹配</span></td><td>1ms</td>
+          <td><span class="action-link">详情</span></td>
+        </tr>
+        <tr>
+          <td>22:45:00.998</td><td><span class="protocol-tag pulsar">Pulsar</span></td>
+          <td style="font-family:var(--font-code);font-size:12px;">topic:order-events / sub:my-sub</td>
+          <td>pulsar-order-ev</td>
+          <td><span class="status-code s200">投递</span></td><td>5ms</td>
+          <td><span class="action-link">详情</span></td>
+        </tr>
+        <tr style="background:#FFF9EB;">
+          <td>22:45:00.850</td><td><span class="protocol-tag http">HTTP</span></td>
+          <td style="font-family:var(--font-code);font-size:12px;">POST /api/refunds</td>
+          <td style="color:var(--color-warning);">(未匹配)</td>
+          <td><span class="status-code s404">404</span></td><td>0ms</td>
+          <td><span class="action-link">详情</span></td>
+        </tr>
+        <tr>
+          <td>22:44:59.720</td><td><span class="protocol-tag http">HTTP</span></td>
+          <td style="font-family:var(--font-code);font-size:12px;">GET /api/products?type=VIP</td>
+          <td>get-products</td>
+          <td><span class="status-code s200">200</span></td><td>3ms</td>
+          <td><span class="action-link">详情</span></td>
+        </tr>
+        <tr>
+          <td>22:44:58.510</td><td><span class="protocol-tag http">HTTP</span></td>
+          <td style="font-family:var(--font-code);font-size:12px;">POST /api/orders</td>
+          <td>create-order-by-type</td>
+          <td><span class="status-code s200">201</span></td><td>2ms</td>
+          <td><span class="action-link">详情</span></td>
+        </tr>
+        <tr>
+          <td>22:44:57.800</td><td><span class="protocol-tag tcp">TCP</span></td>
+          <td style="font-family:var(--font-code);font-size:12px;">FF 00 01 05 ...</td>
+          <td>tcp-query-resp</td>
+          <td><span class="status-code s200">匹配</span></td><td>1ms</td>
+          <td><span class="action-link">详情</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+`;
+
+pages.recordings = () => `
+  <h1 class="page-title">录制管理</h1>
+  <div style="margin-bottom:16px; background:#fff; padding:12px 16px; border-radius:var(--radius-lg); box-shadow:var(--shadow-card); display:flex; align-items:center; gap:12px;">
+    <span style="font-size:13px; color:var(--text-secondary);">磁盘占用:</span>
+    <div style="flex:1; height:8px; background:var(--bg-page); border-radius:4px; overflow:hidden;">
+      <div style="width:64%; height:100%; background:var(--color-warning); border-radius:4px;"></div>
+    </div>
+    <span style="font-size:13px; font-weight:600;">320MB / 500MB (64%)</span>
+    <span style="font-size:12px; color:var(--text-secondary);">保留策略: 7天 或 500MB</span>
+  </div>
+
+  <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:16px;">
+    <div class="stat-card" style="display:block;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+        <span style="font-weight:700;font-size:14px;">Session: rec-001</span>
+        <span style="font-size:12px; color:var(--color-success);">● 录制中</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">05-28 20:00 ~ 现在</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">HTTP (85%) · TCP (15%)</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">大小: 45MB · 请求: 2,340 条</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" style="font-size:12px;">生成规则</button>
+        <button class="btn btn-default" style="font-size:12px;">回放</button>
+        <button class="btn btn-default" style="font-size:12px;color:var(--color-danger);">删除</button>
+      </div>
+    </div>
+
+    <div class="stat-card" style="display:block;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+        <span style="font-weight:700;font-size:14px;">Session: rec-002</span>
+        <span style="font-size:12px; color:var(--color-info);">⏸ 已停止</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">05-28 18:30 ~ 05-28 19:45</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">TCP (100%)</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">大小: 120MB · 请求: 8,900 条</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" style="font-size:12px;">生成规则</button>
+        <button class="btn btn-default" style="font-size:12px;">回放</button>
+        <button class="btn btn-default" style="font-size:12px;color:var(--color-danger);">删除</button>
+      </div>
+    </div>
+
+    <div class="stat-card" style="display:block;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+        <span style="font-weight:700;font-size:14px;">Session: rec-003</span>
+        <span style="font-size:12px; color:var(--color-info);">⏸ 已停止</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">05-27 09:00 ~ 05-27 18:00</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">HTTP (60%) · Kafka (40%)</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">大小: 155MB · 请求: 12,400 条</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" style="font-size:12px;">生成规则</button>
+        <button class="btn btn-default" style="font-size:12px;">回放</button>
+        <button class="btn btn-default" style="font-size:12px;color:var(--color-danger);">删除</button>
+      </div>
+    </div>
+  </div>
+`;
+
+pages.status = () => `
+  <h1 class="page-title">系统状态</h1>
+
+  <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;">端口状态</h3>
+  <div class="status-grid">
+    <div class="status-card"><span class="status-dot online"></span><div><div class="status-label">HTTP (Mock + 控制台)</div><div class="status-port">9000 监听中</div></div></div>
+    <div class="status-card"><span class="status-dot online"></span><div><div class="status-label">TCP (Raw Socket)</div><div class="status-port">9001 监听中</div></div></div>
+    <div class="status-card"><span class="status-dot online"></span><div><div class="status-label">Kafka</div><div class="status-port">9002 监听中</div></div></div>
+    <div class="status-card"><span class="status-dot online"></span><div><div class="status-label">Pulsar</div><div class="status-port">9003 监听中</div></div></div>
+    <div class="status-card"><span class="status-dot offline"></span><div><div class="status-label">JMS</div><div class="status-port">9004 未启动</div></div></div>
+    <div class="status-card"><span class="status-dot online"></span><div><div class="status-label">Consul 集成</div><div class="status-port">DNS + API 模式</div></div></div>
+  </div>
+
+  <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;">系统指标</h3>
+  <div class="metrics-grid">
+    <div class="metric-item"><div class="metric-value">3</div><div class="metric-label">Agent 连接数</div></div>
+    <div class="metric-item"><div class="metric-value">23</div><div class="metric-label">规则总数</div></div>
+    <div class="metric-item"><div class="metric-value">1,247</div><div class="metric-label">今日请求总数</div></div>
+    <div class="metric-item"><div class="metric-value">2.3 ms</div><div class="metric-label">平均延迟 (P50)</div></div>
+    <div class="metric-item"><div class="metric-value">94.2%</div><div class="metric-label">规则命中率</div></div>
+    <div class="metric-item"><div class="metric-value">2d 4h 32m</div><div class="metric-label">Server 运行时间</div></div>
+  </div>
+
+  <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;">版本与配置</h3>
+  <div class="version-card">
+    <div class="version-row"><span class="version-key">Server 版本</span><span class="version-val">v1.0.0</span></div>
+    <div class="version-row"><span class="version-key">Java 版本</span><span class="version-val">1.8.0_352 (Oracle Corporation)</span></div>
+    <div class="version-row"><span class="version-key">Agent 版本</span><span class="version-val">v1.0.0</span></div>
+    <div class="version-row"><span class="version-key">配置文件</span><span class="version-val">/etc/baafoo/config/stub-rules.yml</span></div>
+    <div class="version-row"><span class="version-key">日志级别</span><span class="version-val">INFO</span></div>
+    <div class="version-row"><span class="version-key">录制数据路径</span><span class="version-val">/var/baafoo/recordings/ (320MB)</span></div>
+  </div>
+`;
+
+// ===== RULE EDITOR (shown when "edit" or "new rule" clicked) =====
+function showEditor() {
+  const main = document.getElementById('main-content');
+  main.innerHTML = `
+    <div class="breadcrumb">
+      <a href="#" onclick="showPage('rules')">规则管理</a><span class="sep">/</span>
+      <span>编辑规则: get-user-success</span>
+    </div>
+
+    <div class="editor-layout">
+      <!-- Left: Form -->
+      <div class="editor-form">
+        <div class="form-section">
+          <div class="form-section-title">基本信息</div>
+          <div class="form-row">
+            <span class="form-label">规则 ID</span>
+            <input class="form-input" value="get-user-success">
+          </div>
+          <div class="form-row">
+            <span class="form-label">描述</span>
+            <input class="form-input" value="获取用户信息 - VIP/NORMAL 返回不同响应">
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">请求匹配</div>
+          <div class="form-row">
+            <span class="form-label">方法</span>
+            <select class="form-select"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select>
+          </div>
+          <div class="form-row">
+            <span class="form-label">路径</span>
+            <input class="form-input" value="/api/users/{id}">
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title" style="display:flex;justify-content:space-between;">
+            匹配条件（按顺序匹配，首个命中返回）
+            <button class="btn btn-primary" style="font-size:12px;padding:4px 10px;">+ 添加条件</button>
+          </div>
+          <div class="condition-block">
+            <div class="cond-header">
+              <span class="cond-title">条件 1 — Header 匹配</span>
+              <span style="color:var(--color-danger);cursor:pointer;font-size:12px;">删除</span>
+            </div>
+            <div class="form-row">
+              <span class="form-label">Header Key</span><input class="form-input" value="X-User-Level">
+            </div>
+            <div class="form-row">
+              <span class="form-label">Header Value</span><input class="form-input" value="VIP">
+            </div>
+            <div class="form-row">
+              <span class="form-label">响应 Body</span>
+              <textarea class="form-textarea" style="min-height:50px;">{"id": "{{path.id}}", "name": "Mock VIP User", "discount": 0.8}</textarea>
+            </div>
+          </div>
+          <div class="condition-block">
+            <div class="cond-header">
+              <span class="cond-title">条件 2 — Query 匹配</span>
+              <span style="color:var(--color-danger);cursor:pointer;font-size:12px;">删除</span>
+            </div>
+            <div class="form-row">
+              <span class="form-label">Query Key</span><input class="form-input" value="detail">
+            </div>
+            <div class="form-row">
+              <span class="form-label">Query Value</span><input class="form-input" value="true">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">默认响应（无条件匹配时）</div>
+          <div class="form-row">
+            <span class="form-label">状态码</span><input class="form-input" value="200" style="width:80px;">
+          </div>
+          <div class="form-row">
+            <span class="form-label">响应 Body</span>
+            <textarea class="form-textarea">{"id": "{{path.id}}", "name": "Mock User", "status": "active"}</textarea>
+          </div>
+          <div class="form-row">
+            <span class="form-label">延迟</span><input class="form-input" value="50" style="width:100px;"><span style="font-size:12px;color:var(--text-secondary);padding-top:7px;">ms</span>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:8px;">
+          <button class="btn btn-default" onclick="showPage('rules')">取消</button>
+          <button class="btn btn-primary">保存规则</button>
+        </div>
+      </div>
+
+      <!-- Right: YAML Preview -->
+      <div class="editor-preview">
+<span class="yaml-comment"># HTTP 挡板规则</span>
+<span class="yaml-key">http</span>:
+  - <span class="yaml-key">id</span>: <span class="yaml-string">get-user-success</span>
+    <span class="yaml-key">request</span>:
+      <span class="yaml-key">method</span>: <span class="yaml-string">GET</span>
+      <span class="yaml-key">path</span>: <span class="yaml-string">/api/users/{id}</span>
+    <span class="yaml-key">responses</span>:
+      - <span class="yaml-key">condition</span>:
+          <span class="yaml-key">header</span>:
+            <span class="yaml-key">X-User-Level</span>: <span class="yaml-string">VIP</span>
+        <span class="yaml-key">response</span>:
+          <span class="yaml-key">status</span>: <span class="yaml-number">200</span>
+          <span class="yaml-key">body</span>: <span class="yaml-string">|</span>
+            <span class="yaml-string">{"id": "{{path.id}}",</span>
+            <span class="yaml-string"> "name": "Mock VIP User",</span>
+            <span class="yaml-string"> "discount": 0.8}</span>
+      - <span class="yaml-key">condition</span>:
+          <span class="yaml-key">query</span>:
+            <span class="yaml-key">detail</span>: <span class="yaml-string">"true"</span>
+        <span class="yaml-key">response</span>:
+          <span class="yaml-key">status</span>: <span class="yaml-number">200</span>
+          <span class="yaml-key">body</span>: <span class="yaml-string">|</span>
+            <span class="yaml-string">{"id":"{{path.id}}","detail":"full"}</span>
+      - <span class="yaml-key">response</span>:  <span class="yaml-comment"># 默认</span>
+          <span class="yaml-key">status</span>: <span class="yaml-number">200</span>
+          <span class="yaml-key">body</span>: <span class="yaml-string">|</span>
+            <span class="yaml-string">{"id":"{{path.id}}",</span>
+            <span class="yaml-string"> "name":"Mock User",</span>
+            <span class="yaml-string"> "status":"active"}</span>
+          <span class="yaml-key">delay</span>: <span class="yaml-number">50</span>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:12px;font-size:12px;color:var(--text-secondary);">
+      编辑区域为 <strong>表单左侧 + YAML 实时预览右侧</strong> 双栏布局。修改表单时右侧 YAML 实时刷新。
+    </div>
+  `;
+}
+
+// ===== Init =====
+showPage('dashboard');
+</script>
+
+</body>
+</html>
