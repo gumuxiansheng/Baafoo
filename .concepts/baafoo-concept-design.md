@@ -1,6 +1,6 @@
 # Baafoo 挡板系统 — 概念设计说明书
 
-> **文档状态**：概念设计草稿（v0.2）  
+> **文档状态**：概念设计草稿（v0.3）  
 > **目标读者**：产品经理、架构师、开发负责人  
 > **最后更新**：2026-05-28  
 > **撰写目的**：为产品经理提供完整的技术背景与产品边界，便于进一步形成产品说明书及需求文档
@@ -108,6 +108,7 @@ Agent 基于 Java Instrumentation API，在 JVM 启动的 `premain` 阶段完成
 | `sun.nio.ch.SocketChannelImpl#connect()` | Netty、NIO 框架 | ASM 字节码改写 |
 | `javax.jms.ConnectionFactory#createConnection()` | ActiveMQ、RocketMQ JMS 客户端 | Byte Buddy 方法代理 |
 | `org.apache.kafka.clients.producer.KafkaProducer` / `KafkaConsumer` | Kafka 客户端 | 构造函数拦截，替换 bootstrap.servers |
+| `org.apache.pulsar.client.api.PulsarClient#builder()` + `ClientBuilder#serviceUrl()` | **TDMQ for Pulsar / Apache Pulsar** 客户端 | Byte Buddy 拦截 Builder 的 `serviceUrl()` 参数和 `build()` 方法，将 `pulsar://broker:6650` 替换为 `pulsar://localhost:9002` 指向挡板 |
 | `java.net.InetAddress#getByName()` / `getAllByName()` | **Consul DNS 模式**（8600 端口）| Byte Buddy 包裹方法，拦截 `.consul` 后缀域名的解析结果，返回挡板地址 |
 | `okhttp3.RealCall#execute()` + Consul API 路径匹配 | **Consul HTTP API** 服务发现模式 | 拦截对 Consul Agent `/v1/catalog/service/*` 的调用，篡改返回的 Address:Port |
 
@@ -146,6 +147,8 @@ Protocol Detector（前 N 字节嗅探）
     ├── 私有二进制 ──→ Raw TCP Handler（字节级匹配 → 录制回放）
     │
     ├── Kafka 协议 ──→ Kafka Mock Broker（topic/partition 模拟）
+    │
+    ├── Pulsar 协议 ──→ Pulsar Mock Broker（tenant/namespace/topic 模拟）
     │
     └── JMS/AMQP ──→ MQ Mock Broker（队列/主题模拟）
 ```
@@ -297,13 +300,29 @@ Baafoo 路由表同时支持两种匹配维度：
 - 支持 Queue、Topic 两种模式
 - 支持消息延迟投递、消息顺序控制、死信队列模拟
 
-#### 4.2.5 规则管理 API
+#### 4.2.5 Pulsar / TDMQ 挡板
+
+- 模拟 Pulsar Broker 的最小协议子集（基于 Pulsar binary protocol，端口默认 6650）
+- Agent 层通过拦截 `PulsarClient.builder().serviceUrl()` 将连接重定向至 Baafoo Server
+- Server 内嵌轻量 Pulsar Mock Broker，支持以下核心功能：
+  - **Producer**：模拟消息确认（`send()` 返回 MessageId）
+  - **Consumer**：按 subscription 投递预设消息序列
+  - **Schema 注册**：支持基础 Primitive Schema（STRING / JSON / AVRO）
+  - **延迟消息投递**：配置 `delayMs` 指定消息投递间隔
+- 命中 TDMQ for Pulsar 的全部 Java SDK，**对业务代码零侵入**：
+  - `com.tencent.tdmq:tdmq-client`（腾讯封装 SDK）
+  - `org.apache.pulsar:pulsar-client`（Apache 官方 SDK）
+- 规则示例见 5.2 挡板规则文件
+
+> **说明**：TDMQ for Pulsar 是腾讯云基于 Apache Pulsar 的托管消息队列服务。Baafoo 拦截的是 Pulsar 客户端的二进制协议，与 TDMQ 的管控面无关，因此 TDMQ 和开源 Pulsar **均被同一套拦截逻辑覆盖**。
+
+#### 4.2.6 规则管理 API
 
 - 提供 REST API 供外部管理规则（增删改查）
 - 支持 Web 控制台（可选）：可视化查看规则、请求日志、实时流量
 - 规则变更实时生效，无需重启 Server
 
-#### 4.2.6 请求日志与可观测性
+#### 4.2.7 请求日志与可观测性
 
 - 记录每条入站请求的：来源 Agent 进程、协议类型、请求摘要、匹配规则、响应内容、耗时
 - 支持导出为 HAR 格式（HTTP）或自定义格式（TCP/MQ）
@@ -345,6 +364,21 @@ stubs:
   - service: "socket-legacy-service"
     mode: stub
     protocol: tcp                       # 协议提示给挡板 Server
+
+  # Kafka 连接挡板
+  - target: "kafka.dev:9092"
+    mode: stub
+    protocol: kafka
+
+  # TDMQ for Pulsar 挡板
+  - target: "pulsar-tdmq.dev:6650"
+    mode: stub
+    protocol: pulsar
+
+  # ActiveMQ JMS 挡板
+  - target: "mq.dev:61616"
+    mode: stub
+    protocol: jms
 
   # 透传规则
   - target: "db.dev:5432"
@@ -397,6 +431,21 @@ kafka:
       - key: "order-001"
         value: '{"orderId":"001","status":"PAID"}'
         delay: 100
+
+# Pulsar / TDMQ 挡板规则示例
+pulsar:
+  - tenant: public
+    namespace: default
+    topic: order-events
+    subscription: my-sub
+    messages:
+      - key: "order-001"
+        value: '{"orderId":"001","status":"PAID"}'
+        delay: 100   # 投递延迟 (ms)
+        properties:
+          eventType: "PAYMENT_SUCCESS"
+      - key: "order-002"
+        value: '{"orderId":"002","status":"SHIPPED"}'
 ```
 
 ---
@@ -445,6 +494,7 @@ Step 5（可选）：切换回挡板模式
 | **Consul 服务发现** | ✅ v1.0 支持 | DNS 模式 + HTTP API 模式 |
 | **Socket 直连（Consul 架构）** | ✅ 支持 | 服务发现层拦截，Socket 层自动接驳挡板 |
 | Kafka（JVM 客户端）| ✅ 完全支持 | Producer / Consumer |
+| **TDMQ for Pulsar / Apache Pulsar** | ✅ v1.0 支持 | Producer / Consumer，binary protocol（6650），覆盖腾讯云 TDMQ SDK + Apache 官方 SDK |
 | ActiveMQ JMS | ✅ 完全支持 | Queue / Topic |
 | RocketMQ | 🔶 部分支持 | 基于 JMS 封装的场景 |
 | **Eureka / Nacos / ZooKeeper** | 🔶 规划中 | 见 3.4.5 注册中心路线图 |
@@ -473,7 +523,7 @@ Step 5（可选）：切换回挡板模式
 
 | 产品 | 协议支持 | 侵入性 | Java 版本 | 录制回放 | MQ 支持 |
 |---|---|---|---|---|---|
-| **Baafoo** | HTTP + TCP + MQ | 零侵入（Agent）| Java 8+ | ✅ | ✅ |
+| **Baafoo** | HTTP + TCP + MQ(Kafka/Pulsar/JMS) | 零侵入（Agent）| Java 8+ | ✅ | ✅ |
 | WireMock | HTTP only | 零侵入（Proxy）| Java 8+ | ✅ | ❌ |
 | Hoverfly | HTTP + gRPC | 零侵入（Proxy）| 无要求 | ✅ | ❌ |
 | MockServer | HTTP + SOCKS | 零侵入（Proxy）| Java 8+ | ✅ | ❌ |
@@ -481,7 +531,7 @@ Step 5（可选）：切换回挡板模式
 
 **Baafoo 差异化优势**：
 1. 唯一通过 JavaAgent 实现进程内 TCP 拦截的方案，**无需修改 hosts、无需配置网络代理**
-2. 原生支持 MQ 挡板（Kafka / JMS），覆盖事件驱动架构
+2. 原生支持 MQ 挡板（Kafka / Pulsar(TDMQ) / JMS），覆盖事件驱动架构
 3. 全 Java 技术栈，与 Java 生态天然集成，便于嵌入 CI/CD 流水线
 
 ---
@@ -489,8 +539,8 @@ Step 5（可选）：切换回挡板模式
 ## 9. 规划路线图
 
 ### v1.0（MVP）
-- [ ] Baafoo Agent：Socket.connect() + NIO SocketChannel 拦截，Consul 拦截（DNS + HTTP API），路由规则引擎，配置热加载
-- [ ] Baafoo Server：HTTP Mock Handler，Raw TCP Handler，规则管理 REST API
+- [ ] Baafoo Agent：Socket.connect() + NIO SocketChannel 拦截，Consul 拦截（DNS + HTTP API），Pulsar Client 拦截（serviceUrl 重写），路由规则引擎，配置热加载
+- [ ] Baafoo Server：HTTP Mock Handler，Raw TCP Handler，**Pulsar Mock Broker**，规则管理 REST API
 - [ ] 基础录制/回放（HTTP 层）
 - [ ] 命令行工具（启动/状态查看）
 
@@ -520,6 +570,7 @@ Step 5（可选）：切换回挡板模式
 | 业务代码检测绕过 | 极少数框架绕过 Socket 直接使用 JNI | 影响极小，文档说明，可通过 iptables 兜底 |
 | **Consul 健康检查误判** | Agent 篡改地址后 Consul 健康检查看到的 IP 与注册不一致，可能误标记服务不健康 | Agent 对 `127.0.0.1:8500` 的调用透传，不拦截健康检查请求 |
 | **Consul SDK 版本差异** | 不同版本 Consul SDK（Orbitz / Ecwid / Spring Cloud）内部实现类名不同 | 拦截点优先使用通用 HTTP 层匹配 URL，不依赖具体 SDK 实现 |
+| **Pulsar 协议复杂度** | Pulsar binary protocol 包含 Lookup、Partitioned Topic、ManagedLedger 等复杂机制，Mock Broker 无法完整模拟 | v1.0 聚焦 Producer/Consumer 核心路径；复杂特性（事务消息、Schema/Protobuf 原生注册、Key_Shared 订阅）在 v1.5 迭代 |
 
 ---
 
@@ -535,7 +586,8 @@ baafoo/
 │   │   │   ├── NioChannelTransformer.java
 │   │   │   ├── ConsulDnsTransformer.java
 │   │   │   ├── ConsulApiTransformer.java
-│   │   │   └── KafkaClientTransformer.java
+│   │   │   ├── KafkaClientTransformer.java
+│   │   │   └── PulsarClientTransformer.java
 │   │   ├── router/                   # 路由规则引擎
 │   │   └── recorder/                 # 录制器
 │   └── pom.xml
@@ -547,6 +599,7 @@ baafoo/
 │   │   │   ├── HttpMockHandler.java
 │   │   │   ├── TcpMockHandler.java
 │   │   │   ├── KafkaMockBroker.java
+│   │   │   ├── PulsarMockBroker.java
 │   │   │   └── JmsMockBroker.java
 │   │   ├── rule/                     # 规则引擎
 │   │   └── api/                      # 管理 REST API
@@ -569,6 +622,7 @@ baafoo/
 | SnakeYAML | 1.33 | 配置文件解析（Java 8 兼容）|
 | Jackson | 2.15.x | JSON 处理 |
 | Apache Kafka Client | 3.x | Kafka 协议参考 |
+| Apache Pulsar Client | 2.10.x | Pulsar 协议参考（兼容 TDMQ） |
 | ActiveMQ Artemis Core | 2.x | JMS 内嵌 Broker |
 | SLF4J + Logback | 1.7.x | 日志（Java 8 兼容）|
 
