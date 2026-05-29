@@ -1,11 +1,11 @@
 # Baafoo Web 控制台 — 前端界面框架设计
 
-> **文档状态**：v1.4  
-> **关联文档**：[概念设计说明书 v0.5](../.concepts/baafoo-concept-design.md) | [产品需求文档 v1.4](../.prd/baafoo-prd.md)  
+> **文档状态**：v1.5  
+> **关联文档**：[概念设计说明书 v0.7](../.concepts/baafoo-concept-design.md) | [产品需求文档 v1.5](../.prd/baafoo-prd.md)  
 > **目标读者**：前端开发工程师、UI 设计师  
 > **技术栈**：Vue 3 + Element Plus + Pinia + Axios + ECharts  
 > **最后更新**：2026-05-29  
-> **变更摘要**：v1.4 — 修复跨文档一致性：统一 record-and-stub 模式命名；环境声明方式统一为配置文件；Header 模式指示灯语义修正；离线处理描述修正；stores 目录清理
+> **变更摘要**：v1.5 — 同步 PRD v1.5 变更：关联文档版本号更新；规则编辑器新增撤销按钮；新增场景集管理设计；Kafka 增加 Beta 标识；规则列表新增无 stub 环境 banner；保存反馈信息补充
 
 ---
 
@@ -81,7 +81,7 @@ Baafoo Web 控制台是 Baafoo Server 内嵌的单页应用（SPA），通过可
 /                         → 重定向到 /dashboard
 /dashboard                → 控制台首页（Dashboard）
 /rules                    → 规则管理列表
-/rules/:protocol          → 按协议过滤（http/tcp/kafka/pulsar/jms）
+/rules/:protocol          → 按协议过滤（http/tcp/kafka(Beta)/pulsar/jms）
 /rules/:protocol/create   → 新建规则
 /rules/:protocol/:id/edit → 编辑规则
 /logs                     → 请求日志
@@ -90,6 +90,8 @@ Baafoo Web 控制台是 Baafoo Server 内嵌的单页应用（SPA），通过可
 /recordings/:sessionId    → 录制详情
 /environments             → 环境管理（新增）
 /environments/:name      → 环境详情（查看该环境下 Agent 列表）
+/scenes                   → 场景集管理（新增）
+/scenes/:id               → 场景集详情（新增）
 /status                   → 系统状态
 ```
 
@@ -109,6 +111,7 @@ App.vue
 │   ├── RecordingDetailPage.vue # 录制详情
 │   ├── EnvironmentsPage.vue  # 环境管理（新增）
 │   ├── EnvironmentDetailPage.vue # 环境详情（新增）
+│   ├── SceneSetPage.vue     # 场景集管理（新增）
 │   └── StatusPage.vue        # 系统状态
 └── BaafooStatusBar.vue       # 全局底栏
 ```
@@ -143,7 +146,7 @@ App.vue
 │ 📋 规则管理   │  ← 可展开子菜单（按协议）
 │   · HTTP     │
 │   · TCP      │
-│   · Kafka    │
+│   · Kafka (Beta)    │
 │   · Pulsar   │
 │   · JMS      │
 │ 📜 请求日志   │
@@ -234,7 +237,11 @@ DashboardPage.vue
 ┌──────────────────────────────────────────────────────────────┐
 │  规则管理                          [+ 新建规则] [导入] [导出]   │
 │                                                                  │
-│  [HTTP 12] [TCP 4] [Kafka 3] [Pulsar 2] [JMS 2]             │
+│  ┌─ ⚠️ 当前无 stub 模式环境，所有规则不会生效 ─────────────────┐│
+│  │  请前往环境管理页面将至少一个环境切换为 stub 模式          ││
+│  └───────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  [HTTP 12] [TCP 4] [Kafka (Beta) 3] [Pulsar 2] [JMS 2]             │
 │                                                                  │
 │  ┌──────────────────────────────────────────────────────────────────┐│
 │  │ 🔍 搜索规则...                            协议: [全部 ▼] ││
@@ -255,6 +262,9 @@ DashboardPage.vue
 > **设计变更说明（v1.3）**：
 > - **移除**了顶部的"环境选择器"（旧设计是"规则按环境过滤"）
 > - **原因**：新设计下规则是**全局共享**的，不按环境区分。规则是否生效取决于 Agent 所属环境的模式（stub 模式下才拦截）
+>
+> **设计说明（v1.5）**：
+> - 当无任何环境处于 stub 模式时，规则管理页面顶部显示黄色 banner："当前无 stub 模式环境，所有规则不会生效"，引导用户到环境管理页面切换模式
 
 **交互细节**：
 - 新建规则：弹出协议选择对话框（5 种协议卡片），选择后跳转对应编辑器
@@ -283,7 +293,7 @@ RulesPage.vue
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  ← 返回列表              编辑规则: get-user           [保存] [取消]  │
+│  ← 返回列表              编辑规则: get-user-success           [撤销上次修改] [保存] [取消]  │
 ├────────────────────────────┬─────────────────────────────────┤
 │  基本信息                   │  实时预览                       │
 │  规则ID: [get-user     ]   │                                 │
@@ -335,7 +345,7 @@ RulesPage.vue
 **组件树**：
 ```
 RuleEditorPage.vue
-├── EditorToolbar.vue          # 返回 + 标题 + 保存/取消
+├── EditorToolbar.vue          # 返回 + 标题 + 撤销/保存/取消（新增撤销按钮，调用 POST /api/rules/{id}/restore?version=N）
 ├── RuleBasicInfo.vue          # 规则 ID、描述（移除环境选择）
 ├── ProtocolSpecificForm.vue   # 按协议路由到子组件
 │   ├── HttpRuleForm.vue       # HTTP 表单
@@ -351,7 +361,65 @@ RuleEditorPage.vue
 
 ---
 
-#### 4.2.4 LogsPage.vue — 请求日志列表
+#### 4.2.4 SceneSetPage.vue — 场景集管理（新增）
+
+**页面说明**：场景集管理页面，以卡片/列表形式展示所有场景集
+
+**页面布局**：顶部操作栏 + 场景集列表
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  场景集管理                              [+ 创建场景集]        │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────────┐│
+│  │ 🔍 搜索场景集...                                         ││
+│  └──────────────────────────────────────────────────────────┘│
+│                                                              │
+│  ┌──────────────────────┐ ┌──────────────────────┐          │
+│  │ 📦 用户管理场景集     │ │ 📦 订单管理场景集     │          │
+│  │ 描述: 用户模块挡板   │ │ 描述: 订单流程挡板   │          │
+│  │ 关联规则: 5 条       │ │ 关联规则: 8 条       │          │
+│  │ 状态: ✅ 启用        │ │ 状态: ⏸ 禁用        │          │
+│  │ [启用] [编辑] [删除] │ │ [启用] [编辑] [删除] │          │
+│  └──────────────────────┘ └──────────────────────┘          │
+│                                                              │
+│  ┌──────────────────────┐                                   │
+│  │ 📦 支付管理场景集     │                                   │
+│  │ 描述: 支付流程挡板   │                                   │
+│  │ 关联规则: 3 条       │                                   │
+│  │ 状态: ✅ 启用        │                                   │
+│  │ [启用] [编辑] [删除] │                                   │
+│  └──────────────────────┘                                   │
+│                                                              │
+│  < 1 2 3 >  共 3 个场景集                                │
+└──────────────────────────────────────────────────────────────┘
+```
+
+> **设计说明（v1.5）**：
+> - v1.0 简化版：场景集与规则 1:N 关系（一条规则只属于一个场景集）
+> - 一键启用/禁用整组规则：切换场景集状态时，该场景集下所有规则同步启用/禁用
+> - 路由：`/scenes` 和 `/scenes/:id`
+
+**交互细节**：
+- 创建场景集：点击"+ 创建场景集"按钮 → 弹出创建对话框，填写名称、描述
+- 启用/禁用：el-switch 开关，切换时调用 API 更新场景集状态，该场景集下所有规则同步启用/禁用
+- 编辑场景集：点击"编辑"按钮 → 弹出编辑对话框，修改名称/描述
+- 删除场景集：el-popconfirm 确认后调用 API 删除，仅允许删除无关联规则的场景集
+- 点击场景集卡片或名称 → 跳转到 `/scenes/:id` 查看该场景集下所有规则
+
+**组件树**：
+```
+SceneSetPage.vue
+├── SceneSetToolbar.vue         # 顶部操作栏（搜索 + 创建按钮）
+├── SceneSetCardList.vue        # 卡片网格布局
+│   └── SceneSetCard.vue        # 单个场景集卡片
+│       └── SceneSetActions.vue # 操作按钮组（启用/编辑/删除）
+└── SceneSetCreateDialog.vue    # 创建/编辑场景集对话框
+```
+
+---
+
+#### 4.2.5 LogsPage.vue — 请求日志列表
 
 **页面布局**：过滤器栏 + 实时日志表格
 
@@ -400,7 +468,7 @@ LogsPage.vue
 
 ---
 
-#### 4.2.5 RecordingsPage.vue — 录制管理
+#### 4.2.6 RecordingsPage.vue — 录制管理
 
 **页面布局**：Session 卡片列表
 
@@ -445,7 +513,7 @@ RecordingsPage.vue
 
 ---
 
-#### 4.2.6 EnvironmentsPage.vue — 环境管理（新增）
+#### 4.2.7 EnvironmentsPage.vue — 环境管理（新增）
 
 **页面布局**：环境卡片列表 + 环境详情抽屉
 
@@ -500,7 +568,7 @@ EnvironmentsPage.vue
 
 ---
 
-#### 4.2.7 EnvironmentDetailPage.vue — 环境详情（新增）
+#### 4.2.8 EnvironmentDetailPage.vue — 环境详情（新增）
 
 **页面布局**：环境基本信息 + Agent 列表
 
@@ -522,7 +590,7 @@ EnvironmentsPage.vue
 
 ---
 
-#### 4.2.8 StatusPage.vue — 系统状态
+#### 4.2.9 StatusPage.vue — 系统状态
 
 **页面布局**：端口状态 + 系统指标 + 配置信息
 
@@ -759,6 +827,7 @@ baafoo-console/                          # 独立前端工程目录
 │       ├── RecordingDetailPage.vue
 │       ├── EnvironmentsPage.vue         # 新增
 │       ├── EnvironmentDetailPage.vue    # 新增
+│       ├── SceneSetPage.vue             # 场景集管理（新增）
 │       └── StatusPage.vue
 └── dist/                                # 构建输出，复制到 baafoo-server/src/main/resources/webapp/
 ```
@@ -969,7 +1038,7 @@ axios.interceptors.response.use(
 
 | 操作 | 反馈方式 | 时机 |
 |---|---|---|
-| 保存规则 | `el-message` success "规则已保存" | API 200 后 |
+| 保存规则 | `el-message` success "规则已保存，将在以下 stub 模式环境中生效：{环境列表}" | API 200 后 |
 | 删除规则 | `el-message` success "规则已删除" | API 200 后 |
 | 规则启用/禁用 | `el-switch` 即时切换 + 行状态更新 | API 200 后 |
 | 模式切换（环境） | `el-messageBox` 确认对话框 → `el-message` success | 确认 → API → 反馈 |
@@ -1055,6 +1124,8 @@ const routes = [
   { path: '/recordings/:sessionId', component: () => import('../pages/RecordingDetailPage.vue') },
   { path: '/environments',          component: () => import('../pages/EnvironmentsPage.vue') },
   { path: '/environments/:name',     component: () => import('../pages/EnvironmentDetailPage.vue') },
+  { path: '/scenes',                 component: () => import('../pages/SceneSetPage.vue') },
+  { path: '/scenes/:id',             component: () => import('../pages/SceneSetPage.vue') },
   { path: '/status',        component: () => import('../pages/StatusPage.vue') },
 ];
 
@@ -1079,10 +1150,13 @@ export default router;
 | R-W5 | 系统状态界面 | StatusPage |
 | R-W6 | 测试环境管理界面 | EnvironmentsPage + EnvironmentDetailPage |
 | R-S7.3 | 测试环境管理 API | EnvironmentsPage + EnvironmentDetailPage |
+| R-S7.4 | 规则版本管理 | RuleEditorPage |
 | R-C1 | Agent 配置文件（environment 字段）| EnvironmentsPage（环境列表） |
 | R-C2 | 挡板规则文件（无 environments 字段）| RuleEditorPage + YAML 预览 |
 | G6 | Web 控制台 80% 日常操作 | 全部页面覆盖规则管理 + 请求查看 + 环境管理 |
 | G7 | 接口参数化返回 | RuleEditorPage → MatchConditionList |
+| US-15 | 场景集管理 | SceneSetPage |
+| US-16 | baafoo init | 非 UI 范围，无需追溯 |
 
 ---
 
@@ -1090,39 +1164,45 @@ export default router;
 
 ### 11.1 前端实施步骤
 
-1. **新增 EnvironmentsPage.vue 组件**
+1. **新增 SceneSetPage.vue 组件**
+   - [ ] 场景集卡片列表
+   - [ ] 创建/编辑场景集对话框
+   - [ ] 启用/禁用场景集（同步更新关联规则状态）
+   - [ ] 删除场景集确认对话框
+
+2. **新增 EnvironmentsPage.vue 组件**
    - [ ] 环境列表表格
    - [ ] 创建环境对话框
    - [ ] 编辑环境对话框（含模式切换）
    - [ ] 环境详情抽屉（Agent 列表）
    - [ ] 删除环境确认对话框
 
-2. **更新 RulesPage.vue**
+3. **更新 RulesPage.vue**
    - [ ] **移除**环境选择器（规则全局共享）
    - [ ] 保留协议 Tab + 搜索过滤
 
-3. **更新 RuleEditorPage.vue**
+4. **更新 RuleEditorPage.vue**
    - [ ] **移除**环境多选器（规则无 environments 字段）
    - [ ] YAML 预览移除 environments 字段
 
-4. **更新 DashboardPage.vue**
+5. **更新 DashboardPage.vue**
    - [ ] 保留"活跃环境"统计卡片
    - [ ] 数据来源接入 useEnvStore().activeEnvCount
 
-5. **更新 LogsPage.vue**
+6. **更新 LogsPage.vue**
    - [ ] **新增**环境过滤器
    - [ ] API 调用时传递 environment 参数
 
-6. **更新 RecordingsPage.vue**
+7. **更新 RecordingsPage.vue**
    - [ ] **新增**环境过滤器
    - [ ] API 调用时传递 environment 参数
 
-7. **新增 stores/environments.js**
+8. **新增 stores/environments.js**
    - [ ] 环境列表状态管理
    - [ ] 环境创建/更新/删除 actions
    - [ ] 当前过滤环境状态
 
-8. **更新 API 封装**
+9. **更新 API 封装**
    - [ ] 新增 `/api/environments` 端点
    - [ ] 移除规则 API 的 environments 参数
    - [ ] 新增日志/录制 API 的 environment 参数
@@ -1160,4 +1240,4 @@ export default router;
 
 ---
 
-*本文档为 Baafoo v1.3 前端界面框架设计，供前端工程师进行组件开发和技术方案评审。*
+*本文档为 Baafoo v1.5 前端界面框架设计，供前端工程师进行组件开发和技术方案评审。*

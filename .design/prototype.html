@@ -405,10 +405,13 @@ body { font-family: var(--font-ui); font-size: 14px; color: var(--text-primary);
         <li class="submenu">
           <a href="#" onclick="showPage('rules')" id="nav-rules-http">HTTP<span class="badge">12</span></a>
           <a href="#" onclick="showPage('rules')" id="nav-rules-tcp">TCP<span class="badge">4</span></a>
-          <a href="#" onclick="showPage('rules')" id="nav-rules-kafka">Kafka<span class="badge">3</span></a>
+          <a href="#" onclick="showPage('rules')" id="nav-rules-kafka">Kafka (Beta)<span class="badge">3 β</span></a>
           <a href="#" onclick="showPage('rules')" id="nav-rules-pulsar">Pulsar<span class="badge">2</span></a>
           <a href="#" onclick="showPage('rules')" id="nav-rules-jms">JMS<span class="badge">2</span></a>
         </li>
+        <li><a href="#" onclick="showPage('scenes')" id="nav-scenes">
+          <span class="icon">🎭</span> 场景集管理
+        </a></li>
         <li class="section-title">环境</li>
         <li><a href="#" onclick="showPage('environments')" id="nav-environments">
           <span class="icon">🌐</span> 环境管理
@@ -461,6 +464,7 @@ function showPage(name) {
   switch(name) {
     case 'dashboard': main.innerHTML = pages.dashboard(); break;
     case 'rules': main.innerHTML = pages.rules(); break;
+    case 'scenes': main.innerHTML = pages.scenes(); break;
     case 'environments': main.innerHTML = pages.environments(); break;
     case 'logs': main.innerHTML = pages.logs(); break;
     case 'recordings': main.innerHTML = pages.recordings(); break;
@@ -623,7 +627,7 @@ pages.rules = () => `
   <div class="protocol-tabs">
     <div class="tab active">HTTP <span class="tab-badge">12</span></div>
     <div class="tab">TCP <span class="tab-badge">4</span></div>
-    <div class="tab">Kafka <span class="tab-badge">3</span></div>
+    <div class="tab">Kafka (Beta) <span class="tab-badge">3</span></div>
     <div class="tab">Pulsar <span class="tab-badge">2</span></div>
     <div class="tab">JMS <span class="tab-badge">2</span></div>
   </div>
@@ -941,6 +945,87 @@ pages.recordings = () => `
   </div>
 `;
 
+pages.scenes = () => `
+  <h1 class="page-title">场景集管理</h1>
+  <p style="font-size:13px;color:var(--text-secondary);margin-bottom:20px;">
+    场景集将一组规则组织为逻辑单元（v1.0 简化版：1:N 关系，一条规则只属一个场景集），支持一键启用/禁用整组规则。
+  </p>
+
+  <div class="toolbar">
+    <button class="btn btn-primary">+ 新建场景集</button>
+    <span class="spacer"></span>
+    <input class="form-input" placeholder="🔍 搜索场景集..." style="width:200px;">
+  </div>
+
+  <div class="env-grid">
+    <div class="env-card active">
+      <div class="env-name">支付异常场景集</div>
+      <div class="env-desc">模拟支付链路中的各类异常行为</div>
+      <div style="font-size:13px;color:var(--text-regular);margin-bottom:8px;">
+        关联规则: <strong>4</strong> 条
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;font-family:var(--font-code);">
+        支付超时、支付失败、退款异常、订单状态不一致
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <span class="badge enabled">已启用</span>
+        <label class="toggle"><input type="checkbox" checked><span class="slider"></span></label>
+      </div>
+      <div class="env-actions">
+        <button class="btn btn-default" style="font-size:12px;">编辑</button>
+        <button class="btn btn-default" style="font-size:12px;">禁用</button>
+        <button class="btn btn-default" style="font-size:12px;color:var(--color-danger);">删除</button>
+      </div>
+    </div>
+
+    <div class="env-card">
+      <div class="env-name">用户权限场景集</div>
+      <div class="env-desc">控制不同用户级别的访问权限和折扣策略</div>
+      <div style="font-size:13px;color:var(--text-regular);margin-bottom:8px;">
+        关联规则: <strong>3</strong> 条
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;font-family:var(--font-code);">
+        VIP 用户折扣、普通用户原价、管理员权限
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <span class="badge enabled">已启用</span>
+        <label class="toggle"><input type="checkbox" checked><span class="slider"></span></label>
+      </div>
+      <div class="env-actions">
+        <button class="btn btn-default" style="font-size:12px;">编辑</button>
+        <button class="btn btn-default" style="font-size:12px;">禁用</button>
+        <button class="btn btn-default" style="font-size:12px;color:var(--color-danger);">删除</button>
+      </div>
+    </div>
+
+    <div class="env-card">
+      <div class="env-name">消息队列场景集</div>
+      <div class="env-desc">消息中间件挡板场景</div>
+      <div style="font-size:13px;color:var(--text-regular);margin-bottom:8px;">
+        关联规则: <strong>2</strong> 条
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;font-family:var(--font-code);">
+        Kafka 订单事件、Pulsar 支付通知
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <span class="badge disabled">已禁用</span>
+        <label class="toggle"><input type="checkbox"><span class="slider"></span></label>
+      </div>
+      <div class="env-actions">
+        <button class="btn btn-default" style="font-size:12px;">编辑</button>
+        <button class="btn btn-default" style="font-size:12px;">启用</button>
+        <button class="btn btn-default" style="font-size:12px;color:var(--color-danger);">删除</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="recent-card" style="margin-top:16px;padding:12px 16px;">
+    <p style="font-size:12px;color:var(--text-secondary);margin:0;">
+      v1.0 简化版：场景集与规则 1:N 关系；v1.5 规划多对多 + Git 版本管理
+    </p>
+  </div>
+`;
+
 pages.status = () => `
   <h1 class="page-title">系统状态</h1>
 
@@ -948,7 +1033,7 @@ pages.status = () => `
   <div class="status-grid">
     <div class="status-card"><span class="status-dot online"></span><div><div class="status-label">HTTP (Mock + 控制台)</div><div class="status-port">9000 监听中</div></div></div>
     <div class="status-card"><span class="status-dot online"></span><div><div class="status-label">TCP (Raw Socket)</div><div class="status-port">9001 监听中</div></div></div>
-    <div class="status-card"><span class="status-dot online"></span><div><div class="status-label">Kafka</div><div class="status-port">9002 监听中</div></div></div>
+    <div class="status-card"><span class="status-dot online"></span><div><div class="status-label">Kafka (Beta)</div><div class="status-port">9002 监听中</div></div></div>
     <div class="status-card"><span class="status-dot online"></span><div><div class="status-label">Pulsar</div><div class="status-port">9003 监听中</div></div></div>
     <div class="status-card"><span class="status-dot offline"></span><div><div class="status-label">JMS</div><div class="status-port">9004 未启动</div></div></div>
   </div>
@@ -1061,6 +1146,7 @@ function showEditor() {
 
         <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:8px;">
           <button class="btn btn-default" onclick="showPage('rules')">取消</button>
+          <button class="btn btn-default" style="font-size:12px;" onclick="alert('撤销上次修改，回退到上一版本')">↩ 撤销上次修改</button>
           <button class="btn btn-primary">保存规则</button>
         </div>
       </div>

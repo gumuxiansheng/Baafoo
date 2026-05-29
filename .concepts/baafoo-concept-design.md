@@ -1,10 +1,10 @@
 # Baafoo 挡板系统 — 概念设计说明书
 
-> **文档状态**：概念设计（v0.6）  
+> **文档状态**：概念设计（v0.8）  
 > **目标读者**：产品经理、架构师、开发负责人  
 > **最后更新**：2026-05-29  
 > **撰写目的**：为产品经理提供完整的技术背景与产品边界，便于进一步形成产品说明书及需求文档  
-> **变更摘要**：v0.6 — 补充 record-and-stub 模式定义（§2.1/§3.2/§3.4.2/§4.2.6/§5.3/§6.2）；修复 §6.1 Step 2 命令截断
+> **变更摘要**：v0.8 — 同步 PRD v1.5 全部变更：默认未匹配行为修正、fail-closed、baafoo init、规则版本管理/Undo、场景集管理、Kafka Beta 状态、配置项说明表、风险表同步、路线图修正
 
 ---
 
@@ -168,7 +168,9 @@ Server 查询环境 ft-1 的模式: stub / passthrough / record / record-and-stu
   │   → Agent 正常拦截连接，路由规则参与匹配
   │   → 匹配成功 → 重定向到 Baafoo Server 对应协议端口
   │   → 匹配失败 → 抛出异常（或返回 404，取决于配置）
-  │
+
+  > **fail-closed 策略**：Agent 加载失败（如配置文件不存在、字节码变换异常）时，默认 fail-closed：应用正常启动但输出 ERROR 日志，所有请求走真实下游；可通过 `baafoo.agent.fail-open=true` 配置项改为静默透传
+
   ├── 模式 = passthrough
   │   → Agent 不拦截连接，等效于未安装 Agent
   │   → 所有请求直接透传到真实下游
@@ -182,6 +184,34 @@ Server 查询环境 ft-1 的模式: stub / passthrough / record / record-and-stu
       → Agent 按规则拦截连接，重定向到挡板（同 stub 模式）
       → 同时录制请求/响应字节到内存缓冲区（同 record 模式）
       → 缓冲区满或 session 结束时上传至 Server
+```
+
+#### 3.2.1 插件化架构
+
+> 详见《Baafoo Agent 插件化架构建议》
+
+Agent 采用 **Core Advice 内联 + Plugin 逻辑委托** 的分层架构，解决 Pulsar/TDMQ 等协议的 SDK 依赖冲突问题：
+
+| 层 | 职责 | ClassLoader | 部署方式 |
+|---|---|---|---|
+| **Core** | 内置 HTTP/TCP/Consul 拦截 Advice + Plugin SPI 接口 | Bootstrap CL | Agent 主 jar |
+| **Plugin** | 协议特定逻辑（Kafka/Pulsar/JMS） | 独立 URLClassLoader（parent=null） | v1.0 内嵌；v1.5 外置 jar |
+
+**设计要点**：
+- Advice 类（字节码增强的拦截点）必须在 Core 中预定义，确保目标类可见
+- Plugin 只实现处理逻辑（协议编解码、Mock 行为），不直接提供 Advice 类
+- 插件 ClassLoader `parent=null`，与宿主应用依赖完全隔离
+- v1.0 Pulsar 插件代码内嵌在 Core 中但按 Plugin 接口编写，验证后 v1.5 再拆出独立 jar
+
+**SPI 接口定义**：
+
+```java
+public interface AgentPlugin {
+    String name();                                    // 插件名（如 "pulsar"）
+    void onInstall(PluginContext ctx);                 // 安装回调
+    InterceptResult onIntercept(InterceptTarget target); // 处理拦截
+    void onUninstall();                               // 卸载回调
+}
 ```
 
 ### 3.3 Baafoo Server 工作原理
@@ -374,7 +404,7 @@ Baafoo 路由表同时支持两种匹配维度：
 
 - 支持精确匹配：`downstream-a.dev:8080`
 - 支持通配符：`*.dev:*`、`192.168.1.*:3306`
-- 规则优先级：精确 > 通配 > 默认（默认透传，仅对 `stub` 模式 Agent 生效）
+- 规则优先级：精确 > 通配 > 默认（默认返回 404 并记录 WARN 日志；可通过 `baafoo.stub.unmatched-default` 配置项修改为 passthrough）
 - 配置文件热重载（WatchService 监听文件变化，无需重启应用）
 - **热加载竞态安全策略**：规则切换采用"版本号 + 原子引用替换"机制——新请求读取最新版本规则，正在匹配中的旧连接继续使用旧版本规则完成处理，避免规则半加载状态下的不一致匹配。规则对象整体替换（不可变快照），而非逐字段更新。
 
@@ -448,6 +478,8 @@ Baafoo 路由表同时支持两种匹配维度：
 - 规则是否生效取决于 Agent 的模式：仅 `stub` 模式 Agent 才参与规则匹配
 - 支持 Web 控制台（可选）：可视化查看规则、请求日志、实时流量
 - 规则变更实时生效，无需重启 Server
+- **规则版本管理与 Undo**：每次规则保存前自动快照前一版本，保留最近 10 个版本，支持通过 API 或 Web 控制台一键回退
+- **场景集管理（简化版）**：支持将一组规则组织为场景集（1:N 关系），一键启用/禁用整组规则
 
 #### 4.2.8 请求日志与可观测性
 
@@ -634,6 +666,17 @@ pulsar:
 }
 ```
 
+### 5.4 关键配置项说明
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `baafoo.agent.fail-open` | boolean | false | Agent 加载失败时是否静默透传；false = fail-closed（应用正常启动但输出 ERROR 日志，所有请求走真实下游） |
+| `baafoo.stub.unmatched-default` | enum | `"404"` | 未匹配规则时的行为：`"404"`（返回 404 + WARN 日志）或 `"passthrough"`（透传真实下游） |
+| `baafoo.recording.memory-limit` | String | `"64MB"` | Agent 录制缓冲区上限，超过后触发上传或丢弃 |
+| `baafoo.recording.auto-cleanup-days` | int | `7` | Server 端录制数据自动清理天数 |
+| `baafoo.heartbeat.interval` | Duration | `30s` | Agent 心跳上报间隔 |
+| `baafoo.agent.self-check` | boolean | true | Agent 启动时是否进行自检（验证字节码增强是否生效） |
+
 ---
 
 ## 6. 使用流程
@@ -641,6 +684,9 @@ pulsar:
 ### 6.1 开发者使用步骤
 
 ```
+Step 0（可选）：运行 baafoo init 快速起步工具
+  生成配置文件模板、JVM 启动参数示例和示例规则，5 分钟内完成挡板环境搭建
+
 Step 1：启动 Baafoo Server
   java -jar baafoo-server.jar --config stub-rules.yml
 
@@ -700,8 +746,8 @@ FT-4          environment: ft-4    record-and-stub   按规则拦截返回 Mock 
 | 原生 TCP Socket | ✅ 完全支持 | 字节级匹配与响应 |
 | **Consul 服务发现** | ✅ v1.0 支持 | DNS 模式 + HTTP API 模式 |
 | **Socket 直连（Consul 架构）** | ✅ 支持 | 服务发现层拦截，Socket 层自动接驳挡板 |
-| Kafka（JVM 客户端）| ✅ 完全支持 | Producer / Consumer |
-| **TDMQ for Pulsar / Apache Pulsar** | ✅ v1.0 支持 | Producer / Consumer，binary protocol（6650），覆盖腾讯云 TDMQ SDK + Apache 官方 SDK |
+| Kafka（JVM 客户端）| ✅ v1.0 支持（Beta：支持 Kafka Client 2.8+，Metadata/Produce/Fetch 三个核心 API；不支持 acks=all、事务、Consumer Group Rebalance） | Producer / Consumer |
+| **TDMQ for Pulsar / Apache Pulsar** | ✅ v1.0 支持（Producer/Consumer，binary protocol（6650），覆盖腾讯云 TDMQ SDK + Apache 官方 SDK；v1.0 仅覆盖最简路径：非分区 Topic + 单 Producer + 单 Consumer + Shared 订阅） | Producer / Consumer，binary protocol（6650），覆盖腾讯云 TDMQ SDK + Apache 官方 SDK |
 | ActiveMQ JMS | ✅ 完全支持 | Queue / Topic |
 | RocketMQ | 🔶 部分支持 | 基于 JMS 封装的场景 |
 | **Eureka / Nacos / ZooKeeper** | 🔶 规划中 | 见 3.4.5 注册中心路线图 |
@@ -754,13 +800,17 @@ FT-4          environment: ft-4    record-and-stub   按规则拦截返回 Mock 
 - [ ] 基础录制/回放（HTTP 层）
 - [ ] 命令行工具（启动/状态查看）
 - [ ] **Web 控制台**：规则管理 + 请求日志 + **环境管理页面**
+- [ ] **Kafka Mock Broker（Beta）**
+- [ ] **JMS 内嵌 Broker**
 
 ### v1.5
-- [ ] Kafka Mock Broker（Producer/Consumer）
-- [ ] JMS 内嵌 Broker（ActiveMQ Artemis）
-- [ ] Web 控制台增强（规则管理 + 请求日志 + 环境管理完善）
+- [ ] 规则版本管理/Undo
+- [ ] 场景集管理（简化版）
+- [ ] baafoo init 快速起步工具
+- [ ] Kafka Beta 正式版
+- [ ] Consul HTTP API 完善（Spring Cloud Consul WebClient）
 - [ ] Docker 镜像发布
-- [ ] 规则版本管理（Git 集成）
+- [ ] Web 控制台增强（规则管理 + 请求日志 + 环境管理完善）
 
 ### v2.0
 - [ ] gRPC/HTTP2 支持
@@ -787,6 +837,10 @@ FT-4          environment: ft-4    record-and-stub   按规则拦截返回 Mock 
 | **控制通道可靠性** | Agent-Server 控制通道断开时，Agent 无法获取最新规则和模式切换指令 | Agent 本地 WatchService 作为降级方案；控制通道断开时 Agent 使用最后已知规则继续运行；模式切换指令丢失时，Agent 定期轮询（长轮询超时后重连） |
 | **环境模式不一致** | 同一环境下的多个 Agent 可能因为控制通道延迟而短暂处于不同模式 | 可接受的最终一致性；Agent 定期长轮询保证最终同步；规则匹配失败有明确错误日志便于排查 |
 | **Agent 环境配置错误** | 开发者错误配置 environment 字段，导致 Agent 加入错误环境 | Web 控制台环境管理页面显示每个环境下的 Agent 列表，便于运维排查；Agent 启动时日志明确输出所属环境 |
+| **Plugin Advice 类不在 Bootstrap CL**（🔴 高） | Plugin 的 installTransformers 注册的 Advice 类如果写在 Plugin jar 里，Bootstrap CL 找不到 → 目标类调用时崩溃 | Advice 类必须在 Core 中预定义；Plugin 只实现处理逻辑，不直接提供 Advice 类 |
+| **Plugin 初始化失败**（🟡 中） | Pulsar/TDMQ 插件初始化失败（如依赖版本不兼容），影响同进程其他协议 | 捕获插件初始化异常，打印 WARN 日志，该协议降级为 passthrough，不影响其他协议 |
+| **录制数据丢失**（🟡 中） | Agent 上传录制数据前 Server 重启，数据在 Agent 内存中丢失 | 录制数据写入磁盘后才返回成功；Agent 本地暂存录制数据，上传失败重试 |
+| **Agent 环境归属混淆**（🟡 中） | 规则全局共享但 Agent 分属不同环境，开发者可能混淆"为什么我的规则不生效" | Web 控制台全局显示当前 Agent 所属环境；日志中明确输出 Agent 环境 + 模式；文档中明确说明规则全局共享机制 |
 
 ---
 
@@ -860,4 +914,4 @@ baafoo/
 
 ---
 
-*本文档为概念设计 v0.5，详细技术规格与 UI 设计将在产品说明书阶段进一步细化。*
+*本文档为概念设计 v0.7，详细技术规格与 UI 设计将在产品说明书阶段进一步细化。*
