@@ -103,8 +103,9 @@ public class StaticFileHandler extends SimpleChannelInboundHandler<FullHttpReque
                 return false;
             }
 
-            // Cache headers
-            String ifModifiedSince = ctx.channel().attr(ChannelConfig.ATTR_KEY).toString(); // simplified
+            // Cache headers (simplified — no If-Modified-Since handling in Phase 1)
+            // String ifModifiedSince = request.headers().get(HttpHeaderNames.IF_MODIFIED_SINCE);
+
             // Set content type
             String contentType = getContentType(file.getName());
 

@@ -66,14 +66,14 @@ public class SocketConnectAdvice {
                 // No route matched
                 if (AgentManifest.isStubMode()) {
                     // Safety: unmatched in stub mode = forbid connection
-                    // Use java.io.IOException instead of custom exception (Bootstrap CL safe)
-                    throw new java.io.IOException(
+                    // Use RuntimeException — Bootstrap CL safe, no checked exception issues
+                    throw new RuntimeException(
                             "Baafoo: No rule matched for " + host + ":" + port
                                     + " (stub mode — connection blocked)");
                 }
                 // In record-only mode with no match: let original connection proceed
             }
-        } catch (java.io.IOException e) {
+        } catch (RuntimeException e) {
             throw e;
         } catch (Throwable t) {
             // Fail-closed: swallow error, let the original connection proceed
