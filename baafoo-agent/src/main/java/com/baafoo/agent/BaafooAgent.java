@@ -13,7 +13,9 @@ import net.bytebuddy.matcher.ElementMatchers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.lang.instrument.Instrumentation;
+import java.util.jar.JarFile;
 
 import static net.bytebuddy.matcher.ElementMatchers.*;
 
@@ -56,6 +58,13 @@ public class BaafooAgent {
         try {
             log.info("=== Baafoo Agent {} starting ===", getVersion());
             log.info("Agent args: {}", agentArgs);
+
+            // 0. CRITICAL: Add agent jar to Bootstrap ClassLoader search path.
+            // Advice code is inlined into JDK classes (Socket, InetAddress, SocketChannelImpl)
+            // which are loaded by the Bootstrap ClassLoader. Without this, the inlined code
+            // cannot find AgentManifest, RouteTable, or any com.baafoo.* class.
+            appendToBootstrapClassLoaderSearch(inst);
+            log.info("Agent jar added to Bootstrap ClassLoader search path");
 
             // 1. Load config (supports config=/path format)
             String configPath = resolveConfigPath(agentArgs);
@@ -276,5 +285,46 @@ public class BaafooAgent {
     private static String getVersion() {
         String version = BaafooAgent.class.getPackage().getImplementationVersion();
         return version != null ? version : "1.0.0-SNAPSHOT";
+    }
+
+    /**
+     * Add the agent jar to the Bootstrap ClassLoader search path.
+     *
+     * <p>This is CRITICAL for Byte Buddy Advice to work correctly. When Advice
+     * code is inlined into JDK classes (like Socket, InetAddress), those classes
+     * are loaded by the Bootstrap ClassLoader. The inlined code references
+     * AgentManifest and RouteTable, which must also be visible to the
+     * Bootstrap ClassLoader.</p>
+     *
+     * <p>Without this call, any Advice referencing com.baafoo.* classes
+     * will throw ClassNotFoundException at runtime.</p>
+     *
+     * @param inst the Instrumentation instance
+     */
+    private static void appendToBootstrapClassLoaderSearch(Instrumentation inst) {
+        try {
+            // Find the agent jar file from the code source location
+            java.security.CodeSource codeSource = BaafooAgent.class.getProtectionDomain().getCodeSource();
+            if (codeSource == null) {
+                log.warn("Cannot determine agent jar location (codeSource is null). " +
+                        "Advice classes may fail with ClassNotFoundException.");
+                return;
+            }
+
+            File jarFile = new File(codeSource.getLocation().toURI());
+            if (jarFile.exists() && jarFile.getName().endsWith(".jar")) {
+                inst.appendToBootstrapClassLoaderSearch(new JarFile(jarFile));
+                log.info("Added to Bootstrap CL: {}", jarFile.getAbsolutePath());
+            } else if (jarFile.isDirectory()) {
+                // Running from IDE (target/classes) — need to create a temp jar
+                // For now, log a warning. In production, always use the shaded jar.
+                log.warn("Agent is running from a directory (not a jar): {}. " +
+                        "Bootstrap CL search path not updated. " +
+                        "Advice classes may fail. Use the shaded jar for production.",
+                        jarFile.getAbsolutePath());
+            }
+        } catch (Exception e) {
+            log.error("Failed to add agent jar to Bootstrap ClassLoader search path: {}", e.getMessage(), e);
+        }
     }
 }
