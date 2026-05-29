@@ -28,11 +28,11 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <!-- Core -->
-        <jackson.version>2.13.5</jackson.version>
+        <jackson.version>2.15.3</jackson.version>
         <snakeyaml.version>1.33</snakeyaml.version>
 
         <!-- Agent -->
-        <byte-buddy.version>1.12.23</byte-buddy.version>
+        <byte-buddy.version>1.14.14</byte-buddy.version>
 
         <!-- Server -->
         <netty.version>4.1.100.Final</netty.version>

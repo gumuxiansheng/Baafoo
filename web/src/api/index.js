@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const http = axios.create({
-  baseURL: '/api',
+  baseURL: '/__baafoo__/api',
   timeout: 10000
 })
 

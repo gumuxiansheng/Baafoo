@@ -32,12 +32,6 @@
             <artifactId>byte-buddy</artifactId>
         </dependency>
 
-        <!-- Netty (for control channel) -->
-        <dependency>
-            <groupId>io.netty</groupId>
-            <artifactId>netty-all</artifactId>
-        </dependency>
-
         <!-- JSON -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>

@@ -61,7 +61,7 @@ public class StaticFileHandler extends SimpleChannelInboundHandler<FullHttpReque
         String path = extractPath(uri);
 
         // Only handle /__baafoo__/ prefix
-        if (!path.startsWith(SPA_PREFIX) && !path.equals("/") && !path.startsWith("/api/")) {
+        if (!path.startsWith(SPA_PREFIX) && !path.equals("/") && !path.startsWith("/__baafoo__/api/")) {
             // Also serve static files under /assets/ directly
             if (path.startsWith("/assets/") || path.equals("/favicon.ico")) {
                 serveStaticFile(ctx, path);

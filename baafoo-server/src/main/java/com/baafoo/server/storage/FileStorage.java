@@ -14,12 +14,15 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * File-based storage for rules, environments, scenes, and recordings.
  *
  * <p>Uses JSON files for persistence. Thread-safe via ConcurrentHashMap
- * for in-memory cache with periodic file sync.</p>
+ * for in-memory cache with ReadWriteLock for file I/O operations.
+ * Data directory: ${user.home}/.baafoo/data/</p>
  */
 public class FileStorage {
 
@@ -27,6 +30,9 @@ public class FileStorage {
 
     private final ServerConfig config;
     private final ObjectMapper mapper;
+
+    /** ReadWriteLock for thread-safe file I/O */
+    private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
     /** In-memory rule cache (rule ID → rule) */
     private final Map<String, Rule> rules = new ConcurrentHashMap<String, Rule>();
@@ -59,14 +65,22 @@ public class FileStorage {
      * Initialize storage - create directories and load existing data.
      */
     public void init() throws IOException {
-        new File(config.getDataDir()).mkdirs();
-        new File(config.getRulesDir()).mkdirs();
-        new File(config.getRecordingsDir()).mkdirs();
+        lock.writeLock().lock();
+        try {
+            new File(config.getDataDir()).mkdirs();
+            new File(config.getRulesDir()).mkdirs();
+            new File(config.getRecordingsDir()).mkdirs();
 
-        loadRules();
-        loadEnvironments();
-        log.info("Storage initialized: rules={}, environments={}",
-                rules.size(), environments.size());
+            loadRules();
+            loadEnvironments();
+            loadScenes();
+            loadRuleSets();
+            loadRecordings();
+            log.info("Storage initialized: rules={}, environments={}, scenes={}, ruleSets={}",
+                    rules.size(), environments.size(), scenes.size(), ruleSets.size());
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     // --- Rule CRUD ---
@@ -87,61 +101,81 @@ public class FileStorage {
     }
 
     public Rule createRule(Rule rule) {
-        if (rule.getId() == null || rule.getId().isEmpty()) {
-            rule.setId(IdGenerator.uuid());
-        }
-        rule.setVersion(1);
-        long now = System.currentTimeMillis();
-        rule.setCreatedAt(now);
-        rule.setUpdatedAt(now);
+        lock.writeLock().lock();
+        try {
+            if (rule.getId() == null || rule.getId().isEmpty()) {
+                rule.setId(IdGenerator.uuid());
+            }
+            rule.setVersion(1);
+            long now = System.currentTimeMillis();
+            rule.setCreatedAt(now);
+            rule.setUpdatedAt(now);
 
-        rules.put(rule.getId(), rule);
-        saveRules();
-        return rule;
+            rules.put(rule.getId(), rule);
+            saveRules();
+            return rule;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     public Rule updateRule(String id, Rule update) {
-        Rule existing = rules.get(id);
-        if (existing == null) return null;
+        lock.writeLock().lock();
+        try {
+            Rule existing = rules.get(id);
+            if (existing == null) return null;
 
-        // Save to version history for undo
-        saveVersion(id, existing);
+            // Save to version history for undo
+            saveVersion(id, existing);
 
-        // Apply updates
-        if (update.getName() != null) existing.setName(update.getName());
-        if (update.getProtocol() != null) existing.setProtocol(update.getProtocol());
-        if (update.getServiceName() != null) existing.setServiceName(update.getServiceName());
-        if (update.getHost() != null) existing.setHost(update.getHost());
-        if (update.getPort() != null) existing.setPort(update.getPort());
-        if (update.getConditions() != null) existing.setConditions(update.getConditions());
-        if (update.getResponses() != null) existing.setResponses(update.getResponses());
-        existing.setEnabled(update.isEnabled());
-        existing.setPriority(update.getPriority());
-        if (update.getTags() != null) existing.setTags(update.getTags());
-        existing.setVersion(existing.getVersion() + 1);
-        existing.setUpdatedAt(System.currentTimeMillis());
+            // Apply updates
+            if (update.getName() != null) existing.setName(update.getName());
+            if (update.getProtocol() != null) existing.setProtocol(update.getProtocol());
+            if (update.getServiceName() != null) existing.setServiceName(update.getServiceName());
+            if (update.getHost() != null) existing.setHost(update.getHost());
+            if (update.getPort() != null) existing.setPort(update.getPort());
+            if (update.getConditions() != null) existing.setConditions(update.getConditions());
+            if (update.getResponses() != null) existing.setResponses(update.getResponses());
+            existing.setEnabled(update.isEnabled());
+            existing.setPriority(update.getPriority());
+            if (update.getTags() != null) existing.setTags(update.getTags());
+            existing.setVersion(existing.getVersion() + 1);
+            existing.setUpdatedAt(System.currentTimeMillis());
 
-        saveRules();
-        return existing;
+            saveRules();
+            return existing;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     public boolean deleteRule(String id) {
-        if (rules.remove(id) != null) {
-            saveRules();
-            return true;
+        lock.writeLock().lock();
+        try {
+            if (rules.remove(id) != null) {
+                saveRules();
+                return true;
+            }
+            return false;
+        } finally {
+            lock.writeLock().unlock();
         }
-        return false;
     }
 
     public boolean undoRule(String id) {
-        List<Rule> history = ruleHistory.get(id);
-        if (history == null || history.isEmpty()) {
-            return false;
+        lock.writeLock().lock();
+        try {
+            List<Rule> history = ruleHistory.get(id);
+            if (history == null || history.isEmpty()) {
+                return false;
+            }
+            Rule previous = history.remove(history.size() - 1);
+            rules.put(id, previous);
+            saveRules();
+            return true;
+        } finally {
+            lock.writeLock().unlock();
         }
-        Rule previous = history.remove(history.size() - 1);
-        rules.put(id, previous);
-        saveRules();
-        return true;
     }
 
     // --- Environment CRUD ---
@@ -162,38 +196,53 @@ public class FileStorage {
     }
 
     public Environment createEnvironment(Environment env) {
-        if (env.getId() == null || env.getId().isEmpty()) {
-            env.setId(IdGenerator.uuid());
-        }
-        long now = System.currentTimeMillis();
-        env.setCreatedAt(now);
-        env.setUpdatedAt(now);
+        lock.writeLock().lock();
+        try {
+            if (env.getId() == null || env.getId().isEmpty()) {
+                env.setId(IdGenerator.uuid());
+            }
+            long now = System.currentTimeMillis();
+            env.setCreatedAt(now);
+            env.setUpdatedAt(now);
 
-        environments.put(env.getId(), env);
-        saveEnvironments();
-        return env;
+            environments.put(env.getId(), env);
+            saveEnvironments();
+            return env;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     public Environment updateEnvironment(String id, Environment update) {
-        Environment existing = environments.get(id);
-        if (existing == null) return null;
+        lock.writeLock().lock();
+        try {
+            Environment existing = environments.get(id);
+            if (existing == null) return null;
 
-        if (update.getName() != null) existing.setName(update.getName());
-        if (update.getMode() != null) existing.setMode(update.getMode());
-        if (update.getVariables() != null) existing.setVariables(update.getVariables());
-        if (update.getMetadata() != null) existing.setMetadata(update.getMetadata());
-        existing.setUpdatedAt(System.currentTimeMillis());
+            if (update.getName() != null) existing.setName(update.getName());
+            if (update.getMode() != null) existing.setMode(update.getMode());
+            if (update.getVariables() != null) existing.setVariables(update.getVariables());
+            if (update.getMetadata() != null) existing.setMetadata(update.getMetadata());
+            existing.setUpdatedAt(System.currentTimeMillis());
 
-        saveEnvironments();
-        return existing;
+            saveEnvironments();
+            return existing;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     public boolean deleteEnvironment(String id) {
-        if (environments.remove(id) != null) {
-            saveEnvironments();
-            return true;
+        lock.writeLock().lock();
+        try {
+            if (environments.remove(id) != null) {
+                saveEnvironments();
+                return true;
+            }
+            return false;
+        } finally {
+            lock.writeLock().unlock();
         }
-        return false;
     }
 
     // --- Scene Set CRUD ---
@@ -203,29 +252,50 @@ public class FileStorage {
     }
 
     public SceneSet createScene(SceneSet scene) {
-        if (scene.getId() == null || scene.getId().isEmpty()) {
-            scene.setId(IdGenerator.uuid());
+        lock.writeLock().lock();
+        try {
+            if (scene.getId() == null || scene.getId().isEmpty()) {
+                scene.setId(IdGenerator.uuid());
+            }
+            long now = System.currentTimeMillis();
+            scene.setCreatedAt(now);
+            scene.setUpdatedAt(now);
+            scenes.put(scene.getId(), scene);
+            saveScenes();
+            return scene;
+        } finally {
+            lock.writeLock().unlock();
         }
-        long now = System.currentTimeMillis();
-        scene.setCreatedAt(now);
-        scene.setUpdatedAt(now);
-        scenes.put(scene.getId(), scene);
-        return scene;
     }
 
     public SceneSet updateScene(String id, SceneSet update) {
-        SceneSet existing = scenes.get(id);
-        if (existing == null) return null;
-        if (update.getName() != null) existing.setName(update.getName());
-        if (update.getDescription() != null) existing.setDescription(update.getDescription());
-        if (update.getItemIds() != null) existing.setItemIds(update.getItemIds());
-        existing.setActive(update.isActive());
-        existing.setUpdatedAt(System.currentTimeMillis());
-        return existing;
+        lock.writeLock().lock();
+        try {
+            SceneSet existing = scenes.get(id);
+            if (existing == null) return null;
+            if (update.getName() != null) existing.setName(update.getName());
+            if (update.getDescription() != null) existing.setDescription(update.getDescription());
+            if (update.getItemIds() != null) existing.setItemIds(update.getItemIds());
+            existing.setActive(update.isActive());
+            existing.setUpdatedAt(System.currentTimeMillis());
+            saveScenes();
+            return existing;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     public boolean deleteScene(String id) {
-        return scenes.remove(id) != null;
+        lock.writeLock().lock();
+        try {
+            if (scenes.remove(id) != null) {
+                saveScenes();
+                return true;
+            }
+            return scenes.remove(id) != null;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     // --- Rule Set CRUD ---
@@ -235,18 +305,33 @@ public class FileStorage {
     }
 
     public RuleSet createRuleSet(RuleSet ruleSet) {
-        if (ruleSet.getId() == null || ruleSet.getId().isEmpty()) {
-            ruleSet.setId(IdGenerator.uuid());
+        lock.writeLock().lock();
+        try {
+            if (ruleSet.getId() == null || ruleSet.getId().isEmpty()) {
+                ruleSet.setId(IdGenerator.uuid());
+            }
+            long now = System.currentTimeMillis();
+            ruleSet.setCreatedAt(now);
+            ruleSet.setUpdatedAt(now);
+            ruleSets.put(ruleSet.getId(), ruleSet);
+            saveRuleSets();
+            return ruleSet;
+        } finally {
+            lock.writeLock().unlock();
         }
-        long now = System.currentTimeMillis();
-        ruleSet.setCreatedAt(now);
-        ruleSet.setUpdatedAt(now);
-        ruleSets.put(ruleSet.getId(), ruleSet);
-        return ruleSet;
     }
 
     public boolean deleteRuleSet(String id) {
-        return ruleSets.remove(id) != null;
+        lock.writeLock().lock();
+        try {
+            if (ruleSets.remove(id) != null) {
+                saveRuleSets();
+                return true;
+            }
+            return false;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     // --- Recording ---
@@ -276,8 +361,14 @@ public class FileStorage {
     }
 
     public void addRecordings(List<RecordingEntry> batch) {
-        for (RecordingEntry r : batch) {
-            addRecording(r);
+        lock.writeLock().lock();
+        try {
+            for (RecordingEntry r : batch) {
+                addRecording(r);
+            }
+            saveRecordings();
+        } finally {
+            lock.writeLock().unlock();
         }
     }
 
@@ -294,25 +385,30 @@ public class FileStorage {
     // --- Agent Management ---
 
     public AgentRegistration registerAgent(String agentId, String environment, String hostname, String version, List<String> protocols) {
-        AgentRegistration reg = new AgentRegistration();
-        reg.agentId = agentId;
-        reg.environment = environment;
-        reg.hostname = hostname;
-        reg.version = version;
-        reg.protocols = protocols;
-        reg.registeredAt = System.currentTimeMillis();
-        reg.lastHeartbeat = System.currentTimeMillis();
+        lock.writeLock().lock();
+        try {
+            AgentRegistration reg = new AgentRegistration();
+            reg.agentId = agentId;
+            reg.environment = environment;
+            reg.hostname = hostname;
+            reg.version = version;
+            reg.protocols = protocols;
+            reg.registeredAt = System.currentTimeMillis();
+            reg.lastHeartbeat = System.currentTimeMillis();
 
-        agents.put(agentId, reg);
+            agents.put(agentId, reg);
 
-        // Associate agent with environment
-        Environment env = getEnvironmentByName(environment);
-        if (env != null && !env.getAgentIds().contains(agentId)) {
-            env.getAgentIds().add(agentId);
-            saveEnvironments();
+            // Associate agent with environment
+            Environment env = getEnvironmentByName(environment);
+            if (env != null && !env.getAgentIds().contains(agentId)) {
+                env.getAgentIds().add(agentId);
+                saveEnvironments();
+            }
+
+            return reg;
+        } finally {
+            lock.writeLock().unlock();
         }
-
-        return reg;
     }
 
     public void agentHeartbeat(String agentId) {
@@ -381,6 +477,75 @@ public class FileStorage {
             log.info("Loaded {} environments", environments.size());
         } catch (IOException e) {
             log.error("Failed to load environments: {}", e.getMessage());
+        }
+    }
+
+    private void saveScenes() {
+        try {
+            File file = new File(config.getDataDir(), "scenes.json");
+            mapper.writeValue(file, new ArrayList<SceneSet>(scenes.values()));
+        } catch (IOException e) {
+            log.error("Failed to save scenes: {}", e.getMessage());
+        }
+    }
+
+    private void loadScenes() {
+        try {
+            File file = new File(config.getDataDir(), "scenes.json");
+            if (!file.exists()) return;
+            List<SceneSet> loaded = mapper.readValue(file, new TypeReference<List<SceneSet>>() {});
+            for (SceneSet s : loaded) {
+                scenes.put(s.getId(), s);
+            }
+            log.info("Loaded {} scenes", scenes.size());
+        } catch (IOException e) {
+            log.error("Failed to load scenes: {}", e.getMessage());
+        }
+    }
+
+    private void saveRuleSets() {
+        try {
+            File file = new File(config.getDataDir(), "rulesets.json");
+            mapper.writeValue(file, new ArrayList<RuleSet>(ruleSets.values()));
+        } catch (IOException e) {
+            log.error("Failed to save rule sets: {}", e.getMessage());
+        }
+    }
+
+    private void loadRuleSets() {
+        try {
+            File file = new File(config.getDataDir(), "rulesets.json");
+            if (!file.exists()) return;
+            List<RuleSet> loaded = mapper.readValue(file, new TypeReference<List<RuleSet>>() {});
+            for (RuleSet rs : loaded) {
+                ruleSets.put(rs.getId(), rs);
+            }
+            log.info("Loaded {} rule sets", ruleSets.size());
+        } catch (IOException e) {
+            log.error("Failed to load rule sets: {}", e.getMessage());
+        }
+    }
+
+    private void saveRecordings() {
+        try {
+            File file = new File(config.getRecordingsDir(), "recordings.json");
+            mapper.writeValue(file, new ArrayList<RecordingEntry>(recordings));
+        } catch (IOException e) {
+            log.error("Failed to save recordings: {}", e.getMessage());
+        }
+    }
+
+    private void loadRecordings() {
+        try {
+            File file = new File(config.getRecordingsDir(), "recordings.json");
+            if (!file.exists()) return;
+            List<RecordingEntry> loaded = mapper.readValue(file, new TypeReference<List<RecordingEntry>>() {});
+            for (RecordingEntry r : loaded) {
+                recordings.add(r);
+            }
+            log.info("Loaded {} recordings", recordings.size());
+        } catch (IOException e) {
+            log.error("Failed to load recordings: {}", e.getMessage());
         }
     }
 

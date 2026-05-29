@@ -31,9 +31,8 @@
                 <artifactId>maven-jar-plugin</artifactId>
                 <configuration>
                     <archive>
-                        <manifestEntries>
-                            <Premain-Class>com.baafoo.agent.BaafooAgent</Premain-Class>
-                        </manifestEntries>
+                        <!-- No Premain-Class here — plugin-api is only SPI interfaces,
+                             the agent module owns the Premain-Class manifest entry -->
                     </archive>
                 </configuration>
             </plugin>

@@ -1,0 +1,41 @@
+# Baafoo Agent Configuration
+# Loaded by com.baafoo.core.config.ConfigLoader
+
+# Agent unique identifier (auto-generated if empty)
+agentId: ""
+
+# Environment name this agent belongs to
+environment: "default"
+
+# Baafoo Server base URL
+serverUrl: "http://127.0.0.1:8080"
+
+# Heartbeat interval in seconds
+heartbeatIntervalSec: 30
+
+# Rule polling interval in seconds
+pollIntervalSec: 10
+
+# Whether Consul service discovery interception is enabled
+consulEnabled: false
+
+# Consul address (e.g., localhost:8500)
+consulAddress: "localhost:8500"
+
+# Protocols to intercept (empty = all)
+protocols: []
+
+# Maximum recording size in bytes
+maxRecordingSize: 10485760
+
+# Rule file path for hot-reload (WatchService)
+rulesFilePath: ""
+
+# Whether to enable hot-reload of rule files
+hotReload: true
+
+# Retry count for server connection
+connectionRetries: 3
+
+# Retry backoff base interval in milliseconds
+retryBackoffMs: 1000

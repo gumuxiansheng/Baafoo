@@ -24,17 +24,24 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Agent-to-Server control channel via HTTP long-polling.
  *
+ * <p>Uses only JDK HttpURLConnection — NO Netty dependency.
+ * This is critical because the agent module must be lightweight
+ * and not conflict with application classpaths.</p>
+ *
  * <p>Protocol per concept-design:
  * <ul>
- *   <li>POST /api/agent/register — initial registration</li>
- *   <li>POST /api/agent/heartbeat — periodic heartbeat</li>
- *   <li>GET  /api/agent/poll — long-poll for mode/rules changes</li>
- *   <li>POST /api/agent/recordings — upload recorded data</li>
+ *   <li>POST /__baafoo__/api/agent/register — initial registration</li>
+ *   <li>POST /__baafoo__/api/agent/heartbeat — periodic heartbeat</li>
+ *   <li>GET  /__baafoo__/api/agent/poll — long-poll for mode/rules changes</li>
+ *   <li>POST /__baafoo__/api/agent/recordings — upload recorded data</li>
  * </ul></p>
  */
 public class ControlChannel {
 
     private static final Logger log = LoggerFactory.getLogger(ControlChannel.class);
+
+    /** API base path on the Baafoo server */
+    private static final String API_BASE = "/__baafoo__/api";
 
     private final AgentConfig config;
     private final ObjectMapper mapper;
@@ -115,7 +122,7 @@ public class ControlChannel {
             req.protocols = config.getProtocols();
 
             String json = mapper.writeValueAsString(req);
-            HttpURLConnection conn = post("/api/agent/register", json);
+            HttpURLConnection conn = post(API_BASE + "/agent/register", json);
             int code = conn.getResponseCode();
 
             if (code == 200 || code == 201) {
@@ -153,7 +160,7 @@ public class ControlChannel {
             req.timestamp = System.currentTimeMillis();
 
             String json = mapper.writeValueAsString(req);
-            HttpURLConnection conn = post("/api/agent/heartbeat", json);
+            HttpURLConnection conn = post(API_BASE + "/agent/heartbeat", json);
 
             if (conn.getResponseCode() != 200) {
                 log.warn("Heartbeat failed: HTTP {}", conn.getResponseCode());
@@ -165,7 +172,7 @@ public class ControlChannel {
 
     private void pollRules() {
         try {
-            String url = config.getServerUrl() + "/api/agent/poll?agentId=" +
+            String url = config.getServerUrl() + API_BASE + "/agent/poll?agentId=" +
                     (config.getAgentId() != null ? config.getAgentId() : "");
 
             HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
@@ -206,7 +213,7 @@ public class ControlChannel {
     public void uploadRecordings(List<RecordingEntry> recordings) {
         try {
             String json = mapper.writeValueAsString(recordings);
-            HttpURLConnection conn = post("/api/agent/recordings?agentId=" + config.getAgentId(), json);
+            HttpURLConnection conn = post(API_BASE + "/agent/recordings?agentId=" + config.getAgentId(), json);
             int code = conn.getResponseCode();
             if (code == 200) {
                 log.info("Uploaded {} recordings", recordings.size());
@@ -218,7 +225,7 @@ public class ControlChannel {
         }
     }
 
-    // --- HTTP helpers ---
+    // --- HTTP helpers (JDK HttpURLConnection only, NO Netty) ---
 
     private HttpURLConnection post(String path, String json) throws Exception {
         String url = config.getServerUrl() + path;

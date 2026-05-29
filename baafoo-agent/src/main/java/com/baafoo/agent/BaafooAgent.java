@@ -40,10 +40,16 @@ public class BaafooAgent {
     /** Plugin manager */
     private static volatile PluginManager pluginManager;
 
+    /** Whether agent started successfully */
+    private static volatile boolean initialized = false;
+
     /**
      * JVM premain entry point.
      *
-     * @param agentArgs agent arguments
+     * <p>Agent argument format: {@code config=/path/to/baafoo-agent.yml}
+     * Multiple arguments may be comma-separated.</p>
+     *
+     * @param agentArgs agent arguments (e.g., "config=./baafoo-agent.yml")
      * @param inst      instrumentation instance
      */
     public static void premain(String agentArgs, Instrumentation inst) {
@@ -51,32 +57,29 @@ public class BaafooAgent {
             log.info("=== Baafoo Agent {} starting ===", getVersion());
             log.info("Agent args: {}", agentArgs);
 
-            // 1. Load config
+            // 1. Load config (supports config=/path format)
             String configPath = resolveConfigPath(agentArgs);
             config = ConfigLoader.loadAgentConfig(configPath);
             log.info("Config loaded: {}", config);
 
-            // 2. Init control channel
+            // 2. Initialize AgentManifest (Bootstrap-safe state for Advice classes)
+            initAgentManifest(config);
+            log.info("AgentManifest initialized: serverHost={}, serverPort={}, envId={}, mode={}",
+                    AgentManifest.serverHost, AgentManifest.serverPort,
+                    AgentManifest.environmentId, AgentManifest.getModeName());
+
+            // 3. Init control channel (JDK HttpURLConnection only, no Netty)
             controlChannel = new ControlChannel(config);
             controlChannel.start();
 
-            // 3. Init plugin manager
+            // 4. Init plugin manager
             pluginManager = new PluginManager();
 
-            // 4. Register bytecode transforms
+            // 5. Register bytecode transforms
             TransformRegistry registry = new TransformRegistry();
             AgentBuilder agentBuilder = new AgentBuilder.Default()
                     .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
-                    .with(new AgentBuilder.Listener.Adapter() {
-                        @Override
-                        public void onError(String typeName, ClassLoader classLoader,
-                                            java.lang.instrument.IllegalClassFormatException e,
-                                            java.lang.reflect.Module module, boolean loaded,
-                                            Throwable throwable) {
-                            log.error("Bytecode transform failed for {}: {}", typeName, throwable.getMessage());
-                            // Do not re-throw — fail-closed
-                        }
-                    });
+                    .with(AgentBuilder.Listener.StreamWriting.toSystemOut().withErrorsOnly());
 
             // --- Socket interception ---
             agentBuilder = agentBuilder
@@ -84,8 +87,8 @@ public class BaafooAgent {
                     .transform((builder, typeDesc, classLoader, module, pd) ->
                             builder.visit(Advice.to(SocketConnectAdvice.class)
                                     .on(named("connect")
-                                            .and(takesArguments(1))
-                                            .and(takesArgument(0, named("java.net.SocketAddress"))))));
+                                            .and(takesArguments(1)))));
+            registry.register("java.net.Socket", "SocketConnectAdvice", "tcp");
 
             // --- NIO SocketChannel interception ---
             agentBuilder = agentBuilder
@@ -93,35 +96,58 @@ public class BaafooAgent {
                     .transform((builder, typeDesc, classLoader, module, pd) ->
                             builder.visit(Advice.to(NioSocketConnectAdvice.class)
                                     .on(named("connect").and(takesArguments(1)))));
+            registry.register("sun.nio.ch.SocketChannelImpl", "NioSocketConnectAdvice", "tcp");
 
             // --- Consul DNS interception ---
             if (config.isConsulEnabled()) {
+                // Intercept both getByName and getAllByName
                 agentBuilder = agentBuilder
                         .type(named("java.net.InetAddress"))
                         .transform((builder, typeDesc, classLoader, module, pd) ->
                                 builder.visit(Advice.to(ConsulDnsAdvice.class)
-                                        .on(named("getByName").and(takesArguments(1)))));
+                                        .on(named("getByName").and(takesArguments(1)))))
+                        .type(named("java.net.InetAddress"))
+                        .transform((builder, typeDesc, classLoader, module, pd) ->
+                                builder.visit(Advice.to(ConsulDnsAdvice.class)
+                                        .on(named("getAllByName").and(takesArguments(1)))));
+                registry.register("java.net.InetAddress", "ConsulDnsAdvice", "consul-dns");
+
+                // --- Consul HTTP interception ---
+                agentBuilder = agentBuilder
+                        .type(named("sun.net.www.http.HttpClient"))
+                        .transform((builder, typeDesc, classLoader, module, pd) ->
+                                builder.visit(Advice.to(ConsulHttpAdvice.class)
+                                        .on(named("openServer").and(takesArguments(2)))));
+                registry.register("sun.net.www.http.HttpClient", "ConsulHttpAdvice", "http");
             }
 
             // --- Kafka interception (Beta) ---
+            // Intercept KafkaProducer constructor to replace bootstrap.servers
+            // KafkaProducer has constructors: (Properties), (Map), (Properties, Callback), etc.
+            // We intercept all constructors and check for Properties/Map as first argument
             agentBuilder = agentBuilder
                     .type(named("org.apache.kafka.clients.producer.KafkaProducer"))
                     .transform((builder, typeDesc, classLoader, module, pd) ->
                             builder.visit(Advice.to(KafkaProducerAdvice.class)
-                                    .on(named("send").and(takesArguments(2)))));
+                                    .on(isConstructor())));
+            registry.register("org.apache.kafka.clients.producer.KafkaProducer", "KafkaProducerAdvice", "kafka");
 
             // --- Pulsar interception (Beta) ---
+            // Intercept ClientBuilder.serviceUrl() to replace broker URL
             agentBuilder = agentBuilder
-                    .type(named("org.apache.pulsar.client.impl.PulsarClientImpl"))
+                    .type(named("org.apache.pulsar.client.api.ClientBuilder"))
                     .transform((builder, typeDesc, classLoader, module, pd) ->
                             builder.visit(Advice.to(PulsarClientAdvice.class)
-                                    .on(named("createProducer").or(named("subscribe")))));
+                                    .on(named("serviceUrl").and(takesArguments(1)))));
+            registry.register("org.apache.pulsar.client.api.ClientBuilder", "PulsarClientAdvice", "pulsar");
 
-            // 5. Install agent
+            // 6. Install agent
             agentBuilder.installOn(inst);
-            log.info("Bytecode transforms installed successfully");
+            AgentManifest.agentLoaded = true;
+            initialized = true;
+            log.info("Bytecode transforms installed: {} transforms registered", registry.getCount());
 
-            // 6. Register shutdown hook
+            // 7. Register shutdown hook
             Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
                 @Override
                 public void run() {
@@ -131,22 +157,92 @@ public class BaafooAgent {
 
             log.info("=== Baafoo Agent started successfully ===");
 
-        } catch (Exception e) {
-            log.error("FAILED to start Baafoo Agent (fail-closed): {}", e.getMessage(), e);
-            // Fail-closed: do not prevent JVM from starting
+        } catch (Throwable e) {
+            // Fail-closed: log ERROR, do NOT crash the JVM.
+            // All requests will pass through (no interception).
+            log.error("FAILED to start Baafoo Agent (fail-closed). " +
+                    "All requests will pass through to real downstreams. Error: {}", e.getMessage(), e);
+            initialized = false;
         }
     }
 
+    /**
+     * Parse agent arguments in {@code config=/path/to/file} format.
+     *
+     * <p>Supports formats:
+     * <ul>
+     *   <li>{@code config=/path/to/baafoo-agent.yml}</li>
+     *   <li>{@code /path/to/baafoo-agent.yml} (legacy — entire string is path)</li>
+     *   <li>{@code null} or empty — falls back to system property / default</li>
+     * </ul></p>
+     *
+     * @param agentArgs raw agent argument string
+     * @return resolved config file path
+     */
     private static String resolveConfigPath(String agentArgs) {
         if (agentArgs != null && !agentArgs.isEmpty()) {
-            return agentArgs;
+            // Check for config= prefix
+            String[] parts = agentArgs.split(",");
+            for (String part : parts) {
+                String trimmed = part.trim();
+                if (trimmed.startsWith("config=")) {
+                    return trimmed.substring("config=".length()).trim();
+                }
+            }
+            // Legacy: treat entire argument as path (if it doesn't contain '=')
+            if (!agentArgs.contains("=")) {
+                return agentArgs;
+            }
         }
+        // Fallback to system property or default
         return System.getProperty("baafoo.agent.config", "./baafoo-agent.yml");
+    }
+
+    /**
+     * Initialize AgentManifest fields from config.
+     * Must be called BEFORE any bytecode transform is installed.
+     */
+    private static void initAgentManifest(AgentConfig cfg) {
+        if (cfg.getServerUrl() != null) {
+            String url = cfg.getServerUrl();
+            String host = url;
+            int port = 8080;
+
+            if (host.startsWith("http://")) {
+                host = host.substring(7);
+            } else if (host.startsWith("https://")) {
+                host = host.substring(8);
+            }
+
+            int colonIdx = host.lastIndexOf(':');
+            if (colonIdx > 0) {
+                try {
+                    port = Integer.parseInt(host.substring(colonIdx + 1));
+                    host = host.substring(0, colonIdx);
+                } catch (NumberFormatException e) {
+                    // Ignore, use defaults
+                }
+            }
+
+            AgentManifest.serverHost = host;
+            AgentManifest.serverPort = port;
+        }
+
+        AgentManifest.environmentId = cfg.getEnvironment() != null ? cfg.getEnvironment() : "default";
+
+        if (cfg.getAgentId() != null) {
+            AgentManifest.agentId = cfg.getAgentId();
+        }
     }
 
     private static void shutdown() {
         log.info("Shutting down Baafoo Agent...");
         try {
+            AgentManifest.agentLoaded = false;
+
+            // Flush any remaining recordings
+            RouteManager.flushRecordings();
+
             if (controlChannel != null) {
                 controlChannel.stop();
             }
@@ -171,6 +267,10 @@ public class BaafooAgent {
 
     public static PluginManager getPluginManager() {
         return pluginManager;
+    }
+
+    public static boolean isInitialized() {
+        return initialized;
     }
 
     private static String getVersion() {

@@ -20,32 +20,38 @@ import java.util.Map;
 /**
  * HTTP Management API handler.
  *
- * <p>Routes:
+ * <p>Routes (all prefixed with /__baafoo__/api/):
  * <ul>
- *   <li>GET/POST /api/rules — List/Create rules</li>
- *   <li>GET/PUT/DELETE /api/rules/{id} — Get/Update/Delete rule</li>
- *   <li>POST /api/rules/{id}/undo — Undo rule version</li>
- *   <li>GET/POST /api/environments — List/Create environments</li>
- *   <li>GET/PUT/DELETE /api/environments/{id} — Manage environment</li>
- *   <li>POST /api/agent/register — Agent registration</li>
- *   <li>POST /api/agent/heartbeat — Agent heartbeat</li>
- *   <li>GET  /api/agent/poll — Agent long-poll</li>
- *   <li>POST /api/agent/recordings — Recording upload</li>
- *   <li>GET  /api/recordings — List recordings</li>
- *   <li>GET  /api/scenes — List scene sets</li>
- *   <li>POST /api/scenes — Create scene set</li>
- *   <li>GET  /api/rulesets — List rule sets</li>
- *   <li>GET  /api/status — System status</li>
+ *   <li>GET/POST /__baafoo__/api/rules — List/Create rules</li>
+ *   <li>GET/PUT/DELETE /__baafoo__/api/rules/{id} — Get/Update/Delete rule</li>
+ *   <li>POST /__baafoo__/api/rules/{id}/undo — Undo rule version</li>
+ *   <li>GET/POST /__baafoo__/api/environments — List/Create environments</li>
+ *   <li>GET/PUT/DELETE /__baafoo__/api/environments/{id} — Manage environment</li>
+ *   <li>POST /__baafoo__/api/agent/register — Agent registration</li>
+ *   <li>POST /__baafoo__/api/agent/heartbeat — Agent heartbeat</li>
+ *   <li>GET  /__baafoo__/api/agent/poll — Agent long-poll</li>
+ *   <li>POST /__baafoo__/api/agent/recordings — Recording upload</li>
+ *   <li>GET  /__baafoo__/api/recordings — List recordings</li>
+ *   <li>GET  /__baafoo__/api/scenes — List scene sets</li>
+ *   <li>POST /__baafoo__/api/scenes — Create scene set</li>
+ *   <li>GET  /__baafoo__/api/rulesets — List rule sets</li>
+ *   <li>GET  /__baafoo__/api/status — System status</li>
  * </ul></p>
  *
- * <p>Path prefix: /api/ (non-API paths are delegated to StaticFileHandler)</p>
+ * <p>Path prefix: /__baafoo__/api/ (non-API paths are delegated to StaticFileHandler)</p>
  */
 public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
 
     private static final Logger log = LoggerFactory.getLogger(ManagementApiHandler.class);
 
+    /** All API routes use this prefix */
+    private static final String API_PREFIX = "/__baafoo__/api/";
+
     private final FileStorage storage;
     private final ObjectMapper mapper;
+
+    /** Stores the original URI for query parameter parsing */
+    private String currentUri;
 
     public ManagementApiHandler(FileStorage storage) {
         this.storage = storage;
@@ -56,15 +62,13 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
     protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest request) {
         String uri = request.uri();
         String method = request.method().name();
-
-        // Add CORS headers
-        HttpResponseStatus status = null;
+        currentUri = uri;
 
         try {
             // Route to handler
             String path = extractPath(uri);
 
-            if (path.startsWith("/api/")) {
+            if (path.startsWith(API_PREFIX)) {
                 Object result = handleApiRequest(path, method, request);
                 sendJson(ctx, 200, result);
             } else {
@@ -81,7 +85,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
 
     private Object handleApiRequest(String path, String method, FullHttpRequest request) throws Exception {
         // --- Rules ---
-        if (path.equals("/api/rules")) {
+        if (path.equals(API_PREFIX + "rules")) {
             if ("GET".equals(method)) {
                 return ApiResponse.ok(storage.listRules());
             }
@@ -91,15 +95,15 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             }
         }
 
-        if (path.startsWith("/api/rules/") && path.contains("/undo")) {
-            String id = extractId(path, "/api/rules/", "/undo");
+        if (path.startsWith(API_PREFIX + "rules/") && path.contains("/undo")) {
+            String id = extractId(path, API_PREFIX + "rules/", "/undo");
             boolean success = storage.undoRule(id);
             return success ? ApiResponse.ok("Undo successful", null)
                     : ApiResponse.notFound("Rule not found or no undo history");
         }
 
-        if (path.startsWith("/api/rules/")) {
-            String id = extractId(path, "/api/rules/", null);
+        if (path.startsWith(API_PREFIX + "rules/")) {
+            String id = extractId(path, API_PREFIX + "rules/", null);
             if ("GET".equals(method)) {
                 Rule rule = storage.getRule(id);
                 return rule != null ? ApiResponse.ok(rule) : ApiResponse.notFound("Rule not found");
@@ -116,7 +120,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         }
 
         // --- Rule Sets ---
-        if (path.equals("/api/rulesets")) {
+        if (path.equals(API_PREFIX + "rulesets")) {
             if ("GET".equals(method)) return ApiResponse.ok(storage.listRuleSets());
             if ("POST".equals(method)) {
                 RuleSet set = mapper.readValue(request.content().toString(StandardCharsets.UTF_8), RuleSet.class);
@@ -125,7 +129,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         }
 
         // --- Environments ---
-        if (path.equals("/api/environments")) {
+        if (path.equals(API_PREFIX + "environments")) {
             if ("GET".equals(method)) return ApiResponse.ok(storage.listEnvironments());
             if ("POST".equals(method)) {
                 Environment env = mapper.readValue(request.content().toString(StandardCharsets.UTF_8), Environment.class);
@@ -133,8 +137,8 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             }
         }
 
-        if (path.startsWith("/api/environments/")) {
-            String id = extractId(path, "/api/environments/", null);
+        if (path.startsWith(API_PREFIX + "environments/")) {
+            String id = extractId(path, API_PREFIX + "environments/", null);
             if ("GET".equals(method)) {
                 Environment env = storage.getEnvironment(id);
                 return env != null ? ApiResponse.ok(env) : ApiResponse.notFound("Environment not found");
@@ -151,7 +155,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         }
 
         // --- Agent ---
-        if (path.equals("/api/agent/register") && "POST".equals(method)) {
+        if (path.equals(API_PREFIX + "agent/register") && "POST".equals(method)) {
             Map<String, Object> body = mapper.readValue(
                     request.content().toString(StandardCharsets.UTF_8), Map.class);
             String agentId = (String) body.getOrDefault("agentId", "");
@@ -173,7 +177,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             return ApiResponse.ok(result);
         }
 
-        if (path.equals("/api/agent/heartbeat") && "POST".equals(method)) {
+        if (path.equals(API_PREFIX + "agent/heartbeat") && "POST".equals(method)) {
             Map<String, Object> body = mapper.readValue(
                     request.content().toString(StandardCharsets.UTF_8), Map.class);
             String agentId = (String) body.get("agentId");
@@ -181,8 +185,8 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             return ApiResponse.ok("OK", null);
         }
 
-        if (path.equals("/api/agent/poll") && "GET".equals(method)) {
-            String agentId = parseQueryParam(uri, "agentId");
+        if (path.equals(API_PREFIX + "agent/poll") && "GET".equals(method)) {
+            String agentId = parseQueryParam(currentUri, "agentId");
             List<Rule> rules = storage.listRules();
 
             // Get environment mode for this agent
@@ -202,7 +206,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             return ApiResponse.ok(result);
         }
 
-        if (path.equals("/api/agent/recordings") && "POST".equals(method)) {
+        if (path.equals(API_PREFIX + "agent/recordings") && "POST".equals(method)) {
             List<RecordingEntry> batch = mapper.readValue(
                     request.content().toString(StandardCharsets.UTF_8),
                     mapper.getTypeFactory().constructCollectionType(List.class, RecordingEntry.class));
@@ -211,20 +215,20 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         }
 
         // --- Recordings ---
-        if (path.equals("/api/recordings") && "GET".equals(method)) {
-            String ruleId = parseQueryParam(uri, "ruleId");
-            int limit = parseIntParam(uri, "limit", 100);
+        if (path.equals(API_PREFIX + "recordings") && "GET".equals(method)) {
+            String ruleId = parseQueryParam(currentUri, "ruleId");
+            int limit = parseIntParam(currentUri, "limit", 100);
             return ApiResponse.ok(storage.listRecordings(ruleId, limit));
         }
 
-        if (path.startsWith("/api/recordings/") && "DELETE".equals(method)) {
-            String id = extractId(path, "/api/recordings/", null);
+        if (path.startsWith(API_PREFIX + "recordings/") && "DELETE".equals(method)) {
+            String id = extractId(path, API_PREFIX + "recordings/", null);
             boolean deleted = storage.deleteRecording(id);
             return deleted ? ApiResponse.ok("Deleted", null) : ApiResponse.notFound("Recording not found");
         }
 
         // --- Scene Sets ---
-        if (path.equals("/api/scenes")) {
+        if (path.equals(API_PREFIX + "scenes")) {
             if ("GET".equals(method)) return ApiResponse.ok(storage.listScenes());
             if ("POST".equals(method)) {
                 SceneSet scene = mapper.readValue(request.content().toString(StandardCharsets.UTF_8), SceneSet.class);
@@ -232,8 +236,8 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             }
         }
 
-        if (path.startsWith("/api/scenes/")) {
-            String id = extractId(path, "/api/scenes/", null);
+        if (path.startsWith(API_PREFIX + "scenes/")) {
+            String id = extractId(path, API_PREFIX + "scenes/", null);
             if ("GET".equals(method)) {
                 SceneSet scene = storage.listScenes().stream()
                         .filter(s -> s.getId().equals(id)).findFirst().orElse(null);
@@ -251,7 +255,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         }
 
         // --- System Status ---
-        if (path.equals("/api/status") && "GET".equals(method)) {
+        if (path.equals(API_PREFIX + "status") && "GET".equals(method)) {
             java.util.Map<String, Object> status = new java.util.HashMap<String, Object>();
             status.put("version", "1.0.0-SNAPSHOT");
             status.put("rules", storage.listRules().size());

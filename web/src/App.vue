@@ -72,7 +72,7 @@
 <script>
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { useStatusStore } from '@/store/status'
+import { useStatusStore } from '@/store'
 
 export default {
   name: 'App',

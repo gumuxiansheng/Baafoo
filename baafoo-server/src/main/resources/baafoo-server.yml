@@ -1,0 +1,46 @@
+# Baafoo Server Configuration
+# Loaded by com.baafoo.core.config.ConfigLoader
+
+# HTTP port for management API + Web console
+httpPort: 8080
+
+# Protocol-specific listen ports
+protocolPorts:
+  http: 9000
+  tcp: 9001
+  kafka: 9002
+  pulsar: 9003
+  jms: 9004
+
+# Data storage directory
+dataDir: "${user.home}/.baafoo/data"
+
+# Rule storage directory
+rulesDir: "${user.home}/.baafoo/data/rules"
+
+# Recording storage directory
+recordingsDir: "${user.home}/.baafoo/data/recordings"
+
+# Maximum recording retention days
+recordingRetentionDays: 7
+
+# Maximum rules per page (pagination)
+maxRulesPerPage: 100
+
+# Whether to enable CORS for Web console
+corsEnabled: true
+
+# CORS allowed origins (empty = all)
+corsOrigins: []
+
+# Web console static file path
+webConsolePath: ""
+
+# Whether to enable request logging
+requestLogging: true
+
+# Agent heartbeat timeout in seconds
+agentHeartbeatTimeoutSec: 60
+
+# Maximum agents per environment
+maxAgentsPerEnvironment: 50

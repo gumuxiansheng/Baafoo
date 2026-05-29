@@ -82,7 +82,7 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.baafoo.server.BaafooServer</mainClass>
+                                    <mainClass>com.baafoo.server.bootstrap.BaafooServer</mainClass>
                                 </transformer>
                             </transformers>
                             <filters>
