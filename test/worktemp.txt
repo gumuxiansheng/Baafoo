@@ -1,0 +1,510 @@
+需要搞清楚 baafoo-agent 的 JavaAgent 配置和 test-app 的启动方式。先看 agent 模块：
+
+现在看配置文件和 agent 的打包方式：
+
+现在理解了整个架构。Agent 的工作方式：
+
+Agent 拦截 Socket.connect() → 查 RouteTable → 把目标 host:port 改写为 Baafoo Stub 端口
+ControlChannel 通过 HTTP 轮询 server 获取规则 → RouteManager 更新 RouteTable
+但当前规则没有设置 host/port，所以 RouteTable 里没有路由
+关键问题：规则需要设置 host 和 port 字段（即应用外调的目标地址），这样 Agent 才知道拦截哪些连接。
+
+先看 ManagementApiHandler 里有没有 agent 相关的 API：
+
+好，agent poll API 会返回所有规则。现在需要做两件事：
+
+创建带 host+port 的规则（模拟外调 httpbin.org）
+配置 agent.yml 的 environment 为 “dev”
+用 -javaagent 启动 test-app
+先创建规则：
+
+现在准备 agent 配置文件并启动 test-app。先更新 agent.yml 的 environment 为 “dev”：
+
+需要创建一个配置文件，environment 设为 “dev”：
+
+确认 agent jar 和 test-app jar 都存在：
+
+启动 test-app，挂载 javaagent：
+
+SLF4J/Logback 版本冲突 — agent 的 shaded jar 和 test-app 的 shaded jar 都包含了 logback，类路径冲突导致 IncompatibleClassChangeError。需要让 agent 的 jar 不暴露 logback 到 classpath。
+
+查看 agent pom 的 shade 配置：
+
+问题清楚了：agent shaded jar 把 logback 全部 shade 进去了，但没有做 relocation。test-app 也有自己的 logback。两者冲突。
+
+解决方案：给 agent 的 shade 配置加上 relocation，把 slf4j/logback 包名重定位，这样不会和应用冲突：
+
+重新打包 agent：
+
+重新启动 test-app（先清理旧进程）：
+
+先重启 Baafoo Server：
+
+Server 启动了，但数据库被清理了规则为0。重新创建规则：
+
+好，现在启动 test-app 带 agent：
+
+Test-app 启动成功了！没有任何 agent 错误。但 agent 的日志没有输出到 stderr — 可能是因为 logback 的 appender 没配置。检查 agent 是否真的加载了：
+
+agents=0，说明 agent 没有成功注册。可能是 agent 的 logback 被 relocation 后配置不正确，或者 ControlChannel 的 HTTP 调用被它自己的拦截器拦截了。
+
+看看 agent 是否输出了任何错误：
+
+Relocation 之后 logback 的 ConsoleAppender 类名还是 ch.qos.logback.core.ConsoleAppender（在 XML 配置里），但 shaded 后的类在 com.baafoo.agent.shaded.logback.core.ConsoleAppender，所以实例化失败。不过这回没有 FATAL ERROR 了，agent 没崩溃——只是 logback 日志不工作。
+
+问题更深层：logback 的 logback.xml 配置文件里引用的类名是原始包名，shade 后需要同步修改。更好的方案是 完全排除 logback，让 agent 用 slf4j-simple 或者 nop：
+
+不对，问题的根本在于 shade 后 logback 的 XML 配置中的类名不匹配。更好的方案是直接排除 logback，改用 slf4j-jdk14（JDK util logging bridge，零配置）：
+
+同时移除 shade 的 relocation（不再需要了，因为 slf4j-jdk14 非常轻量不会冲突）：
+
+但 slf4j-jdk14 也可能和应用冲突。还是用 relocation 方案，但不用 logback。重新考虑：agent 的真正问题是它 shade 了 logback 但 logback.xml 里的类名没跟着改。最佳方案：
+
+Agent 不使用 logback，改用 slf4j-simple（零 XML 配置）
+在 shade 时 relocate org.slf4j 包名
+添加 relocation，把 slf4j 完整 relocation：
+
+还需要确认父 pom 里有没有 slf4j-simple 的版本管理：
+
+需要添加 slf4j-simple 到 dependencyManagement：
+
+重新打包：
+
+重启 server + test-app：
+
+启动 test-app 带 agent：
+
+Logback 问题解决了（slf4j-simple 正常工作），但现在暴露了更核心的问题：
+
+LinkageError: loader constraint violation — agent 把自己的 jar 加入了 Bootstrap ClassLoader，然后 AgentConfig 类被 bootloader 加载了，但 test-app 的 classpath 里也有同名的 AgentConfig（来自 baafoo-core），被 AppClassLoader 加载。两个不同的 classloader 加载了同一个类，导致类型不兼容。
+
+这是 JavaAgent 的经典问题。解决方案：不要把整个 agent jar 放入 Bootstrap CL，只放需要从 Bootstrap CL 可见的类（如 AgentManifest）。或者让 baafoo-core 中的关键类也 relocate。
+
+看看 BaafooAgent 的 premain 怎么把自己加入 Bootstrap CL 的：
+
+问题根源：appendToBootstrapClassLoaderSearch 把整个 agent shaded jar 放入了 Bootstrap CL，导致 com.baafoo.core.config.AgentConfig 同时被 Bootstrap CL 和 App CL 加载，产生 loader constraint violation。
+
+修复方案：在 step 1（loadConfig）之前先不 appendToBootstrapClassLoaderSearch。先加载配置（使用 AppClassLoader），然后再 append。但这还不够——因为 Bootstrap CL 加载的类如果也引用了 AgentConfig，还是会冲突。
+
+更好的方案：把 baafoo-core 中的类也 relocate，这样 Bootstrap CL 里的 com.baafoo.core.config.AgentConfig 和 App CL 里的原始包名就不会冲突了：
+
+Relocation 成功，com.baafoo.core 已经重定位到 com.baafoo.agent.shaded.core。重启测试：
+
+还是同样的问题。根本原因不是包名冲突——而是 appendToBootstrapClassLoaderSearch 在 premain 里被先调用了，把整个 jar 加入 Bootstrap CL。然后 premain 本身的代码（包括 BaafooAgent 类）是由 Instrumentation 通过 bootloader 调用的。而 test-app 的 classpath 里也有 baafoo-core 的类。
+
+真正的问题是：整个 agent jar 被加入 Bootstrap CL 后，AgentConfig 被 Bootstrap CL 先加载了，然后 App CL 也尝试加载，冲突。
+
+正确方案：推迟 appendToBootstrapClassLoaderSearch 到所有配置加载完成之后，只在 Byte Buddy 安装之前才 append：
+
+关键洞察：appendToBootstrapClassLoaderSearch 应该在 ConfigLoader.loadAgentConfig 之前 不能调用。但 premain 方法本身是被 bootloader 通过 InstrumentationImpl 调用的，所以 BaafooAgent 类本身已经被某个 classloader 加载了。
+
+实际上问题在于：test-app 的 shaded jar 里也包含了 com.baafoo.core.config.AgentConfig。当 agent jar 被 append 到 Bootstrap CL 后，Bootstrap CL 能看到 com.baafoo.agent.shaded.core.config.AgentConfig，但 test-app 的 AppClassLoader 也有 baafoo-core 的原始类。
+
+等等——relocation 之后，agent 引用的是 com.baafoo.agent.shaded.core.config.AgentConfig，但 test-app 里有 com.baafoo.core.config.AgentConfig，这两个包名不同，不应冲突。
+
+问题是 shaded 后的 agent 代码中，ConfigLoader 内部可能仍然引用了 com.baafoo.core 的原始类名。让我确认：
+
+agent 的 com.baafoo.agent.* 类在原始位置，com.baafoo.core.* 被 relocate 到 com.baafoo.agent.shaded.core.*。OK，但 com.baafoo.agent.* 和 com.baafoo.plugin.* 这些类没被 relocate，而 test-app 的 shaded jar 也包含这些类（因为 baafoo-core 被打包进了 test-app）。
+
+让我查 test-app 的 jar 是否包含 com.baafoo.agent 和 com.baafoo.core：
+
+test-app 确实包含 com.baafoo.core.* 原始类。agent jar 加入 Bootstrap CL 后，Bootstrap CL 能看到 com.baafoo.agent.shaded.core.config.AgentConfig（relocated），而 App CL 能看到 com.baafoo.core.config.AgentConfig（原始）。这两个类包名不同，理论上不冲突。
+
+但是！错误信息说的是 com/baafoo/agent/shaded/core/config/AgentConfig，说明冲突发生在 agent 内部。那意味着 Bootstrap CL 加载了这个类之后，App CL 的某些东西也试图加载它。
+
+等等，重新看错误：loader constraint violation: loader (instance of <bootloader>) previously initiated loading for a different type with name "com/baafoo/agent/shaded/core/config/AgentConfig"
+
+这说明 bootloader 之前加载了一个 com.baafoo.agent.shaded.core.config.AgentConfig，然后又有另一个 loader 也试图加载同名类。但 com.baafoo.agent.shaded.core 只在 agent jar 中存在——
+
+实际上问题可能是：BaafooAgent 本身被 InstrumentationImpl 使用 bootloader 加载。当 BaafooAgent.premain 被调用时，BaafooAgent 的 class loader 是 bootloader。所以 BaafooAgent 内部引用的 ConfigLoader（relocated to com.baafoo.agent.shaded.core.config.ConfigLoader）也会被 bootloader 加载。然后 appendToBootstrapClassLoaderSearch 被调用后，bootloader 就能找到这些类了。
+
+但 premain 调用发生在 appendToBootstrapClassLoaderSearch 之后的代码行——不对，看代码顺序，appendToBootstrapClassLoaderSearch 是第0步，先于 ConfigLoader.loadAgentConfig。
+
+问题是：BaafooAgent.premain 被 bootloader 加载时，如果 agent jar 还没 append 到 bootstrap search path，ConfigLoader 类就找不到。但错误说 “previously initiated loading”，说明 bootloader 已经加载了 AgentConfig 类。
+
+让我仔细想想：premain 是通过 InstrumentationImpl.loadClassAndCallPremain 调用的。这个方法会用 system class loader 加载 BaafooAgent 类，而不是 bootloader。然后 BaafooAgent 引用 ConfigLoader 时，也会用 system class loader 加载。
+
+但当 appendToBootstrapClassLoaderSearch 把 agent jar 加入 Bootstrap CL 后，如果有其他线程（或 agent 本身的字节码增强回调）尝试通过 bootloader 加载 AgentConfig，就会和 system class loader 已加载的 AgentConfig 冲突。
+
+根本解决方案：不要在 premain 开始时就 appendToBootstrapClassLoaderSearch。应该在 Byte Buddy 安装 transforms 之前才做。这样 ConfigLoader.loadAgentConfig 还是用 AppClassLoader，不会冲突。
+
+好消息：ConfigLoader 和 AgentConfig 加载成功了（不再冲突）！ControlChannel 也成功启动了。但现在 AgentBuilder（ByteBuddy）在 appendToBootstrapClassLoaderSearch 之后产生了 loader constraint violation — ByteBuddy 类被两个 classloader 加载了。
+
+根本问题很清楚了：把整个 agent shaded jar append 到 Bootstrap CL 会让其中所有类（包括 ByteBuddy）被 Bootstrap CL 可见，而 BaafooAgent 本身是由 AppClassLoader 加载的。
+
+正确方案：ByteBuddy 也需要 relocate，这样 Bootstrap CL 里的 com.baafoo.agent.shaded.net.bytebuddy.* 和 App CL 里的 net.bytebuddy.* 包名不同不冲突。
+
+同时还需要 relocate Jackson 和其他可能冲突的库：
+
+还是 Loader 约束冲突。关键信息：BaafooAgent 被 AppClassLoader 加载，但 com.baafoo.agent.shaded.bytebuddy.agent.builder.AgentBuilder 被 BootstrapClassLoader 加载（因为我们把 agent jar append 到了 bootstrap CL）。
+
+核心问题是 com.baafoo.agent.BaafooAgent 类本身不在 relocated 包里，它还在 com.baafoo.agent 包。这个类被 AppClassLoader 加载，但通过 Bootstrap CL 找到了 shaded bytebuddy 的类。
+
+终极解决方案：不要把整个 jar append 到 Bootstrap CL。只创建一个包含 Advice 需要的类（AgentManifest, RouteTable 等）的小 jar，append 那个。或者，更简单的方案：不要在 premain 里使用 AgentBuilder 来安装 transform——改用 ClassFileTransformer 直接实现，这样就不需要 Bootstrap CL 可见 ByteBuddy。
+
+但改动太大了。最实际的方案是：在 appendToBootstrapClassLoaderSearch 之后，不要继续用 AppClassLoader 中的 BaafooAgent 引用 Bootstrap CL 中的类。问题是 BaafooAgent 本身也在 agent jar 里，append 后 BaafooAgent 也被 Bootstrap CL 加载了。
+
+实际上，更好的理解是：InstrumentationImpl.loadClassAndCallPremain 使用 SystemClassLoader 加载 BaafooAgent。append 到 Bootstrap CL 后，Bootstrap CL 也能看到 BaafooAgent 和 AgentBuilder，但它们已经是不同的类对象了。
+
+正确方案：不要在 appendToBootstrapClassLoaderSearch 后继续使用 AppClassLoader 中的 AgentBuilder。具体做法：在 appendToBootstrapClassLoaderSearch 之前就创建好 AgentBuilder 并安装所有 transform。
+
+让我重新调整代码顺序：
+
+我理解了核心问题。appendToBootstrapClassLoaderSearch 之后，agent jar 中所有类对 Bootstrap CL 可见。而 BaafooAgent 是被 AppClassLoader 加载的，AgentBuilder 先被 AppClassLoader 加载，然后 append 后 Bootstrap CL 也能看到 AgentBuilder，导致 JVM 的 loader constraint 检查失败。
+
+最终方案：先构建和安装所有 ByteBuddy transforms，最后才 appendToBootstrapClassLoaderSearch。ByteBuddy 的 Advice 在 installOn 时只是注册 transformer，实际 Advice 代码在运行时才被内联到目标类中。到那时 Bootstrap CL 已经有 agent jar 了。
+
+但 ByteBuddy 的 Advice.to(SocketConnectAdvice.class) 在注册时就需要加载 Advice 类…不，它只是引用类对象。
+
+实际上，让我换个思路。参考 SkyWalking、Arthas 等成熟的 JavaAgent 项目，它们都不把整个 jar append 到 Bootstrap CL。它们的做法是创建一个独立的 “bootstrap jar” 只包含需要 Bootstrap CL 可见的类。
+
+但最简单的修复：在 appendToBootstrapClassLoaderSearch 之前就完成所有 AgentBuilder 的构建和安装。
+
+现在找到安装 transforms 之后的位置，把 appendToBootstrapClassLoaderSearch 移到那里：
+
+进展巨大！ByteBuddy transforms 安装成功了！但 appendToBootstrapClassLoaderSearch 之后，BaafooAgent$1（匿名内部类）的访问出了问题。因为 BaafooAgent 被 AppClassLoader 加载，但 append 到 Bootstrap CL 后，JVM 现在能通过 Bootstrap CL 看到 BaafooAgent$1（shutdown hook 的匿名 Runnable），而两个 loader 中的 BaafooAgent 类不同，导致 access error。
+
+问题出在 shutdown hook 的匿名内部类 BaafooAgent$1。解决：把 shutdown hook 的代码移到 appendToBootstrapClassLoaderSearch 之前，或者不使用匿名类：
+
+等等，Java 8 不支持 BaafooAgent::shutdown 这样的方法引用作为 Thread 构造函数参数——Thread(Runnable) 可以接受方法引用。实际上 Java 8 支持方法引用。但 IllegalAccessError 的问题是：BaafooAgent 被 AppClassLoader 加载，BaafooAgent$1 如果生成的话可能被 Bootstrap CL 加载。方法引用不会生成匿名类，但 lambda 会生成 BaafooAgent$$Lambda$1。
+
+更安全的方式是直接把 shutdown hook 放在 append 之前：
+
+🎉 Agent 启动成功了！ 看到 === Baafoo Agent started successfully ===！
+
+但 shutdown hook 已经被触发了（Baafoo Agent stopped），说明 test-app 已经退出了——可能是因为 test-app 是交互式菜单程序，没有输入就自动退出了。
+
+检查 test-app 是否还在运行：
+
+Test-app 进程不在了。它可能是交互式应用，stdin 关闭后自动退出。用 PTY 方式启动：
+
+两个问题：
+
+Agent 注册失败：AgentRegisterResponse 和 PollResponse 不能反序列化 server 返回的 ApiResponse 格式（含 success 字段）。
+Test-app 退出了：因为 stdin 没有输入。
+先修复 ControlChannel 的 JSON 反序列化问题：
+
+问题很清楚：server 返回的 JSON 是 ApiResponse 格式，包了 success, code, message, data, timestamp。但 agent 的 AgentRegisterResponse 和 PollResponse 期望的是扁平结构（直接 agentId, mode 等），没有 @JsonIgnoreProperties(ignoreUnknown = true)。
+
+需要修复 DTO 让它们能解析 server 的 ApiResponse 格式。最简单的方案是加 @JsonIgnoreProperties(ignoreUnknown = true) 并解析 data 字段：
+
+现在修改 register 和 pollRules 方法来正确解析 ApiResponse：
+
+现在重新打包并测试。这次我要用 PTY 模式启动 test-app，保持 stdin 打开：
+
+重大进展！ 看到了关键信息：
+
+✅ Agent 启动成功（虽然 ByteBuddy 对某些类扫描报 ERROR，但这些是非致命的——ByteBuddy 对不匹配的类跳过即可）
+✅ RouteManager 收到了 2 条规则，重建了 RouteTable：1 host:port routes！
+✅ 模式设置为 stub
+✅ Agent poll 成功（不再有 JSON 解析错误）
+✅ Test-app 进程仍在运行
+ByteBuddy 的 IllegalAccessError 是 relocation 的副作用——shaded 后 ByteBuddy 内部的私有构造函数跨包访问被阻止。但这些 ERROR 只影响类型扫描（class pool 解析），不影响实际的 bytecode transform（因为 Socket 类已经被成功匹配了）。
+
+现在发送 “1” 给 test-app 来执行 HTTP 测试：
+
+Test-app 收到了 “1”，但没看到 HTTP 测试的输出。可能是 test-app 还在等待，或者出错了。让我发送 Enter 键确认：
+
+HTTP 测试执行了！但所有请求都返回 503。这说明：
+
+✅ Agent 成功拦截了 Socket.connect() 调用
+✅ 请求被重定向到了 Baafoo Stub Server（端口 9000）
+❌ 但 Stub Server 返回了 503
+问题可能出在 Stub Server 的规则匹配上。让我检查一下 agent 的拦截逻辑——它把 httpbin.org:80 重定向到了 127.0.0.1:9000（HTTP Stub 端口）。但 Stub Server 收到请求时，需要匹配规则中的 host 和 method。
+
+先直接测试 Stub Server：
+
+Stub Server 返回 404，不是 503。所以 Agent 拦截后的请求可能没有到达正确的端口，或者 Host header 不对。
+
+503 可能是 Agent 在重定向连接时的错误处理。让我查看 SocketConnectAdvice 和 RouteManager 的逻辑：
+
+关键：当没有匹配的路由时，stub 模式下 throw new RuntimeException，这会导致 503。
+
+但我们知道 RouteTable 有 1 个 host:port route（httpbin.org:80 → 127.0.0.1:9000）。问题可能是 httpbin.org 的 DNS 解析后的地址和 RouteTable 的匹配逻辑不一致。
+
+看看 RouteTable.lookup 方法：
+
+RouteTable.lookup 用 host:port 作为 key。看看 RouteManager 怎么构建 route table 的：
+
+RouteTable 用 host:port 作为 key。规则中 host = "httpbin.org", port = 80，所以 key 是 httpbin.org:80。SocketConnectAdvice 中 addr.getHostString() 返回的也是 httpbin.org。
+
+但等等——test-app 的 HTTP 请求是怎么发出去的？它使用 HttpURLConnection，底层会调用 Socket.connect()。但 InetSocketAddress 可能先经过 DNS 解析。如果 DNS 解析在 connect() 之前，getHostString() 可能返回 IP 地址而不是域名。
+
+让我检查 test-app 的 HTTP 调用代码：
+
+代码用 URL.openConnection() 打开 HTTP 连接，目标是 http://httpbin.org/get。
+
+问题在于：HttpURLConnection 内部会先做 DNS 查询（InetAddress.getByName("httpbin.org")），得到 IP 地址，然后 Socket.connect() 传入的 InetSocketAddress 的 getHostString() 返回的可能是 IP 地址而不是域名名。
+
+但 503 不是 404（未匹配），也不是连接被拒绝。503 可能来自 Baafoo Stub Server 本身。
+
+让我直接测试 Stub Server，模拟 agent 发来的请求：
+
+Stub Server 返回 404，说明规则没有匹配。但我们知道规则存在（listRules 能返回）。问题在于 Stub Server 的规则匹配逻辑——它需要匹配 host 字段。
+
+让我看看 HttpStubHandler 的匹配逻辑：
+
+找到问题了！HttpStubHandler.channelRead0 里传给 matchEngine.match 的 host 参数是硬编码的 "127.0.0.1"，不是请求的 Host header。但规则中 host = "httpbin.org"，所以匹配时 host 不一致。
+
+修复：从请求的 Host header 中提取 host：
+
+同样检查 TcpStubHandler：
+
+TCP handler 也硬编码了 "127.0.0.1"，但 TCP 场景更复杂（没有 Host header），暂时不改。
+
+现在重新打包 server 并测试：
+
+还是 404。让我检查 MatchEngine 的匹配逻辑：
+
+问题在于 matchesTarget：规则中 host = "httpbin.org"，port = 80。但 HttpStubHandler 传入的 port = 9000（stub 端口）。所以 port != rule.getPort() → 80 != 9000 → 不匹配！
+
+这是根本原因：Stub Server 应该用原始请求的目标端口（从 Host header 中提取），而不是它自己的监听端口。修复：
+
+Stub Server 现在能匹配了！ 🎉 返回了 mock 的 JSON 数据！
+
+现在用 agent 做端到端测试：
+
+Agent 启动成功，RouteTable 加载了 2 条规则。现在触发 HTTP 测试：
+
+仍然是 503。这说明 Agent 的 Socket 拦截把连接重定向到了 9000 端口，但返回的是 503 HTML 页面，不是 404 JSON。这不像 Baafoo Stub Server 的响应格式（Stub 返回 JSON）。
+
+503 可能来自 Java 的 HttpURLConnection 本身——当 Agent 抛出 RuntimeException 时，连接被阻断，HttpURLConnection 可能返回 503 或 ConnectException。
+
+问题可能出在 SocketConnectAdvice 中：InetSocketAddress 创建时如果 host 字段是 IP 地址（DNS 解析后），而不是 httpbin.org，那么 RouteTable 查不到匹配的 key。
+
+让我验证：
+
+确认了。Java HttpURLConnection 创建 InetSocketAddress("httpbin.org", 80) 时，JDK 会先做 DNS 查询得到 IP 地址。InetSocketAddress.getHostString() 可能返回 IP 地址而不是域名。
+
+但实际上，Java 的 InetSocketAddress.getHostString() 在用域名创建时应该返回域名。让我确认一下 SocketConnectAdvice 的拦截点。
+
+关键问题：Agent 拦截的是 java.net.Socket.connect()，但 HttpURLConnection 在 Java 8 中底层可能使用 sun.net.www.http.HttpClient，而它可能通过 InetSocketAddress.createUnresolved() 创建地址，或者先 DNS 解析再创建 InetSocketAddress。
+
+让我查看 agent 日志，看是否有 RuntimeException：
+
+让我用另一种方式测试——直接用 Java 代码检查 Socket.connect 的 InetSocketAddress.getHostString() 返回什么：
+
+端口 9000 可达。有一个 TIME_WAIT 连接，说明之前有连接发生。
+
+问题可能在于 HttpURLConnection 内部的连接机制。Java 8 的 HttpURLConnection 使用 sun.net.www.http.HttpClient，它先做 DNS 解析，然后用解析后的 IP 创建 InetSocketAddress。这样 getHostString() 返回的是 IP 地址而不是域名。
+
+解决：在 SocketConnectAdvice 中同时检查 IP 地址对应的域名。或者在 RouteTable 中同时存储 IP → route 的映射。
+
+但更简单的方案：让 SocketConnectAdvice 也拦截 DNS 解析（InetAddress.getByName()），或者在 route 匹配时做反向 DNS 查询。
+
+实际上最优雅的方案是：拦截 InetSocketAddress 的创建，或者同时匹配 IP 和域名。
+
+让我看看 HttpURLConnection 实际传给 Socket.connect() 的 InetSocketAddress：
+
+InetSocketAddress.getHostString() 返回 httpbin.org！ 所以 RouteTable 的查找 key 应该是正确的。
+
+那为什么还返回 503？503 的 HTML 内容不像是 Baafoo Stub Server 的响应。让我看看 Agent 拦截的端口是多少——也许 HttpURLConnection 不是用 Socket.connect() 而是用 NIO（SocketChannel.connect()）？
+
+检查 NioSocketConnectAdvice：
+
+NioSocketConnectAdvice 和 SocketConnectAdvice 逻辑一样。
+
+503 响应可能来自另一个问题：Agent 成功重定向了 Socket 到 127.0.0.1:9000，但 HttpURLConnection 在连接后发现 TLS/HTTP 协议有问题。
+
+等等，实际上问题可能是：HttpURLConnection 连接到 127.0.0.1:9000 后，发送的 HTTP 请求中 Host header 可能是 127.0.0.1:9000 而不是 httpbin.org。因为 URL 已经被重写了（在 Socket 层面），但 HTTP 层面可能仍然知道原始 host。
+
+让我再检查一下。Java 8 HttpURLConnection 发送 HTTP 请求时，Host header 来自 URL 对象，不是来自 Socket 连接的目标地址。所以 Host header 应该仍然是 httpbin.org。
+
+让我用更精确的方式测试：
+
+直接发 HTTP 请求到 stub server 完全正常！ 200 OK，返回了 mock 数据。
+
+所以问题出在 Agent 的 Socket 重写上。连接被重定向了，但可能 HttpURLConnection 内部的状态和实际连接不一致，导致 503。
+
+让我检查另一个可能性：Agent 重写了 Socket.connect() 的目标地址，但 HttpURLConnection 在连接前就做了 DNS 解析，如果 DNS 返回的 IP 地址在连接后被验证失败，可能会产生 503。
+
+实际上，503 HTML 页面的格式是 <html><head><title>503 Service Temporarily Unavailable</title></head>...。这看起来像是 Java 的 HttpURLConnection 自身产生的错误页面，或者是某个 HTTP 代理的响应。
+
+让我看看 test-app 是不是走了代理：
+
+没有代理。那 503 从哪来的？让我直接从 test-app 内部测试——不走 agent，直接连接 stub server：
+
+没有到 9000 的活跃连接。但 test-app 刚才已经执行完了 HTTP 测试。
+
+关键问题：SocketConnectAdvice.onConnect 中的 endpoint = stubAddr 赋值是否真的生效了？
+
+Byte Buddy 的 @Advice.OnMethodEnter 对 readOnly = false 的参数赋值，实际上是通过字节码修改将新值存回方法的局部变量。但这只在方法声明中参数类型和实际类型兼容时才生效。
+
+java.net.Socket.connect(SocketAddress endpoint) — 参数声明类型是 SocketAddress，实际传入 InetSocketAddress。赋值 endpoint = new InetSocketAddress(stubHost, stubPort) 应该是兼容的。
+
+等等！ Java 8 的 HttpURLConnection 可能使用的是 Socket.connect(SocketAddress, int) 这个重载版本！而不是 connect(SocketAddress)。
+
+找到问题了！ Agent 只拦截了 connect(SocketAddress)（1 个参数的版本），但 Java 8 的 HttpURLConnection 实际上调用的是 connect(SocketAddress, int)（2 个参数的版本——connect(SocketAddress endpoint, int timeout)）！
+
+修复：同时拦截两个重载版本。
+
+同时修改 SocketConnectAdvice 使其兼容 2 参数版本：
+
+括号不匹配。修复：
+
+编译成功。现在启动测试：
+
+Agent 启动成功，RouteManager 加载了 2 条规则。触发 HTTP 测试：
+
+还在执行中，让我等一下看完整结果：
+
+测试似乎卡住了。HTTP 请求可能被阻塞。这暗示 Agent 可能在拦截 Socket.connect() 后出了问题——可能 HttpURLConnection 使用的是 NIO 而不是传统 IO？
+
+让我 kill 掉这个进程，分析一下 Java 8 HttpURLConnection 实际调用的 Socket 方法：
+
+让我写一个简单的 Java 测试程序，用 Java 8 运行，来验证 Socket.connect() 的调用签名：
+
+关键发现！ SocketTimeoutException: Read timed out。这说明：
+
+Socket 连接成功了（否则会是 ConnectException）
+但读取超时了
+这意味着连接到了 stub server，但 stub server 可能没有正确发送响应。之前直接 curl 测试时是正常的，但通过 Agent 拦截后出了问题。
+
+问题出在 Socket.connect() 被拦截后，HttpURLConnection 的内部状态不一致。HttpURLConnection 在 connect() 之前会解析 DNS 得到 IP 地址，然后用这个 IP 做 SSL 验证或其他检查。如果连接被重定向到 127.0.0.1:9000，但 URL 仍然是 http://httpbin.org，可能有某些 HTTP 级别的验证失败。
+
+但实际上 HTTP 协议不应该有这个问题——因为 HTTP 请求的 Host header 由 URL 决定，和 Socket 连接目标无关。
+
+让我检查是不是 Server 没启动（Connection refused 说明 Server 在测试期间没运行）：
+
+规则存在。现在用简单的 Java 测试来验证 Agent 拦截：
+
+核心问题可能是：Agent 拦截 Socket.connect() 并修改目标地址后，连接确实到了 127.0.0.1:9000，但 HttpURLConnection 在解析 HTTP 响应时出了问题。
+
+因为 stub server 返回的响应头包含 content-length: 98，但 HttpURLConnection 可能期望不同的响应格式。或者 stub server 没有正确关闭连接。
+
+让我换个策略——用原始 Socket 测试，而不是 HttpURLConnection：
+
+极其关键的发现！ 原始 Socket 测试成功连接了，但返回的是真实的 httpbin.org 响应，不是 Baafoo mock 响应！
+
+这意味着 Agent 的 SocketConnectAdvice 没有成功重写目标地址。
+
+原因分析：Socket.connect(SocketAddress, int) 的2参数版本被拦截了，但 ByteBuddy Advice 对 readOnly=false 的参数重赋值可能没有正确生效。
+
+让我检查 ByteBuddy Advice 的参数重写机制。关键问题可能是：@Advice.OnMethodEnter 中对 readOnly=false 参数的赋值在2参数重载版本中不工作，因为 ByteBuddy 对每个匹配方法独立生成 Advice 代码。
+
+实际上，Socket.connect(SocketAddress, int) 的参数0是 SocketAddress endpoint，Advice 代码应该正确地把 endpoint = stubAddr 赋值生效。
+
+让我加 debug 日志确认 Advice 是否执行：
+
+代码看起来正确。但问题是：HttpURLConnection 在 Java 8 中不使用 Socket.connect(SocketAddress) 或 Socket.connect(SocketAddress, int)！
+
+Java 8 的 HttpURLConnection 使用 sun.net.www.http.HttpClient，而 HttpClient 使用 Socket() 构造函数 + Socket.connect() 来建立连接。但上面的 raw socket 测试结果显示请求到了真实的 httpbin.org，说明 Advice 根本没有生效。
+
+等等，我注意到 raw socket 测试返回了真实的 httpbin.org 响应，而不是 mock 响应。而且没有看到 Baafoo: No rule matched 的 RuntimeException，也没有看到 mock 响应。
+
+这只有一个解释：Advice 被注入了但没有执行。可能是因为 ByteBuddy shaded 后的 IllegalAccessError 导致 transform 失败了。但日志显示 SocketConnectAdvice 注册成功了。
+
+让我检查另一个可能性：Socket 类在 Java 8 中的 connect 方法声明在 Socket 本身还是在其父类？
+
+两个 connect 方法都声明在 Socket 类中。拦截应该没问题。
+
+让我再仔细看一下 ByteBuddy shaded 后的问题——IllegalAccessError 可能导致 AgentBuilder 的 transform pipeline 失败，即使 Advice 注册了，实际的字节码注入可能没有成功。
+
+关键线索：日志中 Byte Buddy ERROR 在 Agent 注册之后才出现，这说明 transform 在类加载时尝试执行但失败了。如果 Socket 类的 transform 失败了，就不会有 Advice 注入。
+
+但 Socket 类是 JDK 核心类，在 Agent 启动前就已经加载了。ByteBuddy 对已加载的类需要通过 retransform 来注入。
+
+让我检查 BaafooAgent 的 AgentBuilder 配置是否启用了 retransformation：
+
+retransformation 启用了。那问题可能是 Socket 类确实被 retransform 了，但 Advice 代码由于 Bootstrap ClassLoader 的问题没有正确注入。
+
+让我检查 Socket 类是否在 ERROR 日志中出现：
+
+没有任何 [Baafoo-Advice] 的 debug 输出！ 这证实了 Advice 代码根本没执行。
+
+问题原因：Socket 类在 JVM 启动早期就已加载，RedefinitionStrategy.RETRANSFORMATION 应该可以 retransform 已加载的类，但 ByteBuddy 的 retransform 可能因为 shaded 后的 IllegalAccessError 而静默失败了。
+
+让我检查 Socket 类是否出现在 retransform 日志中。ByteBuddy 的 Listener 应该会记录 retransform 事件：
+
+withErrorsOnly() — 只打印错误。如果 Socket 类的 retransform 成功了，不会有日志。
+
+但 Advice 没执行，说明 retransform 虽然可能成功了，但 Advice 代码有问题。
+
+等等，我刚意识到一个严重的问题：ByteBuddy Advice 对 readOnly=false 参数的赋值，实际上是通过修改方法的局部变量来实现的。但对于 Bootstrap ClassLoader 加载的类（如 java.net.Socket），ByteBuddy 的 Advice 需要引用的类（如 AgentManifest、RouteTable）也必须对 Bootstrap ClassLoader 可见。
+
+虽然我们在 appendToBootstrapClassLoaderSearch 之前就安装了 transform，但 Socket 类在 retransform 时，Advice 代码会被内联到 Socket 类中。这些代码引用了 AgentManifest 和 RouteTable，它们必须在 Socket 的 ClassLoader（Bootstrap CL）中可访问。
+
+问题就在这里！ 我们在 installOn 之后才调用 appendToBootstrapClassLoaderSearch，但 retransform 是在 installOn 时就执行的。如果 retransform 发生时 agent jar 还没被加入 Bootstrap CL，那 Advice 中引用的 AgentManifest 和 RouteTable 就无法被 Bootstrap CL 加载。
+
+但查看代码顺序，installOn 之后才 appendToBootstrapClassLoaderSearch：
+
+java
+
+复制
+agentBuilder.installOn(inst);  // ← retransform happens here
+// ...
+inst.appendToBootstrapClassLoaderSearch(jarFile);  // ← too late for retransform!
+这就是根本原因！ retransform 时 Bootstrap CL 找不到 AgentManifest 和 RouteTable，导致 Advice 注入失败（或者注入了但运行时抛出 NoClassDefFoundError）。
+
+修复方案：先添加到 Bootstrap CL，然后再 installOn：
+
+注释说"Must be done AFTER installOn"，但这个注释是关于 loader constraint violation 的旧分析。实际情况是：retransform 需要在 installOn 时就找到 Advice 引用的类。
+
+正确的做法是：先 appendToBootstrapClassLoaderSearch，然后 installOn。之前的 loader constraint violation 是因为 BaafooAgent 本身（被 AppClassLoader 加载）在 appendToBootstrapClassLoaderSearch 后被两个 CL 同时可见。
+
+解决方案：把 appendToBootstrapClassLoaderSearch 移到 installOn 之前，但使用当前的 jar file（不需要 AppClassLoader 加载的类）。
+
+现在我要重构 premain 方法的顺序。核心问题是：
+
+appendToBootstrapClassLoaderSearch 必须在 installOn 之前执行，因为 installOn 时 retransform JDK 类需要 Bootstrap CL 能找到 Advice 引用的类
+但之前的 loader constraint violation 问题是：appendToBootstrapClassLoaderSearch 之后，BaafooAgent 类本身也被 Bootstrap CL 可见，而它已经被 AppClassLoader 加载了
+这个问题的正确解决方案是：先 appendToBootstrapClassLoaderSearch，然后立即 installOn。installOn 本身不会触发 loader constraint violation，因为 AgentBuilder 是在 AppClassLoader 中执行的。loader constraint violation 只发生在当同一个类被两个 CL 同时加载并尝试互相访问时。
+
+之前的 loader constraint violation 是因为 shutdown hook 的匿名内部类。我们已经在之前解决了这个问题（使用方法引用）。现在只要确保 shutdown hook 注册在 appendToBootstrapClassLoaderSearch 之前就行。
+
+我需要重构 premain，把 appendToBootstrapClassLoaderSearch 移到 installOn 之前，但 shutdown hook 注册也要在 appendToBootstrapClassLoaderSearch 之前。
+
+关键修改：
+
+现在看到了！ appendToBootstrapClassLoaderSearch 在 installOn 之前导致了新的 IllegalAccessError：
+
+code
+
+复制
+IllegalAccessError: tried to access method AgentBuilder$Default$Transformation$SimpleMatcher.<init>(...) 
+from class AgentBuilder$Default
+这正是之前分析的 loader constraint violation：一旦 agent jar 被 Bootstrap CL 可见，ByteBuddy 的类被两个 CL 同时加载，包私有构造函数跨 CL 不可访问。
+
+根本矛盾：
+
+installOn 需要 Bootstrap CL 能找到 Advice 引用的类 → 需要先 appendToBootstrapClassLoaderSearch
+但 appendToBootstrapClassLoaderSearch 会让 ByteBuddy 自身也被两个 CL 加载 → 导致 IllegalAccessError
+解决方案：ByteBuddy 的 AgentBuilder 提供了 .with(new AgentBuilder.InjectionStrategy.UsingInstrumentation(inst)) 来处理这个问题。或者更简单的方案：不 relocation ByteBuddy，让它保持在原始包名下。但这样可能和应用的 ByteBuddy 冲突。
+
+最佳方案是使用 ByteBuddy 的 AgentBuilder.InitializationStrategy 和 InjectionStrategy，但更直接的做法是：回到原来的顺序（先 installOn 再 appendToBootstrapClassLoaderSearch），但对 JDK 类使用 Advice.withBootstrapClassLoaderHint 或者用 AgentBuilder.InitializationStrategy.SelfInjection.Hint.UseInstrumentation。
+
+实际上，最简单的方案是：让 Advice 只引用 java.* 和 Bootstrap CL 可见的类。AgentManifest 和 RouteTable 不是 JDK 类，所以需要在 Advice 执行时对 Bootstrap CL 可见。
+
+但 appendToBootstrapClassLoaderSearch 只能把 jar 加到 Bootstrap CL 的搜索路径中。如果 installOn 时不搜索这个 jar，retransform 时内联的 Advice 代码引用的类确实找不到。
+
+等等——ByteBuddy 的 Advice 代码不是在 retransform 时就解析所有引用的。Advice 代码被内联为字节码，类引用在运行时才解析。所以即使 retransform 时 Bootstrap CL 找不到 AgentManifest，只要在 Advice 第一次执行前 jar 已经被加到 Bootstrap CL 就行。
+
+回到原始问题：先 installOn 后 appendToBootstrapClassLoaderSearch，Advice 应该在运行时能找到类。但之前的测试显示 Advice 根本没执行。
+
+让我验证一下：也许 Advice 确实被注入了，但在运行时抛出了 NoClassDefFoundError，被 catch (Throwable t) 捕获并静默了！
+
+问题找到了！catch (Throwable t) 捕获了 NoClassDefFoundError（它是 Error 的子类，而 Error 继承 Throwable），并静默吞掉了。
+
+如果 AgentManifest 在 Bootstrap CL 中找不到，Advice 会在第一个 if (AgentManifest.isPassthrough()) 处抛出 NoClassDefFoundError，被 catch (Throwable t) 捕获，打印 t.getMessage() 但因为 NoClassDefFoundError.getMessage() 可能不是 null，所以应该有输出。
+
+但之前的测试中完全没有 [Baafoo-Advice] 输出！这意味着 Advice 代码根本没有被注入。
+
+让我换回原来的顺序（先 installOn 后 appendToBootstrapClassLoaderSearch），但在 catch 块中打印堆栈：
+
+同时在 catch 中打印完整堆栈：
+
+还是没有任何 [Baafoo-Advice] 输出！即使 catch 中有 printStackTrace，也没有。
+
+这说明 Advice 代码确实没有被注入到 java.net.Socket 类中。
+
+Byte Buddy ERROR 只在 RawSocketTest 类的 transform 时出现，不是 Socket 类。但 Socket 类的 transform 状态完全不清楚。
+
+根本问题在于 ByteBuddy shaded 后的 IllegalAccessError。shaded 后 ByteBuddy 的内部包私有构造函数跨包访问被阻止。这个错误不仅在类型扫描时发生，也可能在 retransform 时发生——只是对 java.net.Socket 的 retransform 错误被 ByteBuddy 的 Listener 静默了（因为我们用了 withErrorsOnly）。
+
+修复方案：不 relocation ByteBuddy。这样 ByteBuddy 的包结构不会被破坏，内部访问不会有问题。唯一的风险是应用如果也用 ByteBuddy 会冲突，但 Baafoo 是 JavaAgent，被拦截的应用不太可能同时使用 ByteBuddy。
+
+问题根源确认：ByteBuddy 的 relocation 导致内部包私有访问被破坏。 ByteBuddy 大量使用包私有构造函数，relocation 后包名变了，跨包访问就不合法了。
+
+修复：移除 ByteBuddy 的 relocation。其他依赖的 relocation 保持不变。
+
+但移除 ByteBuddy relocation 后，需要更新 BaafooAgent.java 中的 import——之前 shaded 后的 com.baafoo.agent.shaded.bytebuddy 需要改回 net.bytebuddy：

@@ -1,8 +1,8 @@
 package com.baafoo.agent.advice;
 
 import com.baafoo.agent.AgentManifest;
-import com.baafoo.agent.RouteTable;
 import com.baafoo.agent.BaafooAgent;
+import com.baafoo.agent.GlobalRouteState;
 import com.baafoo.agent.channel.ControlChannel;
 import com.baafoo.core.model.*;
 import com.baafoo.core.util.MatchEngine;
@@ -10,60 +10,31 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-/**
- * Central route manager for intercepted requests.
- *
- * <p><b>Architecture note (Phase 1 refactor)</b>: RouteManager is now a background
- * service that is NOT referenced by any Advice class. Advice classes read from
- * {@link AgentManifest#ROUTE_TABLE} and {@link AgentManifest#currentMode} exclusively.
- * RouteManager pulls rules from ControlChannel, matches them via MatchEngine, and
- * writes the results into the Bootstrap-safe RouteTable.</p>
- *
- * <p>Design pattern: Simple static singleton, since this runs in
- * the context of intercepted classes across multiple threads.</p>
- *
- * <p>Phase 2 note: KafkaProducerAdvice, PulsarClientAdvice, and RoutingContext
- * still reference RouteManager.route() and RouteResult. These will be migrated
- * to AgentManifest in Phase 2.</p>
- */
 public final class RouteManager {
 
     private static final Logger log = LoggerFactory.getLogger(RouteManager.class);
 
-    /** Current rule set (atomic reference swap for hot-reload) */
     private static final AtomicReference<List<Rule>> RULES = new AtomicReference<List<Rule>>(new ArrayList<Rule>());
 
-    /** Current environments */
     private static final AtomicReference<Map<String, Environment>> ENVIRONMENTS = new AtomicReference<Map<String, Environment>>(new HashMap<String, Environment>());
 
-    /** Match engine */
     private static final MatchEngine MATCH_ENGINE = new MatchEngine();
 
-    /** Current agent environment mode (from server) */
     private static volatile EnvironmentMode currentMode = EnvironmentMode.STUB;
 
-    /** Whether agent is in recording mode */
     private static volatile boolean recording = false;
 
-    /** Recording buffer (batched upload to server) */
     private static final List<RecordingEntry> RECORDING_BUFFER = new CopyOnWriteArrayList<RecordingEntry>();
 
-    /** Default stub host */
     private static final String STUB_HOST = "127.0.0.1";
 
     private RouteManager() {}
 
-    // --- Rule management (hot-reload safe) ---
-
-    /**
-     * Update rules atomically (called by ControlChannel on poll).
-     * Also rebuilds the Bootstrap-safe RouteTable in AgentManifest.
-     */
     public static void updateRules(List<Rule> newRules) {
-        // Sort by priority
         List<Rule> sorted = new ArrayList<Rule>(newRules);
         Collections.sort(sorted, new Comparator<Rule>() {
             @Override
@@ -74,15 +45,12 @@ public final class RouteManager {
         RULES.set(sorted);
         log.info("Rules updated: {} rules loaded", sorted.size());
 
-        // Rebuild the Bootstrap-safe RouteTable
         rebuildRouteTable(sorted);
     }
 
     public static List<Rule> getRules() {
         return RULES.get();
     }
-
-    // --- Environment management ---
 
     public static void updateEnvironments(Map<String, Environment> envs) {
         ENVIRONMENTS.set(envs);
@@ -93,24 +61,28 @@ public final class RouteManager {
         recording = (mode == EnvironmentMode.RECORD || mode == EnvironmentMode.RECORD_AND_STUB);
         log.info("Mode changed to: {} (recording={})", mode.getValue(), recording);
 
-        // Sync to AgentManifest (int mode constants)
+        int modeValue;
         switch (mode) {
             case STUB:
-                AgentManifest.currentMode = AgentManifest.MODE_STUB;
+                modeValue = GlobalRouteState.MODE_STUB;
                 break;
             case PASSTHROUGH:
-                AgentManifest.currentMode = AgentManifest.MODE_PASSTHROUGH;
+                modeValue = GlobalRouteState.MODE_PASSTHROUGH;
                 break;
             case RECORD:
-                AgentManifest.currentMode = AgentManifest.MODE_RECORD;
+                modeValue = GlobalRouteState.MODE_RECORD;
                 break;
             case RECORD_AND_STUB:
-                AgentManifest.currentMode = AgentManifest.MODE_RECORD_AND_STUB;
+                modeValue = GlobalRouteState.MODE_RECORD_AND_STUB;
                 break;
             default:
-                AgentManifest.currentMode = AgentManifest.MODE_STUB;
+                modeValue = GlobalRouteState.MODE_STUB;
                 break;
         }
+
+        AgentManifest.currentMode = modeValue;
+
+        syncModeToBootstrapCL(modeValue);
     }
 
     public static EnvironmentMode getMode() {
@@ -121,15 +93,8 @@ public final class RouteManager {
         return recording;
     }
 
-    // --- Bootstrap-safe RouteTable rebuild ---
-
-    /**
-     * Rebuild the RouteTable in AgentManifest from the current rule set.
-     * This is the critical bridge between the "Plugin" side (RouteManager with
-     * full model access) and the "Core" side (Advice with only Bootstrap-safe types).
-     */
     private static void rebuildRouteTable(List<Rule> rules) {
-        RouteTable newTable = new RouteTable();
+        ConcurrentHashMap<String, String> newRoutes = new ConcurrentHashMap<String, String>();
 
         for (Rule rule : rules) {
             if (!rule.isEnabled()) {
@@ -138,32 +103,51 @@ public final class RouteManager {
 
             String protocol = rule.getProtocol() != null ? rule.getProtocol().toLowerCase() : "tcp";
             int stubPort = getStubPort(protocol);
+            String routeValue = STUB_HOST + ":" + stubPort + ":" + protocol;
 
-            // Add host:port route
             if (rule.getHost() != null && !rule.getHost().isEmpty() && rule.getPort() != null && rule.getPort() > 0) {
-                newTable.put(rule.getHost(), rule.getPort(), STUB_HOST, stubPort, protocol);
+                String key = rule.getHost() + ":" + rule.getPort();
+                newRoutes.put(key, routeValue);
             }
 
-            // Add service name route (for Consul DNS interception)
             if (rule.getServiceName() != null && !rule.getServiceName().isEmpty()) {
-                newTable.putService(rule.getServiceName(), STUB_HOST, stubPort, protocol);
+                String key = "svc:" + rule.getServiceName();
+                newRoutes.put(key, routeValue);
             }
         }
 
-        newTable.incrementVersion();
+        GlobalRouteState.ROUTES.clear();
+        GlobalRouteState.ROUTES.putAll(newRoutes);
 
-        // Atomic swap — Advice classes will see the new table immediately
-        AgentManifest.ROUTE_TABLE.set(newTable);
-        log.info("RouteTable rebuilt: {} host:port routes, {} service name routes, version={}",
-                newTable.getRoutes().size(), newTable.getServiceNames().size(), newTable.getVersion());
+        AgentManifest.ROUTE_TABLE.get().clear();
+        for (java.util.Map.Entry<String, String> entry : newRoutes.entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
+            if (key.startsWith("svc:")) {
+                String serviceName = key.substring(4);
+                String stubHost = GlobalRouteState.parseHost(value);
+                int stubPort = GlobalRouteState.parsePort(value);
+                String protocol = "tcp";
+                AgentManifest.ROUTE_TABLE.get().putService(serviceName, stubHost, stubPort, protocol);
+            } else {
+                int colonIdx = key.indexOf(':');
+                if (colonIdx > 0) {
+                    String host = key.substring(0, colonIdx);
+                    int port = Integer.parseInt(key.substring(colonIdx + 1));
+                    String stubHost = GlobalRouteState.parseHost(value);
+                    int stubPort = GlobalRouteState.parsePort(value);
+                    String protocol = "tcp";
+                    AgentManifest.ROUTE_TABLE.get().put(host, port, stubHost, stubPort, protocol);
+                }
+            }
+        }
+        AgentManifest.ROUTE_TABLE.get().incrementVersion();
+
+        log.info("RouteTable rebuilt: {} routes (GlobalRouteState.ROUTES size={})", newRoutes.size(), GlobalRouteState.ROUTES.size());
+
+        syncRoutesToBootstrapCL(newRoutes);
     }
 
-    /**
-     * Get stub port for a given protocol.
-     *
-     * @param protocol protocol name
-     * @return stub server port
-     */
     private static int getStubPort(String protocol) {
         if (protocol == null) return 9001;
         switch (protocol.toLowerCase()) {
@@ -176,26 +160,6 @@ public final class RouteManager {
         }
     }
 
-    // --- Request routing (Phase 2: used by KafkaProducerAdvice, PulsarClientAdvice) ---
-
-    /**
-     * Route an intercepted request.
-     *
-     * <p>Phase 2 note: This method is still used by KafkaProducerAdvice and
-     * PulsarClientAdvice which have not been migrated to the Bootstrap-safe
-     * pattern yet. After Phase 2 migration, this method can be removed.</p>
-     *
-     * @param protocol    protocol
-     * @param host        target host
-     * @param port        target port
-     * @param serviceName service name (Consul)
-     * @param method      HTTP method (nullable)
-     * @param path        request path (nullable)
-     * @param headers     request headers
-     * @param queryParams query parameters
-     * @param body        request body (nullable)
-     * @return routing result
-     */
     public static RouteResult route(String protocol, String host, int port,
                                      String serviceName, String method, String path,
                                      Map<String, String> headers, Map<String, String> queryParams,
@@ -224,7 +188,6 @@ public final class RouteManager {
                     result.responseEntry != null ? result.responseEntry.getName() : "default");
         } else {
             if (isStubMode()) {
-                // In stub mode, unmatched = 404 (safety design)
                 result.unmatched404 = true;
             }
         }
@@ -236,12 +199,9 @@ public final class RouteManager {
         return currentMode == EnvironmentMode.STUB || currentMode == EnvironmentMode.RECORD_AND_STUB;
     }
 
-    // --- Recording ---
-
     public static void addRecording(RecordingEntry recording) {
         RECORDING_BUFFER.add(recording);
 
-        // Flush if buffer exceeds threshold
         if (RECORDING_BUFFER.size() >= 100) {
             flushRecordings();
         }
@@ -259,12 +219,6 @@ public final class RouteManager {
         }
     }
 
-    /**
-     * Route result.
-     *
-     * <p>Phase 2 note: Still referenced by RoutingContext, KafkaProducerAdvice,
-     * and PulsarClientAdvice. Will be migrated to Bootstrap-safe types in Phase 2.</p>
-     */
     public static class RouteResult {
         public String protocol;
         public String host;
@@ -277,5 +231,28 @@ public final class RouteManager {
         public Rule rule;
         public ResponseEntry responseEntry;
         public int responseIndex;
+    }
+
+    private static void syncModeToBootstrapCL(int modeValue) {
+        java.lang.reflect.Field field = BaafooAgent.getBootstrapCurrentModeField();
+        if (field == null) return;
+        try {
+            field.setInt(null, modeValue);
+            log.debug("Synced mode {} to Bootstrap CL GlobalRouteState", modeValue);
+        } catch (Exception e) {
+            log.error("Failed to sync mode to Bootstrap CL: {}", e.getMessage());
+        }
+    }
+
+    private static void syncRoutesToBootstrapCL(ConcurrentHashMap<String, String> newRoutes) {
+        ConcurrentHashMap<String, String> bootRoutes = BaafooAgent.getBootstrapRoutes();
+        if (bootRoutes == null) return;
+        try {
+            bootRoutes.clear();
+            bootRoutes.putAll(newRoutes);
+            log.info("Synced {} routes to Bootstrap CL GlobalRouteState.ROUTES", bootRoutes.size());
+        } catch (Exception e) {
+            log.error("Failed to sync routes to Bootstrap CL: {}", e.getMessage());
+        }
     }
 }

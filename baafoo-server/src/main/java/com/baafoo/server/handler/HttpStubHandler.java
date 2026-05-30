@@ -47,10 +47,31 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         Map<String, String> headers = extractHeaders(request);
         String body = request.content().toString(StandardCharsets.UTF_8);
 
+        // Extract original host and port from Host header
+        // Agent redirects httpbin.org:80 → 127.0.0.1:9000, but
+        // HttpURLConnection still sends "Host: httpbin.org" (or "Host: httpbin.org:80")
+        String host = null;
+        int port = 80; // default HTTP port
+        String hostHeader = headers.get("Host");
+        if (hostHeader != null) {
+            int colonIdx = hostHeader.lastIndexOf(':');
+            if (colonIdx > 0 && hostHeader.indexOf(']') < 0) {
+                // Has port suffix
+                try {
+                    port = Integer.parseInt(hostHeader.substring(colonIdx + 1));
+                    host = hostHeader.substring(0, colonIdx);
+                } catch (NumberFormatException e) {
+                    host = hostHeader;
+                }
+            } else {
+                host = hostHeader;
+            }
+        }
+
         // Match against rules
         List<Rule> rules = storage.listRules();
         MatchEngine.MatchResult result = matchEngine.match(
-                rules, "http", "127.0.0.1", 9000, null,
+                rules, "http", host, port, null,
                 method, path, headers, queryParams, body);
 
         if (result.isMatched()) {

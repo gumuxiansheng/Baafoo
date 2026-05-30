@@ -4,6 +4,7 @@ import com.baafoo.core.config.AgentConfig;
 import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.Rule;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -127,22 +128,31 @@ public class ControlChannel {
 
             if (code == 200 || code == 201) {
                 String body = readResponse(conn);
-                AgentRegisterResponse res = mapper.readValue(body, AgentRegisterResponse.class);
+                // Server wraps response in ApiResponse format: {success, code, message, data, timestamp}
+                // Extract the "data" field to get the actual payload
+                com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(body);
+                com.fasterxml.jackson.databind.JsonNode dataNode = root.get("data");
+                if (dataNode != null) {
+                    AgentRegisterResponse res = mapper.treeToValue(dataNode, AgentRegisterResponse.class);
 
-                // Update agent ID if server assigned one
-                if (res.agentId != null) {
-                    config.setAgentId(res.agentId);
+                    // Update agent ID if server assigned one
+                    if (res.agentId != null) {
+                        config.setAgentId(res.agentId);
+                    }
+
+                    // Apply initial mode
+                    if (res.mode != null) {
+                        com.baafoo.agent.advice.RouteManager.setMode(
+                                EnvironmentMode.fromValue(res.mode));
+                    }
+
+                    log.info("Registered with server. Agent ID: {}, mode: {}",
+                            config.getAgentId(), res.mode);
+                    return true;
+                } else {
+                    log.warn("Registration response missing 'data' field: {}", body);
+                    return false;
                 }
-
-                // Apply initial mode
-                if (res.mode != null) {
-                    com.baafoo.agent.advice.RouteManager.setMode(
-                            EnvironmentMode.fromValue(res.mode));
-                }
-
-                log.info("Registered with server. Agent ID: {}, mode: {}",
-                        config.getAgentId(), res.mode);
-                return true;
             } else {
                 log.warn("Registration failed: HTTP {}", code);
                 return false;
@@ -183,17 +193,22 @@ public class ControlChannel {
             int code = conn.getResponseCode();
             if (code == 200) {
                 String body = readResponse(conn);
-                PollResponse res = mapper.readValue(body, PollResponse.class);
+                // Server wraps response in ApiResponse format: {success, code, message, data, timestamp}
+                com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(body);
+                com.fasterxml.jackson.databind.JsonNode dataNode = root.get("data");
+                if (dataNode != null) {
+                    PollResponse res = mapper.treeToValue(dataNode, PollResponse.class);
 
-                // Update rules
-                if (res.rules != null) {
-                    com.baafoo.agent.advice.RouteManager.updateRules(res.rules);
-                }
+                    // Update rules
+                    if (res.rules != null) {
+                        com.baafoo.agent.advice.RouteManager.updateRules(res.rules);
+                    }
 
-                // Update mode
-                if (res.mode != null) {
-                    com.baafoo.agent.advice.RouteManager.setMode(
-                            EnvironmentMode.fromValue(res.mode));
+                    // Update mode
+                    if (res.mode != null) {
+                        com.baafoo.agent.advice.RouteManager.setMode(
+                                EnvironmentMode.fromValue(res.mode));
+                    }
                 }
             } else if (code == 204) {
                 // No changes

@@ -1,0 +1,14 @@
+﻿# Baafoo Agent Configuration for Test
+agentId: ""
+environment: "dev"
+serverUrl: "http://127.0.0.1:8080"
+heartbeatIntervalSec: 30
+pollIntervalSec: 5
+consulEnabled: false
+consulAddress: "localhost:8500"
+protocols: []
+maxRecordingSize: 10485760
+rulesFilePath: ""
+hotReload: true
+connectionRetries: 3
+retryBackoffMs: 1000

@@ -38,14 +38,15 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
-        <!-- Logging -->
+        <!-- Logging — use slf4j-simple (zero XML config, no classpath conflicts)
+             Relocated via shade to avoid clash with application's SLF4J binding -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
         </dependency>
         <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
         </dependency>
 
         <!-- Test -->
@@ -84,6 +85,44 @@
                                     </manifestEntries>
                                 </transformer>
                             </transformers>
+                            <relocations>
+                                <!-- Relocate ALL third-party dependencies to prevent Bootstrap CL
+                                     loader constraint violation when agent jar is appended
+                                     to bootstrap search path. Every class in agent jar must
+                                     have a unique package name that won't clash with the
+                                     application's classpath. -->
+                                <!-- NOTE: ByteBuddy is NOT relocated. Relocating ByteBuddy
+                                     breaks internal package-private access (constructors, fields)
+                                     causing IllegalAccessError at runtime. Since Baafoo Agent
+                                     uses Bootstrap CL injection, ByteBuddy must stay in its
+                                     original package for internal access to work correctly. -->
+                                <!--
+                                <relocation>
+                                    <pattern>net.bytebuddy</pattern>
+                                    <shadedPattern>com.baafoo.agent.shaded.bytebuddy</shadedPattern>
+                                </relocation>
+                                -->
+                                <relocation>
+                                    <pattern>com.fasterxml.jackson</pattern>
+                                    <shadedPattern>com.baafoo.agent.shaded.jackson</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>org.slf4j</pattern>
+                                    <shadedPattern>com.baafoo.agent.shaded.slf4j</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>com.baafoo.core</pattern>
+                                    <shadedPattern>com.baafoo.agent.shaded.core</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>com.baafoo.plugin</pattern>
+                                    <shadedPattern>com.baafoo.agent.shaded.plugin</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>org.yaml.snakeyaml</pattern>
+                                    <shadedPattern>com.baafoo.agent.shaded.snakeyaml</shadedPattern>
+                                </relocation>
+                            </relocations>
                             <filters>
                                 <filter>
                                     <artifact>*:*</artifact>

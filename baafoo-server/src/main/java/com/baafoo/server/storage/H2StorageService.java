@@ -272,10 +272,10 @@ public class H2StorageService implements StorageService {
 
         String sql = "UPDATE rules SET name=?, protocol=?, service_name=?, host=?, port=?, " +
                 "conditions_json=?, responses_json=?, enabled=?, priority=?, tags_json=?, " +
-                "version=?, updated_at=? WHERE id=?";
+                "version=?, created_at=?, updated_at=? WHERE id=?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             setRuleParams(ps, existing, 1);
-            ps.setString(13, id);
+            ps.setString(14, id);
             ps.executeUpdate();
             return existing;
         } catch (SQLException e) {
@@ -319,10 +319,10 @@ public class H2StorageService implements StorageService {
                 // Replace current rule with the snapshot
                 String updateSql = "UPDATE rules SET name=?, protocol=?, service_name=?, " +
                         "host=?, port=?, conditions_json=?, responses_json=?, enabled=?, " +
-                        "priority=?, tags_json=?, version=?, updated_at=? WHERE id=?";
+                        "priority=?, tags_json=?, version=?, created_at=?, updated_at=? WHERE id=?";
                 try (PreparedStatement ups = conn.prepareStatement(updateSql)) {
                     setRuleParams(ups, previous, 1);
-                    ups.setString(13, id);
+                    ups.setString(14, id);
                     ups.executeUpdate();
                 }
 
@@ -412,17 +412,20 @@ public class H2StorageService implements StorageService {
         try {
             ps.setString(offset + 5, r.getConditions() != null ? mapper.writeValueAsString(r.getConditions()) : null);
             ps.setString(offset + 6, r.getResponses() != null ? mapper.writeValueAsString(r.getResponses()) : null);
-            ps.setString(offset + 10, r.getTags() != null ? mapper.writeValueAsString(r.getTags()) : null);
         } catch (Exception e) {
             ps.setString(offset + 5, null);
             ps.setString(offset + 6, null);
-            ps.setString(offset + 10, null);
         }
         ps.setBoolean(offset + 7, r.isEnabled());
         ps.setInt(offset + 8, r.getPriority());
-        ps.setInt(offset + 9, r.getVersion());
-        ps.setLong(offset + 11, r.getUpdatedAt());
-        ps.setLong(offset + 12, r.getCreatedAt());
+        try {
+            ps.setString(offset + 9, r.getTags() != null ? mapper.writeValueAsString(r.getTags()) : null);
+        } catch (Exception e) {
+            ps.setString(offset + 9, null);
+        }
+        ps.setInt(offset + 10, r.getVersion());
+        ps.setLong(offset + 11, r.getCreatedAt());
+        ps.setLong(offset + 12, r.getUpdatedAt());
     }
 
     // ==================== Environment CRUD ====================

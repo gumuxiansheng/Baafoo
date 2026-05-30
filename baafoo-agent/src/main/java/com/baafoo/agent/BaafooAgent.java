@@ -16,90 +16,73 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.lang.instrument.Instrumentation;
 import java.util.jar.JarFile;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static net.bytebuddy.matcher.ElementMatchers.*;
 
-/**
- * Baafoo JavaAgent entry point.
- *
- * <p>Loaded via -javaagent:baafoo-agent.jar.
- * Injects bytecode into key JDK and library classes to intercept
- * network calls and redirect them to the Baafoo stub server.</p>
- *
- * <p>Fail-closed design: If agent fails to load, errors are logged
- * and all requests pass through to real downstreams untouched.</p>
- */
 public class BaafooAgent {
 
     private static final Logger log = LoggerFactory.getLogger(BaafooAgent.class);
 
-    /** Global agent config */
     private static volatile AgentConfig config;
-
-    /** Control channel to Baafoo server */
     private static volatile ControlChannel controlChannel;
-
-    /** Plugin manager */
     private static volatile PluginManager pluginManager;
-
-    /** Whether agent started successfully */
     private static volatile boolean initialized = false;
 
-    /**
-     * JVM premain entry point.
-     *
-     * <p>Agent argument format: {@code config=/path/to/baafoo-agent.yml}
-     * Multiple arguments may be comma-separated.</p>
-     *
-     * @param agentArgs agent arguments (e.g., "config=./baafoo-agent.yml")
-     * @param inst      instrumentation instance
-     */
+    private static volatile ConcurrentHashMap<String, String> bootstrapRoutes;
+    private static volatile java.lang.reflect.Field bootstrapCurrentModeField;
+    private static volatile java.lang.reflect.Field bootstrapServerHostField;
+    private static volatile java.lang.reflect.Field bootstrapServerPortField;
+
     public static void premain(String agentArgs, Instrumentation inst) {
         try {
             log.info("=== Baafoo Agent {} starting ===", getVersion());
             log.info("Agent args: {}", agentArgs);
 
-            // 0. CRITICAL: Add agent jar to Bootstrap ClassLoader search path.
-            // Advice code is inlined into JDK classes (Socket, InetAddress, SocketChannelImpl)
-            // which are loaded by the Bootstrap ClassLoader. Without this, the inlined code
-            // cannot find AgentManifest, RouteTable, or any com.baafoo.* class.
-            appendToBootstrapClassLoaderSearch(inst);
-            log.info("Agent jar added to Bootstrap ClassLoader search path");
-
-            // 1. Load config (supports config=/path format)
             String configPath = resolveConfigPath(agentArgs);
             config = ConfigLoader.loadAgentConfig(configPath);
             log.info("Config loaded: {}", config);
 
-            // 2. Initialize AgentManifest (Bootstrap-safe state for Advice classes)
             initAgentManifest(config);
             log.info("AgentManifest initialized: serverHost={}, serverPort={}, envId={}, mode={}",
                     AgentManifest.serverHost, AgentManifest.serverPort,
                     AgentManifest.environmentId, AgentManifest.getModeName());
 
-            // 3. Init control channel (JDK HttpURLConnection only, no Netty)
+            GlobalRouteState.SERVER_HOST = AgentManifest.serverHost;
+            GlobalRouteState.SERVER_PORT = AgentManifest.serverPort;
+            GlobalRouteState.CURRENT_MODE = AgentManifest.currentMode;
+            log.info("GlobalRouteState initialized: SERVER_HOST={}, SERVER_PORT={}, CURRENT_MODE={}",
+                    GlobalRouteState.SERVER_HOST, GlobalRouteState.SERVER_PORT, GlobalRouteState.CURRENT_MODE);
+
             controlChannel = new ControlChannel(config);
             controlChannel.start();
 
-            // 4. Init plugin manager
             pluginManager = new PluginManager();
 
-            // 5. Register bytecode transforms
+            Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    shutdown();
+                }
+            }, "baafoo-shutdown"));
+
             TransformRegistry registry = new TransformRegistry();
             AgentBuilder agentBuilder = new AgentBuilder.Default()
                     .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
-                    .with(AgentBuilder.Listener.StreamWriting.toSystemOut().withErrorsOnly());
+                    .with(AgentBuilder.Listener.StreamWriting.toSystemOut())
+                    .ignore(nameStartsWith("net.bytebuddy.")
+                            .or(nameStartsWith("com.baafoo.agent.shaded."))
+                            .or(isSynthetic()));
 
-            // --- Socket interception ---
             agentBuilder = agentBuilder
                     .type(named("java.net.Socket"))
                     .transform((builder, typeDesc, classLoader, module, pd) ->
                             builder.visit(Advice.to(SocketConnectAdvice.class)
                                     .on(named("connect")
-                                            .and(takesArguments(1)))));
+                                            .and(takesArguments(1)
+                                                    .or(takesArguments(2))))));
             registry.register("java.net.Socket", "SocketConnectAdvice", "tcp");
 
-            // --- NIO SocketChannel interception ---
             agentBuilder = agentBuilder
                     .type(named("sun.nio.ch.SocketChannelImpl"))
                     .transform((builder, typeDesc, classLoader, module, pd) ->
@@ -107,9 +90,7 @@ public class BaafooAgent {
                                     .on(named("connect").and(takesArguments(1)))));
             registry.register("sun.nio.ch.SocketChannelImpl", "NioSocketConnectAdvice", "tcp");
 
-            // --- Consul DNS interception ---
             if (config.isConsulEnabled()) {
-                // Intercept both getByName and getAllByName
                 agentBuilder = agentBuilder
                         .type(named("java.net.InetAddress"))
                         .transform((builder, typeDesc, classLoader, module, pd) ->
@@ -121,7 +102,6 @@ public class BaafooAgent {
                                         .on(named("getAllByName").and(takesArguments(1)))));
                 registry.register("java.net.InetAddress", "ConsulDnsAdvice", "consul-dns");
 
-                // --- Consul HTTP interception ---
                 agentBuilder = agentBuilder
                         .type(named("sun.net.www.http.HttpClient"))
                         .transform((builder, typeDesc, classLoader, module, pd) ->
@@ -130,10 +110,6 @@ public class BaafooAgent {
                 registry.register("sun.net.www.http.HttpClient", "ConsulHttpAdvice", "http");
             }
 
-            // --- Kafka interception (Beta) ---
-            // Intercept KafkaProducer constructor to replace bootstrap.servers
-            // KafkaProducer has constructors: (Properties), (Map), (Properties, Callback), etc.
-            // We intercept all constructors and check for Properties/Map as first argument
             agentBuilder = agentBuilder
                     .type(named("org.apache.kafka.clients.producer.KafkaProducer"))
                     .transform((builder, typeDesc, classLoader, module, pd) ->
@@ -141,8 +117,6 @@ public class BaafooAgent {
                                     .on(isConstructor())));
             registry.register("org.apache.kafka.clients.producer.KafkaProducer", "KafkaProducerAdvice", "kafka");
 
-            // --- Pulsar interception (Beta) ---
-            // Intercept ClientBuilder.serviceUrl() to replace broker URL
             agentBuilder = agentBuilder
                     .type(named("org.apache.pulsar.client.api.ClientBuilder"))
                     .transform((builder, typeDesc, classLoader, module, pd) ->
@@ -150,47 +124,29 @@ public class BaafooAgent {
                                     .on(named("serviceUrl").and(takesArguments(1)))));
             registry.register("org.apache.pulsar.client.api.ClientBuilder", "PulsarClientAdvice", "pulsar");
 
-            // 6. Install agent
             agentBuilder.installOn(inst);
-            AgentManifest.agentLoaded = true;
-            initialized = true;
             log.info("Bytecode transforms installed: {} transforms registered", registry.getCount());
 
-            // 7. Register shutdown hook
-            Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    shutdown();
-                }
-            }, "baafoo-shutdown"));
+            appendToBootstrapClassLoaderSearch(inst);
+            log.info("Agent jar added to Bootstrap ClassLoader search path");
+
+            syncGlobalRouteStateToBootstrapCL();
+            log.info("GlobalRouteState synced to Bootstrap CL version");
+
+            AgentManifest.agentLoaded = true;
+            initialized = true;
 
             log.info("=== Baafoo Agent started successfully ===");
 
         } catch (Throwable e) {
-            // Fail-closed: log ERROR, do NOT crash the JVM.
-            // All requests will pass through (no interception).
             log.error("FAILED to start Baafoo Agent (fail-closed). " +
                     "All requests will pass through to real downstreams. Error: {}", e.getMessage(), e);
             initialized = false;
         }
     }
 
-    /**
-     * Parse agent arguments in {@code config=/path/to/file} format.
-     *
-     * <p>Supports formats:
-     * <ul>
-     *   <li>{@code config=/path/to/baafoo-agent.yml}</li>
-     *   <li>{@code /path/to/baafoo-agent.yml} (legacy — entire string is path)</li>
-     *   <li>{@code null} or empty — falls back to system property / default</li>
-     * </ul></p>
-     *
-     * @param agentArgs raw agent argument string
-     * @return resolved config file path
-     */
     private static String resolveConfigPath(String agentArgs) {
         if (agentArgs != null && !agentArgs.isEmpty()) {
-            // Check for config= prefix
             String[] parts = agentArgs.split(",");
             for (String part : parts) {
                 String trimmed = part.trim();
@@ -198,19 +154,13 @@ public class BaafooAgent {
                     return trimmed.substring("config=".length()).trim();
                 }
             }
-            // Legacy: treat entire argument as path (if it doesn't contain '=')
             if (!agentArgs.contains("=")) {
                 return agentArgs;
             }
         }
-        // Fallback to system property or default
         return System.getProperty("baafoo.agent.config", "./baafoo-agent.yml");
     }
 
-    /**
-     * Initialize AgentManifest fields from config.
-     * Must be called BEFORE any bytecode transform is installed.
-     */
     private static void initAgentManifest(AgentConfig cfg) {
         if (cfg.getServerUrl() != null) {
             String url = cfg.getServerUrl();
@@ -229,7 +179,6 @@ public class BaafooAgent {
                     port = Integer.parseInt(host.substring(colonIdx + 1));
                     host = host.substring(0, colonIdx);
                 } catch (NumberFormatException e) {
-                    // Ignore, use defaults
                 }
             }
 
@@ -248,10 +197,7 @@ public class BaafooAgent {
         log.info("Shutting down Baafoo Agent...");
         try {
             AgentManifest.agentLoaded = false;
-
-            // Flush any remaining recordings
             RouteManager.flushRecordings();
-
             if (controlChannel != null) {
                 controlChannel.stop();
             }
@@ -263,8 +209,6 @@ public class BaafooAgent {
         }
         log.info("Baafoo Agent stopped");
     }
-
-    // --- Static accessors for Advice classes ---
 
     public static AgentConfig getConfig() {
         return config;
@@ -282,28 +226,29 @@ public class BaafooAgent {
         return initialized;
     }
 
+    public static ConcurrentHashMap<String, String> getBootstrapRoutes() {
+        return bootstrapRoutes;
+    }
+
+    public static java.lang.reflect.Field getBootstrapCurrentModeField() {
+        return bootstrapCurrentModeField;
+    }
+
+    public static java.lang.reflect.Field getBootstrapServerHostField() {
+        return bootstrapServerHostField;
+    }
+
+    public static java.lang.reflect.Field getBootstrapServerPortField() {
+        return bootstrapServerPortField;
+    }
+
     private static String getVersion() {
         String version = BaafooAgent.class.getPackage().getImplementationVersion();
         return version != null ? version : "1.0.0-SNAPSHOT";
     }
 
-    /**
-     * Add the agent jar to the Bootstrap ClassLoader search path.
-     *
-     * <p>This is CRITICAL for Byte Buddy Advice to work correctly. When Advice
-     * code is inlined into JDK classes (like Socket, InetAddress), those classes
-     * are loaded by the Bootstrap ClassLoader. The inlined code references
-     * AgentManifest and RouteTable, which must also be visible to the
-     * Bootstrap ClassLoader.</p>
-     *
-     * <p>Without this call, any Advice referencing com.baafoo.* classes
-     * will throw ClassNotFoundException at runtime.</p>
-     *
-     * @param inst the Instrumentation instance
-     */
     private static void appendToBootstrapClassLoaderSearch(Instrumentation inst) {
         try {
-            // Find the agent jar file from the code source location
             java.security.CodeSource codeSource = BaafooAgent.class.getProtectionDomain().getCodeSource();
             if (codeSource == null) {
                 log.warn("Cannot determine agent jar location (codeSource is null). " +
@@ -311,20 +256,105 @@ public class BaafooAgent {
                 return;
             }
 
-            File jarFile = new File(codeSource.getLocation().toURI());
-            if (jarFile.exists() && jarFile.getName().endsWith(".jar")) {
-                inst.appendToBootstrapClassLoaderSearch(new JarFile(jarFile));
-                log.info("Added to Bootstrap CL: {}", jarFile.getAbsolutePath());
-            } else if (jarFile.isDirectory()) {
-                // Running from IDE (target/classes) — need to create a temp jar
-                // For now, log a warning. In production, always use the shaded jar.
+            File agentJar = new File(codeSource.getLocation().toURI());
+            if (!agentJar.exists() || !agentJar.getName().endsWith(".jar")) {
                 log.warn("Agent is running from a directory (not a jar): {}. " +
                         "Bootstrap CL search path not updated. " +
                         "Advice classes may fail. Use the shaded jar for production.",
-                        jarFile.getAbsolutePath());
+                        agentJar.getAbsolutePath());
+                return;
+            }
+
+            File bootstrapJar = createBootstrapJar(agentJar);
+            if (bootstrapJar != null && bootstrapJar.exists()) {
+                inst.appendToBootstrapClassLoaderSearch(new JarFile(bootstrapJar));
+                log.info("Added Bootstrap helper jar to Bootstrap CL: {}", bootstrapJar.getAbsolutePath());
+            } else {
+                log.warn("Failed to create Bootstrap helper jar, falling back to full agent jar");
+                inst.appendToBootstrapClassLoaderSearch(new JarFile(agentJar));
+                log.info("Added full agent jar to Bootstrap CL: {}", agentJar.getAbsolutePath());
             }
         } catch (Exception e) {
             log.error("Failed to add agent jar to Bootstrap ClassLoader search path: {}", e.getMessage(), e);
+        }
+    }
+
+    private static File createBootstrapJar(File agentJar) {
+        try {
+            java.util.jar.JarFile jar = new java.util.jar.JarFile(agentJar);
+            File bootstrapJar = new File(agentJar.getParentFile(), "baafoo-bootstrap-helper.jar");
+            java.util.jar.Manifest manifest = new java.util.jar.Manifest();
+            java.util.jar.JarOutputStream jos = new java.util.jar.JarOutputStream(
+                    new java.io.FileOutputStream(bootstrapJar), manifest);
+
+            String[] bootstrapClasses = {
+                    "com/baafoo/agent/GlobalRouteState.class"
+            };
+
+            for (String entryName : bootstrapClasses) {
+                java.util.jar.JarEntry entry = jar.getJarEntry(entryName);
+                if (entry != null) {
+                    jos.putNextEntry(new java.util.jar.JarEntry(entryName));
+                    java.io.InputStream is = jar.getInputStream(entry);
+                    byte[] buf = new byte[4096];
+                    int n;
+                    while ((n = is.read(buf)) != -1) {
+                        jos.write(buf, 0, n);
+                    }
+                    is.close();
+                    jos.closeEntry();
+                } else {
+                    log.warn("Bootstrap class not found in agent jar: {}", entryName);
+                }
+            }
+
+            jos.close();
+            jar.close();
+            return bootstrapJar;
+        } catch (Exception e) {
+            log.error("Failed to create Bootstrap helper jar: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private static void syncGlobalRouteStateToBootstrapCL() {
+        try {
+            Class<?> bootGRS = findBootstrapClass("com.baafoo.agent.GlobalRouteState");
+
+            Object bootRoutesObj = bootGRS.getField("ROUTES").get(null);
+            if (bootRoutesObj instanceof ConcurrentHashMap) {
+                @SuppressWarnings("unchecked")
+                ConcurrentHashMap<String, String> bootRoutes = (ConcurrentHashMap<String, String>) bootRoutesObj;
+                bootRoutes.putAll(GlobalRouteState.ROUTES);
+                bootstrapRoutes = bootRoutes;
+                log.info("Synced {} routes to Bootstrap CL GlobalRouteState.ROUTES", bootRoutes.size());
+            }
+
+            bootstrapCurrentModeField = bootGRS.getField("CURRENT_MODE");
+            bootstrapCurrentModeField.setInt(null, GlobalRouteState.CURRENT_MODE);
+
+            bootstrapServerHostField = bootGRS.getField("SERVER_HOST");
+            bootstrapServerHostField.set(null, GlobalRouteState.SERVER_HOST);
+
+            bootstrapServerPortField = bootGRS.getField("SERVER_PORT");
+            bootstrapServerPortField.setInt(null, GlobalRouteState.SERVER_PORT);
+
+            log.info("Synced GlobalRouteState fields to Bootstrap CL: CURRENT_MODE={}, SERVER_HOST={}, SERVER_PORT={}",
+                    GlobalRouteState.CURRENT_MODE, GlobalRouteState.SERVER_HOST, GlobalRouteState.SERVER_PORT);
+        } catch (Exception e) {
+            log.error("Failed to sync GlobalRouteState to Bootstrap CL: {}", e.getMessage(), e);
+        }
+    }
+
+    private static Class<?> findBootstrapClass(String name) throws ClassNotFoundException {
+        try {
+            ClassLoader cl = ClassLoader.getSystemClassLoader();
+            while (cl.getParent() != null) {
+                cl = cl.getParent();
+            }
+            return Class.forName(name, false, cl);
+        } catch (Exception e) {
+            return Class.forName(name);
         }
     }
 }
