@@ -99,8 +99,8 @@ public class MatchEngine {
             if (!rule.getHost().equalsIgnoreCase(host)) return false;
         }
 
-        // Port match
-        if (rule.getPort() != null && rule.getPort() > 0) {
+        // Port match (port <= 0 means "any port")
+        if (rule.getPort() != null && rule.getPort() > 0 && port > 0) {
             if (port != rule.getPort()) return false;
         }
 

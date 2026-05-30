@@ -105,9 +105,12 @@ public final class RouteManager {
             int stubPort = getStubPort(protocol);
             String routeValue = STUB_HOST + ":" + stubPort + ":" + protocol;
 
-            if (rule.getHost() != null && !rule.getHost().isEmpty() && rule.getPort() != null && rule.getPort() > 0) {
-                String key = rule.getHost() + ":" + rule.getPort();
-                newRoutes.put(key, routeValue);
+            if (rule.getHost() != null && !rule.getHost().isEmpty()) {
+                newRoutes.put(rule.getHost(), routeValue);
+                if (rule.getPort() != null && rule.getPort() > 0) {
+                    String key = rule.getHost() + ":" + rule.getPort();
+                    newRoutes.put(key, routeValue);
+                }
             }
 
             if (rule.getServiceName() != null && !rule.getServiceName().isEmpty()) {
@@ -131,13 +134,15 @@ public final class RouteManager {
                 AgentManifest.ROUTE_TABLE.get().putService(serviceName, stubHost, stubPort, protocol);
             } else {
                 int colonIdx = key.indexOf(':');
+                String stubHost = GlobalRouteState.parseHost(value);
+                int stubPort = GlobalRouteState.parsePort(value);
+                String protocol = "tcp";
                 if (colonIdx > 0) {
                     String host = key.substring(0, colonIdx);
                     int port = Integer.parseInt(key.substring(colonIdx + 1));
-                    String stubHost = GlobalRouteState.parseHost(value);
-                    int stubPort = GlobalRouteState.parsePort(value);
-                    String protocol = "tcp";
                     AgentManifest.ROUTE_TABLE.get().put(host, port, stubHost, stubPort, protocol);
+                } else {
+                    AgentManifest.ROUTE_TABLE.get().getRoutes().put(key, value);
                 }
             }
         }

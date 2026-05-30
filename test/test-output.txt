@@ -1,1 +1,0 @@
-﻿[baafoo-shutdown] INFO com.baafoo.agent.BaafooAgent - Baafoo Agent stopped

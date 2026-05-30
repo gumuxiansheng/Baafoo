@@ -20,7 +20,10 @@ public final class GlobalRouteState {
 
     public static String lookup(String host, int port) {
         if (host == null) return null;
-        return ROUTES.get(host + ":" + port);
+        String key = host + ":" + port;
+        String result = ROUTES.get(key);
+        if (result != null) return result;
+        return ROUTES.get(host);
     }
 
     public static String lookupService(String serviceName) {

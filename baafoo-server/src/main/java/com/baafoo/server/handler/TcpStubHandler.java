@@ -1,5 +1,6 @@
 package com.baafoo.server.handler;
 
+import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.model.Rule;
 import com.baafoo.core.util.MatchEngine;
@@ -56,6 +57,16 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
         if (result.isMatched()) {
             ResponseEntry entry = result.getResponse();
+
+            RecordingEntry rec = new RecordingEntry();
+            rec.setRuleId(result.getRule().getId());
+            rec.setProtocol("tcp");
+            rec.setRequestBody(payload);
+            rec.setResponseStatusCode(entry.getStatusCode());
+            rec.setResponseBody(entry.getBody());
+            rec.setResponseTimeMs(entry.getDelayMs());
+            storage.addRecording(rec);
+
             sendTcpResponse(ctx, entry);
         } else {
             // TCP unmatched = close connection

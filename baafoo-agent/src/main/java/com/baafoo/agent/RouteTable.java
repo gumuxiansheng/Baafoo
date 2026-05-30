@@ -42,7 +42,9 @@ public final class RouteTable {
             return null;
         }
         String key = host + ":" + port;
-        return routes.get(key);
+        String result = routes.get(key);
+        if (result != null) return result;
+        return routes.get(host);
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.baafoo.server.handler;
 
+import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.Rule;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.util.MatchEngine;
@@ -74,8 +75,30 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                 rules, "http", host, port, null,
                 method, path, headers, queryParams, body);
 
+        if (!result.isMatched()) {
+            result = matchEngine.match(
+                    rules, "http", host, 0, null,
+                    method, path, headers, queryParams, body);
+        }
+
         if (result.isMatched()) {
             ResponseEntry entry = result.getResponse();
+
+            RecordingEntry rec = new RecordingEntry();
+            rec.setRuleId(result.getRule().getId());
+            rec.setProtocol("http");
+            rec.setHost(host);
+            rec.setPort(port);
+            rec.setMethod(method);
+            rec.setPath(path);
+            rec.setRequestHeaders(headers);
+            rec.setRequestBody(body);
+            rec.setResponseStatusCode(entry.getStatusCode());
+            rec.setResponseHeaders(entry.getHeaders() != null ? entry.getHeaders() : new HashMap<String, String>());
+            rec.setResponseBody(entry.getBody());
+            rec.setResponseTimeMs(entry.getDelayMs());
+            storage.addRecording(rec);
+
             sendStubResponse(ctx, entry, result.getRule().getId());
         } else {
             // Unmatched = 404 (safety design)
