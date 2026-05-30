@@ -1,10 +1,10 @@
-# Baafoo 挡板系统 - 产品需求文档(PRD)
+﻿# Baafoo 挡板系统 - 产品需求文档(PRD)
 
-> **文档状态**:PRD v1.5
+> **文档状态**:PRD v2.0
 > **目标读者**:产品团队、工程团队、QA 团队
 > **关联文档**:[概念设计说明书 v0.7](../.concepts/baafoo-concept-design.md)
-> **最后更新**:2026-05-29
-> **变更摘要**:v1.5 - 采纳产品建议书反馈:未匹配规则默认 404(非透传);Agent 加载失败 fail-closed;新增 `baafoo init` Quick Start 工具;新增规则版本管理/Undo;新增场景集管理(简化版);Pulsar 范围收窄;Kafka 标记 Beta;Consul HTTP API 放 v1.5;新增配置项说明表;Agent 插件化架构决策录入。v1.5 审阅修复:US-03 标题修正、US-15/US-16 补充 R-S7.5/R-S7.6 需求定义、R-W1/R-W2 补充场景集 UI 交互、R-S2 AC-09 补充 unmatched-default 交叉引用、R-C2 AC-01 补充 scenarioId 字段、R-S7 AC-01 补充场景集过滤
+> **最后更新**:2026-05-31
+> **变更摘要**:v2.0 - **需求变更**:1) 未匹配规则的请求默认改为**透传**(原 404),`baafoo.stub.unmatched-default` 默认值改为 `passthrough`;2) 规则及场景集新增 `environments` 细粒度控制,可配置在哪些环境生效(新规则默认不生效、新环境默认旧规则不生效);Q8 决议更新为规则与环境双向绑定;N6 非目标删除
 ---
 
 ## 1. 问题陈述
@@ -47,7 +47,7 @@
 | N3 | **不覆盖 gRPC/HTTP2 流式 RPC** | gRPC 基于 HTTP/2 多路复用,字节码拦截复杂度显著高于 HTTP/1.1;v1 聚焦 Unary 调用 + 基础协议 |
 | N4 | **不替代生产环境流量录制** | Baafoo 定位是**开发阶段**挡板工具,不承担生产流量镜像、压力测试等职责 |
 | N5 | **不修改 Consul 注册中心的数据** | Agent 只读 Consul 查询结果,不向 Consul 写入或修改任何注册信息 |
-| N6 | **规则不按环境区分** | 规则全局共享;不同环境下规则是否生效,由 Agent 所属环境的模式决定,而非规则本身绑定环境 |
+
 
 ---
 
@@ -72,7 +72,7 @@
 > 作为 **后端开发人员**,我希望配置 Mock 规则后,应用对下游 REST API 的 HTTP 请求能自动返回我预设的响应(状态码、Header、Body、延迟),以便我可以在下游不可用或数据不符合预期时继续开发和自测。
 
 **US-03:模式热切换(挡板/透传)**
-> 作为 **后端开发人员**,我希望通过 Web 控制台或 API **切换环境模式**后,该环境下的所有 Agent 自动生效(无需重启应用),以便我可以随时按需对比真实下游行为与挡板行为。
+> 作为 **后端开发人员**,我希望通过 Web 控制台或 API **切换环境模式**后,该环境下的所有 Agent 自动生效(无需重启应用),以便我可以随时按需对比真实下游行为与挡板行为。模式切换不影响规则与环境的关联关系。
 
 **US-04:TCP Socket 字节级挡板**
 > 作为 **后端开发人员**,我希望对使用私有 TCP 协议的下游服务也能配置挡板规则(按字节前缀/正则匹配请求,返回预定义字节序列),以便即便下游是二进制协议我也能独立开发。
@@ -107,7 +107,7 @@
 > 作为 **后端开发人员 / QA 测试工程师**,我希望可以将挡板规则导出为文件(YAML/JSON),也可以从文件导入规则集,以便我能在团队成员间共享规则、在项目中版本化管理挡板配置。
 
 **US-14:多测试环境独立模式控制**
-> 作为 **QA 测试工程师 / DevOps 平台工程师**,我们的多套功能测试环境(FT-1、FT-2、FT-3)都连接同一个 Baafoo Server,我希望按测试环境维度独立控制挡板模式或透传模式(如 FT-1 走挡板自测、FT-2 走透传联调真实下游、FT-3 走录制模式),以便不同测试环境可以并行执行不同的验证策略,互不影响,无需为每套环境部署独立的挡板服务。
+> 作为 **QA 测试工程师 / DevOps 平台工程师**,我们的多套功能测试环境(FT-1、FT-2、FT-3)都连接同一个 Baafoo Server,我希望按测试环境维度独立控制挡板模式或透传模式(如 FT-1 走挡板自测、FT-2 走透传联调真实下游、FT-3 走录制模式),同时可以精细控制每条规则/场景集在哪些环境生效(新规则默认不生效、新环境默认不自动关联旧规则),以便不同测试环境可以并行执行不同的验证策略,互不影响,无需为每套环境部署独立的挡板服务。
 
 **US-15:场景集管理(简化版)**
 > 作为 **QA 测试工程师**,我希望将一组规则组织为"场景集"(如"支付异常场景集"),支持一键启用/禁用整组规则,以便我在不同测试场景间快速切换,无需逐条操作规则。
@@ -210,16 +210,18 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 路由规则引擎根据请求目标匹配规则,决定连接的处理模式。支持两种维度匹配:**host:port 精确/通配** 和 **服务名**。服务名匹配优先级高于 host:port 匹配。规则中指定协议类型(`protocol` 字段),Agent 根据协议将连接重定向到 Server 对应端口。规则的生效受 **Agent 所属环境的模式** 控制:**仅当 Agent 所属环境为 `stub` 模式时,路由规则才参与匹配**;环境为 `passthrough` 时 Agent 不拦截连接(等效于未安装 Agent);环境为 `record` 或 `record-and-stub` 时,路由规则参与匹配 + 录制器工作。 |
+| **描述** | 路由规则引擎根据请求目标匹配规则,决定连接的处理模式。支持两种维度匹配:**host:port 精确/通配** 和 **服务名**。服务名匹配优先级高于 host:port 匹配。规则中指定协议类型(`protocol` 字段),Agent 根据协议将连接重定向到 Server 对应端口。**规则与环境双向绑定**:规则通过 `environments` 字段声明在哪些环境生效;`environments` 为空列表时表示不自动生效,需显式关联环境后才参与匹配;指定环境列表时仅在列出的环境中生效。Agent 仅匹配其所属环境被规则 `environments` 包含的规则。场景集同样支持 `environments` 字段控制。**新规则默认 `environments` 为空列表(不生效)**,需显式指定环境;**新环境创建时,已有规则的 `environments` 不自动包含新环境**,需显式关联。规则是否生效同时受 Agent 所属环境的模式控制:**仅当 Agent 所属环境为 `stub` 模式且规则 `environments` 包含该环境时,路由规则才参与匹配**。 |
 | **AC-01** | 精确匹配 `192.168.1.100:8080` - 正确命中 |
 | **AC-02** | 通配匹配 `*.dev:*` - 命中 `api.dev:8080`、`db.dev:5432` |
 | **AC-03** | 服务名匹配 `order-service` - 命中所有 Consul 解析到 order-service 的连接 |
 | **AC-04** | 同时配置服务名规则和 host:port 规则时,服务名规则优先 |
-| **AC-05** | 未匹配任何规则时,默认返回 **404** 并记录 WARN 日志;可通过 `baafoo.stub.unmatched-default` 配置项修改为 `passthrough`(显式配置,非默认) |
+| **AC-05** | 未匹配任何规则时,默认 **透传**(连接真实下游)并记录 INFO 日志;保留 `baafoo.stub.unmatched-default` 配置项允许显式改为 `404`(挡板严格模式,适用于不想漏流量的场景) |
 | **AC-06** | 规则配置文件变化后,< 500ms 内热加载生效(基于 WatchService) |
 | **AC-07** | 规则指定 `protocol: kafka` 时,Agent 将连接重定向到 Server 的 Kafka 端口;`protocol: pulsar` 重定向到 Pulsar 端口;HTTP/TCP 协议根据默认端口映射 |
-| **AC-08** | Agent 所属环境为 `stub` 模式时,路由规则正常参与匹配;环境为 `passthrough` 模式时,Agent 不拦截连接(等效于未安装 Agent),所有请求直接透传 |
-| **AC-09** | Agent 所属环境为 `record` 或 `record-and-stub` 模式时,路由规则参与匹配 + 录制器工作 |
+| **AC-08** | Agent 所属环境为 `stub` 模式且规则 `environments` 包含该环境标识时,路由规则正常参与匹配;环境为 `passthrough` 模式时,Agent 不拦截连接(等效于未安装 Agent),所有请求直接透传 |
+| **AC-09** | Agent 所属环境为 `record` 或 `record-and-stub` 模式且规则 `environments` 包含该环境标识时,路由规则参与匹配 + 录制器工作 |
+| **AC-10** | 新增规则时 `environments` 默认为空列表(`[]`),表示不限定环境但不自动生效,需显式添加环境标识;场景集 `environments` 同理 |
+| **AC-11** | 新增环境时,已有规则和场景集的 `environments` 不自动包含新环境标识,需显式关联 |
 
 #### R-A10:录制器 - P1
 
@@ -260,7 +262,7 @@
 | **AC-06** | **多规则优先级**:`responses` 数组按声明顺序从上到下匹配,首个命中的条件-响应对返回对应响应;无条件匹配的默认响应(数组最后一项无 `condition` 字段)作为兜底 |
 | **AC-07** | 规则可配置响应延迟(固定/随机区间/正态分布),单位 ms |
 | **AC-08** | 支持异常模拟:`READ_TIMEOUT`(读超时)、`CONNECTION_RESET`(连接重置)、`HTTP_502` 等 |
-| **AC-09** | 未匹配到任何 HTTP 规则时,默认返回 404 并记录 WARN 日志(受 `baafoo.stub.unmatched-default` 配置项控制,见 R-A9 AC-05) |
+| **AC-09** | 未匹配到任何 HTTP 规则时,默认透传(连接真实下游)并记录 INFO 日志(受 `baafoo.stub.unmatched-default` 配置项控制,见 R-A9 AC-05) |
 | **AC-10** | 响应 body 支持模板变量:`{{path.xxx}}`(路径参数)、`{{query.xxx}}`(Query 参数)、`{{header.xxx}}`(请求头)、`{{body.xxx}}`(请求体 JSONPath 提取值) |
 
 #### R-S3:Raw TCP Mock Handler - P0
@@ -301,9 +303,6 @@
 | **AC-06** | 支持基础 Primitive Schema(STRING / JSON) |
 | **AC-07** | `getTopicsOfNamespace` 请求返回规则中配置的 Topic 列表,确保客户端发现逻辑正常 |
 | **AC-08** | v1.0 仅覆盖最简路径:非分区 Topic + 单 Producer + 单 Consumer + Shared 订阅;分区 Topic、Key_Shared 订阅、Protobuf Schema 在 v1.5 迭代 |
-| **AC-09** | TDMQ SDK 兼容性需在抓包验证后确认;若 TDMQ 有私有协议扩展,通过插件化架构(见概念设计)隔离适配 |
-| **技术约束** | v1 聚焦 Lookup + Producer/Consumer 核心路径;事务消息、Key_Shared 订阅、Protobuf 原生 Schema 注册等在后续版本迭代 |
-
 #### R-S6:JMS Mock Broker - P1
 
 | 属性 | 内容 |
@@ -318,10 +317,10 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 提供 HTTP REST API 供外部系统或 Web 控制台管理挡板规则。**规则全局共享,无 `environments` 字段**。规则是否生效取决于 Agent 的模式:仅 `stub` 模式 Agent 才参与规则匹配。 |
-| **AC-01** | `GET /api/rules` - 查看所有规则(支持按协议类型过滤:`?protocol=http`,按场景集过滤:`?scenarioId=xxx`) |
-| **AC-02** | `POST /api/rules` - 新增规则 |
-| **AC-03** | `PUT /api/rules/{id}` - 更新规则 |
+| **描述** | 提供 HTTP REST API 供外部系统或 Web 控制台管理挡板规则。规则通过 `environments` 字段控制生效环境:为空列表时表示不自动生效,需显式关联环境后才参与匹配;指定环境列表时仅在列出的环境中生效。 |
+| **AC-01** | `GET /api/rules` - 查看所有规则(支持按协议类型过滤:`?protocol=http`,按场景集过滤:`?scenarioId=xxx`,按环境过滤:`?environment=ft-1`) |
+| **AC-02** | `POST /api/rules` - 新增规则,`environments` 字段默认为空列表 `[]`,需显式指定环境 |
+| **AC-03** | `PUT /api/rules/{id}` - 更新规则(含 `environments` 字段修改) |
 | **AC-04** | `DELETE /api/rules/{id}` - 删除规则 |
 | **AC-05** | `GET /api/health` - 健康检查 |
 | **AC-06** | 规则变更实时生效,无需重启 Server |
@@ -346,7 +345,7 @@
 | **描述** | 提供 Agent 与 Server 之间的控制通道 API,支持心跳上报、规则同步、录制数据上传和**环境模式切换指令下发**。 |
 | **AC-01** | `POST /api/agent/register` - Agent 启动时注册,返回 `agentId` **和该 Agent 所属环境的当前模式**;请求体包含 `pid`、`appName`、`environment`(Agent 所属测试环境标识,如 `"ft-1"`,从 Agent 配置文件读取) |
 | **AC-02** | `POST /api/agent/heartbeat` - Agent 每 30s 上报心跳;心跳超时 90s 后 Server 将 Agent 标记为离线 |
-| **AC-03** | `GET /api/agent/rules` - Agent 拉取最新路由规则(规则全局共享,无环境过滤),响应包含 `version` 字段用于增量判断 |
+| **AC-03** | `GET /api/agent/rules` - Agent 拉取最新路由规则(Server 根据 Agent 所属环境过滤,仅返回 `environments` 包含该环境标识的规则),响应包含 `version` 字段用于增量判断 |
 | **AC-04** | `GET /api/agent/poll?agentId=xxx` - 长轮询端点,Server 端有规则变更、**环境模式切换指令**时立即返回(含该 Agent 所属环境的当前 mode) |
 | **AC-05** | `POST /api/agent/recordings` - Agent 上传录制数据(multipart/form-data),支持分片上传 |
 | **AC-06** | `GET /api/agents` - 查看所有已注册 Agent 的状态列表(供 Web 控制台使用) |
@@ -362,7 +361,10 @@
 | **AC-04** | `DELETE /api/environments/{name}` - 删除测试环境;仅允许删除无活跃 Agent 的环境 |
 | **AC-05** | `GET /api/environments/{name}/agents` - 查看指定环境下所有已注册 Agent 的状态列表 |
 | **AC-06** | Agent 注册时声明的 `environment` 在 Server 端不存在时,Server **自动创建该环境**(默认模式 `passthrough`),避免 Agent 无法启动 |
-| **AC-07** | 环境模式切换不影响规则:从 `stub` 切换到 `passthrough` 时,Agent 停止拦截;切回 `stub` 时,Agent 恢复拦截并匹配现有规则,无需重新配置 |
+| **AC-07** | 环境模式切换不影响规则关联:从 `stub` 切换到 `passthrough` 时,Agent 停止拦截;切回 `stub` 时,Agent 恢复拦截并匹配该环境下已关联的规则,无需重新配置 |
+| **AC-08** | 新建环境时,已有规则和场景集的 `environments` **不自动包含新环境标识**,需通过规则/场景集编辑接口显式关联;环境列表页提示"新环境暂无规则关联,请到规则管理中配置" |
+| **AC-09** | `POST /api/environments/{name}/rules` - 批量关联规则到环境(请求体为规则 ID 列表) |
+| **AC-10** | `DELETE /api/environments/{name}/rules` - 批量取消规则与环境的关联 |
 
 #### R-S7.4:规则版本管理与 Undo - P1
 
@@ -379,15 +381,18 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 支持将一组规则组织为"场景集"(如"支付异常场景集"),支持一键启用/禁用整组规则,方便 QA 在不同测试场景间快速切换。v1.0 简化版:场景集与规则是 1:N 关系(一条规则只属于一个场景集)。 |
-| **AC-01** | `POST /api/scenarios` - 创建场景集,请求体包含 `name`(场景集名称)、`description`(可选) |
-| **AC-02** | `GET /api/scenarios` - 查看所有场景集列表,包含场景集名称、规则数量、启用/禁用状态 |
+| **描述** | 支持将一组规则组织为"场景集"(如"支付异常场景集"),支持一键启用/禁用整组规则,方便 QA 在不同测试场景间快速切换。v1.0 简化版:场景集与规则是 1:N 关系(一条规则只属于一个场景集)。场景集通过 `environments` 字段控制生效环境,与规则 `environments` 逻辑一致:新场景集默认不生效,需显式关联环境。 |
+| **AC-01** | `POST /api/scenarios` - 创建场景集,请求体包含 `name`(场景集名称)、`description`(可选)、`environments`(可选,默认空列表 `[]`) |
+| **AC-02** | `GET /api/scenarios` - 查看所有场景集列表,包含场景集名称、规则数量、启用/禁用状态、关联环境列表 |
 | **AC-03** | `PUT /api/scenarios/{id}` - 更新场景集(修改名称、描述、关联规则列表) |
 | **AC-04** | `DELETE /api/scenarios/{id}` - 删除场景集(仅允许删除已禁用的场景集,删除后关联规则变为无场景集状态) |
 | **AC-05** | `POST /api/scenarios/{id}/activate` - 一键启用场景集:启用该场景集下所有规则 |
 | **AC-06** | `POST /api/scenarios/{id}/deactivate` - 一键禁用场景集:禁用该场景集下所有规则 |
-| **AC-07** | 规则创建/编辑时可指定 `scenarioId` 字段归属某场景集;未指定则为独立规则 |
-| **AC-08** | v1.0 场景集与规则 1:N 关系(一条规则只属于一个场景集);v1.5 规划多对多 + Git 版本管理 |
+| **AC-07** | 规则创建/编辑时可指定 `scenarioId` 字段归属某场景集;未指定则为独立规则。规则继承场景集的 `environments` 关联,也可单独覆盖 |
+| **AC-08** | 场景集一键启用/禁用时,`environments` 字段不变,仅影响 `enabled` 状态;场景集激活后,其关联环境下的规则才参与匹配 |
+| **AC-09** | `POST /api/scenarios/{id}/environments` - 批量关联环境到场景集(请求体为环境名称列表) |
+| **AC-10** | `DELETE /api/scenarios/{id}/environments` - 批量取消场景集与环境的关联 |
+| **AC-11** | v1.0 场景集与规则 1:N 关系(一条规则只属于一个场景集);v1.5 规划多对多 + Git 版本管理 |
 
 #### R-S7.6:`baafoo init` 快速起步工具 - P1
 
@@ -432,7 +437,7 @@
 |---|---|
 | **描述** | Baafoo Server 内嵌 Web 控制台(默认监听端口与 HTTP Mock Handler 共用 9000 端口,路径前缀 `/__baafoo__/`),提供可视化的规则管理、请求查看、环境管理和系统状态界面。 |
 | **AC-01** | 访问 `http://localhost:9000/__baafoo__/` 可进入控制台首页 |
-| **AC-02** | 控制台导航栏包含：规则管理、**场景集管理**、请求日志、录制管理、**环境管理**、系统状态 |
+| **AC-02** | 控制台导航栏包含:规则管理、**场景集管理**、请求日志、录制管理、**环境管理**、系统状态 |
 | **AC-03** | 控制台通过 Server 的 REST API 获取数据,无需独立后端 |
 | **AC-04** | 控制台支持响应式布局,桌面端和移动端均可使用 |
 
@@ -440,19 +445,19 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 在 Web 控制台中对挡板规则进行可视化的增删改查操作,取代手动编辑 YAML 文件。**规则全局共享,无环境过滤**;规则是否生效取决于 Agent 所属环境的模式。 |
-| **AC-01** | 规则列表页:按协议类型(HTTP / TCP / Kafka / Pulsar / JMS)分 Tab 展示,支持搜索和过滤;规则列表增加"生效环境"标签列(显示当前处于 stub 模式的环境列表) |
-| **AC-02** | 规则新增/编辑:表单化录入规则,HTTP 规则支持可视化配置请求匹配条件(method、path、query、header、body 匹配)和响应内容(status、headers、body、delay、fault) |
+| **描述** | 在 Web 控制台中对挡板规则进行可视化的增删改查操作,取代手动编辑 YAML 文件。规则通过 `environments` 字段控制生效环境,界面需提供环境关联操作。 |
+| **AC-01** | 规则列表页:按协议类型(HTTP / TCP / Kafka / Pulsar / JMS)分 Tab 展示,支持搜索和过滤;规则列表增加"生效环境"标签列(显示规则 `environments` 中关联的环境列表);支持按环境筛选规则 |
+| **AC-02** | 规则新增/编辑:表单化录入规则,HTTP 规则支持可视化配置请求匹配条件(method、path、query、header、body 匹配)和响应内容(status、headers、body、delay、fault);**新增"生效环境"多选框**,默认不勾选任何环境,需显式选择 |
 | **AC-03** | **参数化规则编辑**:HTTP 规则编辑界面支持"添加匹配条件"和"添加响应分支",用户可对同一接口配置多组条件-响应对,条件支持 JSONPath、Header 等匹配,响应支持模板变量 |
 | **AC-04** | 规则启用/禁用:单条规则可临时禁用而不删除,禁用后该规则不参与匹配 |
 | **AC-05** | 规则导入/导出:界面上提供"导入规则"(上传 YAML/JSON 文件)和"导出规则"(下载 YAML/JSON 文件)按钮 |
 | **AC-06** | 规则排序:支持拖拽调整同一接口下多规则的优先级顺序 |
 | **AC-07** | 修改实时生效:界面修改规则后,自动调用 REST API 更新,无需手动重载 |
-| **AC-08** | 当无任何环境处于 stub 模式时,规则管理页面顶部显示 banner:"当前无 stub 模式环境,所有规则不会生效",引导用户到环境管理页面切换模式 |
-| **AC-09** | 规则保存后弹出提示：“规则已保存，将在以下 stub 模式环境中生效：{环境列表}” |
-| **AC-10** | 规则列表页增加“场景集”下拉过滤，可按场景集筛选规则；规则编辑时可指定归属场景集 |
-| **AC-11** | 规则编辑页提供“撤销上次修改”按钮（对应 R-S7.4 AC-04） |
-| **AC-12** | 规则列表页增加“启用/禁用”开关列，支持单条规则快速切换启用状态 |
+| **AC-08** | 当某规则未关联任何环境时,规则行显示"未关联环境"标签,提示用户该规则当前不会生效 |
+| **AC-09** | 规则保存后弹出提示:"规则已保存,将在以下环境中生效:{环境列表}";若未关联环境则提示"规则已保存,但未关联任何环境,当前不会生效" |
+| **AC-10** | 规则列表页增加"场景集"下拉过滤,可按场景集筛选规则;规则编辑时可指定归属场景集 |
+| **AC-11** | 规则编辑页提供"撤销上次修改"按钮(对应 R-S7.4 AC-04) |
+| **AC-12** | 规则列表页增加"启用/禁用"开关列,支持单条规则快速切换启用状态 |
 
 #### R-W3:请求日志界面 - P1
 
@@ -486,7 +491,7 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 在 Web 控制台中管理多套测试环境,包括查看环境列表、切换环境模式、查看各环境下活跃 Agent 列表。 |
+| **描述** | 在 Web 控制台中管理多套测试环境,包括查看环境列表、切换环境模式、查看各环境下活跃 Agent 列表、管理规则与环境的关联关系。 |
 | **AC-01** | 环境列表页:展示所有测试环境(环境名称、当前模式、活跃 Agent 数量、描述),支持创建新环境 |
 | **AC-02** | 模式切换:每个环境卡片上提供模式切换按钮(`stub` / `passthrough` / `record` / `record-and-stub`),点击后即时生效,Server 通过控制通道向该环境下所有 Agent 下发模式切换指令 |
 | **AC-03** | Agent 列表:点击环境卡片可展开查看该环境下所有活跃 Agent(PID、应用名、连接时间、状态) |
@@ -495,6 +500,9 @@
 | **AC-06** | 环境模式切换时显示确认弹窗,明确提示影响范围:"即将将环境 {name} 从 {当前模式} 切换为 {新模式},影响 {N} 个活跃 Agent" |
 | **AC-07** | 环境列表支持按模式筛选(如只看 stub 模式环境) |
 | **AC-08** | 无活跃 Agent 的环境在列表中灰显,提示"该环境无活跃 Agent,规则不会生效" |
+| **AC-09** | 新建环境后,环境详情页提示"新环境暂无规则关联,请到规则管理或场景集管理中配置" |
+| **AC-10** | 环境卡片显示已关联规则数量,点击可查看该环境下的规则列表 |
+| **AC-11** | 支持从环境详情页批量关联/取消关联规则(对应 R-S7.3 AC-09/AC-10) |
 
 ---
 
@@ -518,8 +526,8 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | YAML 格式文件,定义 Baafoo Server 的 Mock 响应规则。按协议分区(http/tcp/kafka/pulsar/jms)。**规则全局共享,无 `environments` 字段**。规则是否生效取决于 Agent 的模式:仅 `stub` 模式 Agent 才参与规则匹配。 |
-| **AC-01** | HTTP 规则包含:`id`、`scenarioId`(可选,归属场景集)、`enabled`(可选,默认 true)、`request`(method/path/query/headers/body)、`responses`(数组,每项包含可选 `condition` + 必选 `response`),`response` 包含 status/headers/body/delay/fault。简单规则可只含一项无 `condition` 的默认响应 |
+| **描述** | YAML 格式文件,定义 Baafoo Server 的 Mock 响应规则。按协议分区(http/tcp/kafka/pulsar/jms)。规则通过 `environments` 字段控制生效环境:为空列表 `[]` 时表示不自动生效,需显式关联环境后才参与匹配;指定环境列表(如 `["ft-1", "ft-2"]`)时仅在列出的环境中生效。新规则默认 `environments` 为空。 |
+| **AC-01** | HTTP 规则包含:`id`、`scenarioId`(可选,归属场景集)、`enabled`(可选,默认 true)、`environments`(可选,生效环境列表,默认 `[]`)、`request`(method/path/query/headers/body)、`responses`(数组,每项包含可选 `condition` + 必选 `response`),`response` 包含 status/headers/body/delay/fault。简单规则可只含一项无 `condition` 的默认响应 |
 | **AC-02** | TCP 规则包含:`id`、`request`(prefixHex/pattern/replaySession/offsetMatch)、`responses`(数组,每项包含可选 `condition` + 必选 `response`),`response` 包含 dataHex/replay |
 | **AC-03** | Kafka 规则包含:`topic`、`messages`(key/value/delay) |
 | **AC-04** | Pulsar 规则包含:`tenant`、`namespace`、`topic`、`subscription`、`messages`(key/value/delay/properties) |
@@ -535,7 +543,7 @@
 | 配置项 | 默认值 | 说明 | 配置位置 |
 |---|---|---|---|
 | `baafoo.agent.fail-open` | `false` | Agent 加载失败时的行为:`false`=fail-closed(打 ERROR 日志,请求透传);`true`=fail-open(静默透传) | Agent 启动参数或 `baafoo-agent.yml` |
-| `baafoo.stub.unmatched-default` | `404` | 未匹配规则的请求默认行为:`404`(返回 404 + 日志)、`passthrough`(透传);建议保持默认 `404` | Server 配置文件或环境变量 |
+| `baafoo.stub.unmatched-default` | `passthrough` | 未匹配规则的请求默认行为:`passthrough`(透传 + 日志)、`404`(返回 404 + 日志,挡板严格模式);默认透传确保零配置不误伤 | Server 配置文件或环境变量 |
 | `baafoo.recording.memory-limit` | `256MB` | 单 Agent 录制内存硬上限,超限后停止录制并输出 WARN 日志 | Agent 配置文件 |
 | `baafoo.recording.auto-cleanup-days` | `7` | 录制数据自动清理天数(与 R-S8 `retentionDays` 一致) | Server 配置文件 |
 | `baafoo.heartbeat.interval` | `30s` | Agent-Server 心跳间隔(原 PRD 30s;如需更灵敏可改为 10s) | Agent 配置文件 |
@@ -604,7 +612,7 @@
 | Q5 | Pulsar Mock Broker 是否需要模拟 Lookup 阶段? | **需要**,Mock Broker 必须模拟 `lookupTopic` 和 `getTopicsOfNamespace`,返回自身地址引导客户端直连 Mock Broker | R-S5 |
 | Q6 | Java 9+ 的模块化限制是否会导致企业安全策略拒绝? | **不会**,评估后确认目标团队环境无此限制,`--add-opens` 参数可在开发环境正常使用 | 风险表更新 |
 | Q7 | Consul 拦截在健康检查场景下是否会造成时序竞态? | **暂不明确**,标记为"待实际验证",不阻塞 P0 开发;当前 AC 中已明确 `127.0.0.1:8500` 健康检查透传,若验证发现竞态问题,在 v1.0 发布前修复 | R-A8 |
-| **Q8** | **规则是否应该按环境区分?模式应该由谁控制?** | **规则全局共享,模式由环境控制**。环境是 Agent 的属性(启动时指定),模式是环境的属性(Server 端维护)。规则是否生效取决于 Agent 所属环境的模式。 | **架构级变更**,影响 R-A9, R-C1, R-C2, R-S7, R-W2, R-W6 |
+| **Q8** | **规则是否应该按环境区分?模式应该由谁控制?** | **规则与环境双向绑定**。规则通过 `environments` 字段声明生效环境列表;新规则默认 `environments` 为空(不生效),需显式关联环境;新环境创建时已有规则不自动关联,需显式配置。模式仍由环境控制(stub/passthrough/record/record-and-stub)。规则是否生效取决于两个条件**同时满足**:(1) Agent 所属环境为 stub/record/record-and-stub 模式;(2) 规则 `environments` 包含该环境标识。场景集同样支持 `environments` 字段。 | **架构级变更**,影响 R-A9, R-C1, R-C2, R-S7, R-S7.3, R-S7.5, R-W2, R-W6 |
 
 ---
 
@@ -659,7 +667,7 @@
 | **Plugin Advice 类不在 Bootstrap CL** | Plugin 的 installTransformers 注册的 Advice 类如果写在 Plugin jar 里,Bootstrap CL 找不到 → 目标类调用时崩溃 | 🔴 高 | Advice 类必须在 Core 中预定义;Plugin 只实现处理逻辑,不直接提供 Advice 类 |
 | **Plugin 初始化失败** | Pulsar/TDMQ 插件初始化失败(如依赖版本不兼容),影响同进程其他协议 | 🟡 中 | 捕获插件初始化异常,打印 WARN 日志,该协议降级为 passthrough,不影响其他协议 |
 | **录制数据丢失** | Agent 上传录制数据前 Server 重启,数据在 Agent 内存中丢失 | 🟡 中 | 录制数据写入磁盘后才返回成功;Agent 本地暂存录制数据,上传失败重试(R-A10 AC-05) |
-| **Agent 环境归属混淆** | 规则全局共享但 Agent 分属不同环境,开发者可能混淆"为什么我的规则不生效" | 中 | Web 控制台全局显示当前 Agent 所属环境;日志中明确输出 Agent 环境 + 模式;文档中明确说明"规则全局共享,是否拦截取决于环境模式" |
+| **Agent 环境归属混淆** | 规则通过 `environments` 绑定环境,但开发者可能忘记关联环境导致规则不生效 | 中 | 新建规则时 Web 控制台明确提示"未关联环境";规则列表显示生效环境列;日志中明确输出 Agent 环境 + 模式 + 规则匹配结果 |
 
 ---
 
@@ -676,18 +684,19 @@
 | 服务名路由 | 按 Consul 注册的服务名(如 `order-service`)匹配规则 |
 | 参数化规则 | 同一接口路径下,按不同请求参数条件返回不同 Mock 响应的规则 |
 | Lookup | Pulsar 客户端在创建 Producer/Consumer 前查询 Topic 所在 Broker 地址的阶段 |
-| **环境(Environment)** | Agent 所属的测试环境标识(如 ft-1、ft-2)。**环境是 Agent 的属性**,每个环境有独立的模式配置。多套测试环境的 Agent 连接同一 Server,Server 按环境维度独立控制挡板/透传/录制模式 |
+| **环境(Environment)** | Agent 所属的测试环境标识(如 ft-1、ft-2)。**环境是 Agent 的属性**,每个环境有独立的模式配置。多套测试环境的 Agent 连接同一 Server,Server 按环境维度独立控制挡板/透传/录制模式。规则和场景集通过 `environments` 字段声明生效环境,实现细粒度控制 |
+| **规则环境绑定(Rule-Environment Binding)** | 规则通过 `environments` 字段(环境标识列表)控制生效范围。新规则默认 `environments` 为空(不生效),需显式关联环境;新环境创建时已有规则不自动关联。规则生效需同时满足:(1) 环境模式为 stub/record/record-and-stub;(2) 规则 `environments` 包含该环境标识 |
 | **模式(Mode)** | **模式是环境的属性**,由 Server 端维护。可选值:`stub`(拦截并挡板)、`passthrough`(透传不拦截)、`record`(透传并录制)、`record-and-stub`(挡板并录制) |
 
 ## 附录 B:竞品简要对比
 
-| 产品 | HTTP | TCP | Kafka | Pulsar | JMS | 零侵入 | 录制回放 | 参数化规则 | Web 控制台 | 规则导入导出 | 多环境模式控制 |
+| 产品 | HTTP | TCP | Kafka | Pulsar | JMS | 零侵入 | 录制回放 | 参数化规则 | Web 控制台 | 规则导入导出 | 多环境模式控制 | 规则环境绑定 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Baafoo** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅(Agent) | ✅ | ✅ | ✅ | ✅ |
-| WireMock | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅(Proxy) | ✅ | ✅ | ✅ | ❌ |
-| Hoverfly | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅(Proxy) | ✅ | 🔶 | ✅ | ❌ |
-| MockServer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅(Proxy) | ✅ | 🔶 | ❌ | ❌ |
-| Mountebank | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅(Proxy) | ✅ | 🔶 | ❌ | ❌ |
+| **Baafoo** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅(Agent) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| WireMock | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅(Proxy) | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Hoverfly | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅(Proxy) | ✅ | 🔶 | ✅ | ❌ | ❌ |
+| MockServer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅(Proxy) | ✅ | 🔶 | ❌ | ❌ | ❌ |
+| Mountebank | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅(Proxy) | ✅ | 🔶 | ❌ | ❌ | ❌ |
 
 ## 附录 C:默认端口分配表
 
@@ -705,6 +714,7 @@
 http:
   # 同一接口,不同参数返回不同响应
   - id: get-user-by-level
+    environments: [ft-1, ft-2]
     request:
       method: GET
       path: /api/users/{id}
@@ -730,6 +740,7 @@ http:
 
   # JSONPath body 匹配
   - id: create-order-by-type
+    environments: [ft-1]
     request:
       method: POST
       path: /api/orders
@@ -780,20 +791,25 @@ control:
   heartbeatInterval: 30s
   heartbeatTimeout: 90s
 
-# 路由规则(规则全局共享,不按环境区分)
-# 规则是否生效取决于 Agent 所属环境的模式
+# 路由规则(规则通过 environments 字段控制生效环境)
+# environments 为空列表时不生效,需显式关联环境
+# environments 包含的环境标识需与 Agent 的 environment 字段匹配
 rules:
   - target: "order-service.service.consul"
     protocol: http
+    environments: [ft-1, ft-2]
 
   - target: "payment-service.service.consul"
     protocol: http
+    environments: [ft-1]
 
   - target: "kafka-cluster:9092"
     protocol: kafka
+    environments: [ft-1, ft-3]
 
   - target: "192.168.1.100:8080"
     protocol: http
+    environments: []  # 未关联环境,不会生效
 ```
 
 ### Server 端环境配置(通过 REST API 或 Web 控制台操作)
@@ -824,9 +840,9 @@ curl -X PUT http://localhost:9000/__baafoo__/api/environments/ft-2 \
 
 | 测试环境 | Agent 配置 `environment` | Server 端模式 | 行为 |
 |---|---|---|---|
-| FT-1 | `ft-1` | `stub` | 所有请求被挡板拦截,返回 Mock 响应 |
+| FT-1 | `ft-1` | `stub` | 仅匹配 `environments` 包含 `ft-1` 的规则,返回 Mock 响应;未匹配的规则透传 |
 | FT-2 | `ft-2` | `passthrough` | 所有请求透传到真实下游联调 |
-| FT-3 | `ft-3` | `record` | 连接真实下游,同时录制请求/响应 |
+| FT-3 | `ft-3` | `record` | 仅匹配 `environments` 包含 `ft-3` 的规则,连接真实下游同时录制 |
 
 FT-1 启动:`java -javaagent:baafoo-agent.jar=config=baafoo-agent-ft1.yml -jar my-app.jar`
 FT-2 启动:`java -javaagent:baafoo-agent.jar=config=baafoo-agent-ft2.yml -jar my-app.jar`

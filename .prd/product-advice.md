@@ -10,6 +10,8 @@
 
 ### 1.1 规则匹配失败的默认行为需统一
 
+> **⚠ v2.0 决议更新**：经团队讨论，PRD v2.0 已决定**默认透传**。理由：零配置不误伤优先于严格模式；用户可通过 `baafoo.stub.unmatched-default=404` 切换为严格模式。以下原始建议保留供参考，但默认行为已改为透传。
+
 **现状**：概念设计 §3.4 写"匹配失败→抛异常或返回404取决于配置"，PRD R-A2 写"默认透传"。两个文档矛盾。
 
 **问题**：对用户而言，"配置了挡板但某个请求没匹配到规则"是高频场景，行为必须确定。挡板场景下，用户期望的是"未覆盖的请求应当告警而非悄悄透传"。如果默认透传，用户会以为挡板在生效但实际在走真实下游——这违背了装挡板的初衷。
@@ -21,7 +23,9 @@
 - 在请求日志中对"未匹配"请求标记醒目状态（黄色/橙色），与"命中规则"和"透传模式"区分
 - 在 Web 控制台首页增加"未匹配请求数"统计卡片
 
-**PRD 影响**：R-A2 AC-01 需修改默认行为描述；R-A2 需增加"未匹配请求的默认行为配置项"。
+**v2.0 决议**：默认透传，`baafoo.stub.unmatched-default` 默认值改为 `passthrough`，保留配置项允许切换为 `404`。请求日志中对"未匹配"请求仍标记醒目状态。
+
+**PRD 影响**：R-A9 AC-05 已更新为默认透传；R-S2 AC-09 已更新；配置表已更新默认值。
 
 ---
 
@@ -218,7 +222,7 @@
 | 配置项 | 默认值 | 说明 |
 |---|---|---|
 | `baafoo.agent.fail-open` | `false` | Agent 加载失败时的行为：false=fail-closed（打 ERROR 日志），true=fail-open（静默透传） |
-| `baafoo.stub.unmatched-default` | `404` | 未匹配规则的请求默认行为：`404`（返回404）、`passthrough`（透传） |
+| `baafoo.stub.unmatched-default` | `passthrough` | 未匹配规则的请求默认行为：`passthrough`（透传，v2.0 起默认）、`404`（返回404，挡板严格模式） |
 | `baafoo.recording.memory-limit` | `256MB` | 单 Agent 录制内存硬上限 |
 | `baafoo.recording.auto-cleanup-days` | `7` | 录制数据自动清理天数 |
 | `baafoo.heartbeat.interval` | `10s` | Agent-Server 心跳间隔（PRD 原 30s 偏长） |

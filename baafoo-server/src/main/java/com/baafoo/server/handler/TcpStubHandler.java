@@ -1,5 +1,7 @@
 package com.baafoo.server.handler;
 
+import com.baafoo.core.model.Environment;
+import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.model.Rule;
@@ -58,14 +60,16 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
         if (result.isMatched()) {
             ResponseEntry entry = result.getResponse();
 
-            RecordingEntry rec = new RecordingEntry();
-            rec.setRuleId(result.getRule().getId());
-            rec.setProtocol("tcp");
-            rec.setRequestBody(payload);
-            rec.setResponseStatusCode(entry.getStatusCode());
-            rec.setResponseBody(entry.getBody());
-            rec.setResponseTimeMs(entry.getDelayMs());
-            storage.addRecording(rec);
+            if (isRecording()) {
+                RecordingEntry rec = new RecordingEntry();
+                rec.setRuleId(result.getRule().getId());
+                rec.setProtocol("tcp");
+                rec.setRequestBody(payload);
+                rec.setResponseStatusCode(entry.getStatusCode());
+                rec.setResponseBody(entry.getBody());
+                rec.setResponseTimeMs(entry.getDelayMs());
+                storage.addRecording(rec);
+            }
 
             sendTcpResponse(ctx, entry);
         } else {
@@ -90,6 +94,15 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
             log.error("Error sending TCP response: {}", e.getMessage());
             ctx.close();
         }
+    }
+
+    private boolean isRecording() {
+        for (Environment env : storage.listEnvironments()) {
+            if (env.getMode() == EnvironmentMode.RECORD || env.getMode() == EnvironmentMode.RECORD_AND_STUB) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

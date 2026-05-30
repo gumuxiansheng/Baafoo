@@ -1,5 +1,7 @@
 package com.baafoo.server.handler;
 
+import com.baafoo.core.model.Environment;
+import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.Rule;
 import com.baafoo.core.model.ResponseEntry;
@@ -84,20 +86,22 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         if (result.isMatched()) {
             ResponseEntry entry = result.getResponse();
 
-            RecordingEntry rec = new RecordingEntry();
-            rec.setRuleId(result.getRule().getId());
-            rec.setProtocol("http");
-            rec.setHost(host);
-            rec.setPort(port);
-            rec.setMethod(method);
-            rec.setPath(path);
-            rec.setRequestHeaders(headers);
-            rec.setRequestBody(body);
-            rec.setResponseStatusCode(entry.getStatusCode());
-            rec.setResponseHeaders(entry.getHeaders() != null ? entry.getHeaders() : new HashMap<String, String>());
-            rec.setResponseBody(entry.getBody());
-            rec.setResponseTimeMs(entry.getDelayMs());
-            storage.addRecording(rec);
+            if (isRecording()) {
+                RecordingEntry rec = new RecordingEntry();
+                rec.setRuleId(result.getRule().getId());
+                rec.setProtocol("http");
+                rec.setHost(host);
+                rec.setPort(port);
+                rec.setMethod(method);
+                rec.setPath(path);
+                rec.setRequestHeaders(headers);
+                rec.setRequestBody(body);
+                rec.setResponseStatusCode(entry.getStatusCode());
+                rec.setResponseHeaders(entry.getHeaders() != null ? entry.getHeaders() : new HashMap<String, String>());
+                rec.setResponseBody(entry.getBody());
+                rec.setResponseTimeMs(entry.getDelayMs());
+                storage.addRecording(rec);
+            }
 
             sendStubResponse(ctx, entry, result.getRule().getId());
         } else {
@@ -185,6 +189,15 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
             headers.put(entry.getKey(), entry.getValue());
         }
         return headers;
+    }
+
+    private boolean isRecording() {
+        for (Environment env : storage.listEnvironments()) {
+            if (env.getMode() == EnvironmentMode.RECORD || env.getMode() == EnvironmentMode.RECORD_AND_STUB) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

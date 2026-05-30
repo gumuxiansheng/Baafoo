@@ -698,13 +698,13 @@ public class H2StorageService implements StorageService {
 
     private void setSceneSetInsertParams(PreparedStatement ps, SceneSet s) throws SQLException {
         try {
-            ps.setString(1, s.getName());
-            ps.setString(2, s.getDescription());
-            ps.setString(3, s.getItemIds() != null ? mapper.writeValueAsString(s.getItemIds()) : null);
-            ps.setBoolean(4, s.isActive());
-            ps.setString(5, s.getTags() != null ? mapper.writeValueAsString(s.getTags()) : null);
-            ps.setLong(6, s.getCreatedAt());
-            ps.setLong(7, s.getUpdatedAt());
+            ps.setString(2, s.getName());
+            ps.setString(3, s.getDescription());
+            ps.setString(4, s.getItemIds() != null ? mapper.writeValueAsString(s.getItemIds()) : null);
+            ps.setBoolean(5, s.isActive());
+            ps.setString(6, s.getTags() != null ? mapper.writeValueAsString(s.getTags()) : null);
+            ps.setLong(7, s.getCreatedAt());
+            ps.setLong(8, s.getUpdatedAt());
         } catch (Exception e) {
             log.error("Failed to serialize scene set fields: {}", e.getMessage());
         }
@@ -799,13 +799,13 @@ public class H2StorageService implements StorageService {
 
     private void setRuleSetInsertParams(PreparedStatement ps, RuleSet rs) throws SQLException {
         try {
-            ps.setString(1, rs.getName());
-            ps.setString(2, rs.getDescription());
-            ps.setString(3, rs.getRuleIds() != null ? mapper.writeValueAsString(rs.getRuleIds()) : null);
-            ps.setBoolean(4, rs.isEnabled());
-            ps.setString(5, rs.getTags() != null ? mapper.writeValueAsString(rs.getTags()) : null);
-            ps.setLong(6, rs.getCreatedAt());
-            ps.setLong(7, rs.getUpdatedAt());
+            ps.setString(2, rs.getName());
+            ps.setString(3, rs.getDescription());
+            ps.setString(4, rs.getRuleIds() != null ? mapper.writeValueAsString(rs.getRuleIds()) : null);
+            ps.setBoolean(5, rs.isEnabled());
+            ps.setString(6, rs.getTags() != null ? mapper.writeValueAsString(rs.getTags()) : null);
+            ps.setLong(7, rs.getCreatedAt());
+            ps.setLong(8, rs.getUpdatedAt());
         } catch (Exception e) {
             log.error("Failed to serialize rule set fields: {}", e.getMessage());
         }
