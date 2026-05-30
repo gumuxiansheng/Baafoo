@@ -1,43 +1,80 @@
-# Baafoo
+<div align="center">
 
-**JavaAgent Based API Mock Platform** — 零侵入的微服务挡板系统
+# 🛡️ Baafoo
 
-Baafoo 通过 JavaAgent 字节码增强技术，在不修改任何业务代码的前提下，拦截应用对下游服务的网络调用，按规则返回 Mock 响应。支持 HTTP、TCP、Kafka、Pulsar、JMS 等多种协议，以及 Consul 服务发现架构。
+**JavaAgent-Based API Mock Platform**  
+零侵入的微服务挡板系统
+
+[![Java](https://img.shields.io/badge/Java-8%2B-orange?logo=openjdk&logoColor=white)](https://openjdk.org/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-2.7-brightgreen?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![Vue](https://img.shields.io/badge/Vue-3.4-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
+[![License](https://img.shields.io/badge/License-Private-red.svg)]()
+
+[English](#) · [快速开始](#快速开始) · [使用指南](#使用指南) · [API 参考](#rest-api-参考) · [插件开发](#插件开发)
+
+</div>
 
 ---
 
-## 核心特性
+Baafoo 通过 JavaAgent 字节码增强技术，在不修改任何业务代码的前提下，拦截应用对下游服务的网络调用，按规则返回 Mock 响应。支持 HTTP、TCP、Kafka、Pulsar、JMS 等多种协议，以及 Consul 服务发现架构。
 
-- **零侵入**：仅需在 JVM 启动参数中增加 `-javaagent`，业务代码无需任何修改
-- **多协议覆盖**：HTTP/REST、原生 TCP Socket、Kafka（Beta）、Pulsar（Beta）、JMS（Beta）
-- **Consul 适配**：支持 DNS 模式和 HTTP API 模式的服务发现拦截
-- **多环境管理**：多套测试环境共享同一 Server，按环境维度独立控制挡板/透传/录制模式
-- **参数化规则**：同一接口按不同请求参数（Header / Query / Body）返回不同 Mock 响应
-- **录制回放**：透传模式下自动录制真实下游响应，后续可回放
-- **热切换**：环境模式切换无需重启应用，通过控制通道实时下发
-- **Web 控制台**：可视化规则管理、请求日志、环境管理、场景集管理
-- **场景集管理**：将一组规则组织为场景集，一键启用/禁用
-- **规则版本管理**：规则修改自动快照，支持一键撤销
-- **快速起步**：`baafoo init` 命令生成完整项目骨架
+## ✨ 核心特性
+
+| 特性 | 说明 |
+|:-----|:-----|
+| 🚀 **零侵入** | 仅需在 JVM 启动参数中增加 `-javaagent`，业务代码无需任何修改 |
+| 🌐 **多协议覆盖** | HTTP/REST、原生 TCP Socket、Kafka（Beta）、Pulsar（Beta）、JMS（Beta） |
+| 🔍 **Consul 适配** | 支持 DNS 模式和 HTTP API 模式的服务发现拦截 |
+| 🏗️ **多环境管理** | 多套测试环境共享同一 Server，按环境维度独立控制挡板/透传/录制模式 |
+| 🎯 **参数化规则** | 同一接口按不同请求参数（Header / Query / Body）返回不同 Mock 响应 |
+| 🎬 **录制回放** | 透传模式下自动录制真实下游响应，后续可回放 |
+| 🔥 **热切换** | 环境模式切换无需重启应用，通过控制通道实时下发 |
+| 🖥️ **Web 控制台** | 可视化规则管理、请求日志、环境管理、场景集管理 |
+| 📦 **场景集管理** | 将一组规则组织为场景集，一键启用/禁用 |
+| 📜 **规则版本管理** | 规则修改自动快照，支持一键撤销 |
+| ⚡ **快速起步** | `baafoo init` 命令生成完整项目骨架 |
+
+---
+
+## 📑 目录
+
+- [系统要求](#系统要求)
+- [快速开始](#快速开始)
+- [项目结构](#项目结构)
+- [配置说明](#配置说明)
+- [使用指南](#使用指南)
+  - [环境管理](#环境管理)
+  - [多环境并行](#多环境并行)
+  - [规则管理](#规则管理)
+  - [参数化规则](#参数化规则)
+  - [Consul 服务发现](#consul-服务发现)
+  - [场景集管理](#场景集管理)
+- [REST API 参考](#rest-api-参考)
+- [Web 控制台开发](#web-控制台开发)
+- [插件开发](#插件开发)
+- [技术栈](#技术栈)
+- [协议支持状态](#协议支持状态)
+- [常见问题](#常见问题)
+- [许可证](#许可证)
 
 ---
 
 ## 系统要求
 
 | 项目 | 要求 |
-|------|------|
+|:----:|:----:|
 | Java | 8+（推荐 8 / 11 / 17） |
 | Maven | 3.6+ |
 | Node.js | 16+（仅 Web 控制台开发时需要） |
 | 操作系统 | Windows / macOS / Linux |
 
-> Java 9+ 需要额外 JVM 参数：`--add-opens java.base/java.net=ALL-UNNAMED`
+> ⚠️ **Java 9+ 注意**：需要额外 JVM 参数 `--add-opens java.base/java.net=ALL-UNNAMED`
 
 ---
 
 ## 快速开始
 
-### 1. 构建项目
+### 1️⃣ 构建项目
 
 ```bash
 git clone <repo-url> baafoo
@@ -48,12 +85,12 @@ mvn clean package -DskipTests
 构建产物：
 
 | 文件 | 路径 | 说明 |
-|------|------|------|
+|:-----|:-----|:-----|
 | `baafoo-agent.jar` | `baafoo-agent/target/` | Agent JAR（含 shade 依赖） |
 | `baafoo-server.jar` | `baafoo-server/target/` | Server JAR（含 shade 依赖） |
 | `baafoo-cli.jar` | `baafoo-cli/target/` | CLI 工具 JAR |
 
-### 2. 初始化项目（推荐）
+### 2️⃣ 初始化项目（推荐）
 
 ```bash
 java -jar baafoo-cli/target/baafoo-cli.jar init my-project
@@ -73,7 +110,7 @@ my-project/
 └── start-server.bat      # Server 启动脚本 (Windows)
 ```
 
-### 3. 启动 Server
+### 3️⃣ 启动 Server
 
 ```bash
 # Linux / macOS
@@ -86,7 +123,7 @@ java -jar baafoo-server.jar .\baafoo-server.yml
 Server 启动后会监听以下端口：
 
 | 端口 | 协议 | 说明 |
-|:----:|------|------|
+|:----:|:----:|:-----|
 | 8080 | 管理 API + Web 控制台 | API 前缀 `/__baafoo__/api` |
 | 9000 | HTTP Mock | 接收被重定向的 HTTP 请求 |
 | 9001 | TCP Mock | 接收被重定向的 TCP 连接 |
@@ -94,7 +131,7 @@ Server 启动后会监听以下端口：
 | 9003 | Pulsar Mock (Beta) | 模拟 Pulsar Broker |
 | 9004 | JMS Mock (Beta) | 模拟 JMS Broker |
 
-### 4. 启动应用（附加 Agent）
+### 4️⃣ 启动应用（附加 Agent）
 
 ```bash
 java -javaagent:baafoo-agent.jar=./baafoo-agent.yml -jar your-app.jar
@@ -102,7 +139,7 @@ java -javaagent:baafoo-agent.jar=./baafoo-agent.yml -jar your-app.jar
 
 Agent 会自动向 Server 注册、拉取规则，并根据环境模式决定是否拦截连接。
 
-### 5. 打开 Web 控制台
+### 5️⃣ 打开 Web 控制台
 
 浏览器访问：**http://localhost:8080/__baafoo__/**
 
@@ -205,7 +242,7 @@ maxAgentsPerEnvironment: 50          # 每环境最大 Agent 数
 Baafoo 的核心概念是**环境**。每个 Agent 启动时声明自己所属的环境，Server 端按环境维度控制运行模式：
 
 | 模式 | 行为 |
-|------|------|
+|:-----|:-----|
 | **Stub** | 拦截连接，按规则返回 Mock 响应 |
 | **Passthrough** | 不拦截，所有请求直接透传到真实下游 |
 | **Record** | 透传真实连接，同时录制请求/响应数据 |
@@ -325,61 +362,61 @@ curl -X POST http://localhost:8080/__baafoo__/api/scenes \
 ### 规则管理
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/rules` | 列出所有规则 |
-| POST | `/rules` | 创建规则 |
-| GET | `/rules/{id}` | 获取规则详情 |
-| PUT | `/rules/{id}` | 更新规则 |
-| DELETE | `/rules/{id}` | 删除规则 |
-| POST | `/rules/{id}/undo` | 撤销规则到上一版本 |
+|:----:|:-----|:-----|
+| `GET` | `/rules` | 列出所有规则 |
+| `POST` | `/rules` | 创建规则 |
+| `GET` | `/rules/{id}` | 获取规则详情 |
+| `PUT` | `/rules/{id}` | 更新规则 |
+| `DELETE` | `/rules/{id}` | 删除规则 |
+| `POST` | `/rules/{id}/undo` | 撤销规则到上一版本 |
 
 ### 环境管理
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/environments` | 列出所有环境 |
-| POST | `/environments` | 创建环境 |
-| GET | `/environments/{id}` | 获取环境详情 |
-| PUT | `/environments/{id}` | 更新环境（切换模式） |
-| DELETE | `/environments/{id}` | 删除环境 |
+|:----:|:-----|:-----|
+| `GET` | `/environments` | 列出所有环境 |
+| `POST` | `/environments` | 创建环境 |
+| `GET` | `/environments/{id}` | 获取环境详情 |
+| `PUT` | `/environments/{id}` | 更新环境（切换模式） |
+| `DELETE` | `/environments/{id}` | 删除环境 |
 
 ### 场景集管理
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/scenes` | 列出所有场景集 |
-| POST | `/scenes` | 创建场景集 |
-| PUT | `/scenes/{id}` | 更新场景集 |
-| DELETE | `/scenes/{id}` | 删除场景集 |
+|:----:|:-----|:-----|
+| `GET` | `/scenes` | 列出所有场景集 |
+| `POST` | `/scenes` | 创建场景集 |
+| `PUT` | `/scenes/{id}` | 更新场景集 |
+| `DELETE` | `/scenes/{id}` | 删除场景集 |
 
 ### Agent 控制通道
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/agent/register` | Agent 注册 |
-| POST | `/agent/heartbeat` | Agent 心跳 |
-| GET | `/agent/poll` | Agent 拉取规则和模式 |
-| POST | `/agent/recordings` | Agent 上传录制数据 |
+|:----:|:-----|:-----|
+| `POST` | `/agent/register` | Agent 注册 |
+| `POST` | `/agent/heartbeat` | Agent 心跳 |
+| `GET` | `/agent/poll` | Agent 拉取规则和模式 |
+| `POST` | `/agent/recordings` | Agent 上传录制数据 |
 
 ### 录制管理
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/recordings` | 查询录制数据 |
-| DELETE | `/recordings/{id}` | 删除录制 |
+|:----:|:-----|:-----|
+| `GET` | `/recordings` | 查询录制数据 |
+| `DELETE` | `/recordings/{id}` | 删除录制 |
 
 ### 规则集
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/rulesets` | 列出所有规则集 |
-| POST | `/rulesets` | 创建规则集 |
+|:----:|:-----|:-----|
+| `GET` | `/rulesets` | 列出所有规则集 |
+| `POST` | `/rulesets` | 创建规则集 |
 
 ### 系统
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/status` | 获取系统状态 |
+|:----:|:-----|:-----|
+| `GET` | `/status` | 获取系统状态 |
 
 ---
 
@@ -432,14 +469,15 @@ public class MyPlugin implements AgentPlugin {
 }
 ```
 
-在 JAR 的 `META-INF/services/com.baafoo.plugin.AgentPlugin` 中注册实现类。插件使用独立 ClassLoader（parent=null），与宿主应用依赖完全隔离。
+在 JAR 的 `META-INF/services/com.baafoo.plugin.AgentPlugin` 中注册实现类。  
+插件使用独立 ClassLoader（parent=null），与宿主应用依赖完全隔离。
 
 ---
 
 ## 技术栈
 
 | 层级 | 技术 | 版本 |
-|------|------|------|
+|:-----|:-----|:-----|
 | 字节码增强 | Byte Buddy | 1.14.14 |
 | 网络层 | Netty | 4.1.100 |
 | JSON | Jackson | 2.15.3 |
@@ -457,7 +495,7 @@ public class MyPlugin implements AgentPlugin {
 ## 协议支持状态
 
 | 协议 | 状态 | 说明 |
-|------|------|------|
+|:-----|:----:|:-----|
 | HTTP/1.1 | ✅ 完全支持 | 含参数化规则、条件匹配、延迟模拟、异常模拟 |
 | TCP Socket | ✅ 完全支持 | 字节级匹配、长连接多轮交互 |
 | Consul DNS | ✅ 完全支持 | `.service.consul` 域名拦截 |
@@ -465,6 +503,63 @@ public class MyPlugin implements AgentPlugin {
 | Kafka | 🔶 Beta | Metadata/Produce/Fetch 核心路径；不支持 acks=all、事务、Consumer Group Rebalance |
 | Pulsar / TDMQ | 🔶 Beta | v1.0 仅覆盖非分区 Topic + 单 Producer + 单 Consumer + Shared 订阅 |
 | JMS | 🔶 Beta | ActiveMQ Artemis 内嵌模式 |
+
+---
+
+## 常见问题
+
+<details>
+<summary><strong>Agent 启动后没有连接到 Server 怎么办？</strong></summary>
+
+1. 检查 `baafoo-agent.yml` 中 `serverUrl` 是否正确
+2. 确认 Server 已启动且端口 8080 可达
+3. 查看应用日志中是否有 Agent 注册失败的错误
+4. 检查 `connectionRetries` 和 `retryBackoffMs` 配置是否合理
+
+</details>
+
+<details>
+<summary><strong>Java 9+ 启动时报 IllegalAccessError 怎么办？</strong></summary>
+
+Java 9+ 的模块系统限制了反射访问，需要在 JVM 启动参数中添加：
+
+```
+--add-opens java.base/java.net=ALL-UNNAMED
+```
+
+完整的启动命令：
+
+```bash
+java --add-opens java.base/java.net=ALL-UNNAMED -javaagent:baafoo-agent.jar=./baafoo-agent.yml -jar your-app.jar
+```
+
+</details>
+
+<details>
+<summary><strong>如何让多个环境使用不同的规则？</strong></summary>
+
+Baafoo 的规则是全局共享的，但**规则的生效取决于 Agent 所属环境的模式**。只有处于 `stub` 模式的环境中的 Agent 才会拦截和匹配规则。你可以通过场景集（Scene Set）来组织规则组，然后在不同环境中启用/禁用不同的场景集。
+
+</details>
+
+<details>
+<summary><strong>Kafka Beta 版本有哪些限制？</strong></summary>
+
+当前 Kafka Mock 处于 Beta 阶段，仅支持 Metadata/Produce/Fetch 核心路径，暂不支持：
+- `acks=all` 的生产者确认模式
+- 事务消息
+- Consumer Group Rebalance
+
+如果需要这些特性，建议暂时使用 Passthrough 模式透传到真实 Kafka。
+
+</details>
+
+<details>
+<summary><strong>插件 JAR 放在哪个目录？</strong></summary>
+
+将插件 JAR 放入应用工作目录下的 `./plugins/` 文件夹。Agent 启动时会自动扫描该目录，通过 SPI 机制发现并加载实现了 `AgentPlugin` 接口的插件。每个插件使用独立的 ClassLoader（parent=null），不会与宿主应用产生依赖冲突。
+
+</details>
 
 ---
 
