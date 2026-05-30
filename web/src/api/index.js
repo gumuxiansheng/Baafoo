@@ -45,6 +45,9 @@ export default {
   getRecordings: (ruleId, limit = 100) => http.get(`/recordings?ruleId=${ruleId || ''}&limit=${limit}`),
   deleteRecording: (id) => http.delete(`/recordings/${id}`),
 
+  // --- Agents ---
+  getAgents: () => http.get('/agents'),
+
   // --- Status ---
   getStatus: () => http.get('/status')
 }

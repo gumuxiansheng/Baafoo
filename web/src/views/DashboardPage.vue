@@ -91,6 +91,7 @@ export default {
 
       if (statusRes.success) {
         Object.assign(stats, statusRes.data)
+        stats.agents = statusRes.data.onlineAgents ?? statusRes.data.agents ?? 0
         stats.scenes = scenesRes.success ? scenesRes.data.length : 0
       }
 

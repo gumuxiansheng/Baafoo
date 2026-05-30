@@ -254,13 +254,28 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             }
         }
 
+        // --- Agents ---
+        if (path.equals(API_PREFIX + "agents") && "GET".equals(method)) {
+            return ApiResponse.ok(storage.listAgents());
+        }
+
         // --- System Status ---
         if (path.equals(API_PREFIX + "status") && "GET".equals(method)) {
+            List<StorageService.AgentRegistration> allAgents = storage.listAgents();
+            long onlineThreshold = System.currentTimeMillis() - 60000;
+            long onlineCount = 0;
+            for (StorageService.AgentRegistration agent : allAgents) {
+                if (agent.lastHeartbeat > onlineThreshold) {
+                    onlineCount++;
+                }
+            }
+
             java.util.Map<String, Object> status = new java.util.HashMap<String, Object>();
             status.put("version", "1.0.0-SNAPSHOT");
             status.put("rules", storage.listRules().size());
             status.put("environments", storage.listEnvironments().size());
-            status.put("agents", storage.listAgents().size());
+            status.put("agents", allAgents.size());
+            status.put("onlineAgents", onlineCount);
             status.put("scenes", storage.listScenes().size());
             status.put("uptime", System.currentTimeMillis());
             return ApiResponse.ok(status);

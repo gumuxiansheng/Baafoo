@@ -12,13 +12,24 @@
     </el-row>
 
     <el-card shadow="never" style="margin-top: 20px">
-      <template #header><span>Agent 列表</span></template>
+      <template #header>
+        <span>Agent 列表</span>
+        <el-button size="small" text style="float: right" @click="loadData">刷新</el-button>
+      </template>
       <el-table :data="agents" stripe size="small" empty-text="暂无 Agent 连接">
         <el-table-column prop="agentId" label="Agent ID" width="200" show-overflow-tooltip />
         <el-table-column prop="environment" label="环境" width="120" />
         <el-table-column prop="hostname" label="主机" width="150" />
         <el-table-column prop="version" label="版本" width="100" />
-        <el-table-column label="最后心跳" width="180">
+        <el-table-column label="协议" min-width="200">
+          <template #default="{ row }">
+            <el-tag v-for="p in (row.protocols || [])" :key="p" size="small" style="margin-right: 4px">{{ p }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="注册时间" width="180">
+          <template #default="{ row }">{{ formatTime(row.registeredAt) }}</template>
+        </el-table-column>
+        <el-table-column label="最后心跳" width="200">
           <template #default="{ row }">
             {{ formatTime(row.lastHeartbeat) }}
             <el-tag v-if="isOnline(row)" size="small" type="success" effect="plain" style="margin-left: 8px">在线</el-tag>
@@ -43,7 +54,7 @@
 </template>
 
 <script>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '@/api'
 
 export default {
@@ -51,30 +62,23 @@ export default {
   setup() {
     const status = ref(null)
     const agents = ref([])
-    const envs = ref([])
-    const scenes = ref([])
 
     const statItems = computed(() => [
       { label: '规则总数', value: status.value?.rules ?? 0 },
-      { label: '环境数', value: envs.value.length },
-      { label: '在线 Agents', value: agents.value.length },
-      { label: '场景集', value: scenes.value.length }
+      { label: '环境数', value: status.value?.environments ?? 0 },
+      { label: '在线 Agents', value: status.value?.onlineAgents ?? 0 },
+      { label: '场景集', value: status.value?.scenes ?? 0 }
     ])
 
-    onMounted(async () => {
-      const [statusRes, envsRes, scenesRes] = await Promise.all([
+    async function loadData() {
+      const [statusRes, agentsRes] = await Promise.all([
         api.getStatus(),
-        api.getEnvironments(),
-        api.getScenes()
+        api.getAgents()
       ])
 
       if (statusRes.success) status.value = statusRes.data
-      if (envsRes.success) envs.value = envsRes.data
-      if (scenesRes.success) scenes.value = scenesRes.data
-
-      // Agents are part of the status response
-      agents.value = status.value?.agents || []
-    })
+      if (agentsRes.success) agents.value = agentsRes.data || []
+    }
 
     function isOnline(agent) {
       if (!agent.lastHeartbeat) return false
@@ -82,7 +86,9 @@ export default {
     }
 
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
-    return { status, agents, statItems, isOnline, formatTime }
+
+    onMounted(loadData)
+    return { status, agents, statItems, isOnline, formatTime, loadData }
   }
 }
 </script>

@@ -829,14 +829,15 @@ public class H2StorageService implements StorageService {
     @Override
     public List<RecordingEntry> listRecordings(String ruleId, int limit) {
         StringBuilder sql = new StringBuilder("SELECT * FROM recordings");
-        if (ruleId != null) {
+        boolean filterByRuleId = ruleId != null && !ruleId.isEmpty();
+        if (filterByRuleId) {
             sql.append(" WHERE rule_id = ?");
         }
         sql.append(" ORDER BY recorded_at DESC LIMIT ?");
         List<RecordingEntry> result = new ArrayList<RecordingEntry>();
         try (PreparedStatement ps = conn.prepareStatement(sql.toString())) {
             int idx = 1;
-            if (ruleId != null) {
+            if (filterByRuleId) {
                 ps.setString(idx++, ruleId);
             }
             ps.setInt(idx, limit);
