@@ -10,11 +10,18 @@
         <version>1.0.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>baafoo-server</artifactId>
+    <artifactId>baafoo-test-app</artifactId>
     <packaging>jar</packaging>
 
-    <name>Baafoo Server</name>
-    <description>Netty-based multi-protocol stub server with web console</description>
+    <name>Baafoo Test App</name>
+    <description>Test application for Baafoo stub system — exercises all protocol outbound calls</description>
+
+    <properties>
+        <kafka-clients.version>3.4.1</kafka-clients.version>
+        <pulsar-client.version>2.10.4</pulsar-client.version>
+        <activemq-client.version>5.18.3</activemq-client.version>
+        <jms-api.version>2.0.1</jms-api.version>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -22,32 +29,37 @@
             <artifactId>baafoo-core</artifactId>
         </dependency>
 
-        <!-- Netty -->
-        <dependency>
-            <groupId>io.netty</groupId>
-            <artifactId>netty-all</artifactId>
-        </dependency>
-
-        <!-- JSON -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
+
+        <!-- Kafka Client -->
         <dependency>
-            <groupId>com.fasterxml.jackson.dataformat</groupId>
-            <artifactId>jackson-dataformat-yaml</artifactId>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>${kafka-clients.version}</version>
         </dependency>
 
-        <!-- YAML -->
+        <!-- Pulsar Client -->
         <dependency>
-            <groupId>org.yaml</groupId>
-            <artifactId>snakeyaml</artifactId>
+            <groupId>org.apache.pulsar</groupId>
+            <artifactId>pulsar-client</artifactId>
+            <version>${pulsar-client.version}</version>
         </dependency>
 
-        <!-- H2 Embedded Database -->
+        <!-- JMS API -->
         <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
+            <groupId>javax.jms</groupId>
+            <artifactId>javax.jms-api</artifactId>
+            <version>${jms-api.version}</version>
+        </dependency>
+
+        <!-- ActiveMQ Client (JMS implementation) -->
+        <dependency>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>activemq-client</artifactId>
+            <version>${activemq-client.version}</version>
         </dependency>
 
         <!-- Logging -->
@@ -58,18 +70,6 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-        </dependency>
-
-        <!-- Test -->
-        <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -88,7 +88,7 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.baafoo.server.bootstrap.BaafooServer</mainClass>
+                                    <mainClass>com.baafoo.testapp.BaafooTestApp</mainClass>
                                 </transformer>
                             </transformers>
                             <filters>

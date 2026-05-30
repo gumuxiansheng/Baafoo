@@ -3,7 +3,7 @@ package com.baafoo.server.handler;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.model.Rule;
 import com.baafoo.core.util.MatchEngine;
-import com.baafoo.server.storage.FileStorage;
+import com.baafoo.server.storage.StorageService;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFutureListener;
@@ -26,10 +26,10 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
     private static final Logger log = LoggerFactory.getLogger(TcpStubHandler.class);
 
-    private final FileStorage storage;
+    private final StorageService storage;
     private final MatchEngine matchEngine;
 
-    public TcpStubHandler(FileStorage storage) {
+    public TcpStubHandler(StorageService storage) {
         this.storage = storage;
         this.matchEngine = new MatchEngine();
     }

@@ -5,7 +5,8 @@ import com.baafoo.core.config.ServerConfig;
 import com.baafoo.server.api.*;
 import com.baafoo.server.handler.HttpStubHandler;
 import com.baafoo.server.handler.TcpStubHandler;
-import com.baafoo.server.storage.FileStorage;
+import com.baafoo.server.storage.StorageService;
+import com.baafoo.server.storage.H2StorageService;
 import com.baafoo.server.web.StaticFileHandler;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
@@ -40,14 +41,14 @@ public class BaafooServer {
     private static final Logger log = LoggerFactory.getLogger(BaafooServer.class);
 
     private final ServerConfig config;
-    private final FileStorage storage;
+    private final StorageService storage;
     private final EventLoopGroup bossGroup;
     private final EventLoopGroup workerGroup;
     private final List<Channel> channels;
 
     public BaafooServer(ServerConfig config) {
         this.config = config;
-        this.storage = new FileStorage(config);
+        this.storage = new H2StorageService(config);
         this.bossGroup = new NioEventLoopGroup(1);
         this.workerGroup = new NioEventLoopGroup();
         this.channels = new ArrayList<Channel>();
@@ -198,6 +199,7 @@ public class BaafooServer {
 
     private void stop() {
         log.info("Shutting down Baafoo Server...");
+        storage.shutdown();
         for (Channel ch : channels) {
             ch.close();
         }

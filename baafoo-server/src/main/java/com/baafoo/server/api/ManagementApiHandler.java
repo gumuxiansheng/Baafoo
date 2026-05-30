@@ -2,7 +2,7 @@ package com.baafoo.server.api;
 
 import com.baafoo.core.api.ApiResponse;
 import com.baafoo.core.model.*;
-import com.baafoo.server.storage.FileStorage;
+import com.baafoo.server.storage.StorageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFutureListener;
@@ -47,13 +47,13 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
     /** All API routes use this prefix */
     private static final String API_PREFIX = "/__baafoo__/api/";
 
-    private final FileStorage storage;
+    private final StorageService storage;
     private final ObjectMapper mapper;
 
     /** Stores the original URI for query parameter parsing */
     private String currentUri;
 
-    public ManagementApiHandler(FileStorage storage) {
+    public ManagementApiHandler(StorageService storage) {
         this.storage = storage;
         this.mapper = new ObjectMapper();
     }
@@ -165,7 +165,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             @SuppressWarnings("unchecked")
             List<String> protocols = (List<String>) body.getOrDefault("protocols", new ArrayList<String>());
 
-            FileStorage.AgentRegistration reg = storage.registerAgent(agentId, env, hostname, version, protocols);
+            StorageService.AgentRegistration reg = storage.registerAgent(agentId, env, hostname, version, protocols);
 
             Environment environment = storage.getEnvironmentByName(env);
             String mode = environment != null ? environment.getMode().getValue() : "stub";
@@ -191,7 +191,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
 
             // Get environment mode for this agent
             String mode = "stub";
-            for (FileStorage.AgentRegistration reg : storage.listAgents()) {
+            for (StorageService.AgentRegistration reg : storage.listAgents()) {
                 if (reg.agentId != null && reg.agentId.equals(agentId)) {
                     Environment env = storage.getEnvironmentByName(reg.environment);
                     if (env != null) mode = env.getMode().getValue();

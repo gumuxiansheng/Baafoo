@@ -18,6 +18,7 @@
         <module>baafoo-agent</module>
         <module>baafoo-server</module>
         <module>baafoo-cli</module>
+        <module>baafoo-test-app</module>
     </modules>
 
     <properties>
@@ -36,6 +37,7 @@
 
         <!-- Server -->
         <netty.version>4.1.100.Final</netty.version>
+        <h2.version>2.2.224</h2.version>
 
         <!-- Logging -->
         <slf4j.version>1.7.36</slf4j.version>
@@ -96,6 +98,13 @@
                 <groupId>io.netty</groupId>
                 <artifactId>netty-all</artifactId>
                 <version>${netty.version}</version>
+            </dependency>
+
+            <!-- H2 -->
+            <dependency>
+                <groupId>com.h2database</groupId>
+                <artifactId>h2</artifactId>
+                <version>${h2.version}</version>
             </dependency>
 
             <!-- Logging -->
