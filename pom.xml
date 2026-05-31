@@ -39,6 +39,7 @@
         <netty.version>4.1.100.Final</netty.version>
         <h2.version>2.2.224</h2.version>
         <hikaricp.version>4.0.3</hikaricp.version>
+        <postgresql.version>42.7.1</postgresql.version>
 
         <!-- Logging -->
         <slf4j.version>1.7.36</slf4j.version>
@@ -113,6 +114,13 @@
             <groupId>com.zaxxer</groupId>
             <artifactId>HikariCP</artifactId>
             <version>${hikaricp.version}</version>
+        </dependency>
+
+        <!-- PostgreSQL -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>${postgresql.version}</version>
         </dependency>
 
         <!-- MyBatis -->

@@ -49,3 +49,12 @@ maxAgentsPerEnvironment: 50
 # - passthrough: forward to real downstream and log
 # - 404: return 404 response and log (strict stub mode)
 unmatchedDefault: passthrough
+
+# Database configuration
+# type: "h2" (embedded, default) or "postgresql" (external)
+database:
+  type: h2
+  # For PostgreSQL, set url, username, password
+  # url: jdbc:postgresql://localhost:5432/baafoo
+  # username: postgres
+  # password: postgres

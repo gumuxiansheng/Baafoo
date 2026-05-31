@@ -8,6 +8,7 @@ import com.baafoo.server.mapper.entity.*;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.zaxxer.hikari.HikariDataSource;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.apache.ibatis.session.SqlSessionFactoryBuilder;
@@ -16,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
+import java.io.File;
 import java.io.InputStream;
 import java.sql.*;
 import java.util.*;
@@ -53,21 +55,43 @@ public class MybatisStorageService implements StorageService {
 
     @Override
     public void init() throws Exception {
+        String dbType = config.getDatabase().getType();
+        DataSource dataSource;
+
+        if ("postgresql".equalsIgnoreCase(dbType)) {
+            dataSource = createPostgresqlDataSource();
+        } else {
+            dataSource = createH2DataSource();
+        }
+
+        try (Connection conn = dataSource.getConnection()) {
+            createTablesIfNotExist(conn, dbType);
+        }
+
+        this.sqlSessionFactory = buildSqlSessionFactory(dataSource);
+        log.info("MyBatis + {} storage initialized", dbType);
+    }
+
+    private DataSource createH2DataSource() {
         String dbPath = config.getDataDir() + "/baafoo";
-        java.io.File dbDir = new java.io.File(config.getDataDir());
+        File dbDir = new File(config.getDataDir());
         if (!dbDir.exists()) {
             dbDir.mkdirs();
         }
         String jdbcUrl = "jdbc:h2:file:" + dbPath + ";DB_CLOSE_DELAY=-1";
+        return org.h2.jdbcx.JdbcConnectionPool.create(jdbcUrl, "sa", "");
+    }
 
-        org.h2.jdbcx.JdbcConnectionPool dataSource = org.h2.jdbcx.JdbcConnectionPool.create(jdbcUrl, "sa", "");
-
-        try (Connection conn = dataSource.getConnection()) {
-            createTablesIfNotExist(conn);
-        }
-
-        this.sqlSessionFactory = buildSqlSessionFactory(dataSource);
-        log.info("MyBatis + H2 storage initialized: {}", dbPath);
+    private DataSource createPostgresqlDataSource() {
+        ServerConfig.DatabaseConfig dbConfig = config.getDatabase();
+        HikariDataSource ds = new HikariDataSource();
+        ds.setDriverClassName("org.postgresql.Driver");
+        ds.setJdbcUrl(dbConfig.getUrl());
+        ds.setUsername(dbConfig.getUsername());
+        ds.setPassword(dbConfig.getPassword());
+        ds.setMaximumPoolSize(10);
+        ds.setMinimumIdle(2);
+        return ds;
     }
 
     @Override
@@ -75,7 +99,8 @@ public class MybatisStorageService implements StorageService {
         log.info("MyBatis storage shutdown");
     }
 
-    private void createTablesIfNotExist(Connection conn) throws SQLException {
+    private void createTablesIfNotExist(Connection conn, String dbType) throws SQLException {
+        String autoIncrement = "postgresql".equalsIgnoreCase(dbType) ? "BIGSERIAL" : "BIGINT AUTO_INCREMENT";
         try (Statement stmt = conn.createStatement()) {
             stmt.executeUpdate(
                 "CREATE TABLE IF NOT EXISTS rules (" +
@@ -104,7 +129,7 @@ public class MybatisStorageService implements StorageService {
 
             stmt.executeUpdate(
                 "CREATE TABLE IF NOT EXISTS rule_history (" +
-                "  id BIGINT AUTO_INCREMENT PRIMARY KEY," +
+                "  id " + autoIncrement + " PRIMARY KEY," +
                 "  rule_id VARCHAR(36) NOT NULL," +
                 "  rule_snapshot TEXT NOT NULL," +
                 "  created_at BIGINT" +

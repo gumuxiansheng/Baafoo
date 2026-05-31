@@ -52,6 +52,9 @@ public class ServerConfig {
     /** Unmatched request default behavior: passthrough or 404 */
     private String unmatchedDefault;
 
+    /** Database configuration */
+    private DatabaseConfig database;
+
     public ServerConfig() {
         this.httpPort = 8080;
         this.protocolPorts = new java.util.HashMap<String, Integer>();
@@ -69,6 +72,7 @@ public class ServerConfig {
         this.agentHeartbeatTimeoutSec = 60;
         this.maxAgentsPerEnvironment = 50;
         this.unmatchedDefault = "passthrough";
+        this.database = new DatabaseConfig();
     }
 
     // --- Getters / Setters ---
@@ -120,11 +124,43 @@ public class ServerConfig {
     public String getUnmatchedDefault() { return unmatchedDefault; }
     public void setUnmatchedDefault(String unmatchedDefault) { this.unmatchedDefault = unmatchedDefault; }
 
+    public DatabaseConfig getDatabase() { return database; }
+    public void setDatabase(DatabaseConfig database) { this.database = database; }
+
     @Override
     public String toString() {
         return "ServerConfig{" +
                 "httpPort=" + httpPort +
                 ", dataDir='" + dataDir + '\'' +
+                ", database=" + database +
                 '}';
+    }
+
+    /**
+     * Database configuration.
+     * <p>Use type "h2" (default) for embedded H2, or "postgresql" for external PostgreSQL.</p>
+     */
+    public static class DatabaseConfig {
+        private String type = "h2";
+        private String url;
+        private String username = "sa";
+        private String password = "";
+
+        public String getType() { return type; }
+        public void setType(String type) { this.type = type; }
+
+        public String getUrl() { return url; }
+        public void setUrl(String url) { this.url = url; }
+
+        public String getUsername() { return username; }
+        public void setUsername(String username) { this.username = username; }
+
+        public String getPassword() { return password; }
+        public void setPassword(String password) { this.password = password; }
+
+        @Override
+        public String toString() {
+            return "DatabaseConfig{type='" + type + "', url='" + url + "'}";
+        }
     }
 }
