@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.lang.instrument.Instrumentation;
+import java.util.Map;
 import java.util.jar.JarFile;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -29,7 +30,7 @@ public class BaafooAgent {
     private static volatile PluginManager pluginManager;
     private static volatile boolean initialized = false;
 
-    private static volatile ConcurrentHashMap<String, String> bootstrapRoutes;
+    private static volatile ConcurrentHashMap<String, GlobalRouteState.HostPort> bootstrapRoutes;
 
     public static void premain(String agentArgs, Instrumentation inst) {
         try {
@@ -45,13 +46,11 @@ public class BaafooAgent {
                     AgentManifest.serverHost, AgentManifest.serverPort,
                     AgentManifest.environmentId, AgentManifest.getModeName());
 
-            GlobalRouteState.SERVER_HOST = AgentManifest.serverHost;
-            GlobalRouteState.SERVER_PORT = AgentManifest.serverPort;
-            GlobalRouteState.CURRENT_MODE = AgentManifest.currentMode;
             log.info("GlobalRouteState initialized: SERVER_HOST={}, SERVER_PORT={}, CURRENT_MODE={}",
                     GlobalRouteState.SERVER_HOST, GlobalRouteState.SERVER_PORT, GlobalRouteState.CURRENT_MODE);
 
             controlChannel = new ControlChannel(config);
+            controlChannel.setAgentIdCallback(id -> config.setAgentId(id));
             controlChannel.start();
 
             pluginManager = new PluginManager();
@@ -102,12 +101,12 @@ public class BaafooAgent {
                 if (port < 0) {
                     port = "https".equals(uri.getScheme()) ? 443 : 8080;
                 }
-                AgentManifest.serverHost = host;
-                AgentManifest.serverPort = port;
+                AgentManifest.setServerHost(host);
+                AgentManifest.setServerPort(port);
             } catch (Exception e) {
                 log.warn("Failed to parse server URL: {}, using defaults", cfg.getServerUrl());
-                AgentManifest.serverHost = "127.0.0.1";
-                AgentManifest.serverPort = 8080;
+                AgentManifest.setServerHost("127.0.0.1");
+                AgentManifest.setServerPort(8080);
             }
         }
 
@@ -222,7 +221,7 @@ public class BaafooAgent {
         return initialized;
     }
 
-    public static ConcurrentHashMap<String, String> getBootstrapRoutes() {
+    public static ConcurrentHashMap<String, GlobalRouteState.HostPort> getBootstrapRoutes() {
         return bootstrapRoutes;
     }
 
@@ -272,7 +271,8 @@ public class BaafooAgent {
                     new java.io.FileOutputStream(bootstrapJar), manifest);
 
             String[] bootstrapClasses = {
-                    "com/baafoo/agent/GlobalRouteState.class"
+                    "com/baafoo/agent/GlobalRouteState.class",
+                    "com/baafoo/agent/GlobalRouteState$HostPort.class"
             };
 
             for (String entryName : bootstrapClasses) {
@@ -301,15 +301,21 @@ public class BaafooAgent {
         }
     }
 
+    @SuppressWarnings("unchecked")
     private static void syncGlobalRouteStateToBootstrapCL() {
         try {
             Class<?> bootGRS = findBootstrapClass("com.baafoo.agent.GlobalRouteState");
 
             Object bootRoutesObj = bootGRS.getField("ROUTES").get(null);
             if (bootRoutesObj instanceof ConcurrentHashMap) {
-                @SuppressWarnings("unchecked")
-                ConcurrentHashMap<String, String> bootRoutes = (ConcurrentHashMap<String, String>) bootRoutesObj;
-                bootRoutes.putAll(GlobalRouteState.ROUTES);
+                ConcurrentHashMap<String, GlobalRouteState.HostPort> bootRoutes = (ConcurrentHashMap<String, GlobalRouteState.HostPort>) bootRoutesObj;
+                Class<?> bootHostPortClass = Class.forName("com.baafoo.agent.GlobalRouteState$HostPort", false, bootGRS.getClassLoader());
+                java.lang.reflect.Constructor<?> ctor = bootHostPortClass.getConstructor(String.class, int.class);
+                ((ConcurrentHashMap) bootRoutes).clear();
+                for (Map.Entry<String, GlobalRouteState.HostPort> entry : GlobalRouteState.ROUTES.entrySet()) {
+                    Object bootHostPort = ctor.newInstance(entry.getValue().host, entry.getValue().port);
+                    ((ConcurrentHashMap) bootRoutes).put(entry.getKey(), bootHostPort);
+                }
                 bootstrapRoutes = bootRoutes;
                 log.info("Synced {} routes to Bootstrap CL GlobalRouteState.ROUTES", bootRoutes.size());
             }

@@ -2,8 +2,7 @@ package com.baafoo.server.storage;
 
 import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.model.*;
-import com.baafoo.core.util.IdGenerator;
-import com.fasterxml.jackson.core.type.TypeReference;
+import com.baafoo.server.storage.repo.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.zaxxer.hikari.HikariConfig;
@@ -21,6 +20,12 @@ public class H2StorageService implements StorageService {
     private final ServerConfig config;
     private final ObjectMapper mapper;
     private HikariDataSource dataSource;
+    private RuleRepository ruleRepo;
+    private EnvironmentRepository envRepo;
+    private SceneRepository sceneRepo;
+    private RecordingRepository recordingRepo;
+    private AgentRepository agentRepo;
+    private UserRepository userRepo;
 
     public H2StorageService(ServerConfig config) {
         this.config = config;
@@ -53,6 +58,15 @@ public class H2StorageService implements StorageService {
         try (Connection conn = dataSource.getConnection()) {
             createTablesIfNotExist(conn);
         }
+
+        JsonColumnHelper jsonHelper = new JsonColumnHelper(mapper);
+        ruleRepo = new RuleRepository(dataSource, jsonHelper);
+        envRepo = new EnvironmentRepository(dataSource, jsonHelper);
+        sceneRepo = new SceneRepository(dataSource, jsonHelper, ruleRepo);
+        recordingRepo = new RecordingRepository(dataSource, jsonHelper);
+        agentRepo = new AgentRepository(dataSource, jsonHelper, envRepo);
+        userRepo = new UserRepository(dataSource);
+
         log.info("H2 storage initialized with HikariCP pool: {}", dbPath);
     }
 
@@ -219,1156 +233,118 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public List<Rule> listRules() {
-        String sql = "SELECT * FROM rules ORDER BY priority ASC";
-        List<Rule> result = new ArrayList<Rule>();
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                result.add(mapRule(rs));
-            }
-        } catch (SQLException e) {
-            log.error("Failed to list rules: {}", e.getMessage());
-        }
-        return result;
+    public List<Rule> listRules() { return ruleRepo.listRules(); }
+
+    @Override
+    public Rule getRule(String id) { return ruleRepo.getRule(id); }
+
+    @Override
+    public Rule createRule(Rule rule) { return ruleRepo.createRule(rule); }
+
+    @Override
+    public Rule updateRule(String id, Rule update) { return ruleRepo.updateRule(id, update); }
+
+    @Override
+    public boolean deleteRule(String id) { return ruleRepo.deleteRule(id); }
+
+    @Override
+    public boolean undoRule(String id) { return ruleRepo.undoRule(id); }
+
+    @Override
+    public List<Environment> listEnvironments() { return envRepo.listEnvironments(); }
+
+    @Override
+    public Environment getEnvironment(String id) { return envRepo.getEnvironment(id); }
+
+    @Override
+    public Environment getEnvironmentByName(String name) { return envRepo.getEnvironmentByName(name); }
+
+    @Override
+    public Environment createEnvironment(Environment env) { return envRepo.createEnvironment(env); }
+
+    @Override
+    public Environment updateEnvironment(String id, Environment update) { return envRepo.updateEnvironment(id, update); }
+
+    @Override
+    public boolean deleteEnvironment(String id) { return envRepo.deleteEnvironment(id); }
+
+    @Override
+    public List<SceneSet> listScenes() { return sceneRepo.listScenes(); }
+
+    @Override
+    public SceneSet getScene(String id) { return sceneRepo.getScene(id); }
+
+    @Override
+    public SceneSet createScene(SceneSet scene) { return sceneRepo.createScene(scene); }
+
+    @Override
+    public SceneSet updateScene(String id, SceneSet update) { return sceneRepo.updateScene(id, update); }
+
+    @Override
+    public boolean deleteScene(String id) { return sceneRepo.deleteScene(id); }
+
+    @Override
+    public List<RuleSet> listRuleSets() { return ruleRepo.listRuleSets(); }
+
+    @Override
+    public RuleSet createRuleSet(RuleSet ruleSet) { return ruleRepo.createRuleSet(ruleSet); }
+
+    @Override
+    public boolean deleteRuleSet(String id) { return ruleRepo.deleteRuleSet(id); }
+
+    @Override
+    public List<RecordingEntry> listRecordings(String ruleId, int limit) { return recordingRepo.listRecordings(ruleId, limit); }
+
+    @Override
+    public void addRecording(RecordingEntry recording) { recordingRepo.addRecording(recording); }
+
+    @Override
+    public void addRecordings(List<RecordingEntry> batch) { recordingRepo.addRecordings(batch); }
+
+    @Override
+    public boolean deleteRecording(String id) { return recordingRepo.deleteRecording(id); }
+
+    @Override
+    public AgentRegistration registerAgent(String agentId, String environment, String hostname, String version, List<String> protocols) {
+        return agentRepo.registerAgent(agentId, environment, hostname, version, protocols);
     }
 
     @Override
-    public Rule getRule(String id) {
-        String sql = "SELECT * FROM rules WHERE id = ?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, id);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) return mapRule(rs);
-            }
-        } catch (SQLException e) {
-            log.error("Failed to get rule {}: {}", id, e.getMessage());
-        }
-        return null;
-    }
+    public void agentHeartbeat(String agentId) { agentRepo.agentHeartbeat(agentId); }
 
     @Override
-    public Rule createRule(Rule rule) {
-        if (rule.getId() == null || rule.getId().isEmpty()) {
-            rule.setId(IdGenerator.uuid());
-        }
-        rule.setVersion(1);
-        long now = System.currentTimeMillis();
-        rule.setCreatedAt(now);
-        rule.setUpdatedAt(now);
-
-        String sql = "INSERT INTO rules (id, name, protocol, service_name, host, port, " +
-                "conditions_json, responses_json, enabled, priority, tags_json, environments_json, version, " +
-                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, rule.getId());
-            setRuleParams(ps, rule, 2);
-            ps.executeUpdate();
-            return rule;
-        } catch (SQLException e) {
-            log.error("Failed to create rule: {}", e.getMessage());
-            return null;
-        }
-    }
+    public List<AgentRegistration> listAgents() { return agentRepo.listAgents(); }
 
     @Override
-    public Rule updateRule(String id, Rule update) {
-        Rule existing = getRule(id);
-        if (existing == null) return null;
-
-        if (update.getName() != null) existing.setName(update.getName());
-        if (update.getProtocol() != null) existing.setProtocol(update.getProtocol());
-        if (update.getServiceName() != null) existing.setServiceName(update.getServiceName());
-        if (update.getHost() != null) existing.setHost(update.getHost());
-        if (update.getPort() != null) existing.setPort(update.getPort());
-        if (update.getConditions() != null && !update.getConditions().isEmpty())
-            existing.setConditions(update.getConditions());
-        if (update.getResponses() != null && !update.getResponses().isEmpty())
-            existing.setResponses(update.getResponses());
-        existing.setEnabled(update.isEnabled());
-        existing.setPriority(update.getPriority());
-        if (update.getTags() != null) existing.setTags(update.getTags());
-        if (update.getEnvironments() != null) existing.setEnvironments(update.getEnvironments());
-        existing.setVersion(existing.getVersion() + 1);
-        existing.setUpdatedAt(System.currentTimeMillis());
-
-        try (Connection conn = dataSource.getConnection()) {
-            saveVersion(conn, id, existing);
-
-            String sql = "UPDATE rules SET name=?, protocol=?, service_name=?, host=?, port=?, " +
-                    "conditions_json=?, responses_json=?, enabled=?, priority=?, tags_json=?, " +
-                    "environments_json=?, version=?, created_at=?, updated_at=? WHERE id=?";
-            try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                setRuleParams(ps, existing, 1);
-                ps.setString(15, id);
-                ps.executeUpdate();
-            }
-            return existing;
-        } catch (Exception e) {
-            log.error("Failed to update rule {}: {}", id, e.getMessage());
-            return null;
-        }
-    }
+    public List<AgentRegistration> getAgentsForEnvironment(String envName) { return agentRepo.getAgentsForEnvironment(envName); }
 
     @Override
-    public boolean deleteRule(String id) {
-        try (Connection conn = dataSource.getConnection()) {
-            try (PreparedStatement ps = conn.prepareStatement("DELETE FROM rule_history WHERE rule_id = ?")) {
-                ps.setString(1, id);
-                ps.executeUpdate();
-            }
-
-            String sql = "DELETE FROM rules WHERE id = ?";
-            try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                ps.setString(1, id);
-                return ps.executeUpdate() > 0;
-            }
-        } catch (SQLException e) {
-            log.error("Failed to delete rule {}: {}", id, e.getMessage());
-            return false;
-        }
-    }
+    public void associateRulesToEnvironment(String envName, List<String> ruleIds) { ruleRepo.associateRulesToEnvironment(envName, ruleIds); }
 
     @Override
-    public boolean undoRule(String id) {
-        try (Connection conn = dataSource.getConnection()) {
-            String findSql = "SELECT rule_snapshot FROM rule_history " +
-                    "WHERE rule_id = ? ORDER BY created_at DESC LIMIT 1";
-            try (PreparedStatement ps = conn.prepareStatement(findSql)) {
-                ps.setString(1, id);
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (!rs.next()) return false;
-                    String snapshot = rs.getString("rule_snapshot");
-                    Rule previous = mapper.readValue(snapshot, Rule.class);
-
-                    String updateSql = "UPDATE rules SET name=?, protocol=?, service_name=?, " +
-                            "host=?, port=?, conditions_json=?, responses_json=?, enabled=?, " +
-                            "priority=?, tags_json=?, environments_json=?, version=?, created_at=?, updated_at=? WHERE id=?";
-                    try (PreparedStatement ups = conn.prepareStatement(updateSql)) {
-                        setRuleParams(ups, previous, 1);
-                        ups.setString(15, id);
-                        ups.executeUpdate();
-                    }
-
-                    long historyId = -1;
-                    try (PreparedStatement hps = conn.prepareStatement(
-                            "SELECT id FROM rule_history WHERE rule_id = ? ORDER BY created_at DESC LIMIT 1")) {
-                        hps.setString(1, id);
-                        try (ResultSet hrs = hps.executeQuery()) {
-                            if (hrs.next()) {
-                                historyId = hrs.getLong("id");
-                            }
-                        }
-                    }
-                    if (historyId != -1) {
-                        try (PreparedStatement dps = conn.prepareStatement(
-                                "DELETE FROM rule_history WHERE rule_id = ? AND id = ?")) {
-                            dps.setString(1, id);
-                            dps.setLong(2, historyId);
-                            dps.executeUpdate();
-                        }
-                    }
-
-                    return true;
-                }
-            }
-        } catch (Exception e) {
-            log.error("Failed to undo rule {}: {}", id, e.getMessage());
-            return false;
-        }
-    }
-
-    private void saveVersion(Connection conn, String ruleId, Rule previous) {
-        try {
-            String snapshot = mapper.writeValueAsString(previous);
-            String sql = "INSERT INTO rule_history (rule_id, rule_snapshot, created_at) VALUES (?, ?, ?)";
-            try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                ps.setString(1, ruleId);
-                ps.setString(2, snapshot);
-                ps.setLong(3, System.currentTimeMillis());
-                ps.executeUpdate();
-            }
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "DELETE FROM rule_history WHERE rule_id = ? AND id NOT IN " +
-                    "(SELECT id FROM rule_history WHERE rule_id = ? ORDER BY created_at DESC LIMIT 10)")) {
-                ps.setString(1, ruleId);
-                ps.setString(2, ruleId);
-                ps.executeUpdate();
-            }
-        } catch (Exception e) {
-            log.error("Failed to save rule version: {}", e.getMessage());
-        }
-    }
-
-    private Rule mapRule(ResultSet rs) throws SQLException {
-        Rule r = new Rule();
-        r.setId(rs.getString("id"));
-        r.setName(rs.getString("name"));
-        r.setProtocol(rs.getString("protocol"));
-        r.setServiceName(rs.getString("service_name"));
-        r.setHost(rs.getString("host"));
-        int port = rs.getInt("port");
-        r.setPort(rs.wasNull() ? null : port);
-        r.setEnabled(rs.getBoolean("enabled"));
-        r.setPriority(rs.getInt("priority"));
-        r.setVersion(rs.getInt("version"));
-        r.setCreatedAt(rs.getLong("created_at"));
-        r.setUpdatedAt(rs.getLong("updated_at"));
-        try {
-            String condJson = rs.getString("conditions_json");
-            if (condJson != null && !condJson.isEmpty()) {
-                r.setConditions(mapper.readValue(condJson, new TypeReference<List<MatchCondition>>() {}));
-            }
-            String respJson = rs.getString("responses_json");
-            if (respJson != null && !respJson.isEmpty()) {
-                r.setResponses(mapper.readValue(respJson, new TypeReference<List<ResponseEntry>>() {}));
-            }
-            String tagsJson = rs.getString("tags_json");
-            if (tagsJson != null && !tagsJson.isEmpty()) {
-                r.setTags(mapper.readValue(tagsJson, new TypeReference<List<String>>() {}));
-            }
-            String envJson = rs.getString("environments_json");
-            if (envJson != null && !envJson.isEmpty()) {
-                r.setEnvironments(mapper.readValue(envJson, new TypeReference<List<String>>() {}));
-            }
-        } catch (Exception e) {
-            log.warn("Failed to deserialize rule fields: {}", e.getMessage());
-        }
-        return r;
-    }
-
-    private void setRuleParams(PreparedStatement ps, Rule r, int offset) throws SQLException {
-        ps.setString(offset, r.getName());
-        ps.setString(offset + 1, r.getProtocol());
-        ps.setString(offset + 2, r.getServiceName());
-        ps.setString(offset + 3, r.getHost());
-        if (r.getPort() != null) {
-            ps.setInt(offset + 4, r.getPort());
-        } else {
-            ps.setNull(offset + 4, Types.INTEGER);
-        }
-        try {
-            ps.setString(offset + 5, r.getConditions() != null ? mapper.writeValueAsString(r.getConditions()) : null);
-            ps.setString(offset + 6, r.getResponses() != null ? mapper.writeValueAsString(r.getResponses()) : null);
-        } catch (Exception e) {
-            ps.setString(offset + 5, null);
-            ps.setString(offset + 6, null);
-        }
-        ps.setBoolean(offset + 7, r.isEnabled());
-        ps.setInt(offset + 8, r.getPriority());
-        try {
-            ps.setString(offset + 9, r.getTags() != null ? mapper.writeValueAsString(r.getTags()) : null);
-            ps.setString(offset + 10, r.getEnvironments() != null ? mapper.writeValueAsString(r.getEnvironments()) : null);
-        } catch (Exception e) {
-            ps.setString(offset + 9, null);
-            ps.setString(offset + 10, null);
-        }
-        ps.setInt(offset + 11, r.getVersion());
-        ps.setLong(offset + 12, r.getCreatedAt());
-        ps.setLong(offset + 13, r.getUpdatedAt());
-    }
+    public void dissociateRulesFromEnvironment(String envName, List<String> ruleIds) { ruleRepo.dissociateRulesFromEnvironment(envName, ruleIds); }
 
     @Override
-    public List<Environment> listEnvironments() {
-        String sql = "SELECT * FROM environments";
-        List<Environment> result = new ArrayList<Environment>();
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                result.add(mapEnvironment(rs));
-            }
-        } catch (SQLException e) {
-            log.error("Failed to list environments: {}", e.getMessage());
-        }
-        return result;
-    }
+    public List<User> listUsers() { return userRepo.listUsers(); }
 
     @Override
-    public Environment getEnvironment(String id) {
-        String sql = "SELECT * FROM environments WHERE id = ?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, id);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) return mapEnvironment(rs);
-            }
-        } catch (SQLException e) {
-            log.error("Failed to get environment {}: {}", id, e.getMessage());
-        }
-        return null;
-    }
+    public User getUserByUsername(String username) { return userRepo.getUserByUsername(username); }
 
     @Override
-    public Environment getEnvironmentByName(String name) {
-        String sql = "SELECT * FROM environments WHERE name = ?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, name);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) return mapEnvironment(rs);
-            }
-        } catch (SQLException e) {
-            log.error("Failed to get environment by name {}: {}", name, e.getMessage());
-        }
-        return null;
-    }
+    public User getUserByApiKey(String apiKey) { return userRepo.getUserByApiKey(apiKey); }
 
     @Override
-    public Environment createEnvironment(Environment env) {
-        if (env.getId() == null || env.getId().isEmpty()) {
-            env.setId(IdGenerator.uuid());
-        }
-        long now = System.currentTimeMillis();
-        env.setCreatedAt(now);
-        env.setUpdatedAt(now);
-
-        String sql = "INSERT INTO environments (id, name, mode, agent_ids_json, variables_json, " +
-                "metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, env.getId());
-            setEnvironmentParams(ps, env, 2);
-            ps.executeUpdate();
-            return env;
-        } catch (SQLException e) {
-            log.error("Failed to create environment: {}", e.getMessage());
-            return null;
-        }
-    }
+    public User createUser(User user) { return userRepo.createUser(user); }
 
     @Override
-    public Environment updateEnvironment(String id, Environment update) {
-        Environment existing = getEnvironment(id);
-        if (existing == null) return null;
-
-        if (update.getName() != null) existing.setName(update.getName());
-        if (update.getMode() != null) existing.setMode(update.getMode());
-        if (update.getVariables() != null) existing.setVariables(update.getVariables());
-        if (update.getMetadata() != null) existing.setMetadata(update.getMetadata());
-        existing.setUpdatedAt(System.currentTimeMillis());
-
-        String sql = "UPDATE environments SET name=?, mode=?, agent_ids_json=?, " +
-                "variables_json=?, metadata_json=?, updated_at=? WHERE id=?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            setEnvironmentUpdateParams(ps, existing);
-            ps.setString(7, id);
-            ps.executeUpdate();
-            return existing;
-        } catch (SQLException e) {
-            log.error("Failed to update environment {}: {}", id, e.getMessage());
-            return null;
-        }
-    }
+    public boolean updateUserRole(String username, String role) { return userRepo.updateUserRole(username, role); }
 
     @Override
-    public boolean deleteEnvironment(String id) {
-        String sql = "DELETE FROM environments WHERE id = ?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, id);
-            return ps.executeUpdate() > 0;
-        } catch (SQLException e) {
-            log.error("Failed to delete environment {}: {}", id, e.getMessage());
-            return false;
-        }
-    }
-
-    private Environment mapEnvironment(ResultSet rs) throws SQLException {
-        Environment env = new Environment();
-        env.setId(rs.getString("id"));
-        env.setName(rs.getString("name"));
-        env.setMode(EnvironmentMode.fromValue(rs.getString("mode")));
-        env.setCreatedAt(rs.getLong("created_at"));
-        env.setUpdatedAt(rs.getLong("updated_at"));
-        try {
-            String agentIdsJson = rs.getString("agent_ids_json");
-            if (agentIdsJson != null && !agentIdsJson.isEmpty()) {
-                env.setAgentIds(mapper.readValue(agentIdsJson, new TypeReference<List<String>>() {}));
-            }
-            String varsJson = rs.getString("variables_json");
-            if (varsJson != null && !varsJson.isEmpty()) {
-                env.setVariables(mapper.readValue(varsJson, new TypeReference<Map<String, String>>() {}));
-            }
-            String metaJson = rs.getString("metadata_json");
-            if (metaJson != null && !metaJson.isEmpty()) {
-                env.setMetadata(mapper.readValue(metaJson, new TypeReference<Map<String, String>>() {}));
-            }
-        } catch (Exception e) {
-            log.warn("Failed to deserialize environment fields: {}", e.getMessage());
-        }
-        return env;
-    }
-
-    private void setEnvironmentParams(PreparedStatement ps, Environment env, int offset) throws SQLException {
-        try {
-            ps.setString(offset, env.getName());
-            ps.setString(offset + 1, env.getMode().getValue());
-            ps.setString(offset + 2, env.getAgentIds() != null ? mapper.writeValueAsString(env.getAgentIds()) : null);
-            ps.setString(offset + 3, env.getVariables() != null ? mapper.writeValueAsString(env.getVariables()) : null);
-            ps.setString(offset + 4, env.getMetadata() != null ? mapper.writeValueAsString(env.getMetadata()) : null);
-            ps.setLong(offset + 5, env.getCreatedAt());
-            ps.setLong(offset + 6, env.getUpdatedAt());
-        } catch (Exception e) {
-            log.error("Failed to serialize environment fields: {}", e.getMessage());
-        }
-    }
-
-    private void setEnvironmentUpdateParams(PreparedStatement ps, Environment env) throws SQLException {
-        try {
-            ps.setString(1, env.getName());
-            ps.setString(2, env.getMode().getValue());
-            ps.setString(3, env.getAgentIds() != null ? mapper.writeValueAsString(env.getAgentIds()) : null);
-            ps.setString(4, env.getVariables() != null ? mapper.writeValueAsString(env.getVariables()) : null);
-            ps.setString(5, env.getMetadata() != null ? mapper.writeValueAsString(env.getMetadata()) : null);
-            ps.setLong(6, env.getUpdatedAt());
-        } catch (Exception e) {
-            log.error("Failed to serialize environment fields: {}", e.getMessage());
-        }
-    }
+    public boolean updateUserApiKey(String username, String apiKey) { return userRepo.updateUserApiKey(username, apiKey); }
 
     @Override
-    public List<SceneSet> listScenes() {
-        String sql = "SELECT * FROM scene_sets";
-        List<SceneSet> result = new ArrayList<SceneSet>();
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                result.add(mapSceneSet(rs));
-            }
-        } catch (SQLException e) {
-            log.error("Failed to list scenes: {}", e.getMessage());
-        }
-        return result;
-    }
+    public boolean updateUserLastLogin(String username) { return userRepo.updateUserLastLogin(username); }
 
     @Override
-    public SceneSet getScene(String id) {
-        String sql = "SELECT * FROM scene_sets WHERE id = ?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, id);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) return mapSceneSet(rs);
-            }
-        } catch (SQLException e) {
-            log.error("Failed to get scene {}: {}", id, e.getMessage());
-        }
-        return null;
-    }
-
-    @Override
-    public SceneSet createScene(SceneSet scene) {
-        if (scene.getId() == null || scene.getId().isEmpty()) {
-            scene.setId(IdGenerator.uuid());
-        }
-        long now = System.currentTimeMillis();
-        scene.setCreatedAt(now);
-        scene.setUpdatedAt(now);
-
-        String sql = "INSERT INTO scene_sets (id, name, description, item_ids_json, " +
-                "active, tags_json, environments_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, scene.getId());
-            setSceneSetInsertParams(ps, scene);
-            ps.executeUpdate();
-            return scene;
-        } catch (SQLException e) {
-            log.error("Failed to create scene: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    @Override
-    public SceneSet updateScene(String id, SceneSet update) {
-        SceneSet existing = getScene(id);
-        if (existing == null) return null;
-
-        List<String> oldEnvironments = existing.getEnvironments() != null
-                ? new ArrayList<String>(existing.getEnvironments())
-                : new ArrayList<String>();
-        List<String> oldItemIds = existing.getItemIds() != null
-                ? new ArrayList<String>(existing.getItemIds())
-                : new ArrayList<String>();
-
-        if (update.getName() != null) existing.setName(update.getName());
-        if (update.getDescription() != null) existing.setDescription(update.getDescription());
-        if (update.getItemIds() != null) existing.setItemIds(update.getItemIds());
-        if (update.getEnvironments() != null) existing.setEnvironments(update.getEnvironments());
-        existing.setActive(update.isActive());
-        existing.setUpdatedAt(System.currentTimeMillis());
-
-        String sql = "UPDATE scene_sets SET name=?, description=?, item_ids_json=?, " +
-                "active=?, tags_json=?, environments_json=?, updated_at=? WHERE id=?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            setSceneSetParams(ps, existing);
-            ps.setString(8, id);
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            log.error("Failed to update scene {}: {}", id, e.getMessage());
-            return null;
-        }
-
-        syncSceneEnvironmentsToRules(existing, oldEnvironments, oldItemIds);
-
-        return existing;
-    }
-
-    private void syncSceneEnvironmentsToRules(SceneSet scene, List<String> oldEnvironments, List<String> oldItemIds) {
-        List<String> newEnvironments = scene.getEnvironments() != null ? scene.getEnvironments() : Collections.<String>emptyList();
-        List<String> currentItemIds = scene.getItemIds() != null ? scene.getItemIds() : Collections.<String>emptyList();
-
-        Set<String> allRuleIds = new HashSet<String>();
-        allRuleIds.addAll(oldItemIds);
-        allRuleIds.addAll(currentItemIds);
-
-        for (String ruleId : allRuleIds) {
-            Rule rule = getRule(ruleId);
-            if (rule == null) continue;
-
-            List<String> ruleEnvs = new ArrayList<String>(rule.getEnvironments() != null ? rule.getEnvironments() : Collections.<String>emptyList());
-
-            for (String oldEnv : oldEnvironments) {
-                if (!newEnvironments.contains(oldEnv)) {
-                    boolean stillInherited = isEnvironmentInheritedFromOtherScene(ruleId, oldEnv, scene.getId());
-                    if (!stillInherited) {
-                        ruleEnvs.remove(oldEnv);
-                    }
-                }
-            }
-
-            for (String newEnv : newEnvironments) {
-                if (!ruleEnvs.contains(newEnv)) {
-                    ruleEnvs.add(newEnv);
-                }
-            }
-
-            rule.setEnvironments(ruleEnvs);
-            updateRule(ruleId, rule);
-        }
-    }
-
-    private boolean isEnvironmentInheritedFromOtherScene(String ruleId, String envName, String excludeSceneId) {
-        for (SceneSet otherScene : listScenes()) {
-            if (otherScene.getId().equals(excludeSceneId)) continue;
-            if (!otherScene.isActive()) continue;
-            List<String> envs = otherScene.getEnvironments();
-            if (envs == null || !envs.contains(envName)) continue;
-            List<String> items = otherScene.getItemIds();
-            if (items != null && items.contains(ruleId)) return true;
-        }
-        return false;
-    }
-
-    @Override
-    public boolean deleteScene(String id) {
-        String sql = "DELETE FROM scene_sets WHERE id = ?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, id);
-            return ps.executeUpdate() > 0;
-        } catch (SQLException e) {
-            log.error("Failed to delete scene {}: {}", id, e.getMessage());
-            return false;
-        }
-    }
-
-    private SceneSet mapSceneSet(ResultSet rs) throws SQLException {
-        SceneSet s = new SceneSet();
-        s.setId(rs.getString("id"));
-        s.setName(rs.getString("name"));
-        s.setDescription(rs.getString("description"));
-        s.setActive(rs.getBoolean("active"));
-        s.setCreatedAt(rs.getLong("created_at"));
-        s.setUpdatedAt(rs.getLong("updated_at"));
-        try {
-            String itemIdsJson = rs.getString("item_ids_json");
-            if (itemIdsJson != null && !itemIdsJson.isEmpty()) {
-                s.setItemIds(mapper.readValue(itemIdsJson, new TypeReference<List<String>>() {}));
-            }
-            String tagsJson = rs.getString("tags_json");
-            if (tagsJson != null && !tagsJson.isEmpty()) {
-                s.setTags(mapper.readValue(tagsJson, new TypeReference<List<String>>() {}));
-            }
-            String envJson = rs.getString("environments_json");
-            if (envJson != null && !envJson.isEmpty()) {
-                s.setEnvironments(mapper.readValue(envJson, new TypeReference<List<String>>() {}));
-            }
-        } catch (Exception e) {
-            log.warn("Failed to deserialize scene set fields: {}", e.getMessage());
-        }
-        return s;
-    }
-
-    private void setSceneSetInsertParams(PreparedStatement ps, SceneSet s) throws SQLException {
-        try {
-            ps.setString(2, s.getName());
-            ps.setString(3, s.getDescription());
-            ps.setString(4, s.getItemIds() != null ? mapper.writeValueAsString(s.getItemIds()) : null);
-            ps.setBoolean(5, s.isActive());
-            ps.setString(6, s.getTags() != null ? mapper.writeValueAsString(s.getTags()) : null);
-            ps.setString(7, s.getEnvironments() != null ? mapper.writeValueAsString(s.getEnvironments()) : null);
-            ps.setLong(8, s.getCreatedAt());
-            ps.setLong(9, s.getUpdatedAt());
-        } catch (Exception e) {
-            log.error("Failed to serialize scene set fields: {}", e.getMessage());
-        }
-    }
-
-    private void setSceneSetParams(PreparedStatement ps, SceneSet s) throws SQLException {
-        try {
-            ps.setString(1, s.getName());
-            ps.setString(2, s.getDescription());
-            ps.setString(3, s.getItemIds() != null ? mapper.writeValueAsString(s.getItemIds()) : null);
-            ps.setBoolean(4, s.isActive());
-            ps.setString(5, s.getTags() != null ? mapper.writeValueAsString(s.getTags()) : null);
-            ps.setString(6, s.getEnvironments() != null ? mapper.writeValueAsString(s.getEnvironments()) : null);
-            ps.setLong(7, s.getUpdatedAt());
-        } catch (Exception e) {
-            log.error("Failed to serialize scene set fields: {}", e.getMessage());
-        }
-    }
-
-    @Override
-    public List<RuleSet> listRuleSets() {
-        String sql = "SELECT * FROM rule_sets";
-        List<RuleSet> result = new ArrayList<RuleSet>();
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                result.add(mapRuleSet(rs));
-            }
-        } catch (SQLException e) {
-            log.error("Failed to list rule sets: {}", e.getMessage());
-        }
-        return result;
-    }
-
-    @Override
-    public RuleSet createRuleSet(RuleSet ruleSet) {
-        if (ruleSet.getId() == null || ruleSet.getId().isEmpty()) {
-            ruleSet.setId(IdGenerator.uuid());
-        }
-        long now = System.currentTimeMillis();
-        ruleSet.setCreatedAt(now);
-        ruleSet.setUpdatedAt(now);
-
-        String sql = "INSERT INTO rule_sets (id, name, description, rule_ids_json, " +
-                "enabled, tags_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, ruleSet.getId());
-            setRuleSetInsertParams(ps, ruleSet);
-            ps.executeUpdate();
-            return ruleSet;
-        } catch (SQLException e) {
-            log.error("Failed to create rule set: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    @Override
-    public boolean deleteRuleSet(String id) {
-        String sql = "DELETE FROM rule_sets WHERE id = ?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, id);
-            return ps.executeUpdate() > 0;
-        } catch (SQLException e) {
-            log.error("Failed to delete rule set {}: {}", id, e.getMessage());
-            return false;
-        }
-    }
-
-    private RuleSet mapRuleSet(ResultSet rs) throws SQLException {
-        RuleSet rs2 = new RuleSet();
-        rs2.setId(rs.getString("id"));
-        rs2.setName(rs.getString("name"));
-        rs2.setDescription(rs.getString("description"));
-        rs2.setEnabled(rs.getBoolean("enabled"));
-        rs2.setCreatedAt(rs.getLong("created_at"));
-        rs2.setUpdatedAt(rs.getLong("updated_at"));
-        try {
-            String ruleIdsJson = rs.getString("rule_ids_json");
-            if (ruleIdsJson != null && !ruleIdsJson.isEmpty()) {
-                rs2.setRuleIds(mapper.readValue(ruleIdsJson, new TypeReference<List<String>>() {}));
-            }
-            String tagsJson = rs.getString("tags_json");
-            if (tagsJson != null && !tagsJson.isEmpty()) {
-                rs2.setTags(mapper.readValue(tagsJson, new TypeReference<List<String>>() {}));
-            }
-        } catch (Exception e) {
-            log.warn("Failed to deserialize rule set fields: {}", e.getMessage());
-        }
-        return rs2;
-    }
-
-    private void setRuleSetInsertParams(PreparedStatement ps, RuleSet rs) throws SQLException {
-        try {
-            ps.setString(2, rs.getName());
-            ps.setString(3, rs.getDescription());
-            ps.setString(4, rs.getRuleIds() != null ? mapper.writeValueAsString(rs.getRuleIds()) : null);
-            ps.setBoolean(5, rs.isEnabled());
-            ps.setString(6, rs.getTags() != null ? mapper.writeValueAsString(rs.getTags()) : null);
-            ps.setLong(7, rs.getCreatedAt());
-            ps.setLong(8, rs.getUpdatedAt());
-        } catch (Exception e) {
-            log.error("Failed to serialize rule set fields: {}", e.getMessage());
-        }
-    }
-
-    private void setRuleSetParams(PreparedStatement ps, RuleSet rs) throws SQLException {
-        try {
-            ps.setString(1, rs.getName());
-            ps.setString(2, rs.getDescription());
-            ps.setString(3, rs.getRuleIds() != null ? mapper.writeValueAsString(rs.getRuleIds()) : null);
-            ps.setBoolean(4, rs.isEnabled());
-            ps.setString(5, rs.getTags() != null ? mapper.writeValueAsString(rs.getTags()) : null);
-            ps.setLong(6, rs.getUpdatedAt());
-        } catch (Exception e) {
-            log.error("Failed to serialize rule set fields: {}", e.getMessage());
-        }
-    }
-
-    @Override
-    public List<RecordingEntry> listRecordings(String ruleId, int limit) {
-        StringBuilder sql = new StringBuilder("SELECT * FROM recordings");
-        boolean filterByRuleId = ruleId != null && !ruleId.isEmpty();
-        if (filterByRuleId) {
-            sql.append(" WHERE rule_id = ?");
-        }
-        sql.append(" ORDER BY recorded_at DESC LIMIT ?");
-        List<RecordingEntry> result = new ArrayList<RecordingEntry>();
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql.toString())) {
-            int idx = 1;
-            if (filterByRuleId) {
-                ps.setString(idx++, ruleId);
-            }
-            ps.setInt(idx, limit);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    result.add(mapRecording(rs));
-                }
-            }
-        } catch (SQLException e) {
-            log.error("Failed to list recordings: {}", e.getMessage());
-        }
-        return result;
-    }
-
-    @Override
-    public void addRecording(RecordingEntry recording) {
-        if (recording.getId() == null || recording.getId().isEmpty()) {
-            recording.setId(IdGenerator.uuid());
-        }
-        recording.setRecordedAt(System.currentTimeMillis());
-        try (Connection conn = dataSource.getConnection()) {
-            insertRecording(conn, recording);
-            trimRecordings(conn);
-        } catch (SQLException e) {
-            log.error("Failed to add recording: {}", e.getMessage());
-        }
-    }
-
-    private void trimRecordings(Connection conn) {
-        try (PreparedStatement ps = conn.prepareStatement(
-                "DELETE FROM recordings WHERE id NOT IN " +
-                "(SELECT id FROM recordings ORDER BY recorded_at DESC LIMIT 1000)")) {
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            log.warn("Failed to trim recordings: {}", e.getMessage());
-        }
-    }
-
-    @Override
-    public void addRecordings(List<RecordingEntry> batch) {
-        try (Connection conn = dataSource.getConnection()) {
-            conn.setAutoCommit(false);
-            for (RecordingEntry r : batch) {
-                if (r.getId() == null || r.getId().isEmpty()) {
-                    r.setId(IdGenerator.uuid());
-                }
-                r.setRecordedAt(System.currentTimeMillis());
-                insertRecording(conn, r);
-            }
-            conn.commit();
-            conn.setAutoCommit(true);
-            trimRecordings(conn);
-        } catch (Exception e) {
-            log.error("Failed to batch insert recordings: {}", e.getMessage());
-        }
-    }
-
-    @Override
-    public boolean deleteRecording(String id) {
-        String sql = "DELETE FROM recordings WHERE id = ?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, id);
-            return ps.executeUpdate() > 0;
-        } catch (SQLException e) {
-            log.error("Failed to delete recording {}: {}", id, e.getMessage());
-            return false;
-        }
-    }
-
-    private void insertRecording(Connection conn, RecordingEntry r) {
-        String sql = "INSERT INTO recordings (id, rule_id, environment_id, agent_id, protocol, " +
-                "host, port, service_name, method, path, request_headers_json, request_body, " +
-                "response_status_code, response_headers_json, response_body, response_time_ms, " +
-                "recorded_at, tags_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, r.getId());
-            ps.setString(2, r.getRuleId());
-            ps.setString(3, r.getEnvironmentId());
-            ps.setString(4, r.getAgentId());
-            ps.setString(5, r.getProtocol());
-            ps.setString(6, r.getHost());
-            ps.setInt(7, r.getPort());
-            ps.setString(8, r.getServiceName());
-            ps.setString(9, r.getMethod());
-            ps.setString(10, r.getPath());
-            ps.setString(11, r.getRequestHeaders() != null ? mapper.writeValueAsString(r.getRequestHeaders()) : null);
-            ps.setString(12, r.getRequestBody());
-            ps.setInt(13, r.getResponseStatusCode());
-            ps.setString(14, r.getResponseHeaders() != null ? mapper.writeValueAsString(r.getResponseHeaders()) : null);
-            ps.setString(15, r.getResponseBody());
-            ps.setLong(16, r.getResponseTimeMs());
-            ps.setLong(17, r.getRecordedAt());
-            ps.setString(18, r.getTags() != null ? mapper.writeValueAsString(r.getTags()) : null);
-            ps.executeUpdate();
-        } catch (Exception e) {
-            log.error("Failed to insert recording: {}", e.getMessage());
-        }
-    }
-
-    private RecordingEntry mapRecording(ResultSet rs) throws SQLException {
-        RecordingEntry r = new RecordingEntry();
-        r.setId(rs.getString("id"));
-        r.setRuleId(rs.getString("rule_id"));
-        r.setEnvironmentId(rs.getString("environment_id"));
-        r.setAgentId(rs.getString("agent_id"));
-        r.setProtocol(rs.getString("protocol"));
-        r.setHost(rs.getString("host"));
-        r.setPort(rs.getInt("port"));
-        r.setServiceName(rs.getString("service_name"));
-        r.setMethod(rs.getString("method"));
-        r.setPath(rs.getString("path"));
-        r.setRequestBody(rs.getString("request_body"));
-        r.setResponseStatusCode(rs.getInt("response_status_code"));
-        r.setResponseBody(rs.getString("response_body"));
-        r.setResponseTimeMs(rs.getLong("response_time_ms"));
-        r.setRecordedAt(rs.getLong("recorded_at"));
-        try {
-            String reqHeadersJson = rs.getString("request_headers_json");
-            if (reqHeadersJson != null && !reqHeadersJson.isEmpty()) {
-                r.setRequestHeaders(mapper.readValue(reqHeadersJson, new TypeReference<Map<String, String>>() {}));
-            }
-            String respHeadersJson = rs.getString("response_headers_json");
-            if (respHeadersJson != null && !respHeadersJson.isEmpty()) {
-                r.setResponseHeaders(mapper.readValue(respHeadersJson, new TypeReference<Map<String, String>>() {}));
-            }
-            String tagsJson = rs.getString("tags_json");
-            if (tagsJson != null && !tagsJson.isEmpty()) {
-                r.setTags(mapper.readValue(tagsJson, new TypeReference<Map<String, String>>() {}));
-            }
-        } catch (Exception e) {
-            log.warn("Failed to deserialize recording fields: {}", e.getMessage());
-        }
-        return r;
-    }
-
-    @Override
-    public AgentRegistration registerAgent(String agentId, String environment, String hostname,
-                                           String version, List<String> protocols) {
-        AgentRegistration reg = new AgentRegistration();
-        reg.agentId = agentId;
-        reg.environment = environment;
-        reg.hostname = hostname;
-        reg.version = version;
-        reg.protocols = protocols;
-        reg.registeredAt = System.currentTimeMillis();
-        reg.lastHeartbeat = System.currentTimeMillis();
-
-        String sql = "MERGE INTO agents (agent_id, environment, hostname, version, " +
-                "protocols_json, registered_at, last_heartbeat) KEY(agent_id) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, agentId);
-            ps.setString(2, environment);
-            ps.setString(3, hostname);
-            ps.setString(4, version);
-            ps.setString(5, protocols != null ? mapper.writeValueAsString(protocols) : null);
-            ps.setLong(6, reg.registeredAt);
-            ps.setLong(7, reg.lastHeartbeat);
-            ps.executeUpdate();
-        } catch (Exception e) {
-            log.error("Failed to register agent {}: {}", agentId, e.getMessage());
-        }
-
-        Environment env = getEnvironmentByName(environment);
-        if (env != null && !env.getAgentIds().contains(agentId)) {
-            env.getAgentIds().add(agentId);
-            updateEnvironment(env.getId(), env);
-        }
-
-        return reg;
-    }
-
-    @Override
-    public void agentHeartbeat(String agentId) {
-        String sql = "UPDATE agents SET last_heartbeat = ? WHERE agent_id = ?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setLong(1, System.currentTimeMillis());
-            ps.setString(2, agentId);
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            log.error("Failed to update heartbeat for agent {}: {}", agentId, e.getMessage());
-        }
-    }
-
-    @Override
-    public List<AgentRegistration> listAgents() {
-        String sql = "SELECT * FROM agents";
-        List<AgentRegistration> result = new ArrayList<AgentRegistration>();
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                result.add(mapAgent(rs));
-            }
-        } catch (SQLException e) {
-            log.error("Failed to list agents: {}", e.getMessage());
-        }
-        return result;
-    }
-
-    @Override
-    public List<AgentRegistration> getAgentsForEnvironment(String envName) {
-        String sql = "SELECT * FROM agents WHERE environment = ?";
-        List<AgentRegistration> result = new ArrayList<AgentRegistration>();
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, envName);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    result.add(mapAgent(rs));
-                }
-            }
-        } catch (SQLException e) {
-            log.error("Failed to get agents for environment {}: {}", envName, e.getMessage());
-        }
-        return result;
-    }
-
-    private AgentRegistration mapAgent(ResultSet rs) throws SQLException {
-        AgentRegistration reg = new AgentRegistration();
-        reg.agentId = rs.getString("agent_id");
-        reg.environment = rs.getString("environment");
-        reg.hostname = rs.getString("hostname");
-        reg.version = rs.getString("version");
-        reg.registeredAt = rs.getLong("registered_at");
-        reg.lastHeartbeat = rs.getLong("last_heartbeat");
-        try {
-            String protJson = rs.getString("protocols_json");
-            if (protJson != null && !protJson.isEmpty()) {
-                reg.protocols = mapper.readValue(protJson, new TypeReference<List<String>>() {});
-            }
-        } catch (Exception e) {
-            log.warn("Failed to deserialize agent protocols: {}", e.getMessage());
-        }
-        return reg;
-    }
-
-    @Override
-    public void associateRulesToEnvironment(String envName, List<String> ruleIds) {
-        for (String ruleId : ruleIds) {
-            Rule rule = getRule(ruleId);
-            if (rule == null) continue;
-            List<String> envs = new ArrayList<String>(rule.getEnvironments() != null ? rule.getEnvironments() : Collections.<String>emptyList());
-            if (!envs.contains(envName)) {
-                envs.add(envName);
-                rule.setEnvironments(envs);
-                updateRule(ruleId, rule);
-            }
-        }
-    }
-
-    @Override
-    public void dissociateRulesFromEnvironment(String envName, List<String> ruleIds) {
-        for (String ruleId : ruleIds) {
-            Rule rule = getRule(ruleId);
-            if (rule == null) continue;
-            List<String> envs = new ArrayList<String>(rule.getEnvironments() != null ? rule.getEnvironments() : Collections.<String>emptyList());
-            if (envs.remove(envName)) {
-                rule.setEnvironments(envs);
-                updateRule(ruleId, rule);
-            }
-        }
-    }
-
-    @Override
-    public List<User> listUsers() {
-        String sql = "SELECT * FROM users ORDER BY created_at ASC";
-        List<User> result = new ArrayList<User>();
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                result.add(mapUser(rs));
-            }
-        } catch (SQLException e) {
-            log.error("Failed to list users: {}", e.getMessage());
-        }
-        return result;
-    }
-
-    @Override
-    public User getUserByUsername(String username) {
-        String sql = "SELECT * FROM users WHERE username = ?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, username);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) return mapUser(rs);
-            }
-        } catch (SQLException e) {
-            log.error("Failed to get user {}: {}", username, e.getMessage());
-        }
-        return null;
-    }
-
-    @Override
-    public User getUserByApiKey(String apiKey) {
-        String sql = "SELECT * FROM users WHERE api_key = ?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, apiKey);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) return mapUser(rs);
-            }
-        } catch (SQLException e) {
-            log.error("Failed to get user by API key: {}", e.getMessage());
-        }
-        return null;
-    }
-
-    @Override
-    public User createUser(User user) {
-        if (user.getId() == null || user.getId().isEmpty()) {
-            user.setId(IdGenerator.uuid());
-        }
-        long now = System.currentTimeMillis();
-        user.setCreatedAt(now);
-        user.setUpdatedAt(now);
-
-        String sql = "INSERT INTO users (id, username, password_hash, display_name, email, role, api_key, created_at, updated_at, last_login_at) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, user.getId());
-            ps.setString(2, user.getUsername());
-            ps.setString(3, user.getPasswordHash());
-            ps.setString(4, user.getDisplayName());
-            ps.setString(5, user.getEmail());
-            ps.setString(6, user.getRole());
-            ps.setString(7, user.getApiKey());
-            ps.setLong(8, user.getCreatedAt());
-            ps.setLong(9, user.getUpdatedAt());
-            if (user.getLastLoginAt() != null) {
-                ps.setLong(10, user.getLastLoginAt());
-            } else {
-                ps.setNull(10, Types.BIGINT);
-            }
-            ps.executeUpdate();
-            return user;
-        } catch (SQLException e) {
-            log.error("Failed to create user: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    @Override
-    public boolean updateUserRole(String username, String role) {
-        String sql = "UPDATE users SET role = ?, updated_at = ? WHERE username = ?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, role);
-            ps.setLong(2, System.currentTimeMillis());
-            ps.setString(3, username);
-            return ps.executeUpdate() > 0;
-        } catch (SQLException e) {
-            log.error("Failed to update role for user {}: {}", username, e.getMessage());
-            return false;
-        }
-    }
-
-    @Override
-    public boolean updateUserApiKey(String username, String apiKey) {
-        String sql = "UPDATE users SET api_key = ?, updated_at = ? WHERE username = ?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, apiKey);
-            ps.setLong(2, System.currentTimeMillis());
-            ps.setString(3, username);
-            return ps.executeUpdate() > 0;
-        } catch (SQLException e) {
-            log.error("Failed to update API key for user {}: {}", username, e.getMessage());
-            return false;
-        }
-    }
-
-    @Override
-    public boolean updateUserLastLogin(String username) {
-        String sql = "UPDATE users SET last_login_at = ? WHERE username = ?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setLong(1, System.currentTimeMillis());
-            ps.setString(2, username);
-            return ps.executeUpdate() > 0;
-        } catch (SQLException e) {
-            log.error("Failed to update last login for user {}: {}", username, e.getMessage());
-            return false;
-        }
-    }
-
-    @Override
-    public boolean deleteUser(String username) {
-        String sql = "DELETE FROM users WHERE username = ?";
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, username);
-            return ps.executeUpdate() > 0;
-        } catch (SQLException e) {
-            log.error("Failed to delete user {}: {}", username, e.getMessage());
-            return false;
-        }
-    }
-
-    private User mapUser(ResultSet rs) throws SQLException {
-        User u = new User();
-        u.setId(rs.getString("id"));
-        u.setUsername(rs.getString("username"));
-        u.setPasswordHash(rs.getString("password_hash"));
-        u.setDisplayName(rs.getString("display_name"));
-        u.setEmail(rs.getString("email"));
-        u.setRole(rs.getString("role"));
-        u.setApiKey(rs.getString("api_key"));
-        u.setCreatedAt(rs.getLong("created_at"));
-        u.setUpdatedAt(rs.getLong("updated_at"));
-        long lastLogin = rs.getLong("last_login_at");
-        u.setLastLoginAt(rs.wasNull() ? null : lastLogin);
-        return u;
-    }
+    public boolean deleteUser(String username) { return userRepo.deleteUser(username); }
 }

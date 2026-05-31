@@ -2,10 +2,12 @@ package com.baafoo.server.api;
 
 import com.baafoo.core.api.ApiResponse;
 import com.baafoo.core.model.User;
+import com.baafoo.server.api.dto.ApiKeyResponse;
+import com.baafoo.server.api.dto.CsvImportResponse;
+import com.baafoo.server.api.dto.UserSafeResponse;
 import com.baafoo.server.auth.AuthService;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -17,9 +19,9 @@ class UserApiHandler implements ResourceHandler {
         if (path.equals(API_PREFIX + "users") && "GET".equals(method)) {
             ctx.requirePermission("user", "read");
             List<User> users = ctx.storage.listUsers();
-            List<Map<String, Object>> safeUsers = new ArrayList<Map<String, Object>>();
+            List<UserSafeResponse> safeUsers = new ArrayList<UserSafeResponse>();
             for (User u : users) {
-                safeUsers.add(toSafeMap(u));
+                safeUsers.add(toSafeResponse(u));
             }
             return ApiResponse.ok(safeUsers);
         }
@@ -52,7 +54,7 @@ class UserApiHandler implements ResourceHandler {
             user.setEmail(email);
             user.setRole(role);
             User created = ctx.storage.createUser(user);
-            return ApiResponse.created(toSafeMap(created));
+            return ApiResponse.created(toSafeResponse(created));
         }
 
         if (path.equals(API_PREFIX + "users/import") && "POST".equals(method)) {
@@ -78,8 +80,7 @@ class UserApiHandler implements ResourceHandler {
             String newApiKey = ctx.authService.generateApiKey();
             boolean updated = ctx.storage.updateUserApiKey(username, newApiKey);
             if (!updated) return ApiResponse.notFound("User not found");
-            Map<String, Object> result = new HashMap<String, Object>();
-            result.put("apiKey", newApiKey);
+            ApiKeyResponse result = new ApiKeyResponse().apiKey(newApiKey);
             return ApiResponse.ok(result);
         }
 
@@ -103,17 +104,17 @@ class UserApiHandler implements ResourceHandler {
         return null;
     }
 
-    private Map<String, Object> toSafeMap(User u) {
-        Map<String, Object> safe = new HashMap<String, Object>();
-        safe.put("id", u.getId());
-        safe.put("username", u.getUsername());
-        safe.put("displayName", u.getDisplayName());
-        safe.put("email", u.getEmail());
-        safe.put("role", u.getRole());
-        safe.put("apiKey", u.getApiKey() != null);
-        safe.put("createdAt", u.getCreatedAt());
-        safe.put("updatedAt", u.getUpdatedAt());
-        safe.put("lastLoginAt", u.getLastLoginAt());
+    private UserSafeResponse toSafeResponse(User u) {
+        UserSafeResponse safe = new UserSafeResponse();
+        safe.id = u.getId();
+        safe.username = u.getUsername();
+        safe.displayName = u.getDisplayName();
+        safe.email = u.getEmail();
+        safe.role = u.getRole();
+        safe.apiKey = u.getApiKey() != null;
+        safe.createdAt = u.getCreatedAt();
+        safe.updatedAt = u.getUpdatedAt();
+        safe.lastLoginAt = u.getLastLoginAt();
         return safe;
     }
 
@@ -138,7 +139,7 @@ class UserApiHandler implements ResourceHandler {
         if (usernameIdx < 0 || passwordIdx < 0) {
             return ApiResponse.fail(400, "CSV必须包含\"用户名\"和\"密码\"列");
         }
-        int created = 0, skipped = 0, failed = 0;
+        CsvImportResponse summary = new CsvImportResponse();
         List<String> errors = new ArrayList<String>();
         for (int i = 1; i < lines.length; i++) {
             String line = lines[i].trim();
@@ -150,22 +151,22 @@ class UserApiHandler implements ResourceHandler {
             String email = emailIdx >= 0 && emailIdx < cols.length ? cols[emailIdx].trim() : "";
             String role = roleIdx >= 0 && roleIdx < cols.length ? cols[roleIdx].trim() : "guest";
             if (username.isEmpty() || password.isEmpty()) {
-                failed++;
+                summary.failed++;
                 errors.add("第" + (i + 1) + "行: 用户名或密码为空");
                 continue;
             }
             if (ctx.storage.getUserByUsername(username) != null) {
-                skipped++;
+                summary.skipped++;
                 continue;
             }
             AuthService.PasswordValidation pv = AuthService.validatePassword(password);
             if (!pv.isValid()) {
-                failed++;
+                summary.failed++;
                 errors.add("第" + (i + 1) + "行(" + username + "): " + pv.getMessage());
                 continue;
             }
             if (!ApiUtils.isValidRole(role)) {
-                failed++;
+                summary.failed++;
                 errors.add("第" + (i + 1) + "行(" + username + "): 无效角色代码 '" + role + "'");
                 continue;
             }
@@ -177,17 +178,13 @@ class UserApiHandler implements ResourceHandler {
             user.setRole(role);
             User result = ctx.storage.createUser(user);
             if (result != null) {
-                created++;
+                summary.created++;
             } else {
-                failed++;
+                summary.failed++;
                 errors.add("第" + (i + 1) + "行(" + username + "): 创建失败");
             }
         }
-        Map<String, Object> summary = new HashMap<String, Object>();
-        summary.put("created", created);
-        summary.put("skipped", skipped);
-        summary.put("failed", failed);
-        summary.put("errors", errors);
+        summary.errors = errors;
         return ApiResponse.ok(summary);
     }
 

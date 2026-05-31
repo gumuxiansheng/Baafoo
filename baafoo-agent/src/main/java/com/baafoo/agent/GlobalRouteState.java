@@ -4,7 +4,17 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class GlobalRouteState {
 
-    public static final ConcurrentHashMap<String, String> ROUTES = new ConcurrentHashMap<String, String>();
+    public static final class HostPort {
+        public final String host;
+        public final int port;
+
+        public HostPort(String host, int port) {
+            this.host = host;
+            this.port = port;
+        }
+    }
+
+    public static final ConcurrentHashMap<String, HostPort> ROUTES = new ConcurrentHashMap<String, HostPort>();
 
     public static volatile int CURRENT_MODE = 0;
 
@@ -18,15 +28,15 @@ public final class GlobalRouteState {
 
     private GlobalRouteState() {}
 
-    public static String lookup(String host, int port) {
-        if (host == null) return null;
-        String key = host + ":" + port;
-        String result = ROUTES.get(key);
-        if (result != null) return result;
-        return ROUTES.get(host);
+    public static String[] lookup(String host, int port) {
+        HostPort target = ROUTES.get(host + ":" + port);
+        if (target != null) {
+            return new String[]{target.host, String.valueOf(target.port)};
+        }
+        return null;
     }
 
-    public static String lookupService(String serviceName) {
+    public static HostPort lookupService(String serviceName) {
         if (serviceName == null) return null;
         return ROUTES.get("svc:" + serviceName);
     }
@@ -37,26 +47,6 @@ public final class GlobalRouteState {
 
     public static boolean isRecording() {
         return CURRENT_MODE == MODE_RECORD || CURRENT_MODE == MODE_RECORD_AND_STUB;
-    }
-
-    public static String parseHost(String routeValue) {
-        if (routeValue == null) return "127.0.0.1";
-        int idx = routeValue.indexOf(':');
-        if (idx < 0) return "127.0.0.1";
-        return routeValue.substring(0, idx);
-    }
-
-    public static int parsePort(String routeValue) {
-        if (routeValue == null) return 9001;
-        int firstColon = routeValue.indexOf(':');
-        if (firstColon < 0) return 9001;
-        int secondColon = routeValue.indexOf(':', firstColon + 1);
-        if (secondColon < 0) return 9001;
-        try {
-            return Integer.parseInt(routeValue.substring(firstColon + 1, secondColon));
-        } catch (NumberFormatException e) {
-            return 9001;
-        }
     }
 
     private static final java.util.Set<Integer> INTERNAL_PORTS = java.util.Collections.unmodifiableSet(
@@ -70,16 +60,12 @@ public final class GlobalRouteState {
         return INTERNAL_PORTS.contains(port);
     }
 
-    public static void putRoute(String host, int port, String stubHost, int stubPort, String protocol) {
-        String key = host + ":" + port;
-        String value = stubHost + ":" + stubPort + ":" + protocol;
-        ROUTES.put(key, value);
+    public static void addRoute(String originalHost, int originalPort, String targetHost, int targetPort) {
+        ROUTES.put(originalHost + ":" + originalPort, new HostPort(targetHost, targetPort));
     }
 
-    public static void putService(String serviceName, String stubHost, int stubPort, String protocol) {
-        String key = "svc:" + serviceName;
-        String value = stubHost + ":" + stubPort + ":" + protocol;
-        ROUTES.put(key, value);
+    public static void addService(String serviceName, String targetHost, int targetPort) {
+        ROUTES.put("svc:" + serviceName, new HostPort(targetHost, targetPort));
     }
 
     public static void clearRoutes() {

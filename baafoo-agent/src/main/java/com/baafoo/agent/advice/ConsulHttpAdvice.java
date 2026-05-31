@@ -19,13 +19,11 @@ public class ConsulHttpAdvice {
                 return;
             }
 
-            String routeValue = GlobalRouteState.lookupService(server);
+            GlobalRouteState.HostPort target = GlobalRouteState.lookupService(server);
 
-            if (routeValue != null) {
-                String stubHost = GlobalRouteState.parseHost(routeValue);
-                int stubPort = GlobalRouteState.parsePort(routeValue);
-                server = stubHost;
-                port = stubPort;
+            if (target != null) {
+                server = target.host;
+                port = target.port;
             }
         } catch (Throwable t) {
         }

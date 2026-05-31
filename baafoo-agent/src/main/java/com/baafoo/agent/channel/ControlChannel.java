@@ -48,6 +48,7 @@ public class ControlChannel {
     private final ObjectMapper mapper;
     private final ScheduledExecutorService scheduler;
     private final AtomicBoolean running;
+    private java.util.function.Consumer<String> agentIdCallback;
 
     private ScheduledFuture<?> heartbeatTask;
     private ScheduledFuture<?> pollTask;
@@ -64,6 +65,19 @@ public class ControlChannel {
             }
         });
         this.running = new AtomicBoolean(false);
+    }
+
+    public void setAgentIdCallback(java.util.function.Consumer<String> callback) {
+        this.agentIdCallback = callback;
+    }
+
+    private <T> T unwrapApiResponse(String body, Class<T> type) throws Exception {
+        com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(body);
+        com.fasterxml.jackson.databind.JsonNode dataNode = root.get("data");
+        if (dataNode != null) {
+            return mapper.treeToValue(dataNode, type);
+        }
+        return null;
     }
 
     /**
@@ -116,16 +130,13 @@ public class ControlChannel {
 
             if (code == 200 || code == 201) {
                 String body = readResponse(conn);
-                // Server wraps response in ApiResponse format: {success, code, message, data, timestamp}
-                // Extract the "data" field to get the actual payload
-                com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(body);
-                com.fasterxml.jackson.databind.JsonNode dataNode = root.get("data");
-                if (dataNode != null) {
-                    AgentRegisterResponse res = mapper.treeToValue(dataNode, AgentRegisterResponse.class);
+                AgentRegisterResponse res = unwrapApiResponse(body, AgentRegisterResponse.class);
+                if (res != null) {
 
-                    // Update agent ID if server assigned one
                     if (res.agentId != null) {
-                        config.setAgentId(res.agentId);
+                        if (agentIdCallback != null) {
+                            agentIdCallback.accept(res.agentId);
+                        }
                     }
 
                     // Apply initial mode
@@ -181,11 +192,8 @@ public class ControlChannel {
             int code = conn.getResponseCode();
             if (code == 200) {
                 String body = readResponse(conn);
-                // Server wraps response in ApiResponse format: {success, code, message, data, timestamp}
-                com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(body);
-                com.fasterxml.jackson.databind.JsonNode dataNode = root.get("data");
-                if (dataNode != null) {
-                    PollResponse res = mapper.treeToValue(dataNode, PollResponse.class);
+                PollResponse res = unwrapApiResponse(body, PollResponse.class);
+                if (res != null) {
 
                     // Update rules
                     if (res.rules != null) {

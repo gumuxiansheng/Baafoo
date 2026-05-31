@@ -94,7 +94,7 @@ public final class RouteManager {
     }
 
     private static void rebuildRouteTable(List<Rule> rules) {
-        ConcurrentHashMap<String, String> newRoutes = new ConcurrentHashMap<String, String>();
+        ConcurrentHashMap<String, GlobalRouteState.HostPort> newRoutes = new ConcurrentHashMap<String, GlobalRouteState.HostPort>();
 
         for (Rule rule : rules) {
             if (!rule.isEnabled()) {
@@ -103,14 +103,14 @@ public final class RouteManager {
 
             String protocol = rule.getProtocol() != null ? rule.getProtocol().toLowerCase() : "tcp";
             int stubPort = getStubPort(protocol);
-            String routeValue = STUB_HOST + ":" + stubPort + ":" + protocol;
+            GlobalRouteState.HostPort routeValue = new GlobalRouteState.HostPort(STUB_HOST, stubPort);
 
             if (rule.getHost() != null && !rule.getHost().isEmpty()) {
-                newRoutes.put(rule.getHost(), routeValue);
                 if (rule.getPort() != null && rule.getPort() > 0) {
                     String key = rule.getHost() + ":" + rule.getPort();
                     newRoutes.put(key, routeValue);
                 }
+                newRoutes.put(rule.getHost(), routeValue);
             }
 
             if (rule.getServiceName() != null && !rule.getServiceName().isEmpty()) {
@@ -123,24 +123,18 @@ public final class RouteManager {
         GlobalRouteState.ROUTES.putAll(newRoutes);
 
         AgentManifest.ROUTE_TABLE.get().clear();
-        for (java.util.Map.Entry<String, String> entry : newRoutes.entrySet()) {
+        for (Map.Entry<String, GlobalRouteState.HostPort> entry : newRoutes.entrySet()) {
             String key = entry.getKey();
-            String value = entry.getValue();
+            GlobalRouteState.HostPort value = entry.getValue();
             if (key.startsWith("svc:")) {
                 String serviceName = key.substring(4);
-                String stubHost = GlobalRouteState.parseHost(value);
-                int stubPort = GlobalRouteState.parsePort(value);
-                String protocol = "tcp";
-                AgentManifest.ROUTE_TABLE.get().putService(serviceName, stubHost, stubPort, protocol);
+                AgentManifest.ROUTE_TABLE.get().putService(serviceName, value.host, value.port);
             } else {
                 int colonIdx = key.indexOf(':');
-                String stubHost = GlobalRouteState.parseHost(value);
-                int stubPort = GlobalRouteState.parsePort(value);
-                String protocol = "tcp";
                 if (colonIdx > 0) {
                     String host = key.substring(0, colonIdx);
                     int port = Integer.parseInt(key.substring(colonIdx + 1));
-                    AgentManifest.ROUTE_TABLE.get().put(host, port, stubHost, stubPort, protocol);
+                    AgentManifest.ROUTE_TABLE.get().put(host, port, value.host, value.port);
                 } else {
                     AgentManifest.ROUTE_TABLE.get().getRoutes().put(key, value);
                 }
@@ -245,12 +239,19 @@ public final class RouteManager {
         }
     }
 
-    private static void syncRoutesToBootstrapCL(ConcurrentHashMap<String, String> newRoutes) {
-        ConcurrentHashMap<String, String> bootRoutes = BaafooAgent.getBootstrapRoutes();
+    @SuppressWarnings("unchecked")
+    private static void syncRoutesToBootstrapCL(ConcurrentHashMap<String, GlobalRouteState.HostPort> newRoutes) {
+        ConcurrentHashMap<String, GlobalRouteState.HostPort> bootRoutes = BaafooAgent.getBootstrapRoutes();
         if (bootRoutes == null) return;
         try {
-            bootRoutes.clear();
-            bootRoutes.putAll(newRoutes);
+            Class<?> bootGRS = Class.forName("com.baafoo.agent.GlobalRouteState");
+            Class<?> bootHostPortClass = Class.forName("com.baafoo.agent.GlobalRouteState$HostPort", false, bootGRS.getClassLoader());
+            java.lang.reflect.Constructor<?> ctor = bootHostPortClass.getConstructor(String.class, int.class);
+            ((ConcurrentHashMap) bootRoutes).clear();
+            for (Map.Entry<String, GlobalRouteState.HostPort> entry : newRoutes.entrySet()) {
+                Object bootHostPort = ctor.newInstance(entry.getValue().host, entry.getValue().port);
+                ((ConcurrentHashMap) bootRoutes).put(entry.getKey(), bootHostPort);
+            }
             log.info("Synced {} routes to Bootstrap CL GlobalRouteState.ROUTES", bootRoutes.size());
         } catch (Exception e) {
             log.error("Failed to sync routes to Bootstrap CL: {}", e.getMessage());

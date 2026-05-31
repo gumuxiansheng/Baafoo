@@ -27,11 +27,11 @@ public class SocketConnectAdvice {
                 return;
             }
 
-            String routeValue = GlobalRouteState.lookup(host, port);
+            String[] routeValue = GlobalRouteState.lookup(host, port);
 
             if (routeValue != null) {
-                String stubHost = GlobalRouteState.parseHost(routeValue);
-                int stubPort = GlobalRouteState.parsePort(routeValue);
+                String stubHost = routeValue[0];
+                int stubPort = Integer.parseInt(routeValue[1]);
                 endpoint = new InetSocketAddress(stubHost, stubPort);
             }
         } catch (RuntimeException e) {

@@ -4,10 +4,11 @@ import com.baafoo.core.api.ApiResponse;
 import com.baafoo.core.model.Environment;
 import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.Rule;
+import com.baafoo.server.api.dto.AgentPollResponseDto;
+import com.baafoo.server.api.dto.AgentRegisterResponseDto;
 import com.baafoo.server.storage.StorageService;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -30,10 +31,10 @@ class AgentApiHandler implements ResourceHandler {
             Environment environment = ctx.storage.getEnvironmentByName(env);
             String mode = environment != null ? environment.getMode().getValue() : "record-and-stub";
 
-            Map<String, Object> result = new HashMap<String, Object>();
-            result.put("agentId", reg.getAgentId());
-            result.put("mode", mode);
-            result.put("pollIntervalSec", 10);
+            AgentRegisterResponseDto result = new AgentRegisterResponseDto()
+                    .agentId(reg.getAgentId())
+                    .mode(mode)
+                    .pollIntervalSec(10);
             return ApiResponse.ok(result);
         }
 
@@ -57,10 +58,10 @@ class AgentApiHandler implements ResourceHandler {
                 }
             }
 
-            Map<String, Object> result = new HashMap<String, Object>();
-            result.put("rules", rules);
-            result.put("mode", mode);
-            result.put("version", System.currentTimeMillis());
+            AgentPollResponseDto result = new AgentPollResponseDto()
+                    .rules(rules)
+                    .mode(mode)
+                    .version(System.currentTimeMillis());
             return ApiResponse.ok(result);
         }
 

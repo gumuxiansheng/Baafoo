@@ -12,11 +12,12 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Plugin manager for loading and managing protocol-specific plugins.
+ * Manages the lifecycle of Baafoo agent plugins via the AgentPlugin SPI.
  *
- * <p>Uses ServiceLoader SPI to discover plugins from JAR files in the
- * plugins directory. Each plugin is loaded by its own PluginClassLoader
- * (parent=null) for SDK dependency isolation.</p>
+ * <p>NOTE: The plugin system is implemented but not yet activated in the
+ * current agent bootstrap flow. It is reserved for future extensibility
+ * when third-party protocol interceptors are needed beyond the built-in
+ * set (Socket, NIO, Kafka, Pulsar, Consul).</p>
  */
 public class PluginManager {
 

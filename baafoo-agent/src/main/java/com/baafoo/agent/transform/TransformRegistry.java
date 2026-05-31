@@ -8,8 +8,12 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Registry for tracking installed Byte Buddy transforms.
- * Useful for debugging and runtime introspection.
+ * Registry of Byte Buddy type transformations applied by the agent.
+ *
+ * <p>NOTE: The registration count is used for startup diagnostics only.
+ * The actual transform logic is wired directly into the AgentBuilder
+ * lambda in BaafooAgent.installTransforms(). Future versions may use
+ * this registry for dynamic transform addition/removal.</p>
  */
 public class TransformRegistry {
 

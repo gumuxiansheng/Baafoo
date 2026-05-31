@@ -29,6 +29,57 @@ public class AuthService {
     private final Map<String, String> apiKeyRoleMap;
     private final SecureRandom random = new SecureRandom();
 
+    public enum Role {
+        ADMIN("admin"), DEVELOPER("developer"), TESTER("tester"), GUEST("guest");
+
+        private final String value;
+        Role(String value) { this.value = value; }
+        public String getValue() { return value; }
+
+        public static Role fromValue(String value) {
+            for (Role r : values()) {
+                if (r.value.equals(value)) return r;
+            }
+            return null;
+        }
+
+        public static boolean isValid(String value) {
+            return fromValue(value) != null;
+        }
+    }
+
+    public enum Resource {
+        RULE("rule"), SCENE("scene"), ENVIRONMENT("environment"),
+        RECORDING("recording"), USER("user");
+
+        private final String value;
+        Resource(String value) { this.value = value; }
+        public String getValue() { return value; }
+
+        public static Resource fromValue(String value) {
+            for (Resource r : values()) {
+                if (r.value.equals(value)) return r;
+            }
+            return null;
+        }
+    }
+
+    public enum Action {
+        READ("read"), CREATE("create"), UPDATE("update"), DELETE("delete"),
+        ASSOCIATE("associate"), ACTIVATE("activate"), IMPORT_EXPORT("import_export");
+
+        private final String value;
+        Action(String value) { this.value = value; }
+        public String getValue() { return value; }
+
+        public static Action fromValue(String value) {
+            for (Action a : values()) {
+                if (a.value.equals(value)) return a;
+            }
+            return null;
+        }
+    }
+
     public AuthService(StorageService storage, String jwtSecret, boolean authEnabled, boolean localBypass,
                        Map<String, String> apiKeyRoleMap) {
         this.storage = storage;
@@ -217,42 +268,43 @@ public class AuthService {
         return new PasswordValidation(true, null);
     }
 
-    public static boolean hasPermission(String role, String resource, String action) {
-        if ("admin".equals(role)) return true;
+    public static boolean hasPermission(Role role, Resource resource, Action action) {
+        if (role == Role.ADMIN) return true;
+        if (action == Action.READ) return true;
 
-        if ("read".equals(action)) {
-            return true;
-        }
-
-        if ("rule".equals(resource)) {
-            if ("create".equals(action) || "update".equals(action) || "delete".equals(action) || "import_export".equals(action)) {
-                return "developer".equals(role);
+        if (resource == Resource.RULE) {
+            if (action == Action.CREATE || action == Action.UPDATE || action == Action.DELETE || action == Action.IMPORT_EXPORT) {
+                return role == Role.DEVELOPER;
             }
         }
 
-        if ("scene".equals(resource)) {
-            if ("create".equals(action) || "update".equals(action) || "delete".equals(action) || "activate".equals(action)) {
-                return "developer".equals(role) || "tester".equals(role);
+        if (resource == Resource.SCENE) {
+            if (action == Action.CREATE || action == Action.UPDATE || action == Action.DELETE || action == Action.ACTIVATE) {
+                return role == Role.DEVELOPER || role == Role.TESTER;
             }
         }
 
-        if ("environment".equals(resource)) {
-            if ("create".equals(action) || "update".equals(action) || "delete".equals(action) || "associate".equals(action)) {
+        if (resource == Resource.ENVIRONMENT) {
+            if (action == Action.CREATE || action == Action.UPDATE || action == Action.DELETE || action == Action.ASSOCIATE) {
                 return false;
             }
         }
 
-        if ("recording".equals(resource)) {
-            if ("create".equals(action) || "update".equals(action) || "delete".equals(action)) {
-                return "developer".equals(role) || "tester".equals(role);
+        if (resource == Resource.RECORDING) {
+            if (action == Action.CREATE || action == Action.UPDATE || action == Action.DELETE) {
+                return role == Role.DEVELOPER || role == Role.TESTER;
             }
         }
 
-        if ("user".equals(resource)) {
+        if (resource == Resource.USER) {
             return false;
         }
 
         return false;
+    }
+
+    public static boolean hasPermission(String role, String resource, String action) {
+        return hasPermission(Role.fromValue(role), Resource.fromValue(resource), Action.fromValue(action));
     }
 
     public static class AuthResult {

@@ -16,9 +16,11 @@ public class GlobalRouteStateTest {
 
     @Test
     public void testLookup() {
-        GlobalRouteState.putRoute("api.test.com", 80, "127.0.0.1", 9000, "http");
-        String route = GlobalRouteState.lookup("api.test.com", 80);
-        assertEquals("127.0.0.1:9000:http", route);
+        GlobalRouteState.addRoute("api.test.com", 80, "127.0.0.1", 9000);
+        String[] route = GlobalRouteState.lookup("api.test.com", 80);
+        assertNotNull(route);
+        assertEquals("127.0.0.1", route[0]);
+        assertEquals("9000", route[1]);
     }
 
     @Test
@@ -33,17 +35,17 @@ public class GlobalRouteStateTest {
 
     @Test
     public void testLookupByHostOnlyReturnsNullWithoutHostKey() {
-        GlobalRouteState.putRoute("api.test.com", 80, "127.0.0.1", 9000, "http");
-        // lookup stores "host:port" keys, not bare host keys
-        // So lookup with port 0 won't find "api.test.com:80" and no bare "api.test.com" key exists
+        GlobalRouteState.addRoute("api.test.com", 80, "127.0.0.1", 9000);
         assertNull(GlobalRouteState.lookup("api.test.com", 0));
     }
 
     @Test
     public void testLookupService() {
-        GlobalRouteState.putService("my-service", "127.0.0.1", 9000, "http");
-        String route = GlobalRouteState.lookupService("my-service");
-        assertEquals("127.0.0.1:9000:http", route);
+        GlobalRouteState.addService("my-service", "127.0.0.1", 9000);
+        GlobalRouteState.HostPort target = GlobalRouteState.lookupService("my-service");
+        assertNotNull(target);
+        assertEquals("127.0.0.1", target.host);
+        assertEquals(9000, target.port);
     }
 
     @Test
@@ -77,26 +79,6 @@ public class GlobalRouteStateTest {
     }
 
     @Test
-    public void testParseHost() {
-        assertEquals("127.0.0.1", GlobalRouteState.parseHost("127.0.0.1:9000:http"));
-        assertEquals("127.0.0.1", GlobalRouteState.parseHost(null));
-        assertEquals("127.0.0.1", GlobalRouteState.parseHost("no-colon"));
-    }
-
-    @Test
-    public void testParsePort() {
-        assertEquals(9000, GlobalRouteState.parsePort("127.0.0.1:9000:http"));
-        assertEquals(9001, GlobalRouteState.parsePort(null));
-        assertEquals(9001, GlobalRouteState.parsePort("no-colon"));
-        assertEquals(9001, GlobalRouteState.parsePort("host:bad:http"));
-    }
-
-    @Test
-    public void testParsePortNormal() {
-        assertEquals(8080, GlobalRouteState.parsePort("host:8080:proto"));
-    }
-
-    @Test
     public void testIsInternal() {
         assertTrue(GlobalRouteState.isInternal("127.0.0.1", 8080));
         assertTrue(GlobalRouteState.isInternal("127.0.0.1", 9000));
@@ -106,20 +88,26 @@ public class GlobalRouteStateTest {
     }
 
     @Test
-    public void testPutRoute() {
-        GlobalRouteState.putRoute("host", 80, "stub", 9000, "http");
-        assertEquals("stub:9000:http", GlobalRouteState.lookup("host", 80));
+    public void testAddRoute() {
+        GlobalRouteState.addRoute("host", 80, "stub", 9000);
+        String[] route = GlobalRouteState.lookup("host", 80);
+        assertNotNull(route);
+        assertEquals("stub", route[0]);
+        assertEquals("9000", route[1]);
     }
 
     @Test
-    public void testPutService() {
-        GlobalRouteState.putService("svc", "stub", 9000, "http");
-        assertEquals("stub:9000:http", GlobalRouteState.lookupService("svc"));
+    public void testAddService() {
+        GlobalRouteState.addService("svc", "stub", 9000);
+        GlobalRouteState.HostPort target = GlobalRouteState.lookupService("svc");
+        assertNotNull(target);
+        assertEquals("stub", target.host);
+        assertEquals(9000, target.port);
     }
 
     @Test
     public void testClearRoutes() {
-        GlobalRouteState.putRoute("host", 80, "stub", 9000, "http");
+        GlobalRouteState.addRoute("host", 80, "stub", 9000);
         assertEquals(1, GlobalRouteState.ROUTES.size());
         GlobalRouteState.clearRoutes();
         assertEquals(0, GlobalRouteState.ROUTES.size());

@@ -57,6 +57,21 @@ public final class AgentManifest {
 
     private AgentManifest() {}
 
+    public static void setServerHost(String host) {
+        serverHost = host;
+        com.baafoo.agent.GlobalRouteState.SERVER_HOST = host;
+    }
+
+    public static void setServerPort(int port) {
+        serverPort = port;
+        com.baafoo.agent.GlobalRouteState.SERVER_PORT = port;
+    }
+
+    public static void setCurrentMode(int mode) {
+        currentMode = mode;
+        com.baafoo.agent.GlobalRouteState.CURRENT_MODE = mode;
+    }
+
     /**
      * Check if current mode is passthrough (i.e., should we skip interception).
      *

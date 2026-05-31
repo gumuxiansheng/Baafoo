@@ -15,9 +15,11 @@ public class RouteTableTest {
     @Test
     public void testLookup() {
         RouteTable rt = new RouteTable();
-        rt.put("api.test.com", 80, "127.0.0.1", 9000, "http");
-        String route = rt.lookup("api.test.com", 80);
-        assertEquals("127.0.0.1:9000:http", route);
+        rt.put("api.test.com", 80, "127.0.0.1", 9000);
+        GlobalRouteState.HostPort route = rt.lookup("api.test.com", 80);
+        assertNotNull(route);
+        assertEquals("127.0.0.1", route.host);
+        assertEquals(9000, route.port);
     }
 
     @Test
@@ -35,8 +37,11 @@ public class RouteTableTest {
     @Test
     public void testLookupService() {
         RouteTable rt = new RouteTable();
-        rt.putService("my-service", "127.0.0.1", 9000, "http");
-        assertEquals("127.0.0.1:9000:http", rt.lookupService("my-service"));
+        rt.putService("my-service", "127.0.0.1", 9000);
+        GlobalRouteState.HostPort target = rt.lookupService("my-service");
+        assertNotNull(target);
+        assertEquals("127.0.0.1", target.host);
+        assertEquals(9000, target.port);
     }
 
     @Test
@@ -47,36 +52,9 @@ public class RouteTableTest {
     }
 
     @Test
-    public void testParseHost() {
-        assertEquals("127.0.0.1", RouteTable.parseHost("127.0.0.1:9000:http"));
-        assertEquals("127.0.0.1", RouteTable.parseHost(null));
-        assertEquals("127.0.0.1", RouteTable.parseHost("no-colon"));
-    }
-
-    @Test
-    public void testParsePort() {
-        assertEquals(9000, RouteTable.parsePort("host:9000:http"));
-        assertEquals(9001, RouteTable.parsePort(null));
-        assertEquals(9001, RouteTable.parsePort("no-colon"));
-    }
-
-    @Test
-    public void testParsePortInvalidNumber() {
-        assertEquals(9001, RouteTable.parsePort("host:abc:http"));
-    }
-
-    @Test
-    public void testParseProtocol() {
-        assertEquals("http", RouteTable.parseProtocol("host:9000:http"));
-        assertEquals("tcp", RouteTable.parseProtocol(null));
-        assertEquals("tcp", RouteTable.parseProtocol("no-colon"));
-        assertEquals("tcp", RouteTable.parseProtocol("only:one"));
-    }
-
-    @Test
     public void testRemove() {
         RouteTable rt = new RouteTable();
-        rt.put("host", 80, "stub", 9000, "http");
+        rt.put("host", 80, "stub", 9000);
         assertEquals(1, rt.size());
         rt.remove("host", 80);
         assertEquals(0, rt.size());
@@ -92,7 +70,7 @@ public class RouteTableTest {
     @Test
     public void testRemoveService() {
         RouteTable rt = new RouteTable();
-        rt.putService("svc", "stub", 9000, "http");
+        rt.putService("svc", "stub", 9000);
         assertEquals(1, rt.size());
         rt.removeService("svc");
         assertEquals(0, rt.size());
@@ -107,9 +85,9 @@ public class RouteTableTest {
     @Test
     public void testClear() {
         RouteTable rt = new RouteTable();
-        rt.put("host1", 80, "stub", 9000, "http");
-        rt.put("host2", 443, "stub", 9000, "http");
-        rt.putService("svc", "stub", 9000, "http");
+        rt.put("host1", 80, "stub", 9000);
+        rt.put("host2", 443, "stub", 9000);
+        rt.putService("svc", "stub", 9000);
         assertEquals(3, rt.size());
         rt.clear();
         assertEquals(0, rt.size());
@@ -126,16 +104,22 @@ public class RouteTableTest {
     @Test
     public void testGetRoutes() {
         RouteTable rt = new RouteTable();
-        rt.put("host", 80, "stub", 9000, "http");
+        rt.put("host", 80, "stub", 9000);
         assertFalse(rt.getRoutes().isEmpty());
-        assertEquals("stub:9000:http", rt.getRoutes().get("host:80"));
+        GlobalRouteState.HostPort hp = rt.getRoutes().get("host:80");
+        assertNotNull(hp);
+        assertEquals("stub", hp.host);
+        assertEquals(9000, hp.port);
     }
 
     @Test
     public void testGetServiceNames() {
         RouteTable rt = new RouteTable();
-        rt.putService("svc", "stub", 9000, "http");
+        rt.putService("svc", "stub", 9000);
         assertFalse(rt.getServiceNames().isEmpty());
-        assertEquals("stub:9000:http", rt.getServiceNames().get("svc"));
+        GlobalRouteState.HostPort hp = rt.getServiceNames().get("svc");
+        assertNotNull(hp);
+        assertEquals("stub", hp.host);
+        assertEquals(9000, hp.port);
     }
 }

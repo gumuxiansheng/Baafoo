@@ -1,11 +1,10 @@
 package com.baafoo.server.api;
 
 import com.baafoo.core.api.ApiResponse;
+import com.baafoo.server.api.dto.SystemStatusResponse;
 import com.baafoo.server.storage.StorageService;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 class StatusApiHandler implements ResourceHandler {
     @Override
@@ -18,15 +17,15 @@ class StatusApiHandler implements ResourceHandler {
                 if (agent.getLastHeartbeat() > onlineThreshold) onlineCount++;
             }
 
-            Map<String, Object> status = new HashMap<String, Object>();
-            status.put("version", "1.0.0-SNAPSHOT");
-            status.put("rules", ctx.storage.listRules().size());
-            status.put("environments", ctx.storage.listEnvironments().size());
-            status.put("agents", allAgents.size());
-            status.put("onlineAgents", onlineCount);
-            status.put("scenes", ctx.storage.listScenes().size());
-            status.put("uptime", System.currentTimeMillis());
-            status.put("authEnabled", ctx.authService.isAuthEnabled());
+            SystemStatusResponse status = new SystemStatusResponse()
+                    .version("1.0.0-SNAPSHOT")
+                    .rules(ctx.storage.listRules().size())
+                    .environments(ctx.storage.listEnvironments().size())
+                    .agents(allAgents.size())
+                    .onlineAgents(onlineCount)
+                    .scenes(ctx.storage.listScenes().size())
+                    .uptime(System.currentTimeMillis())
+                    .authEnabled(ctx.authService.isAuthEnabled());
             return ApiResponse.ok(status);
         }
         return null;

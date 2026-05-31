@@ -21,11 +21,10 @@ public class ConsulDnsAdvice {
                 return;
             }
 
-            String routeValue = GlobalRouteState.lookupService(host);
+            GlobalRouteState.HostPort target = GlobalRouteState.lookupService(host);
 
-            if (routeValue != null) {
-                String stubHost = GlobalRouteState.parseHost(routeValue);
-                result = InetAddress.getByName(stubHost);
+            if (target != null) {
+                result = InetAddress.getByName(target.host);
             }
         } catch (Throwable t) {
         }
@@ -45,11 +44,10 @@ public class ConsulDnsAdvice {
                 return;
             }
 
-            String routeValue = GlobalRouteState.lookupService(host);
+            GlobalRouteState.HostPort target = GlobalRouteState.lookupService(host);
 
-            if (routeValue != null) {
-                String stubHost = GlobalRouteState.parseHost(routeValue);
-                InetAddress stubAddr = InetAddress.getByName(stubHost);
+            if (target != null) {
+                InetAddress stubAddr = InetAddress.getByName(target.host);
                 result = new InetAddress[]{stubAddr};
             }
         } catch (Throwable t) {
