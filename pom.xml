@@ -38,6 +38,7 @@
         <!-- Server -->
         <netty.version>4.1.100.Final</netty.version>
         <h2.version>2.2.224</h2.version>
+        <hikaricp.version>4.0.3</hikaricp.version>
 
         <!-- Logging -->
         <slf4j.version>1.7.36</slf4j.version>
@@ -105,6 +106,13 @@
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
             <version>${h2.version}</version>
+        </dependency>
+
+        <!-- HikariCP -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+            <version>${hikaricp.version}</version>
         </dependency>
 
         <!-- MyBatis -->

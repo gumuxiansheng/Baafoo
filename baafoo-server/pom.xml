@@ -50,6 +50,12 @@
             <artifactId>h2</artifactId>
         </dependency>
 
+        <!-- HikariCP -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+        </dependency>
+
         <!-- MyBatis -->
         <dependency>
             <groupId>org.mybatis</groupId>
