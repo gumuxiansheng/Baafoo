@@ -18,7 +18,6 @@ import org.slf4j.LoggerFactory;
 
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -206,7 +205,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
             return;
         }
         PASSTHROUGH_EXECUTOR.submit(() -> {
-            URLConnection conn = null;
+            HttpURLConnection conn = null;
             try {
                 long startTime = System.currentTimeMillis();
 
@@ -252,7 +251,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     conn.getOutputStream().close();
                 }
 
-                int statusCode = ((HttpURLConnection) conn).getResponseCode();
+                int statusCode = conn.getResponseCode();
                 HttpResponseStatus status = HttpResponseStatus.valueOf(statusCode);
 
                 byte[] responseBytes;
@@ -352,7 +351,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                 }
             } finally {
                 if (conn != null) {
-                    ((HttpURLConnection) conn).disconnect();
+                    conn.disconnect();
                 }
             }
         });
@@ -406,7 +405,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
             return;
         }
         PASSTHROUGH_EXECUTOR.submit(() -> {
-            URLConnection conn = null;
+            HttpURLConnection conn = null;
             try {
                 String protocol = determineProtocol(host, port, headers);
                 StringBuilder urlBuilder = new StringBuilder();
@@ -450,7 +449,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     conn.getOutputStream().close();
                 }
 
-                int statusCode = ((HttpURLConnection) conn).getResponseCode();
+                int statusCode = conn.getResponseCode();
                 log.debug("Passthrough got response: status={}, contentLength={}", statusCode, conn.getContentLength());
                 HttpResponseStatus status = HttpResponseStatus.valueOf(statusCode);
 
@@ -528,7 +527,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                 }
             } finally {
                 if (conn != null) {
-                    ((HttpURLConnection) conn).disconnect();
+                    conn.disconnect();
                 }
             }
         });
