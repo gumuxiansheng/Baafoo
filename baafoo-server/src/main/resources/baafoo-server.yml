@@ -58,3 +58,19 @@ database:
   # url: jdbc:postgresql://localhost:5432/baafoo
   # username: postgres
   # password: postgres
+
+# Authentication configuration (RBAC)
+auth:
+  # Whether to enable authentication. When disabled, all requests get admin role.
+  enabled: true
+  # Whether to auto-grant admin role for local requests (127.0.0.1 / ::1)
+  localBypass: true
+  # JWT signing secret (at least 32 characters). If not set, auto-generated key is used.
+  # jwtSecret: "change-me-to-a-long-random-secret-string"
+  # JWT token expiry in hours (default: 24, max: 168/7 days)
+  tokenExpiryHours: 24
+  # Static API Key to role mapping. Requests with X-Api-Key header matching a key below
+  # will be authenticated with the corresponding role.
+  # apiKeys:
+  #   dev-key-001: developer
+  #   test-key-001: tester

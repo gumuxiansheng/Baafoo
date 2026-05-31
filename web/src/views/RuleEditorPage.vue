@@ -74,7 +74,7 @@
 
         <!-- Match Conditions -->
         <el-divider content-position="left">匹配条件
-          <el-button size="small" @click="addCondition">+ 添加条件</el-button>
+          <el-button size="small" @click="addCondition" v-if="authStore.canWriteRule">+ 添加条件</el-button>
         </el-divider>
         <div v-if="form.conditions.length === 0" style="color: #909399; font-size: 12px; margin-bottom: 8px">
           未添加条件时，该规则对所有请求生效（受主机/端口/环境约束）
@@ -109,14 +109,14 @@
               <el-input v-model="cond.value" size="small" :placeholder="getValuePlaceholder(cond)" />
             </el-col>
             <el-col :span="4">
-              <el-button size="small" type="danger" text @click="removeCondition(idx)">删除</el-button>
+              <el-button size="small" type="danger" text @click="removeCondition(idx)" v-if="authStore.canWriteRule">删除</el-button>
             </el-col>
           </el-row>
         </div>
 
         <!-- Responses -->
         <el-divider content-position="left">响应分支
-          <el-button size="small" @click="addResponse">+ 添加响应分支</el-button>
+          <el-button size="small" @click="addResponse" v-if="authStore.canWriteRule">+ 添加响应分支</el-button>
         </el-divider>
         <div v-if="form.responses.length === 0" style="color: #909399; font-size: 12px; margin-bottom: 8px">
           请至少添加一个响应分支，第一个无条件的响应将作为默认响应
@@ -128,7 +128,7 @@
             <div>
               <el-tag v-if="!resp.condition" size="small" type="info">默认响应</el-tag>
               <el-tag v-else size="small" type="warning">条件响应</el-tag>
-              <el-button size="small" type="danger" text @click="removeResponse(idx)" style="margin-left: 8px">删除</el-button>
+              <el-button size="small" type="danger" text @click="removeResponse(idx)" style="margin-left: 8px" v-if="authStore.canWriteRule">删除</el-button>
             </div>
           </div>
 
@@ -231,7 +231,8 @@
 
         <div style="margin-top: 24px; text-align: right">
           <el-button @click="$router.back()">取消</el-button>
-          <el-button type="primary" @click="saveRule" :loading="saving">保存规则</el-button>
+          <el-button type="primary" @click="saveRule" :loading="saving" v-if="authStore.canWriteRule">保存规则</el-button>
+          <span v-if="!authStore.canWriteRule" style="color: #909399; font-size: 14px; margin-left: 12px">当前角色无编辑权限</span>
         </div>
       </el-form>
     </el-card>
@@ -241,7 +242,7 @@
 <script>
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useRulesStore } from '@/store'
+import { useRulesStore, useAuthStore } from '@/store'
 import api from '@/api'
 
 export default {
@@ -250,6 +251,7 @@ export default {
     const route = useRoute()
     const router = useRouter()
     const rulesStore = useRulesStore()
+    const authStore = useAuthStore()
     const rule = ref(null)
     const loading = ref(true)
     const saving = ref(false)
@@ -418,7 +420,7 @@ export default {
       addCondition, removeCondition,
       addResponse, removeResponse, addResponseCondition,
       getResponseHeaders, addResponseHeader, removeResponseHeader,
-      onConditionTypeChange, getValuePlaceholder, saveRule
+      onConditionTypeChange, getValuePlaceholder, saveRule, authStore
     }
   }
 }

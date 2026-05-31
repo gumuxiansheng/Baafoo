@@ -2,7 +2,7 @@
   <div class="rules-page">
     <div class="page-header">
       <h2>规则管理</h2>
-      <el-button type="primary" @click="showCreateDialog">
+      <el-button type="primary" @click="showCreateDialog" v-if="authStore.canWriteRule">
         <el-icon><Plus /></el-icon> 新建规则
       </el-button>
     </div>
@@ -52,7 +52,7 @@
         <el-table-column prop="priority" label="优先级" width="80" align="center" />
         <el-table-column label="状态" width="80" align="center">
           <template #default="{ row }">
-            <el-switch v-model="row.enabled" @change="toggleRule(row)" size="small" />
+            <el-switch v-model="row.enabled" @change="toggleRule(row)" size="small" :disabled="!authStore.canWriteRule" />
           </template>
         </el-table-column>
         <el-table-column label="生效环境" min-width="120">
@@ -66,9 +66,9 @@
         <el-table-column prop="version" label="版本" width="60" align="center" />
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" text @click="editRule(row)">编辑</el-button>
-            <el-button size="small" text @click="undoRuleItem(row)" :disabled="row.version <= 1">撤销</el-button>
-            <el-popconfirm title="确定删除此规则？" @confirm="deleteRuleItem(row.id)">
+            <el-button size="small" text @click="editRule(row)" v-if="authStore.canWriteRule">编辑</el-button>
+            <el-button size="small" text @click="undoRuleItem(row)" :disabled="row.version <= 1" v-if="authStore.canWriteRule">撤销</el-button>
+            <el-popconfirm title="确定删除此规则？" @confirm="deleteRuleItem(row.id)" v-if="authStore.canWriteRule">
               <template #reference>
                 <el-button size="small" text type="danger">删除</el-button>
               </template>
@@ -137,7 +137,7 @@
 
 <script>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRulesStore } from '@/store'
+import { useRulesStore, useAuthStore } from '@/store'
 import { useRouter } from 'vue-router'
 import api from '@/api'
 
@@ -146,6 +146,7 @@ export default {
   setup() {
     const router = useRouter()
     const rulesStore = useRulesStore()
+    const authStore = useAuthStore()
     const loading = ref(false)
     const dialogVisible = ref(false)
     const editingRuleId = ref(null)
@@ -245,7 +246,7 @@ export default {
     return {
       loading, dialogVisible, editingRuleId, allEnvironments, filter, form,
       filteredRules, showCreateDialog, editRule, saveRule,
-      toggleRule, deleteRuleItem, undoRuleItem, loadRules, resetFilter
+      toggleRule, deleteRuleItem, undoRuleItem, loadRules, resetFilter, authStore
     }
   }
 }

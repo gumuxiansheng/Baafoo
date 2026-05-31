@@ -16,12 +16,13 @@
       </el-descriptions>
 
       <h3 style="margin-top: 24px">模式切换</h3>
-      <el-radio-group v-model="selectedMode" @change="switchMode" style="margin-top: 12px">
+      <el-radio-group v-model="selectedMode" @change="switchMode" style="margin-top: 12px" v-if="authStore.canWriteEnvironment">
         <el-radio-button value="STUB">Stub</el-radio-button>
         <el-radio-button value="PASSTHROUGH">Passthrough</el-radio-button>
         <el-radio-button value="RECORD">Record</el-radio-button>
         <el-radio-button value="RECORD_AND_STUB">Record+Stub</el-radio-button>
       </el-radio-group>
+      <span v-else style="color: #909399; font-size: 14px; margin-top: 12px; display: inline-block">当前模式: {{ env ? env.mode : '' }}（无切换权限）</span>
 
       <h3 style="margin-top: 24px">关联 Agents ({{ (env.agentIds || []).length }})</h3>
       <el-table :data="env.agentIds || []" size="small" style="margin-top: 12px" empty-text="暂无 Agent">
@@ -42,12 +43,14 @@
 <script>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAuthStore } from '@/store'
 import api from '@/api'
 
 export default {
   name: 'EnvironmentDetailPage',
   setup() {
     const route = useRoute()
+    const authStore = useAuthStore()
     const env = ref(null)
     const loading = ref(true)
     const selectedMode = ref('')
@@ -77,7 +80,7 @@ export default {
     }
 
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
-    return { env, loading, selectedMode, variableList, switchMode, modeTagType, formatTime }
+    return { env, loading, selectedMode, variableList, switchMode, modeTagType, formatTime, authStore }
   }
 }
 </script>

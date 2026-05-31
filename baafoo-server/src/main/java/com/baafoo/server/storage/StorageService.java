@@ -89,6 +89,24 @@ public interface StorageService {
 
     void dissociateRulesFromEnvironment(String envName, List<String> ruleIds);
 
+    // --- User CRUD ---
+
+    List<User> listUsers();
+
+    User getUserByUsername(String username);
+
+    User getUserByApiKey(String apiKey);
+
+    User createUser(User user);
+
+    boolean updateUserRole(String username, String role);
+
+    boolean updateUserApiKey(String username, String apiKey);
+
+    boolean updateUserLastLogin(String username);
+
+    boolean deleteUser(String username);
+
     // --- DTO ---
 
     /**

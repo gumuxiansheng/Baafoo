@@ -55,6 +55,9 @@ public class ServerConfig {
     /** Database configuration */
     private DatabaseConfig database;
 
+    /** Authentication configuration */
+    private AuthConfig auth;
+
     public ServerConfig() {
         this.httpPort = 8080;
         this.protocolPorts = new java.util.HashMap<String, Integer>();
@@ -73,6 +76,7 @@ public class ServerConfig {
         this.maxAgentsPerEnvironment = 50;
         this.unmatchedDefault = "passthrough";
         this.database = new DatabaseConfig();
+        this.auth = new AuthConfig();
     }
 
     // --- Getters / Setters ---
@@ -127,6 +131,9 @@ public class ServerConfig {
     public DatabaseConfig getDatabase() { return database; }
     public void setDatabase(DatabaseConfig database) { this.database = database; }
 
+    public AuthConfig getAuth() { return auth; }
+    public void setAuth(AuthConfig auth) { this.auth = auth; }
+
     @Override
     public String toString() {
         return "ServerConfig{" +
@@ -161,6 +168,34 @@ public class ServerConfig {
         @Override
         public String toString() {
             return "DatabaseConfig{type='" + type + "', url='" + url + "'}";
+        }
+    }
+
+    public static class AuthConfig {
+        private boolean enabled = true;
+        private boolean localBypass = true;
+        private String jwtSecret;
+        private long tokenExpiryHours = 24;
+        private Map<String, String> apiKeys;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+        public boolean isLocalBypass() { return localBypass; }
+        public void setLocalBypass(boolean localBypass) { this.localBypass = localBypass; }
+
+        public String getJwtSecret() { return jwtSecret; }
+        public void setJwtSecret(String jwtSecret) { this.jwtSecret = jwtSecret; }
+
+        public long getTokenExpiryHours() { return tokenExpiryHours; }
+        public void setTokenExpiryHours(long tokenExpiryHours) { this.tokenExpiryHours = tokenExpiryHours; }
+
+        public Map<String, String> getApiKeys() { return apiKeys; }
+        public void setApiKeys(Map<String, String> apiKeys) { this.apiKeys = apiKeys; }
+
+        @Override
+        public String toString() {
+            return "AuthConfig{enabled=" + enabled + ", localBypass=" + localBypass + "}";
         }
     }
 }

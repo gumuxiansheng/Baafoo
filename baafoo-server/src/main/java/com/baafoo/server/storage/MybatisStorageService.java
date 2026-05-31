@@ -224,6 +224,31 @@ public class MybatisStorageService implements StorageService {
             stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_recordings_recorded_at ON recordings(recorded_at)");
             stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_agents_environment ON agents(environment)");
             stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_rule_history_rule_id ON rule_history(rule_id)");
+
+            stmt.executeUpdate(
+                "CREATE TABLE IF NOT EXISTS users (" +
+                "  id VARCHAR(36) PRIMARY KEY," +
+                "  username VARCHAR(255) NOT NULL UNIQUE," +
+                "  password_hash VARCHAR(512) NOT NULL," +
+                "  display_name VARCHAR(255)," +
+                "  email VARCHAR(255)," +
+                "  role VARCHAR(50) DEFAULT 'guest'," +
+                "  api_key VARCHAR(255)," +
+                "  created_at BIGINT," +
+                "  updated_at BIGINT," +
+                "  last_login_at BIGINT" +
+                ")"
+            );
+
+            try {
+                stmt.executeUpdate("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(255)");
+            } catch (SQLException ignored) {}
+            try {
+                stmt.executeUpdate("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255)");
+            } catch (SQLException ignored) {}
+
+            stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)");
+            stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_users_api_key ON users(api_key)");
         }
         log.info("Database tables verified/created");
     }
@@ -976,5 +1001,144 @@ public class MybatisStorageService implements StorageService {
                 updateRule(ruleId, rule);
             }
         }
+    }
+
+    @Override
+    public List<User> listUsers() {
+        try (SqlSession session = sqlSessionFactory.openSession()) {
+            UserMapper mapper = session.getMapper(UserMapper.class);
+            return mapper.selectAll().stream()
+                    .map(this::entityToUser)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.error("Failed to list users: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    @Override
+    public User getUserByUsername(String username) {
+        try (SqlSession session = sqlSessionFactory.openSession()) {
+            UserMapper mapper = session.getMapper(UserMapper.class);
+            UserEntity entity = mapper.selectByUsername(username);
+            return entity != null ? entityToUser(entity) : null;
+        } catch (Exception e) {
+            log.error("Failed to get user {}: {}", username, e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public User getUserByApiKey(String apiKey) {
+        try (SqlSession session = sqlSessionFactory.openSession()) {
+            UserMapper mapper = session.getMapper(UserMapper.class);
+            UserEntity entity = mapper.selectByApiKey(apiKey);
+            return entity != null ? entityToUser(entity) : null;
+        } catch (Exception e) {
+            log.error("Failed to get user by API key: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public User createUser(User user) {
+        if (user.getId() == null || user.getId().isEmpty()) {
+            user.setId(IdGenerator.uuid());
+        }
+        long now = System.currentTimeMillis();
+        user.setCreatedAt(now);
+        user.setUpdatedAt(now);
+
+        try (SqlSession session = sqlSessionFactory.openSession()) {
+            UserMapper mapper = session.getMapper(UserMapper.class);
+            mapper.insert(userToEntity(user));
+            session.commit();
+            return user;
+        } catch (Exception e) {
+            log.error("Failed to create user: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public boolean updateUserRole(String username, String role) {
+        try (SqlSession session = sqlSessionFactory.openSession()) {
+            UserMapper mapper = session.getMapper(UserMapper.class);
+            int result = mapper.updateRole(username, role);
+            session.commit();
+            return result > 0;
+        } catch (Exception e) {
+            log.error("Failed to update role for user {}: {}", username, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean updateUserApiKey(String username, String apiKey) {
+        try (SqlSession session = sqlSessionFactory.openSession()) {
+            UserMapper mapper = session.getMapper(UserMapper.class);
+            int result = mapper.updateApiKey(username, apiKey);
+            session.commit();
+            return result > 0;
+        } catch (Exception e) {
+            log.error("Failed to update API key for user {}: {}", username, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean updateUserLastLogin(String username) {
+        try (SqlSession session = sqlSessionFactory.openSession()) {
+            UserMapper mapper = session.getMapper(UserMapper.class);
+            int result = mapper.updateLastLogin(username, System.currentTimeMillis());
+            session.commit();
+            return result > 0;
+        } catch (Exception e) {
+            log.error("Failed to update last login for user {}: {}", username, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
+    public boolean deleteUser(String username) {
+        try (SqlSession session = sqlSessionFactory.openSession()) {
+            UserMapper mapper = session.getMapper(UserMapper.class);
+            int result = mapper.deleteByUsername(username);
+            session.commit();
+            return result > 0;
+        } catch (Exception e) {
+            log.error("Failed to delete user {}: {}", username, e.getMessage());
+            return false;
+        }
+    }
+
+    private User entityToUser(UserEntity e) {
+        User u = new User();
+        u.setId(e.getId());
+        u.setUsername(e.getUsername());
+        u.setPasswordHash(e.getPasswordHash());
+        u.setDisplayName(e.getDisplayName());
+        u.setEmail(e.getEmail());
+        u.setRole(e.getRole());
+        u.setApiKey(e.getApiKey());
+        u.setCreatedAt(e.getCreatedAt());
+        u.setUpdatedAt(e.getUpdatedAt());
+        u.setLastLoginAt(e.getLastLoginAt());
+        return u;
+    }
+
+    private UserEntity userToEntity(User u) {
+        UserEntity e = new UserEntity();
+        e.setId(u.getId());
+        e.setUsername(u.getUsername());
+        e.setPasswordHash(u.getPasswordHash());
+        e.setDisplayName(u.getDisplayName());
+        e.setEmail(u.getEmail());
+        e.setRole(u.getRole());
+        e.setApiKey(u.getApiKey());
+        e.setCreatedAt(u.getCreatedAt());
+        e.setUpdatedAt(u.getUpdatedAt());
+        e.setLastLoginAt(u.getLastLoginAt());
+        return e;
     }
 }

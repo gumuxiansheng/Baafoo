@@ -21,5 +21,6 @@
         <mapper resource="mappers/SceneMapper.xml"/>
         <mapper resource="mappers/RecordingMapper.xml"/>
         <mapper resource="mappers/AgentMapper.xml"/>
+        <mapper resource="mappers/UserMapper.xml"/>
     </mappers>
 </configuration>

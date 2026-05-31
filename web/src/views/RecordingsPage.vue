@@ -22,7 +22,7 @@
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text @click="viewDetail(row)">详情</el-button>
-            <el-popconfirm title="确定删除？" @confirm="deleteItem(row.id)">
+            <el-popconfirm title="确定删除？" @confirm="deleteItem(row.id)" v-if="authStore.canWriteRecording">
               <template #reference>
                 <el-button size="small" text type="danger">删除</el-button>
               </template>
@@ -48,11 +48,13 @@
 
 <script>
 import { ref, onMounted } from 'vue'
+import { useAuthStore } from '@/store'
 import api from '@/api'
 
 export default {
   name: 'RecordingsPage',
   setup() {
+    const authStore = useAuthStore()
     const recordings = ref([])
     const loading = ref(false)
     const detailVisible = ref(false)
@@ -83,7 +85,7 @@ export default {
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
 
     onMounted(loadRecordings)
-    return { recordings, loading, detailVisible, currentRecording, loadRecordings, viewDetail, deleteItem, formatHeaders, formatTime }
+    return { recordings, loading, detailVisible, currentRecording, loadRecordings, viewDetail, deleteItem, formatHeaders, formatTime, authStore }
   }
 }
 </script>

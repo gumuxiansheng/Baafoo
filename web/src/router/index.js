@@ -6,6 +6,12 @@ const routes = [
     redirect: '/dashboard'
   },
   {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/LoginPage.vue'),
+    meta: { title: '登录', public: true }
+  },
+  {
     path: '/dashboard',
     name: 'Dashboard',
     component: () => import('@/views/DashboardPage.vue'),
@@ -54,6 +60,12 @@ const routes = [
     meta: { title: '环境详情' }
   },
   {
+    path: '/users',
+    name: 'Users',
+    component: () => import('@/views/UsersPage.vue'),
+    meta: { title: '用户管理', requireAdmin: true }
+  },
+  {
     path: '/status',
     name: 'Status',
     component: () => import('@/views/StatusPage.vue'),
@@ -68,6 +80,15 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   document.title = (to.meta.title ? to.meta.title + ' - ' : '') + 'Baafoo'
+
+  if (to.meta.requireAdmin) {
+    const role = localStorage.getItem('baafoo_role')
+    if (role !== 'admin') {
+      next('/')
+      return
+    }
+  }
+
   next()
 })
 

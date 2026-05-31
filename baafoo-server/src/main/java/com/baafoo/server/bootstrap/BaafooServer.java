@@ -2,7 +2,9 @@ package com.baafoo.server.bootstrap;
 
 import com.baafoo.core.config.ConfigLoader;
 import com.baafoo.core.config.ServerConfig;
+import com.baafoo.core.model.User;
 import com.baafoo.server.api.*;
+import com.baafoo.server.auth.AuthService;
 import com.baafoo.server.handler.HttpStubHandler;
 import com.baafoo.server.handler.TcpStubHandler;
 import com.baafoo.server.storage.StorageService;
@@ -42,6 +44,7 @@ public class BaafooServer {
 
     private final ServerConfig config;
     private final StorageService storage;
+    private final AuthService authService;
     private final EventLoopGroup bossGroup;
     private final EventLoopGroup workerGroup;
     private final List<Channel> channels;
@@ -49,9 +52,24 @@ public class BaafooServer {
     public BaafooServer(ServerConfig config) {
         this.config = config;
         this.storage = new MybatisStorageService(config);
+        this.authService = createAuthService(config, storage);
         this.bossGroup = new NioEventLoopGroup(1);
         this.workerGroup = new NioEventLoopGroup();
         this.channels = new ArrayList<Channel>();
+    }
+
+    private AuthService createAuthService(ServerConfig config, StorageService storage) {
+        ServerConfig.AuthConfig authConfig = config.getAuth();
+        if (authConfig == null) {
+            authConfig = new ServerConfig.AuthConfig();
+        }
+        return new AuthService(
+                storage,
+                authConfig.getJwtSecret(),
+                authConfig.isEnabled(),
+                authConfig.isLocalBypass(),
+                authConfig.getApiKeys()
+        );
     }
 
     /**
@@ -62,6 +80,9 @@ public class BaafooServer {
 
         // Initialize storage
         storage.init();
+
+        // Initialize default admin user if auth is enabled
+        ensureDefaultAdmin();
 
         // Start HTTP management server (API + Web console)
         startManagementServer();
@@ -102,7 +123,7 @@ public class BaafooServer {
                         ChannelPipeline p = ch.pipeline();
                         p.addLast(new HttpServerCodec());
                         p.addLast(new HttpObjectAggregator(65536));
-                        p.addLast(new ManagementApiHandler(storage));
+                        p.addLast(new ManagementApiHandler(storage, authService));
                         p.addLast(new StaticFileHandler(config.getWebConsolePath()));
                     }
                 });
@@ -166,6 +187,42 @@ public class BaafooServer {
             if (port != null && port > 0) {
                 startProtocolStubServer(protocol, port);
             }
+        }
+    }
+
+    private void ensureDefaultAdmin() {
+        if (!authService.isAuthEnabled()) return;
+        User existing = storage.getUserByUsername("admin");
+        if (existing == null) {
+            User admin = new User();
+            admin.setUsername("admin");
+            admin.setPasswordHash(authService.hashPassword("B@af00!Adm1n#2026"));
+            admin.setDisplayName("系统管理员");
+            admin.setEmail("admin@baafoo.local");
+            admin.setRole("admin");
+            storage.createUser(admin);
+            log.info("Default admin user created (username: admin) — please change the password after first login");
+            return;
+        }
+        boolean needsFix = false;
+        if (!"admin".equals(existing.getRole())) {
+            needsFix = true;
+            log.info("Admin user has incorrect role '{}', fixing to 'admin'", existing.getRole());
+        }
+        if (authService.verifyPassword("admin123", existing.getPasswordHash())) {
+            needsFix = true;
+            log.info("Admin user still has weak password, upgrading");
+        }
+        if (needsFix) {
+            storage.deleteUser("admin");
+            User admin = new User();
+            admin.setUsername("admin");
+            admin.setPasswordHash(authService.hashPassword("B@af00!Adm1n#2026"));
+            admin.setDisplayName("系统管理员");
+            admin.setEmail("admin@baafoo.local");
+            admin.setRole("admin");
+            storage.createUser(admin);
+            log.info("Default admin user repaired — please change the password after first login");
         }
     }
 

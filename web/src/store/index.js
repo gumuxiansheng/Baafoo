@@ -62,3 +62,66 @@ export const useRulesStore = defineStore('rules', {
     }
   }
 })
+
+export const useAuthStore = defineStore('auth', {
+  state: () => ({
+    token: localStorage.getItem('baafoo_token') || null,
+    role: localStorage.getItem('baafoo_role') || 'guest',
+    username: localStorage.getItem('baafoo_username') || null,
+    permissions: [],
+    initialized: false
+  }),
+  getters: {
+    isLoggedIn: (state) => !!state.token,
+    isAdmin: (state) => state.role === 'admin',
+    isDeveloper: (state) => state.role === 'developer' || state.role === 'admin',
+    isTester: (state) => state.role === 'tester' || state.role === 'developer' || state.role === 'admin',
+    canWriteRule: (state) => ['admin', 'developer'].includes(state.role),
+    canWriteScene: (state) => ['admin', 'developer', 'tester'].includes(state.role),
+    canWriteEnvironment: (state) => state.role === 'admin',
+    canWriteRecording: (state) => ['admin', 'developer', 'tester'].includes(state.role),
+    canManageUsers: (state) => state.role === 'admin'
+  },
+  actions: {
+    async login(username, password) {
+      const res = await api.login(username, password)
+      if (res.success && res.data) {
+        this.token = res.data.token
+        this.role = res.data.role
+        this.username = username
+        localStorage.setItem('baafoo_token', res.data.token)
+        localStorage.setItem('baafoo_role', res.data.role)
+        localStorage.setItem('baafoo_username', username)
+        await this.fetchMe()
+        return true
+      }
+      return false
+    },
+    logout() {
+      this.token = null
+      this.role = 'guest'
+      this.username = null
+      this.permissions = []
+      localStorage.removeItem('baafoo_token')
+      localStorage.removeItem('baafoo_role')
+      localStorage.removeItem('baafoo_username')
+    },
+    async fetchMe() {
+      try {
+        const res = await api.getAuthMe()
+        if (res.success && res.data) {
+          this.role = res.data.role
+          this.username = res.data.username
+          this.permissions = res.data.permissions || []
+          localStorage.setItem('baafoo_role', res.data.role)
+          if (res.data.username) {
+            localStorage.setItem('baafoo_username', res.data.username)
+          }
+          this.initialized = true
+        }
+      } catch (e) {
+        this.initialized = true
+      }
+    }
+  }
+})

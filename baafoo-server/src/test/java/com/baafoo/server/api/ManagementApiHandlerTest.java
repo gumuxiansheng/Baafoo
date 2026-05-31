@@ -2,6 +2,7 @@ package com.baafoo.server.api;
 
 import com.baafoo.core.api.ApiResponse;
 import com.baafoo.core.model.*;
+import com.baafoo.server.auth.AuthService;
 import com.baafoo.server.storage.StorageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.buffer.ByteBuf;
@@ -20,14 +21,16 @@ import static org.mockito.Mockito.*;
 public class ManagementApiHandlerTest {
 
     private StorageService storage;
+    private AuthService authService;
     private EmbeddedChannel channel;
     private ObjectMapper mapper;
 
     @Before
     public void setUp() {
         storage = mock(StorageService.class);
+        authService = new AuthService(storage, null, false, false, null);
         mapper = new ObjectMapper();
-        ManagementApiHandler handler = new ManagementApiHandler(storage);
+        ManagementApiHandler handler = new ManagementApiHandler(storage, authService);
         channel = new EmbeddedChannel(handler);
     }
 

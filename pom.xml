@@ -45,6 +45,9 @@
         <slf4j.version>1.7.36</slf4j.version>
         <logback.version>1.2.13</logback.version>
 
+        <!-- JWT -->
+        <jjwt.version>0.11.5</jjwt.version>
+
         <!-- Test -->
         <junit.version>4.13.2</junit.version>
         <mockito.version>4.11.0</mockito.version>
@@ -135,6 +138,25 @@
             <groupId>org.mybatis</groupId>
             <artifactId>mybatis-typehandlers-jsr310</artifactId>
             <version>1.0.2</version>
+        </dependency>
+
+        <!-- JWT -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>${jjwt.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
         </dependency>
 
             <!-- Logging -->

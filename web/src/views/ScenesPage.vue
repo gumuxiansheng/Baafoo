@@ -2,7 +2,7 @@
   <div class="scenes-page">
     <div class="page-header">
       <h2>场景集管理</h2>
-      <el-button type="primary" @click="showCreateDialog">
+      <el-button type="primary" @click="showCreateDialog" v-if="authStore.canWriteScene">
         <el-icon><Plus /></el-icon> 新建场景集
       </el-button>
     </div>
@@ -16,7 +16,7 @@
         </el-table-column>
         <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }">
-            <el-switch v-model="row.active" @change="toggleScene(row)" size="small" />
+            <el-switch v-model="row.active" @change="toggleScene(row)" size="small" :disabled="!authStore.canWriteScene" />
           </template>
         </el-table-column>
         <el-table-column label="生效环境" min-width="120">
@@ -32,8 +32,8 @@
         </el-table-column>
         <el-table-column label="操作" width="160">
           <template #default="{ row }">
-            <el-button size="small" text type="primary" @click="showEditDialog(row)">编辑</el-button>
-            <el-popconfirm title="确定删除？" @confirm="deleteSceneItem(row.id)">
+            <el-button size="small" text type="primary" @click="showEditDialog(row)" v-if="authStore.canWriteScene">编辑</el-button>
+            <el-popconfirm title="确定删除？" @confirm="deleteSceneItem(row.id)" v-if="authStore.canWriteScene">
               <template #reference>
                 <el-button size="small" text type="danger">删除</el-button>
               </template>
@@ -75,11 +75,13 @@
 
 <script>
 import { ref, reactive, onMounted } from 'vue'
+import { useAuthStore } from '@/store'
 import api from '@/api'
 
 export default {
   name: 'ScenesPage',
   setup() {
+    const authStore = useAuthStore()
     const scenes = ref([])
     const allRules = ref([])
     const allEnvironments = ref([])
@@ -168,7 +170,7 @@ export default {
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
 
     onMounted(() => { loadScenes(); loadRules(); loadEnvironments() })
-    return { scenes, allRules, allEnvironments, loading, saving, dialogVisible, isEdit, form, showCreateDialog, showEditDialog, createScene, updateScene, toggleScene, deleteSceneItem, formatTime }
+    return { scenes, allRules, allEnvironments, loading, saving, dialogVisible, isEdit, form, showCreateDialog, showEditDialog, createScene, updateScene, toggleScene, deleteSceneItem, formatTime, authStore }
   }
 }
 </script>

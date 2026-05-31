@@ -2,6 +2,7 @@ package com.baafoo.server.api;
 
 import com.baafoo.core.api.ApiResponse;
 import com.baafoo.core.model.*;
+import com.baafoo.server.auth.AuthService;
 import com.baafoo.server.storage.StorageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.buffer.Unpooled;
@@ -14,47 +15,25 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * HTTP Management API handler.
- *
- * <p>Routes (all prefixed with /__baafoo__/api/):
- * <ul>
- *   <li>GET/POST /__baafoo__/api/rules — List/Create rules</li>
- *   <li>GET/PUT/DELETE /__baafoo__/api/rules/{id} — Get/Update/Delete rule</li>
- *   <li>POST /__baafoo__/api/rules/{id}/undo — Undo rule version</li>
- *   <li>GET/POST /__baafoo__/api/environments — List/Create environments</li>
- *   <li>GET/PUT/DELETE /__baafoo__/api/environments/{id} — Manage environment</li>
- *   <li>POST /__baafoo__/api/agent/register — Agent registration</li>
- *   <li>POST /__baafoo__/api/agent/heartbeat — Agent heartbeat</li>
- *   <li>GET  /__baafoo__/api/agent/poll — Agent long-poll</li>
- *   <li>POST /__baafoo__/api/agent/recordings — Recording upload</li>
- *   <li>GET  /__baafoo__/api/recordings — List recordings</li>
- *   <li>GET  /__baafoo__/api/scenes — List scene sets</li>
- *   <li>POST /__baafoo__/api/scenes — Create scene set</li>
- *   <li>GET  /__baafoo__/api/rulesets — List rule sets</li>
- *   <li>GET  /__baafoo__/api/status — System status</li>
- * </ul></p>
- *
- * <p>Path prefix: /__baafoo__/api/ (non-API paths are delegated to StaticFileHandler)</p>
- */
 public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
 
     private static final Logger log = LoggerFactory.getLogger(ManagementApiHandler.class);
 
-    /** All API routes use this prefix */
     private static final String API_PREFIX = "/__baafoo__/api/";
 
     private final StorageService storage;
+    private final AuthService authService;
     private final ObjectMapper mapper;
 
-    /** Stores the original URI for query parameter parsing */
     private String currentUri;
 
-    public ManagementApiHandler(StorageService storage) {
+    public ManagementApiHandler(StorageService storage, AuthService authService) {
         this.storage = storage;
+        this.authService = authService;
         this.mapper = new ObjectMapper();
     }
 
@@ -83,14 +62,12 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         currentUri = uri;
 
         try {
-            // Route to handler
             String path = extractPath(uri);
 
             if (path.startsWith(API_PREFIX)) {
-                Object result = handleApiRequest(path, method, request);
+                Object result = handleApiRequest(path, method, request, ctx);
                 sendJson(ctx, 200, result);
             } else {
-                // Pass through to next handler (StaticFileHandler)
                 ctx.fireChannelRead(request.retain());
             }
         } catch (ApiException e) {
@@ -101,9 +78,200 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         }
     }
 
-    private Object handleApiRequest(String path, String method, FullHttpRequest request) throws Exception {
+    private String resolveRemoteAddr(ChannelHandlerContext ctx, FullHttpRequest request) {
+        String forwarded = request.headers().get("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isEmpty()) {
+            return forwarded.split(",")[0].trim();
+        }
+        if (ctx.channel().remoteAddress() != null) {
+            String addr = ctx.channel().remoteAddress().toString();
+            if (addr.startsWith("/")) addr = addr.substring(1);
+            int colonIdx = addr.indexOf(':');
+            return colonIdx > 0 ? addr.substring(0, colonIdx) : addr;
+        }
+        return "unknown";
+    }
+
+    private AuthService.AuthResult authenticate(FullHttpRequest request, String remoteAddr) {
+        String authHeader = request.headers().get("Authorization");
+        String apiKeyHeader = request.headers().get("X-Api-Key");
+        return authService.authenticate(authHeader, apiKeyHeader, remoteAddr);
+    }
+
+    private void requirePermission(String role, String resource, String action) {
+        if (!AuthService.hasPermission(role, resource, action)) {
+            throw new ApiException(403, "permission_denied",
+                    getRequiredRoleForAction(resource, action), role);
+        }
+    }
+
+    private String getRequiredRoleForAction(String resource, String action) {
+        if ("rule".equals(resource)) return "developer";
+        if ("scene".equals(resource)) return "tester";
+        if ("environment".equals(resource)) return "admin";
+        if ("recording".equals(resource)) return "tester";
+        if ("user".equals(resource)) return "admin";
+        return "admin";
+    }
+
+    private Object handleApiRequest(String path, String method, FullHttpRequest request, ChannelHandlerContext ctx) throws Exception {
         if ("OPTIONS".equals(method)) {
             return ApiResponse.ok("OK", null);
+        }
+
+        String remoteAddr = resolveRemoteAddr(ctx, request);
+        AuthService.AuthResult auth = authenticate(request, remoteAddr);
+
+        // --- Auth endpoints (no permission check needed) ---
+        if (path.equals(API_PREFIX + "auth/me") && "GET".equals(method)) {
+            Map<String, Object> me = new HashMap<String, Object>();
+            me.put("authenticated", true);
+            me.put("role", auth.role);
+            me.put("username", auth.username);
+            me.put("authMethod", auth.message);
+            List<String> permissions = new ArrayList<String>();
+            permissions.add("read:all");
+            if (AuthService.hasPermission(auth.role, "rule", "create")) permissions.add("write:rule");
+            if (AuthService.hasPermission(auth.role, "scene", "create")) permissions.add("write:scene");
+            if (AuthService.hasPermission(auth.role, "environment", "create")) permissions.add("write:environment");
+            if (AuthService.hasPermission(auth.role, "recording", "delete")) permissions.add("write:recording");
+            if (AuthService.hasPermission(auth.role, "user", "create")) permissions.add("write:user");
+            me.put("permissions", permissions);
+            return ApiResponse.ok(me);
+        }
+
+        if (path.equals(API_PREFIX + "auth/login") && "POST".equals(method)) {
+            Map<String, Object> body = mapper.readValue(
+                    request.content().toString(StandardCharsets.UTF_8), Map.class);
+            String username = (String) body.get("username");
+            String password = (String) body.get("password");
+            Object expiresInObj = body.get("expiresIn");
+            Long expiresInMs = null;
+            if (expiresInObj instanceof Number) {
+                expiresInMs = ((Number) expiresInObj).longValue() * 1000;
+            }
+            if (username == null || username.isEmpty() || password == null || password.isEmpty()) {
+                return ApiResponse.fail(400, "Username and password are required");
+            }
+            AuthService.LoginResult loginResult = authService.login(username, password, expiresInMs);
+            if (!loginResult.success) {
+                return ApiResponse.fail(401, loginResult.message);
+            }
+            Map<String, Object> result = new HashMap<String, Object>();
+            result.put("token", loginResult.token);
+            result.put("role", loginResult.role);
+            return ApiResponse.ok(result);
+        }
+
+        // --- Permission check for all other endpoints ---
+        if (!auth.success) {
+            throw new ApiException(401, "Authentication failed: " + auth.message);
+        }
+
+        // --- User management endpoints (admin only) ---
+        if (path.equals(API_PREFIX + "users") && "GET".equals(method)) {
+            requirePermission(auth.role, "user", "read");
+            List<User> users = storage.listUsers();
+            List<Map<String, Object>> safeUsers = new ArrayList<Map<String, Object>>();
+            for (User u : users) {
+                Map<String, Object> safe = new HashMap<String, Object>();
+                safe.put("id", u.getId());
+                safe.put("username", u.getUsername());
+                safe.put("displayName", u.getDisplayName());
+                safe.put("email", u.getEmail());
+                safe.put("role", u.getRole());
+                safe.put("apiKey", u.getApiKey() != null);
+                safe.put("createdAt", u.getCreatedAt());
+                safe.put("updatedAt", u.getUpdatedAt());
+                safe.put("lastLoginAt", u.getLastLoginAt());
+                safeUsers.add(safe);
+            }
+            return ApiResponse.ok(safeUsers);
+        }
+
+        if (path.equals(API_PREFIX + "users") && "POST".equals(method)) {
+            requirePermission(auth.role, "user", "create");
+            Map<String, Object> body = mapper.readValue(
+                    request.content().toString(StandardCharsets.UTF_8), Map.class);
+            String username = (String) body.get("username");
+            String password = (String) body.get("password");
+            String displayName = (String) body.get("displayName");
+            String email = (String) body.get("email");
+            String role = (String) body.get("role");
+            if (username == null || username.isEmpty()) {
+                return ApiResponse.fail(400, "Username is required");
+            }
+            AuthService.PasswordValidation pv = AuthService.validatePassword(password);
+            if (!pv.valid) {
+                return ApiResponse.fail(400, pv.message);
+            }
+            if (role == null || !isValidRole(role)) {
+                return ApiResponse.fail(400, "Invalid role. Must be one of: admin, developer, tester, guest");
+            }
+            if (storage.getUserByUsername(username) != null) {
+                return ApiResponse.fail(409, "User already exists: " + username);
+            }
+            User user = new User();
+            user.setUsername(username);
+            user.setPasswordHash(authService.hashPassword(password));
+            user.setDisplayName(displayName != null ? displayName : username);
+            user.setEmail(email);
+            user.setRole(role);
+            User created = storage.createUser(user);
+            Map<String, Object> safe = new HashMap<String, Object>();
+            safe.put("id", created.getId());
+            safe.put("username", created.getUsername());
+            safe.put("displayName", created.getDisplayName());
+            safe.put("email", created.getEmail());
+            safe.put("role", created.getRole());
+            return ApiResponse.created(safe);
+        }
+
+        if (path.equals(API_PREFIX + "users/import") && "POST".equals(method)) {
+            requirePermission(auth.role, "user", "create");
+            String csv = request.content().toString(StandardCharsets.UTF_8);
+            return handleCsvImport(csv);
+        }
+
+        if (path.startsWith(API_PREFIX + "users/") && path.endsWith("/role") && "PUT".equals(method)) {
+            requirePermission(auth.role, "user", "update");
+            String username = extractId(path, API_PREFIX + "users/", "/role");
+            Map<String, Object> body = mapper.readValue(
+                    request.content().toString(StandardCharsets.UTF_8), Map.class);
+            String newRole = (String) body.get("role");
+            if (newRole == null || !isValidRole(newRole)) {
+                return ApiResponse.fail(400, "Invalid role. Must be one of: admin, developer, tester, guest");
+            }
+            boolean updated = storage.updateUserRole(username, newRole);
+            return updated ? ApiResponse.ok("Role updated", null) : ApiResponse.notFound("User not found");
+        }
+
+        if (path.startsWith(API_PREFIX + "users/") && path.endsWith("/api-key") && "POST".equals(method)) {
+            requirePermission(auth.role, "user", "update");
+            String username = extractId(path, API_PREFIX + "users/", "/api-key");
+            String newApiKey = authService.generateApiKey();
+            boolean updated = storage.updateUserApiKey(username, newApiKey);
+            if (!updated) return ApiResponse.notFound("User not found");
+            Map<String, Object> result = new HashMap<String, Object>();
+            result.put("apiKey", newApiKey);
+            return ApiResponse.ok(result);
+        }
+
+        if (path.startsWith(API_PREFIX + "users/") && path.endsWith("/api-key") && "DELETE".equals(method)) {
+            requirePermission(auth.role, "user", "update");
+            String username = extractId(path, API_PREFIX + "users/", "/api-key");
+            boolean updated = storage.updateUserApiKey(username, null);
+            return updated ? ApiResponse.ok("API key revoked", null) : ApiResponse.notFound("User not found");
+        }
+
+        if (path.startsWith(API_PREFIX + "users/") && "DELETE".equals(method)) {
+            requirePermission(auth.role, "user", "delete");
+            String username = extractId(path, API_PREFIX + "users/", null);
+            if (username.equals(auth.username)) {
+                return ApiResponse.fail(400, "Cannot delete yourself");
+            }
+            boolean deleted = storage.deleteUser(username);
+            return deleted ? ApiResponse.ok("Deleted", null) : ApiResponse.notFound("User not found");
         }
 
         // --- Rules ---
@@ -112,6 +280,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
                 return ApiResponse.ok(storage.listRules());
             }
             if ("POST".equals(method)) {
+                requirePermission(auth.role, "rule", "create");
                 Rule rule = mapper.readValue(request.content().toString(StandardCharsets.UTF_8), Rule.class);
                 return ApiResponse.created(storage.createRule(rule));
             }
@@ -119,6 +288,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
 
         if (path.startsWith(API_PREFIX + "rules/") && path.contains("/undo")) {
             String id = extractId(path, API_PREFIX + "rules/", "/undo");
+            requirePermission(auth.role, "rule", "update");
             boolean success = storage.undoRule(id);
             return success ? ApiResponse.ok("Undo successful", null)
                     : ApiResponse.notFound("Rule not found or no undo history");
@@ -137,6 +307,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
                 return rule != null ? ApiResponse.ok(rule) : ApiResponse.notFound("Rule not found");
             }
             if ("PUT".equals(method)) {
+                requirePermission(auth.role, "rule", "update");
                 Rule update = mapper.readValue(request.content().toString(StandardCharsets.UTF_8), Rule.class);
                 Rule existing = storage.getRule(id);
                 if (existing == null) return ApiResponse.notFound("Rule not found");
@@ -153,6 +324,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
                 return updated != null ? ApiResponse.ok(updated) : ApiResponse.notFound("Rule not found");
             }
             if ("DELETE".equals(method)) {
+                requirePermission(auth.role, "rule", "delete");
                 boolean deleted = storage.deleteRule(id);
                 return deleted ? ApiResponse.ok("Deleted", null) : ApiResponse.notFound("Rule not found");
             }
@@ -162,6 +334,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         if (path.equals(API_PREFIX + "rulesets")) {
             if ("GET".equals(method)) return ApiResponse.ok(storage.listRuleSets());
             if ("POST".equals(method)) {
+                requirePermission(auth.role, "rule", "create");
                 RuleSet set = mapper.readValue(request.content().toString(StandardCharsets.UTF_8), RuleSet.class);
                 return ApiResponse.created(storage.createRuleSet(set));
             }
@@ -171,6 +344,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         if (path.equals(API_PREFIX + "environments")) {
             if ("GET".equals(method)) return ApiResponse.ok(storage.listEnvironments());
             if ("POST".equals(method)) {
+                requirePermission(auth.role, "environment", "create");
                 Environment env = mapper.readValue(request.content().toString(StandardCharsets.UTF_8), Environment.class);
                 return ApiResponse.created(storage.createEnvironment(env));
             }
@@ -186,8 +360,8 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             }
             log.debug("Environment route: path={} id={} isRulesSubPath={} method={}", path, id, isRulesSubPath, method);
 
-            // POST /environments/{id}/rules - batch associate rules to environment
             if (isRulesSubPath && "POST".equals(method)) {
+                requirePermission(auth.role, "environment", "associate");
                 Map<String, Object> body = mapper.readValue(
                         request.content().toString(StandardCharsets.UTF_8), Map.class);
                 @SuppressWarnings("unchecked")
@@ -198,8 +372,8 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
                 return ApiResponse.ok("Associated " + (ruleIds != null ? ruleIds.size() : 0) + " rules", null);
             }
 
-            // DELETE /environments/{id}/rules - batch dissociate rules from environment
             if (isRulesSubPath && "DELETE".equals(method)) {
+                requirePermission(auth.role, "environment", "associate");
                 Map<String, Object> body = mapper.readValue(
                         request.content().toString(StandardCharsets.UTF_8), Map.class);
                 @SuppressWarnings("unchecked")
@@ -215,11 +389,13 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
                 return env != null ? ApiResponse.ok(env) : ApiResponse.notFound("Environment not found");
             }
             if ("PUT".equals(method)) {
+                requirePermission(auth.role, "environment", "update");
                 Environment update = mapper.readValue(request.content().toString(StandardCharsets.UTF_8), Environment.class);
                 Environment updated = storage.updateEnvironment(id, update);
                 return updated != null ? ApiResponse.ok(updated) : ApiResponse.notFound("Environment not found");
             }
             if ("DELETE".equals(method)) {
+                requirePermission(auth.role, "environment", "delete");
                 boolean deleted = storage.deleteEnvironment(id);
                 return deleted ? ApiResponse.ok("Deleted", null) : ApiResponse.notFound("Environment not found");
             }
@@ -241,7 +417,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             Environment environment = storage.getEnvironmentByName(env);
             String mode = environment != null ? environment.getMode().getValue() : "record-and-stub";
 
-            java.util.Map<String, Object> result = new java.util.HashMap<String, Object>();
+            Map<String, Object> result = new HashMap<String, Object>();
             result.put("agentId", reg.agentId);
             result.put("mode", mode);
             result.put("pollIntervalSec", 10);
@@ -260,7 +436,6 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             String agentId = parseQueryParam(currentUri, "agentId");
             List<Rule> rules = storage.listRules();
 
-            // Get environment mode for this agent
             String mode = "record-and-stub";
             for (StorageService.AgentRegistration reg : storage.listAgents()) {
                 if (reg.agentId != null && reg.agentId.equals(agentId)) {
@@ -270,7 +445,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
                 }
             }
 
-            java.util.Map<String, Object> result = new java.util.HashMap<String, Object>();
+            Map<String, Object> result = new HashMap<String, Object>();
             result.put("rules", rules);
             result.put("mode", mode);
             result.put("version", System.currentTimeMillis());
@@ -278,6 +453,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         }
 
         if (path.equals(API_PREFIX + "agent/recordings") && "POST".equals(method)) {
+            requirePermission(auth.role, "recording", "create");
             List<RecordingEntry> batch = mapper.readValue(
                     request.content().toString(StandardCharsets.UTF_8),
                     mapper.getTypeFactory().constructCollectionType(List.class, RecordingEntry.class));
@@ -293,6 +469,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         }
 
         if (path.startsWith(API_PREFIX + "recordings/") && "DELETE".equals(method)) {
+            requirePermission(auth.role, "recording", "delete");
             String id = extractId(path, API_PREFIX + "recordings/", null);
             boolean deleted = storage.deleteRecording(id);
             return deleted ? ApiResponse.ok("Deleted", null) : ApiResponse.notFound("Recording not found");
@@ -302,6 +479,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         if (path.equals(API_PREFIX + "scenes")) {
             if ("GET".equals(method)) return ApiResponse.ok(storage.listScenes());
             if ("POST".equals(method)) {
+                requirePermission(auth.role, "scene", "create");
                 SceneSet scene = mapper.readValue(request.content().toString(StandardCharsets.UTF_8), SceneSet.class);
                 return ApiResponse.created(storage.createScene(scene));
             }
@@ -315,11 +493,13 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
                 return scene != null ? ApiResponse.ok(scene) : ApiResponse.notFound("Scene set not found");
             }
             if ("PUT".equals(method)) {
+                requirePermission(auth.role, "scene", "update");
                 SceneSet update = mapper.readValue(request.content().toString(StandardCharsets.UTF_8), SceneSet.class);
                 SceneSet updated = storage.updateScene(id, update);
                 return updated != null ? ApiResponse.ok(updated) : ApiResponse.notFound("Scene not found");
             }
             if ("DELETE".equals(method)) {
+                requirePermission(auth.role, "scene", "delete");
                 boolean deleted = storage.deleteScene(id);
                 return deleted ? ApiResponse.ok("Deleted", null) : ApiResponse.notFound("Scene not found");
             }
@@ -341,7 +521,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
                 }
             }
 
-            java.util.Map<String, Object> status = new java.util.HashMap<String, Object>();
+            Map<String, Object> status = new HashMap<String, Object>();
             status.put("version", "1.0.0-SNAPSHOT");
             status.put("rules", storage.listRules().size());
             status.put("environments", storage.listEnvironments().size());
@@ -349,14 +529,114 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             status.put("onlineAgents", onlineCount);
             status.put("scenes", storage.listScenes().size());
             status.put("uptime", System.currentTimeMillis());
+            status.put("authEnabled", authService.isAuthEnabled());
             return ApiResponse.ok(status);
         }
 
-        // 404
         throw new ApiException(404, "API endpoint not found: " + method + " " + path);
     }
 
-    // --- Helpers ---
+    private boolean isValidRole(String role) {
+        return "admin".equals(role) || "developer".equals(role) || "tester".equals(role) || "guest".equals(role);
+    }
+
+    private Object handleCsvImport(String csv) {
+        String[] lines = csv.split("\r?\n");
+        if (lines.length < 2) {
+            return ApiResponse.fail(400, "CSV文件至少需要包含标题行和一行数据");
+        }
+        String[] headers = lines[0].split(",");
+        for (int i = 0; i < headers.length; i++) {
+            headers[i] = headers[i].trim().replace("\"", "");
+        }
+        int usernameIdx = -1, passwordIdx = -1, displayNameIdx = -1, emailIdx = -1, roleIdx = -1;
+        for (int i = 0; i < headers.length; i++) {
+            String h = headers[i];
+            if ("用户名".equals(h) || "username".equalsIgnoreCase(h)) usernameIdx = i;
+            else if ("密码".equals(h) || "password".equalsIgnoreCase(h)) passwordIdx = i;
+            else if ("显示名称".equals(h) || "displayName".equalsIgnoreCase(h) || "display_name".equalsIgnoreCase(h)) displayNameIdx = i;
+            else if ("邮箱".equals(h) || "email".equalsIgnoreCase(h)) emailIdx = i;
+            else if ("角色代码".equals(h) || "role".equalsIgnoreCase(h) || "roleCode".equalsIgnoreCase(h)) roleIdx = i;
+        }
+        if (usernameIdx < 0 || passwordIdx < 0) {
+            return ApiResponse.fail(400, "CSV必须包含\"用户名\"和\"密码\"列");
+        }
+        int created = 0, skipped = 0, failed = 0;
+        List<String> errors = new ArrayList<String>();
+        for (int i = 1; i < lines.length; i++) {
+            String line = lines[i].trim();
+            if (line.isEmpty()) continue;
+            String[] cols = parseCsvLine(line);
+            String username = usernameIdx < cols.length ? cols[usernameIdx].trim() : "";
+            String password = passwordIdx < cols.length ? cols[passwordIdx].trim() : "";
+            String displayName = displayNameIdx >= 0 && displayNameIdx < cols.length ? cols[displayNameIdx].trim() : "";
+            String email = emailIdx >= 0 && emailIdx < cols.length ? cols[emailIdx].trim() : "";
+            String role = roleIdx >= 0 && roleIdx < cols.length ? cols[roleIdx].trim() : "guest";
+            if (username.isEmpty() || password.isEmpty()) {
+                failed++;
+                errors.add("第" + (i + 1) + "行: 用户名或密码为空");
+                continue;
+            }
+            if (storage.getUserByUsername(username) != null) {
+                skipped++;
+                continue;
+            }
+            AuthService.PasswordValidation pv = AuthService.validatePassword(password);
+            if (!pv.valid) {
+                failed++;
+                errors.add("第" + (i + 1) + "行(" + username + "): " + pv.message);
+                continue;
+            }
+            if (!isValidRole(role)) {
+                failed++;
+                errors.add("第" + (i + 1) + "行(" + username + "): 无效角色代码 '" + role + "'");
+                continue;
+            }
+            User user = new User();
+            user.setUsername(username);
+            user.setPasswordHash(authService.hashPassword(password));
+            user.setDisplayName(displayName.isEmpty() ? username : displayName);
+            user.setEmail(email.isEmpty() ? null : email);
+            user.setRole(role);
+            User result = storage.createUser(user);
+            if (result != null) {
+                created++;
+            } else {
+                failed++;
+                errors.add("第" + (i + 1) + "行(" + username + "): 创建失败");
+            }
+        }
+        Map<String, Object> summary = new HashMap<String, Object>();
+        summary.put("created", created);
+        summary.put("skipped", skipped);
+        summary.put("failed", failed);
+        summary.put("errors", errors);
+        return ApiResponse.ok(summary);
+    }
+
+    private String[] parseCsvLine(String line) {
+        List<String> result = new ArrayList<String>();
+        StringBuilder sb = new StringBuilder();
+        boolean inQuotes = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '"') {
+                if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                    sb.append('"');
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (c == ',' && !inQuotes) {
+                result.add(sb.toString());
+                sb = new StringBuilder();
+            } else {
+                sb.append(c);
+            }
+        }
+        result.add(sb.toString());
+        return result.toArray(new String[0]);
+    }
 
     private void sendJson(ChannelHandlerContext ctx, int statusCode, Object data) {
         try {
@@ -368,7 +648,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
             response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
             response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, PUT, DELETE, OPTIONS");
-            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "Content-Type, Authorization");
+            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "Content-Type, Authorization, X-Api-Key");
 
             ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
         } catch (Exception e) {
@@ -420,10 +700,29 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
 
     public static class ApiException extends RuntimeException {
         private final int statusCode;
+        private final String error;
+        private final String requiredRole;
+        private final String yourRole;
+
         public ApiException(int statusCode, String message) {
             super(message);
             this.statusCode = statusCode;
+            this.error = null;
+            this.requiredRole = null;
+            this.yourRole = null;
         }
+
+        public ApiException(int statusCode, String error, String requiredRole, String yourRole) {
+            super(error);
+            this.statusCode = statusCode;
+            this.error = error;
+            this.requiredRole = requiredRole;
+            this.yourRole = yourRole;
+        }
+
         public int getStatusCode() { return statusCode; }
+        public String getError() { return error; }
+        public String getRequiredRole() { return requiredRole; }
+        public String getYourRole() { return yourRole; }
     }
 }

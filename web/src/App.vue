@@ -8,9 +8,18 @@
           <el-tag size="small" type="info" effect="plain">v1.0</el-tag>
         </div>
         <div class="header-right">
-          <el-tag :type="statusConnected ? 'success' : 'danger'" size="small" effect="dark">
+          <span class="header-badge" :class="statusConnected ? 'badge-success' : 'badge-danger'">
             {{ statusConnected ? '已连接' : '已断开' }}
-          </el-tag>
+          </span>
+          <template v-if="authStore.isLoggedIn">
+            <span class="header-badge badge-role">{{ roleLabel }}</span>
+            <span class="user-name">{{ authStore.username }}</span>
+            <el-button class="btn-header-logout" text size="small" @click="handleLogout">退出</el-button>
+          </template>
+          <template v-else>
+            <span class="header-badge badge-guest">游客</span>
+            <el-button class="btn-header-login" text size="small" @click="$router.push('/login')">登录</el-button>
+          </template>
         </div>
       </el-header>
 
@@ -47,6 +56,10 @@
               <el-icon><Setting /></el-icon>
               <span>环境管理</span>
             </el-menu-item>
+            <el-menu-item v-if="authStore.canManageUsers" index="/users">
+              <el-icon><User /></el-icon>
+              <span>用户管理</span>
+            </el-menu-item>
             <el-menu-item index="/status">
               <el-icon><Monitor /></el-icon>
               <span>系统状态</span>
@@ -71,14 +84,16 @@
 
 <script>
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
-import { useStatusStore } from '@/store'
+import { useRoute, useRouter } from 'vue-router'
+import { useStatusStore, useAuthStore } from '@/store'
 
 export default {
   name: 'App',
   setup() {
     const route = useRoute()
+    const router = useRouter()
     const statusStore = useStatusStore()
+    const authStore = useAuthStore()
     const statusConnected = ref(true)
 
     const activeMenu = computed(() => route.path)
@@ -87,9 +102,20 @@ export default {
     const envCount = computed(() => statusStore.status?.environments ?? 0)
     const agentCount = computed(() => statusStore.status?.agents ?? 0)
 
+    const roleLabel = computed(() => {
+      const map = { admin: '管理员', developer: '开发', tester: '测试', guest: '游客' }
+      return map[authStore.role] || authStore.role
+    })
+
+    const handleLogout = () => {
+      authStore.logout()
+      router.push('/login')
+    }
+
     let timer = null
 
-    onMounted(() => {
+    onMounted(async () => {
+      await authStore.fetchMe()
       statusStore.fetchStatus()
       timer = setInterval(() => statusStore.fetchStatus(), 30000)
     })
@@ -98,7 +124,10 @@ export default {
       if (timer) clearInterval(timer)
     })
 
-    return { activeMenu, statusConnected, ruleCount, envCount, agentCount }
+    return {
+      activeMenu, statusConnected, ruleCount, envCount, agentCount,
+      authStore, roleLabel, handleLogout
+    }
   }
 }
 </script>
@@ -123,6 +152,27 @@ body {
 
 .header-left { display: flex; align-items: center; gap: 10px; }
 .logo { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+
+.header-right { display: flex; align-items: center; gap: 10px; }
+.header-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.badge-success { background: rgba(255,255,255,0.2); color: #b7eb8f; }
+.badge-danger { background: rgba(255,255,255,0.2); color: #ffa39e; }
+.badge-role { background: rgba(255,255,255,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.35); }
+.badge-guest { background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.75); border: 1px solid rgba(255,255,255,0.25); }
+.user-name { font-size: 13px; color: rgba(255,255,255,0.9); }
+.btn-header-logout { color: rgba(255,255,255,0.8) !important; }
+.btn-header-logout:hover { color: #fff !important; }
+.btn-header-login { color: rgba(255,255,255,0.9) !important; font-weight: 500; }
+.btn-header-login:hover { color: #fff !important; }
 
 .baafoo-sidebar {
   background: #fff;

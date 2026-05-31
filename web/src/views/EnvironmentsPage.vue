@@ -2,7 +2,7 @@
   <div class="environments-page">
     <div class="page-header">
       <h2>环境管理</h2>
-      <el-button type="primary" @click="showCreateDialog">
+      <el-button type="primary" @click="showCreateDialog" v-if="authStore.canWriteEnvironment">
         <el-icon><Plus /></el-icon> 新建环境
       </el-button>
     </div>
@@ -31,7 +31,7 @@
         <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text @click="viewDetail(row.id)">详情</el-button>
-            <el-dropdown @command="(cmd) => changeMode(row, cmd)" style="margin-left: 8px">
+            <el-dropdown @command="(cmd) => changeMode(row, cmd)" style="margin-left: 8px" v-if="authStore.canWriteEnvironment">
               <el-button size="small" text>切换模式 <el-icon><ArrowDown /></el-icon></el-button>
               <template #dropdown>
                 <el-dropdown-menu>
@@ -42,7 +42,7 @@
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-            <el-popconfirm title="确定删除？" @confirm="deleteEnv(row.id)">
+            <el-popconfirm title="确定删除？" @confirm="deleteEnv(row.id)" v-if="authStore.canWriteEnvironment">
               <template #reference>
                 <el-button size="small" text type="danger">删除</el-button>
               </template>
@@ -85,7 +85,7 @@
       </el-form>
       <template #footer>
         <el-button @click="associateVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveAssociation" :loading="saving">保存关联</el-button>
+        <el-button type="primary" @click="saveAssociation" :loading="saving" v-if="authStore.canWriteEnvironment">保存关联</el-button>
       </template>
     </el-dialog>
   </div>
@@ -94,12 +94,14 @@
 <script>
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/store'
 import api from '@/api'
 
 export default {
   name: 'EnvironmentsPage',
   setup() {
     const router = useRouter()
+    const authStore = useAuthStore()
     const environments = ref([])
     const allRules = ref([])
     const loading = ref(false)
@@ -195,7 +197,7 @@ export default {
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
 
     onMounted(() => { loadEnvs(); loadRules() })
-    return { environments, allRules, loading, saving, dialogVisible, associateVisible, currentEnv, selectedRuleIds, form, showCreateDialog, createEnv, changeMode, viewDetail, deleteEnv, modeTagType, modeLabel, formatTime, getRuleCountForEnv, showAssociateDialog, saveAssociation }
+    return { environments, allRules, loading, saving, dialogVisible, associateVisible, currentEnv, selectedRuleIds, form, showCreateDialog, createEnv, changeMode, viewDetail, deleteEnv, modeTagType, modeLabel, formatTime, getRuleCountForEnv, showAssociateDialog, saveAssociation, authStore }
   }
 }
 </script>

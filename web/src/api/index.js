@@ -5,10 +5,29 @@ const http = axios.create({
   timeout: 10000
 })
 
-// Response interceptor
+http.interceptors.request.use((config) => {
+  const token = localStorage.getItem('baafoo_token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
 http.interceptors.response.use(
   (response) => response.data,
   (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('baafoo_token')
+      localStorage.removeItem('baafoo_role')
+      localStorage.removeItem('baafoo_username')
+      if (window.location.hash !== '#/login') {
+        window.location.hash = '#/login'
+      }
+    }
+    if (!error.response) {
+      console.error('Network Error: backend server may not be running')
+      return { success: false, code: 0, message: '无法连接到服务器，请确认后端服务已启动', data: null }
+    }
     const msg = error.response?.data?.message || error.message
     console.error('API Error:', msg)
     return { success: false, code: error.response?.status || 500, message: msg, data: null }
@@ -16,6 +35,21 @@ http.interceptors.response.use(
 )
 
 export default {
+  // --- Auth ---
+  login: (username, password) => http.post('/auth/login', { username, password }),
+  getAuthMe: () => http.get('/auth/me'),
+
+  // --- Users ---
+  getUsers: () => http.get('/users'),
+  createUser: (data) => http.post('/users', data),
+  importUsersCsv: (csvText) => http.post('/users/import', csvText, {
+    headers: { 'Content-Type': 'text/csv' }
+  }),
+  updateUserRole: (username, role) => http.put(`/users/${username}/role`, { role }),
+  deleteUser: (username) => http.delete(`/users/${username}`),
+  generateApiKey: (username) => http.post(`/users/${username}/api-key`),
+  revokeApiKey: (username) => http.delete(`/users/${username}/api-key`),
+
   // --- Rules ---
   getRules: () => http.get('/rules'),
   getRule: (id) => http.get(`/rules/${id}`),
