@@ -30,9 +30,6 @@ public class BaafooAgent {
     private static volatile boolean initialized = false;
 
     private static volatile ConcurrentHashMap<String, String> bootstrapRoutes;
-    private static volatile java.lang.reflect.Field bootstrapCurrentModeField;
-    private static volatile java.lang.reflect.Field bootstrapServerHostField;
-    private static volatile java.lang.reflect.Field bootstrapServerPortField;
 
     public static void premain(String agentArgs, Instrumentation inst) {
         try {
@@ -59,79 +56,11 @@ public class BaafooAgent {
 
             pluginManager = new PluginManager();
 
-            Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    shutdown();
-                }
-            }, "baafoo-shutdown"));
+            Runtime.getRuntime().addShutdownHook(new Thread(BaafooAgent::shutdown, "baafoo-shutdown"));
 
-            TransformRegistry registry = new TransformRegistry();
-            AgentBuilder agentBuilder = new AgentBuilder.Default()
-                    .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
-                    .with(AgentBuilder.Listener.StreamWriting.toSystemOut())
-                    .ignore(nameStartsWith("net.bytebuddy.")
-                            .or(nameStartsWith("com.baafoo.agent.shaded."))
-                            .or(isSynthetic()));
+            installTransforms(config, inst);
 
-            agentBuilder = agentBuilder
-                    .type(named("java.net.Socket"))
-                    .transform((builder, typeDesc, classLoader, module, pd) ->
-                            builder.visit(Advice.to(SocketConnectAdvice.class)
-                                    .on(named("connect")
-                                            .and(takesArguments(1)
-                                                    .or(takesArguments(2))))));
-            registry.register("java.net.Socket", "SocketConnectAdvice", "tcp");
-
-            agentBuilder = agentBuilder
-                    .type(named("sun.nio.ch.SocketChannelImpl"))
-                    .transform((builder, typeDesc, classLoader, module, pd) ->
-                            builder.visit(Advice.to(NioSocketConnectAdvice.class)
-                                    .on(named("connect").and(takesArguments(1)))));
-            registry.register("sun.nio.ch.SocketChannelImpl", "NioSocketConnectAdvice", "tcp");
-
-            if (config.isConsulEnabled()) {
-                agentBuilder = agentBuilder
-                        .type(named("java.net.InetAddress"))
-                        .transform((builder, typeDesc, classLoader, module, pd) ->
-                                builder.visit(Advice.to(ConsulDnsAdvice.class)
-                                        .on(named("getByName").and(takesArguments(1)))))
-                        .type(named("java.net.InetAddress"))
-                        .transform((builder, typeDesc, classLoader, module, pd) ->
-                                builder.visit(Advice.to(ConsulDnsAdvice.class)
-                                        .on(named("getAllByName").and(takesArguments(1)))));
-                registry.register("java.net.InetAddress", "ConsulDnsAdvice", "consul-dns");
-
-                agentBuilder = agentBuilder
-                        .type(named("sun.net.www.http.HttpClient"))
-                        .transform((builder, typeDesc, classLoader, module, pd) ->
-                                builder.visit(Advice.to(ConsulHttpAdvice.class)
-                                        .on(named("openServer").and(takesArguments(2)))));
-                registry.register("sun.net.www.http.HttpClient", "ConsulHttpAdvice", "http");
-            }
-
-            agentBuilder = agentBuilder
-                    .type(named("org.apache.kafka.clients.producer.KafkaProducer"))
-                    .transform((builder, typeDesc, classLoader, module, pd) ->
-                            builder.visit(Advice.to(KafkaProducerAdvice.class)
-                                    .on(isConstructor())));
-            registry.register("org.apache.kafka.clients.producer.KafkaProducer", "KafkaProducerAdvice", "kafka");
-
-            agentBuilder = agentBuilder
-                    .type(named("org.apache.pulsar.client.api.ClientBuilder"))
-                    .transform((builder, typeDesc, classLoader, module, pd) ->
-                            builder.visit(Advice.to(PulsarClientAdvice.class)
-                                    .on(named("serviceUrl").and(takesArguments(1)))));
-            registry.register("org.apache.pulsar.client.api.ClientBuilder", "PulsarClientAdvice", "pulsar");
-
-            agentBuilder.installOn(inst);
-            log.info("Bytecode transforms installed: {} transforms registered", registry.getCount());
-
-            appendToBootstrapClassLoaderSearch(inst);
-            log.info("Agent jar added to Bootstrap ClassLoader search path");
-
-            syncGlobalRouteStateToBootstrapCL();
-            log.info("GlobalRouteState synced to Bootstrap CL version");
+            setupBootstrapClassPath(inst);
 
             AgentManifest.agentLoaded = true;
             initialized = true;
@@ -206,6 +135,77 @@ public class BaafooAgent {
         log.info("Baafoo Agent stopped");
     }
 
+    private static void installTransforms(AgentConfig cfg, Instrumentation inst) {
+        TransformRegistry registry = new TransformRegistry();
+        AgentBuilder agentBuilder = new AgentBuilder.Default()
+                .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
+                .with(AgentBuilder.Listener.StreamWriting.toSystemOut())
+                .ignore(nameStartsWith("net.bytebuddy.")
+                        .or(nameStartsWith("com.baafoo.agent.shaded."))
+                        .or(isSynthetic()));
+
+        agentBuilder = agentBuilder
+                .type(named("java.net.Socket"))
+                .transform((builder, typeDesc, classLoader, module, pd) ->
+                        builder.visit(Advice.to(SocketConnectAdvice.class)
+                                .on(named("connect")
+                                        .and(takesArguments(1)
+                                                .or(takesArguments(2))))));
+        registry.register("java.net.Socket", "SocketConnectAdvice", "tcp");
+
+        agentBuilder = agentBuilder
+                .type(named("sun.nio.ch.SocketChannelImpl"))
+                .transform((builder, typeDesc, classLoader, module, pd) ->
+                        builder.visit(Advice.to(NioSocketConnectAdvice.class)
+                                .on(named("connect").and(takesArguments(1)))));
+        registry.register("sun.nio.ch.SocketChannelImpl", "NioSocketConnectAdvice", "tcp");
+
+        if (cfg.isConsulEnabled()) {
+            agentBuilder = agentBuilder
+                    .type(named("java.net.InetAddress"))
+                    .transform((builder, typeDesc, classLoader, module, pd) ->
+                            builder.visit(Advice.to(ConsulDnsAdvice.class)
+                                    .on(named("getByName").and(takesArguments(1)))))
+                    .type(named("java.net.InetAddress"))
+                    .transform((builder, typeDesc, classLoader, module, pd) ->
+                            builder.visit(Advice.to(ConsulDnsAdvice.class)
+                                    .on(named("getAllByName").and(takesArguments(1)))));
+            registry.register("java.net.InetAddress", "ConsulDnsAdvice", "consul-dns");
+
+            agentBuilder = agentBuilder
+                    .type(named("sun.net.www.http.HttpClient"))
+                    .transform((builder, typeDesc, classLoader, module, pd) ->
+                            builder.visit(Advice.to(ConsulHttpAdvice.class)
+                                    .on(named("openServer").and(takesArguments(2)))));
+            registry.register("sun.net.www.http.HttpClient", "ConsulHttpAdvice", "http");
+        }
+
+        agentBuilder = agentBuilder
+                .type(named("org.apache.kafka.clients.producer.KafkaProducer"))
+                .transform((builder, typeDesc, classLoader, module, pd) ->
+                        builder.visit(Advice.to(KafkaProducerAdvice.class)
+                                .on(isConstructor())));
+        registry.register("org.apache.kafka.clients.producer.KafkaProducer", "KafkaProducerAdvice", "kafka");
+
+        agentBuilder = agentBuilder
+                .type(named("org.apache.pulsar.client.api.ClientBuilder"))
+                .transform((builder, typeDesc, classLoader, module, pd) ->
+                        builder.visit(Advice.to(PulsarClientAdvice.class)
+                                .on(named("serviceUrl").and(takesArguments(1)))));
+        registry.register("org.apache.pulsar.client.api.ClientBuilder", "PulsarClientAdvice", "pulsar");
+
+        agentBuilder.installOn(inst);
+        log.info("Bytecode transforms installed: {} transforms registered", registry.getCount());
+    }
+
+    private static void setupBootstrapClassPath(Instrumentation inst) {
+        appendToBootstrapClassLoaderSearch(inst);
+        log.info("Agent jar added to Bootstrap ClassLoader search path");
+
+        syncGlobalRouteStateToBootstrapCL();
+        log.info("GlobalRouteState synced to Bootstrap CL version");
+    }
+
     public static AgentConfig getConfig() {
         return config;
     }
@@ -224,18 +224,6 @@ public class BaafooAgent {
 
     public static ConcurrentHashMap<String, String> getBootstrapRoutes() {
         return bootstrapRoutes;
-    }
-
-    public static java.lang.reflect.Field getBootstrapCurrentModeField() {
-        return bootstrapCurrentModeField;
-    }
-
-    public static java.lang.reflect.Field getBootstrapServerHostField() {
-        return bootstrapServerHostField;
-    }
-
-    public static java.lang.reflect.Field getBootstrapServerPortField() {
-        return bootstrapServerPortField;
     }
 
     private static String getVersion() {
@@ -326,14 +314,11 @@ public class BaafooAgent {
                 log.info("Synced {} routes to Bootstrap CL GlobalRouteState.ROUTES", bootRoutes.size());
             }
 
-            bootstrapCurrentModeField = bootGRS.getField("CURRENT_MODE");
-            bootstrapCurrentModeField.setInt(null, GlobalRouteState.CURRENT_MODE);
+            bootGRS.getField("CURRENT_MODE").setInt(null, GlobalRouteState.CURRENT_MODE);
 
-            bootstrapServerHostField = bootGRS.getField("SERVER_HOST");
-            bootstrapServerHostField.set(null, GlobalRouteState.SERVER_HOST);
+            bootGRS.getField("SERVER_HOST").set(null, GlobalRouteState.SERVER_HOST);
 
-            bootstrapServerPortField = bootGRS.getField("SERVER_PORT");
-            bootstrapServerPortField.setInt(null, GlobalRouteState.SERVER_PORT);
+            bootGRS.getField("SERVER_PORT").setInt(null, GlobalRouteState.SERVER_PORT);
 
             log.info("Synced GlobalRouteState fields to Bootstrap CL: CURRENT_MODE={}, SERVER_HOST={}, SERVER_PORT={}",
                     GlobalRouteState.CURRENT_MODE, GlobalRouteState.SERVER_HOST, GlobalRouteState.SERVER_PORT);

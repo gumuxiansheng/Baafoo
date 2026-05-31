@@ -57,7 +57,6 @@ public class ControlChannel {
         this.mapper = new ObjectMapper();
         this.scheduler = Executors.newScheduledThreadPool(2, new java.util.concurrent.ThreadFactory() {
             private int count = 0;
-            @Override
             public Thread newThread(Runnable r) {
                 Thread t = new Thread(r, "baafoo-channel-" + (++count));
                 t.setDaemon(true);
@@ -82,20 +81,9 @@ public class ControlChannel {
         }
 
         // 2. Start heartbeat
-        heartbeatTask = scheduler.scheduleAtFixedRate(new Runnable() {
-            @Override
-            public void run() {
-                heartbeat();
-            }
-        }, 0, config.getHeartbeatIntervalSec(), TimeUnit.SECONDS);
+        heartbeatTask = scheduler.scheduleAtFixedRate(this::heartbeat, 0, config.getHeartbeatIntervalSec(), TimeUnit.SECONDS);
 
-        // 3. Start rule poll
-        pollTask = scheduler.scheduleAtFixedRate(new Runnable() {
-            @Override
-            public void run() {
-                pollRules();
-            }
-        }, 0, config.getPollIntervalSec(), TimeUnit.SECONDS);
+        pollTask = scheduler.scheduleAtFixedRate(this::pollRules, 0, config.getPollIntervalSec(), TimeUnit.SECONDS);
 
         log.info("Control channel started (heartbeat={}s, poll={}s)",
                 config.getHeartbeatIntervalSec(), config.getPollIntervalSec());

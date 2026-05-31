@@ -16,6 +16,7 @@ import io.netty.handler.codec.http.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -26,7 +27,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.HttpsURLConnection;
 
@@ -58,12 +61,15 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         System.setProperty("sun.net.http.allowRestrictedHeaders", "true");
     }
 
-    private static final ExecutorService PASSTHROUGH_EXECUTOR = Executors.newCachedThreadPool(
+    private static final ExecutorService PASSTHROUGH_EXECUTOR = new ThreadPoolExecutor(
+            4, 64, 60L, TimeUnit.SECONDS,
+            new LinkedBlockingQueue<Runnable>(1000),
             runnable -> {
                 Thread t = new Thread(runnable, "baafoo-passthrough");
                 t.setDaemon(true);
                 return t;
-            });
+            },
+            new ThreadPoolExecutor.CallerRunsPolicy());
 
     private final StorageService storage;
     private final MatchEngine matchEngine;
@@ -124,8 +130,8 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
 
             if (currentMode == EnvironmentMode.PASSTHROUGH || currentMode == EnvironmentMode.RECORD) {
                 log.info("Mode {} — passthrough for matched rule: {} {}", currentMode.getValue(), method, path);
-                sendPassthroughAndRecord(ctx, method, path, headers, queryParams, body,
-                        host, port, result.getRule().getId(), currentMode == EnvironmentMode.RECORD);
+                sendPassthroughAndRecord(ctx, method, host, port, path, queryParams, headers, body,
+                        result, agentEnvironment);
             } else {
                 if (currentMode == EnvironmentMode.RECORD_AND_STUB) {
                     RecordingEntry rec = buildRecordingFromStub(result, host, port, method, path, headers, body);
@@ -140,7 +146,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                 send404Response(ctx, method, path);
             } else {
                 log.info("No Baafoo rule matched: {} {} — passthrough", method, path);
-                sendPassthroughResponse(ctx, method, path, headers, queryParams, body, host, port);
+                sendPassthroughResponse(ctx, method, host, port, path, queryParams, headers, body);
             }
         }
     }
@@ -197,162 +203,46 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         return rec;
     }
 
-    private void sendPassthroughAndRecord(ChannelHandlerContext ctx, String method, String path,
-                                           Map<String, String> headers, Map<String, String> queryParams,
-                                           String body, String host, int port, String ruleId, boolean record) {
-        if (!ctx.channel().isActive()) {
-            log.warn("Channel already inactive, skipping passthrough for {} {}", method, path);
-            return;
-        }
+    private void sendPassthroughAndRecord(ChannelHandlerContext ctx, String method, String host, int port,
+                                           String path, Map<String, String> queryParams,
+                                           Map<String, String> headers, String requestBody,
+                                           MatchEngine.MatchResult matchResult, String agentEnvironment) {
         PASSTHROUGH_EXECUTOR.submit(() -> {
-            HttpURLConnection conn = null;
             try {
-                long startTime = System.currentTimeMillis();
-
-                String protocol = determineProtocol(host, port, headers);
-                StringBuilder urlBuilder = new StringBuilder();
-                urlBuilder.append(protocol).append("://").append(host).append(":").append(port).append(path);
-                if (!queryParams.isEmpty()) {
-                    urlBuilder.append("?");
-                    boolean first = true;
-                    for (Map.Entry<String, String> entry : queryParams.entrySet()) {
-                        if (!first) urlBuilder.append("&");
-                        urlBuilder.append(entry.getKey()).append("=").append(entry.getValue());
-                        first = false;
-                    }
-                }
-
-                URL url = new URL(urlBuilder.toString());
-                log.debug("Passthrough connecting to: {}", urlBuilder);
-                if ("https".equals(protocol)) {
-                    conn = (HttpsURLConnection) url.openConnection();
-                } else {
-                    conn = (HttpURLConnection) url.openConnection();
-                }
-                conn.setRequestMethod(method);
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(30000);
-                conn.setInstanceFollowRedirects(false);
-                conn.setRequestProperty("Connection", "close");
-
-                for (Map.Entry<String, String> entry : headers.entrySet()) {
-                    String key = entry.getKey();
-                    if ("Host".equalsIgnoreCase(key)) continue;
-                    if (HOP_BY_HOP_HEADERS.contains(key.toLowerCase())) continue;
-                    conn.setRequestProperty(key, entry.getValue());
-                }
-
-                if (body != null && !body.isEmpty() &&
-                        ("POST".equalsIgnoreCase(method) || "PUT".equalsIgnoreCase(method) ||
-                                "PATCH".equalsIgnoreCase(method))) {
-                    conn.setDoOutput(true);
-                    conn.getOutputStream().write(body.getBytes(StandardCharsets.UTF_8));
-                    conn.getOutputStream().flush();
-                    conn.getOutputStream().close();
-                }
-
-                int statusCode = conn.getResponseCode();
-                HttpResponseStatus status = HttpResponseStatus.valueOf(statusCode);
-
-                byte[] responseBytes;
-                java.io.InputStream inputStream = null;
-                try {
-                    if (statusCode >= 400) {
-                        inputStream = conn.getErrorStream();
-                    } else {
-                        inputStream = conn.getInputStream();
-                    }
-                } catch (java.io.FileNotFoundException e) {
-                }
-                if (inputStream == null) {
-                    responseBytes = new byte[0];
-                } else {
-                    try {
-                        int contentLength = conn.getContentLength();
-                        if (contentLength > 0) {
-                            responseBytes = new byte[contentLength];
-                            int totalRead = 0;
-                            while (totalRead < contentLength) {
-                                int n = inputStream.read(responseBytes, totalRead, contentLength - totalRead);
-                                if (n < 0) break;
-                                totalRead += n;
-                            }
-                            if (totalRead < contentLength) {
-                                byte[] trimmed = new byte[totalRead];
-                                System.arraycopy(responseBytes, 0, trimmed, 0, totalRead);
-                                responseBytes = trimmed;
-                            }
-                        } else {
-                            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-                            byte[] buffer = new byte[8192];
-                            int bytesRead;
-                            while ((bytesRead = inputStream.read(buffer)) != -1) {
-                                baos.write(buffer, 0, bytesRead);
-                            }
-                            responseBytes = baos.toByteArray();
-                        }
-                    } finally {
-                        inputStream.close();
-                    }
-                }
-
-                long elapsed = System.currentTimeMillis() - startTime;
-
-                if (record) {
-                    Map<String, String> respHeaders = new HashMap<String, String>();
-                    for (Map.Entry<String, List<String>> entry : conn.getHeaderFields().entrySet()) {
-                        if (entry.getKey() != null && !entry.getValue().isEmpty()) {
-                            respHeaders.put(entry.getKey(), entry.getValue().get(0));
-                        }
-                    }
-                    RecordingEntry rec = new RecordingEntry();
-                    rec.setRuleId(ruleId);
-                    rec.setProtocol("http");
-                    rec.setHost(host);
-                    rec.setPort(port);
-                    rec.setMethod(method);
-                    rec.setPath(path);
-                    rec.setRequestHeaders(headers);
-                    rec.setRequestBody(body);
-                    rec.setResponseStatusCode(statusCode);
-                    rec.setResponseHeaders(respHeaders);
-                    rec.setResponseBody(new String(responseBytes, StandardCharsets.UTF_8));
-                    rec.setResponseTimeMs(elapsed);
-                    storage.addRecording(rec);
-                }
-
-                if (!ctx.channel().isActive()) {
-                    log.warn("Channel became inactive during passthrough for {} {}", method, path);
-                    return;
-                }
+                PassthroughResult result = doPassthrough(method, host, port, path, queryParams, headers, requestBody);
 
                 FullHttpResponse response = new DefaultFullHttpResponse(
-                        HTTP_1_1, status,
-                        Unpooled.copiedBuffer(responseBytes));
-
-                for (Map.Entry<String, List<String>> entry : conn.getHeaderFields().entrySet()) {
-                    if (entry.getKey() == null || entry.getValue().isEmpty()) continue;
-                    String lowerKey = entry.getKey().toLowerCase();
-                    if (HOP_BY_HOP_HEADERS.contains(lowerKey)) continue;
-                    response.headers().set(entry.getKey(), entry.getValue().get(0));
+                        HttpVersion.HTTP_1_1, HttpResponseStatus.valueOf(result.statusCode),
+                        Unpooled.copiedBuffer(result.responseBody));
+                for (Map.Entry<String, String> entry : result.responseHeaders.entrySet()) {
+                    if (!HOP_BY_HOP_HEADERS.contains(entry.getKey().toLowerCase())) {
+                        response.headers().set(entry.getKey(), entry.getValue());
+                    }
                 }
-
-                response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
+                response.headers().set(HttpHeaderNames.CONTENT_LENGTH, result.responseBody.length);
                 response.headers().set("X-Baafoo-Stub", "passthrough");
-                response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
-
-                log.info("Passthrough response: {} {} status={} time={}ms", method, path, statusCode, elapsed);
-
                 ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+
+                if (agentEnvironment != null) {
+                    RecordingEntry recording = new RecordingEntry();
+                    recording.setRuleId(matchResult.getRule() != null ? matchResult.getRule().getId() : null);
+                    recording.setEnvironmentId(agentEnvironment);
+                    recording.setProtocol("http");
+                    recording.setHost(host);
+                    recording.setPort(port);
+                    recording.setMethod(method);
+                    recording.setPath(path);
+                    recording.setRequestHeaders(headers);
+                    recording.setRequestBody(requestBody);
+                    recording.setResponseStatusCode(result.statusCode);
+                    recording.setResponseHeaders(result.responseHeaders);
+                    recording.setResponseBody(new String(result.responseBody, StandardCharsets.UTF_8));
+                    recording.setResponseTimeMs(result.responseTimeMs);
+                    storage.addRecording(recording);
+                }
             } catch (Exception e) {
-                log.error("Passthrough error for {} {}: {}", method, path, e.getMessage());
-                if (ctx.channel().isActive()) {
-                    sendError(ctx, BAD_GATEWAY, "Passthrough error: " + e.getMessage());
-                }
-            } finally {
-                if (conn != null) {
-                    conn.disconnect();
-                }
+                log.error("Passthrough+record error: {}", e.getMessage());
+                sendError(ctx, HttpResponseStatus.BAD_GATEWAY, "Passthrough failed: " + e.getMessage());
             }
         });
     }
@@ -397,140 +287,153 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         }
     }
 
-    private void sendPassthroughResponse(ChannelHandlerContext ctx, String method, String path,
-                                           Map<String, String> headers, Map<String, String> queryParams,
-                                           String body, String host, int port) {
-        if (!ctx.channel().isActive()) {
-            log.warn("Channel already inactive, skipping passthrough for {} {}", method, path);
-            return;
-        }
+    private void sendPassthroughResponse(ChannelHandlerContext ctx, String method, String host, int port,
+                                          String path, Map<String, String> queryParams,
+                                          Map<String, String> headers, String requestBody) {
         PASSTHROUGH_EXECUTOR.submit(() -> {
-            HttpURLConnection conn = null;
             try {
-                String protocol = determineProtocol(host, port, headers);
-                StringBuilder urlBuilder = new StringBuilder();
-                urlBuilder.append(protocol).append("://").append(host).append(":").append(port).append(path);
-                if (!queryParams.isEmpty()) {
-                    urlBuilder.append("?");
-                    boolean first = true;
-                    for (Map.Entry<String, String> entry : queryParams.entrySet()) {
-                        if (!first) urlBuilder.append("&");
-                        urlBuilder.append(entry.getKey()).append("=").append(entry.getValue());
-                        first = false;
-                    }
-                }
-
-                URL url = new URL(urlBuilder.toString());
-                log.debug("Passthrough connecting to: {}", urlBuilder);
-                if ("https".equals(protocol)) {
-                    conn = (HttpsURLConnection) url.openConnection();
-                } else {
-                    conn = (HttpURLConnection) url.openConnection();
-                }
-                conn.setRequestMethod(method);
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(30000);
-                conn.setInstanceFollowRedirects(false);
-                conn.setRequestProperty("Connection", "close");
-
-                for (Map.Entry<String, String> entry : headers.entrySet()) {
-                    String key = entry.getKey();
-                    if ("Host".equalsIgnoreCase(key)) continue;
-                    if (HOP_BY_HOP_HEADERS.contains(key.toLowerCase())) continue;
-                    conn.setRequestProperty(key, entry.getValue());
-                }
-
-                if (body != null && !body.isEmpty() &&
-                        ("POST".equalsIgnoreCase(method) || "PUT".equalsIgnoreCase(method) ||
-                                "PATCH".equalsIgnoreCase(method))) {
-                    conn.setDoOutput(true);
-                    conn.getOutputStream().write(body.getBytes(StandardCharsets.UTF_8));
-                    conn.getOutputStream().flush();
-                    conn.getOutputStream().close();
-                }
-
-                int statusCode = conn.getResponseCode();
-                log.debug("Passthrough got response: status={}, contentLength={}", statusCode, conn.getContentLength());
-                HttpResponseStatus status = HttpResponseStatus.valueOf(statusCode);
-
-                byte[] responseBytes;
-                java.io.InputStream inputStream = null;
-                try {
-                    if (statusCode >= 400) {
-                        inputStream = conn.getErrorStream();
-                    } else {
-                        inputStream = conn.getInputStream();
-                    }
-                } catch (java.io.FileNotFoundException e) {
-                }
-                if (inputStream == null) {
-                    responseBytes = new byte[0];
-                } else {
-                    try {
-                        int contentLength = conn.getContentLength();
-                        if (contentLength > 0) {
-                            responseBytes = new byte[contentLength];
-                            int totalRead = 0;
-                            while (totalRead < contentLength) {
-                                int n = inputStream.read(responseBytes, totalRead, contentLength - totalRead);
-                                if (n < 0) break;
-                                totalRead += n;
-                            }
-                            if (totalRead < contentLength) {
-                                byte[] trimmed = new byte[totalRead];
-                                System.arraycopy(responseBytes, 0, trimmed, 0, totalRead);
-                                responseBytes = trimmed;
-                            }
-                        } else {
-                            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-                            byte[] buffer = new byte[8192];
-                            int bytesRead;
-                            while ((bytesRead = inputStream.read(buffer)) != -1) {
-                                baos.write(buffer, 0, bytesRead);
-                            }
-                            responseBytes = baos.toByteArray();
-                        }
-                    } finally {
-                        inputStream.close();
-                    }
-                }
-
-                if (!ctx.channel().isActive()) {
-                    log.warn("Channel became inactive during passthrough for {} {}", method, path);
-                    return;
-                }
-
-                log.debug("Passthrough writing response to client: {} bytes", responseBytes.length);
+                PassthroughResult result = doPassthrough(method, host, port, path, queryParams, headers, requestBody);
 
                 FullHttpResponse response = new DefaultFullHttpResponse(
-                        HTTP_1_1, status,
-                        Unpooled.copiedBuffer(responseBytes));
-
-                for (Map.Entry<String, List<String>> entry : conn.getHeaderFields().entrySet()) {
-                    if (entry.getKey() == null || entry.getValue().isEmpty()) continue;
-                    String lowerKey = entry.getKey().toLowerCase();
-                    if (HOP_BY_HOP_HEADERS.contains(lowerKey)) continue;
-                    response.headers().set(entry.getKey(), entry.getValue().get(0));
+                        HttpVersion.HTTP_1_1, HttpResponseStatus.valueOf(result.statusCode),
+                        Unpooled.copiedBuffer(result.responseBody));
+                for (Map.Entry<String, String> entry : result.responseHeaders.entrySet()) {
+                    if (!HOP_BY_HOP_HEADERS.contains(entry.getKey().toLowerCase())) {
+                        response.headers().set(entry.getKey(), entry.getValue());
+                    }
                 }
-
-                response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
+                response.headers().set(HttpHeaderNames.CONTENT_LENGTH, result.responseBody.length);
                 response.headers().set("X-Baafoo-Stub", "passthrough");
-                response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
-
-                log.info("Passthrough response: {} {} status={}", method, path, statusCode);
-
                 ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
             } catch (Exception e) {
-                log.error("Passthrough error for {} {}: {}", method, path, e.getMessage());
-                if (ctx.channel().isActive()) {
-                    sendError(ctx, BAD_GATEWAY, "Passthrough error: " + e.getMessage());
-                }
-            } finally {
-                if (conn != null) {
-                    conn.disconnect();
-                }
+                log.error("Passthrough error: {}", e.getMessage());
+                sendError(ctx, HttpResponseStatus.BAD_GATEWAY, "Passthrough failed: " + e.getMessage());
             }
         });
+    }
+
+    private static class PassthroughResult {
+        final int statusCode;
+        final Map<String, String> responseHeaders;
+        final byte[] responseBody;
+        final long responseTimeMs;
+
+        PassthroughResult(int statusCode, Map<String, String> responseHeaders, byte[] responseBody, long responseTimeMs) {
+            this.statusCode = statusCode;
+            this.responseHeaders = responseHeaders;
+            this.responseBody = responseBody;
+            this.responseTimeMs = responseTimeMs;
+        }
+    }
+
+    private PassthroughResult doPassthrough(String method, String host, int port, String path,
+                                             Map<String, String> queryParams, Map<String, String> headers,
+                                             String requestBody) throws Exception {
+        HttpURLConnection conn = null;
+        try {
+            long startTime = System.currentTimeMillis();
+
+            String protocol = determineProtocol(host, port, headers);
+            StringBuilder urlBuilder = new StringBuilder();
+            urlBuilder.append(protocol).append("://").append(host).append(":").append(port).append(path);
+            if (queryParams != null && !queryParams.isEmpty()) {
+                urlBuilder.append("?");
+                boolean first = true;
+                for (Map.Entry<String, String> entry : queryParams.entrySet()) {
+                    if (!first) urlBuilder.append("&");
+                    urlBuilder.append(entry.getKey()).append("=").append(entry.getValue());
+                    first = false;
+                }
+            }
+
+            URL url = new URL(urlBuilder.toString());
+            if ("https".equals(protocol)) {
+                conn = (HttpsURLConnection) url.openConnection();
+            } else {
+                conn = (HttpURLConnection) url.openConnection();
+            }
+            conn.setRequestMethod(method);
+            conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(10000);
+
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                String key = entry.getKey();
+                if (!HOP_BY_HOP_HEADERS.contains(key.toLowerCase()) &&
+                    !"host".equalsIgnoreCase(key)) {
+                    conn.setRequestProperty(key, entry.getValue());
+                }
+            }
+
+            if (requestBody != null && !requestBody.isEmpty() &&
+                ("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method))) {
+                conn.setDoOutput(true);
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(requestBody.getBytes(StandardCharsets.UTF_8));
+                    os.flush();
+                }
+            }
+
+            int statusCode = conn.getResponseCode();
+            HttpResponseStatus status = HttpResponseStatus.valueOf(statusCode);
+
+            byte[] responseBytes;
+            java.io.InputStream inputStream = null;
+            try {
+                if (statusCode >= 400) {
+                    inputStream = conn.getErrorStream();
+                } else {
+                    inputStream = conn.getInputStream();
+                }
+            } catch (java.io.FileNotFoundException e) {
+            }
+            if (inputStream == null) {
+                responseBytes = new byte[0];
+            } else {
+                try {
+                    int contentLength = conn.getContentLength();
+                    if (contentLength > 0) {
+                        responseBytes = new byte[contentLength];
+                        int totalRead = 0;
+                        while (totalRead < contentLength) {
+                            int n = inputStream.read(responseBytes, totalRead, contentLength - totalRead);
+                            if (n < 0) break;
+                            totalRead += n;
+                        }
+                        if (totalRead < contentLength) {
+                            byte[] trimmed = new byte[totalRead];
+                            System.arraycopy(responseBytes, 0, trimmed, 0, totalRead);
+                            responseBytes = trimmed;
+                        }
+                    } else {
+                        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                        byte[] buffer = new byte[8192];
+                        int bytesRead;
+                        while ((bytesRead = inputStream.read(buffer)) != -1) {
+                            baos.write(buffer, 0, bytesRead);
+                        }
+                        responseBytes = baos.toByteArray();
+                    }
+                } finally {
+                    inputStream.close();
+                }
+            }
+
+            Map<String, String> responseHeaders = new HashMap<String, String>();
+            for (Map.Entry<String, List<String>> entry : conn.getHeaderFields().entrySet()) {
+                if (entry.getKey() != null && !entry.getValue().isEmpty()) {
+                    responseHeaders.put(entry.getKey(), entry.getValue().get(0));
+                }
+            }
+
+            long responseTimeMs = System.currentTimeMillis() - startTime;
+            return new PassthroughResult(statusCode, responseHeaders, responseBytes, responseTimeMs);
+
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
     }
 
     private void sendError(ChannelHandlerContext ctx, HttpResponseStatus status, String message) {

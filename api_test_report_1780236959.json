@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-05-31T22:15:59.686230",
+  "summary": {
+    "total": 9,
+    "passed": 7,
+    "failed": 2,
+    "pass_rate": "77.78%"
+  },
+  "details": [
+    {
+      "name": "创建规则（正常场景）",
+      "method": "POST",
+      "url": "http://localhost:8080/__baafoo__/api/rules",
+      "expected_status": 200,
+      "actual_status": 403,
+      "response": "{\"success\":false,\"code\":403,\"message\":\"permission_denied\",\"data\":null,\"timestamp\":1780236959605}",
+      "timestamp": "2026-05-31T22:15:59.605923"
+    },
+    {
+      "name": "创建环境",
+      "method": "POST",
+      "url": "http://localhost:8080/__baafoo__/api/environments",
+      "expected_status": 200,
+      "actual_status": 403,
+      "response": "{\"success\":false,\"code\":403,\"message\":\"permission_denied\",\"data\":null,\"timestamp\":1780236959637}",
+      "timestamp": "2026-05-31T22:15:59.638026"
+    }
+  ]
+}
