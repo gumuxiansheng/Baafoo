@@ -35,6 +35,8 @@ public class RuleSetup {
         results.add(createJmsRule());
         results.add(createConsulDnsRule());
         results.add(createConsulHttpRule());
+        results.add(createOkHttpRule());
+        results.add(createFeignRule());
 
         return results;
     }
@@ -162,6 +164,38 @@ public class RuleSetup {
             return "Consul HTTP 规则 → " + (resp != null ? "OK" : "FAIL");
         } catch (Exception e) {
             return "Consul HTTP 规则 → 跳过 (" + e.getMessage() + ")";
+        }
+    }
+
+    private String createOkHttpRule() {
+        try {
+            Map<String, Object> rule = buildRule(
+                    "test-okhttp-rule", "OkHttp挡板规则", "http",
+                    "httpbin.org", 80, null,
+                    Collections.singletonList(pathCondition("startsWith", "/")),
+                    Collections.singletonList(responseEntry("OkHttp挡板响应", 200,
+                            "{\"mocked\":true,\"protocol\":\"okhttp\",\"message\":\"Baafoo OkHttp stub\"}"))
+            );
+            String resp = doPost("/__baafoo__/api/rules", rule);
+            return "OkHttp 规则 → " + (resp != null ? "OK" : "FAIL");
+        } catch (Exception e) {
+            return "OkHttp 规则 → 跳过 (" + e.getMessage() + ")";
+        }
+    }
+
+    private String createFeignRule() {
+        try {
+            Map<String, Object> rule = buildRule(
+                    "test-feign-rule", "Feign+OkHttp挡板规则", "http",
+                    "httpbin.org", 80, null,
+                    Collections.singletonList(pathCondition("startsWith", "/")),
+                    Collections.singletonList(responseEntry("Feign挡板响应", 200,
+                            "{\"mocked\":true,\"protocol\":\"feign-okhttp\",\"message\":\"Baafoo Feign stub\"}"))
+            );
+            String resp = doPost("/__baafoo__/api/rules", rule);
+            return "Feign+OkHttp 规则 → " + (resp != null ? "OK" : "FAIL");
+        } catch (Exception e) {
+            return "Feign+OkHttp 规则 → 跳过 (" + e.getMessage() + ")";
         }
     }
 
