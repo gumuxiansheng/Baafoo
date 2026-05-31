@@ -35,10 +35,10 @@
               <el-button size="small" text>切换模式 <el-icon><ArrowDown /></el-icon></el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="stub" :disabled="row.mode === 'STUB'">Stub 模式</el-dropdown-item>
-                  <el-dropdown-item command="passthrough" :disabled="row.mode === 'PASSTHROUGH'">Passthrough</el-dropdown-item>
-                  <el-dropdown-item command="record" :disabled="row.mode === 'RECORD'">Record</el-dropdown-item>
-                  <el-dropdown-item command="record-and-stub" :disabled="row.mode === 'RECORD_AND_STUB'">Record+Stub</el-dropdown-item>
+                  <el-dropdown-item command="stub" :disabled="row.mode === 'stub'">Stub 模式</el-dropdown-item>
+                  <el-dropdown-item command="passthrough" :disabled="row.mode === 'passthrough'">Passthrough</el-dropdown-item>
+                  <el-dropdown-item command="record" :disabled="row.mode === 'record'">Record</el-dropdown-item>
+                  <el-dropdown-item command="record-and-stub" :disabled="row.mode === 'record-and-stub'">Record+Stub</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -155,12 +155,12 @@ export default {
     }
 
     function modeTagType(mode) {
-      const map = { STUB: '', PASSTHROUGH: 'info', RECORD: 'warning', RECORD_AND_STUB: 'success' }
+      const map = { 'stub': '', 'passthrough': 'info', 'record': 'warning', 'record-and-stub': 'success' }
       return map[mode] || ''
     }
 
     function modeLabel(row) {
-      const map = { STUB: 'Stub', PASSTHROUGH: 'Passthrough', RECORD: 'Record', RECORD_AND_STUB: 'Record+Stub' }
+      const map = { 'stub': 'Stub', 'passthrough': 'Passthrough', 'record': 'Record', 'record-and-stub': 'Record+Stub' }
       return map[row.mode] || row.mode
     }
 
@@ -171,7 +171,7 @@ export default {
     }
 
     async function createEnv() {
-      const res = await api.createEnvironment({ name: form.name, mode: form.mode.toUpperCase() })
+      const res = await api.createEnvironment({ name: form.name, mode: form.mode })
       if (res.success) {
         dialogVisible.value = false
         await loadEnvs()
@@ -179,7 +179,7 @@ export default {
     }
 
     async function changeMode(env, cmd) {
-      await api.updateEnvironment(env.id, { mode: cmd.toUpperCase() })
+      await api.updateEnvironment(env.id, { mode: cmd })
       await loadEnvs()
     }
 
