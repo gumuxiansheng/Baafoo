@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -27,6 +28,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import javax.net.ssl.HttpsURLConnection;
 
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
@@ -195,25 +198,30 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
             return;
         }
         PASSTHROUGH_EXECUTOR.submit(() -> {
-            HttpURLConnection conn = null;
+            URLConnection conn = null;
             try {
                 long startTime = System.currentTimeMillis();
 
+                String protocol = determineProtocol(host, port, headers);
                 StringBuilder urlBuilder = new StringBuilder();
-                urlBuilder.append("http://").append(host).append(":").append(port).append(path);
+                urlBuilder.append(protocol).append("://").append(host).append(":").append(port).append(path);
                 if (!queryParams.isEmpty()) {
                     urlBuilder.append("?");
                     boolean first = true;
                     for (Map.Entry<String, String> entry : queryParams.entrySet()) {
                         if (!first) urlBuilder.append("&");
                         urlBuilder.append(entry.getKey()).append("=").append(entry.getValue());
-                        first = true;
+                        first = false;
                     }
                 }
 
                 URL url = new URL(urlBuilder.toString());
                 log.debug("Passthrough connecting to: {}", urlBuilder);
-                conn = (HttpURLConnection) url.openConnection();
+                if ("https".equals(protocol)) {
+                    conn = (HttpsURLConnection) url.openConnection();
+                } else {
+                    conn = (HttpURLConnection) url.openConnection();
+                }
                 conn.setRequestMethod(method);
                 conn.setConnectTimeout(5000);
                 conn.setReadTimeout(30000);
@@ -236,12 +244,12 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     conn.getOutputStream().close();
                 }
 
-                int statusCode = conn.getResponseCode();
+                int statusCode = ((HttpURLConnection) conn).getResponseCode();
                 HttpResponseStatus status = HttpResponseStatus.valueOf(statusCode);
 
                 java.io.InputStream inputStream;
                 if (statusCode >= 400) {
-                    inputStream = conn.getErrorStream();
+                    inputStream = ((HttpURLConnection) conn).getErrorStream();
                 } else {
                     inputStream = conn.getInputStream();
                 }
@@ -330,7 +338,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                 }
             } finally {
                 if (conn != null) {
-                    conn.disconnect();
+                    ((HttpURLConnection) conn).disconnect();
                 }
             }
         });
@@ -384,10 +392,11 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
             return;
         }
         PASSTHROUGH_EXECUTOR.submit(() -> {
-            HttpURLConnection conn = null;
+            URLConnection conn = null;
             try {
+                String protocol = determineProtocol(host, port, headers);
                 StringBuilder urlBuilder = new StringBuilder();
-                urlBuilder.append("http://").append(host).append(":").append(port).append(path);
+                urlBuilder.append(protocol).append("://").append(host).append(":").append(port).append(path);
                 if (!queryParams.isEmpty()) {
                     urlBuilder.append("?");
                     boolean first = true;
@@ -400,7 +409,11 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
 
                 URL url = new URL(urlBuilder.toString());
                 log.debug("Passthrough connecting to: {}", urlBuilder);
-                conn = (HttpURLConnection) url.openConnection();
+                if ("https".equals(protocol)) {
+                    conn = (HttpsURLConnection) url.openConnection();
+                } else {
+                    conn = (HttpURLConnection) url.openConnection();
+                }
                 conn.setRequestMethod(method);
                 conn.setConnectTimeout(5000);
                 conn.setReadTimeout(30000);
@@ -423,13 +436,13 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     conn.getOutputStream().close();
                 }
 
-                int statusCode = conn.getResponseCode();
+                int statusCode = ((HttpURLConnection) conn).getResponseCode();
                 log.debug("Passthrough got response: status={}, contentLength={}", statusCode, conn.getContentLength());
                 HttpResponseStatus status = HttpResponseStatus.valueOf(statusCode);
 
                 java.io.InputStream inputStream;
                 if (statusCode >= 400) {
-                    inputStream = conn.getErrorStream();
+                    inputStream = ((HttpURLConnection) conn).getErrorStream();
                 } else {
                     inputStream = conn.getInputStream();
                 }
@@ -499,7 +512,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                 }
             } finally {
                 if (conn != null) {
-                    conn.disconnect();
+                    ((HttpURLConnection) conn).disconnect();
                 }
             }
         });
@@ -516,6 +529,17 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         response.headers().set("X-Baafoo-Stub", "unmatched");
 
         ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+    }
+
+    private String determineProtocol(String host, int port, Map<String, String> headers) {
+        String forwardedProto = headers.get("X-Forwarded-Proto");
+        if (forwardedProto != null && !forwardedProto.isEmpty()) {
+            return forwardedProto;
+        }
+        if (port == 443) {
+            return "https";
+        }
+        return "http";
     }
 
     private String extractPath(String uri) {

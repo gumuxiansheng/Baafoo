@@ -40,7 +40,7 @@ public class H2StorageService implements StorageService {
     // ==================== Lifecycle ====================
 
     @Override
-    public void init() throws Exception {
+    public synchronized void init() throws Exception {
         String dbPath = config.getDataDir() + "/baafoo";
         // Ensure parent directory exists
         java.io.File dbDir = new java.io.File(config.getDataDir());
@@ -57,7 +57,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public void shutdown() {
+    public synchronized void shutdown() {
         try {
             if (conn != null && !conn.isClosed()) {
                 conn.close();
@@ -212,7 +212,7 @@ public class H2StorageService implements StorageService {
     // ==================== Rule CRUD ====================
 
     @Override
-    public List<Rule> listRules() {
+    public synchronized List<Rule> listRules() {
         String sql = "SELECT * FROM rules ORDER BY priority ASC";
         List<Rule> result = new ArrayList<Rule>();
         try (PreparedStatement ps = conn.prepareStatement(sql);
@@ -227,7 +227,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public Rule getRule(String id) {
+    public synchronized Rule getRule(String id) {
         String sql = "SELECT * FROM rules WHERE id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, id);
@@ -241,7 +241,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public Rule createRule(Rule rule) {
+    public synchronized Rule createRule(Rule rule) {
         if (rule.getId() == null || rule.getId().isEmpty()) {
             rule.setId(IdGenerator.uuid());
         }
@@ -265,7 +265,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public Rule updateRule(String id, Rule update) {
+    public synchronized Rule updateRule(String id, Rule update) {
         Rule existing = getRule(id);
         if (existing == null) return null;
 
@@ -304,7 +304,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public boolean deleteRule(String id) {
+    public synchronized boolean deleteRule(String id) {
         // Also delete history
         try (PreparedStatement ps = conn.prepareStatement("DELETE FROM rule_history WHERE rule_id = ?")) {
             ps.setString(1, id);
@@ -324,7 +324,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public boolean undoRule(String id) {
+    public synchronized boolean undoRule(String id) {
         // Get the most recent history entry
         String findSql = "SELECT rule_snapshot FROM rule_history " +
                 "WHERE rule_id = ? ORDER BY created_at DESC LIMIT 1";
@@ -346,12 +346,23 @@ public class H2StorageService implements StorageService {
                 }
 
                 // Delete the used history entry
-                try (PreparedStatement dps = conn.prepareStatement(
-                        "DELETE FROM rule_history WHERE rule_id = ? AND id = " +
-                        "(SELECT id FROM rule_history WHERE rule_id = ? ORDER BY created_at DESC LIMIT 1)")) {
-                    dps.setString(1, id);
-                    dps.setString(2, id);
-                    dps.executeUpdate();
+                long historyId = -1;
+                try (PreparedStatement hps = conn.prepareStatement(
+                        "SELECT id FROM rule_history WHERE rule_id = ? ORDER BY created_at DESC LIMIT 1")) {
+                    hps.setString(1, id);
+                    try (ResultSet hrs = hps.executeQuery()) {
+                        if (hrs.next()) {
+                            historyId = hrs.getLong("id");
+                        }
+                    }
+                }
+                if (historyId != -1) {
+                    try (PreparedStatement dps = conn.prepareStatement(
+                            "DELETE FROM rule_history WHERE rule_id = ? AND id = ?")) {
+                        dps.setString(1, id);
+                        dps.setLong(2, historyId);
+                        dps.executeUpdate();
+                    }
                 }
 
                 return true;
@@ -456,7 +467,7 @@ public class H2StorageService implements StorageService {
     // ==================== Environment CRUD ====================
 
     @Override
-    public List<Environment> listEnvironments() {
+    public synchronized List<Environment> listEnvironments() {
         String sql = "SELECT * FROM environments";
         List<Environment> result = new ArrayList<Environment>();
         try (PreparedStatement ps = conn.prepareStatement(sql);
@@ -471,7 +482,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public Environment getEnvironment(String id) {
+    public synchronized Environment getEnvironment(String id) {
         String sql = "SELECT * FROM environments WHERE id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, id);
@@ -485,7 +496,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public Environment getEnvironmentByName(String name) {
+    public synchronized Environment getEnvironmentByName(String name) {
         String sql = "SELECT * FROM environments WHERE name = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, name);
@@ -499,7 +510,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public Environment createEnvironment(Environment env) {
+    public synchronized Environment createEnvironment(Environment env) {
         if (env.getId() == null || env.getId().isEmpty()) {
             env.setId(IdGenerator.uuid());
         }
@@ -521,7 +532,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public Environment updateEnvironment(String id, Environment update) {
+    public synchronized Environment updateEnvironment(String id, Environment update) {
         Environment existing = getEnvironment(id);
         if (existing == null) return null;
 
@@ -545,7 +556,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public boolean deleteEnvironment(String id) {
+    public synchronized boolean deleteEnvironment(String id) {
         String sql = "DELETE FROM environments WHERE id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, id);
@@ -612,7 +623,7 @@ public class H2StorageService implements StorageService {
     // ==================== Scene Set CRUD ====================
 
     @Override
-    public List<SceneSet> listScenes() {
+    public synchronized List<SceneSet> listScenes() {
         String sql = "SELECT * FROM scene_sets";
         List<SceneSet> result = new ArrayList<SceneSet>();
         try (PreparedStatement ps = conn.prepareStatement(sql);
@@ -627,7 +638,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public SceneSet getScene(String id) {
+    public synchronized SceneSet getScene(String id) {
         String sql = "SELECT * FROM scene_sets WHERE id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, id);
@@ -641,7 +652,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public SceneSet createScene(SceneSet scene) {
+    public synchronized SceneSet createScene(SceneSet scene) {
         if (scene.getId() == null || scene.getId().isEmpty()) {
             scene.setId(IdGenerator.uuid());
         }
@@ -663,7 +674,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public SceneSet updateScene(String id, SceneSet update) {
+    public synchronized SceneSet updateScene(String id, SceneSet update) {
         SceneSet existing = getScene(id);
         if (existing == null) return null;
 
@@ -744,7 +755,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public boolean deleteScene(String id) {
+    public synchronized boolean deleteScene(String id) {
         String sql = "DELETE FROM scene_sets WHERE id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, id);
@@ -814,7 +825,7 @@ public class H2StorageService implements StorageService {
     // ==================== Rule Set CRUD ====================
 
     @Override
-    public List<RuleSet> listRuleSets() {
+    public synchronized List<RuleSet> listRuleSets() {
         String sql = "SELECT * FROM rule_sets";
         List<RuleSet> result = new ArrayList<RuleSet>();
         try (PreparedStatement ps = conn.prepareStatement(sql);
@@ -829,7 +840,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public RuleSet createRuleSet(RuleSet ruleSet) {
+    public synchronized RuleSet createRuleSet(RuleSet ruleSet) {
         if (ruleSet.getId() == null || ruleSet.getId().isEmpty()) {
             ruleSet.setId(IdGenerator.uuid());
         }
@@ -851,7 +862,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public boolean deleteRuleSet(String id) {
+    public synchronized boolean deleteRuleSet(String id) {
         String sql = "DELETE FROM rule_sets WHERE id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, id);
@@ -915,7 +926,7 @@ public class H2StorageService implements StorageService {
     // ==================== Recording ====================
 
     @Override
-    public List<RecordingEntry> listRecordings(String ruleId, int limit) {
+    public synchronized List<RecordingEntry> listRecordings(String ruleId, int limit) {
         StringBuilder sql = new StringBuilder("SELECT * FROM recordings");
         boolean filterByRuleId = ruleId != null && !ruleId.isEmpty();
         if (filterByRuleId) {
@@ -941,7 +952,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public void addRecording(RecordingEntry recording) {
+    public synchronized void addRecording(RecordingEntry recording) {
         if (recording.getId() == null || recording.getId().isEmpty()) {
             recording.setId(IdGenerator.uuid());
         }
@@ -961,14 +972,14 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public void addRecordings(List<RecordingEntry> batch) {
+    public synchronized void addRecordings(List<RecordingEntry> batch) {
         for (RecordingEntry r : batch) {
             addRecording(r);
         }
     }
 
     @Override
-    public boolean deleteRecording(String id) {
+    public synchronized boolean deleteRecording(String id) {
         String sql = "DELETE FROM recordings WHERE id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, id);
@@ -1048,7 +1059,7 @@ public class H2StorageService implements StorageService {
     // ==================== Agent Management ====================
 
     @Override
-    public AgentRegistration registerAgent(String agentId, String environment, String hostname,
+    public synchronized AgentRegistration registerAgent(String agentId, String environment, String hostname,
                                             String version, List<String> protocols) {
         AgentRegistration reg = new AgentRegistration();
         reg.agentId = agentId;
@@ -1087,7 +1098,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public void agentHeartbeat(String agentId) {
+    public synchronized void agentHeartbeat(String agentId) {
         String sql = "UPDATE agents SET last_heartbeat = ? WHERE agent_id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setLong(1, System.currentTimeMillis());
@@ -1099,7 +1110,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public List<AgentRegistration> listAgents() {
+    public synchronized List<AgentRegistration> listAgents() {
         String sql = "SELECT * FROM agents";
         List<AgentRegistration> result = new ArrayList<AgentRegistration>();
         try (PreparedStatement ps = conn.prepareStatement(sql);
@@ -1114,7 +1125,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public List<AgentRegistration> getAgentsForEnvironment(String envName) {
+    public synchronized List<AgentRegistration> getAgentsForEnvironment(String envName) {
         String sql = "SELECT * FROM agents WHERE environment = ?";
         List<AgentRegistration> result = new ArrayList<AgentRegistration>();
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -1152,7 +1163,7 @@ public class H2StorageService implements StorageService {
     // ==================== Environment-Rule Association ====================
 
     @Override
-    public void associateRulesToEnvironment(String envName, List<String> ruleIds) {
+    public synchronized void associateRulesToEnvironment(String envName, List<String> ruleIds) {
         for (String ruleId : ruleIds) {
             Rule rule = getRule(ruleId);
             if (rule == null) continue;
@@ -1166,7 +1177,7 @@ public class H2StorageService implements StorageService {
     }
 
     @Override
-    public void dissociateRulesFromEnvironment(String envName, List<String> ruleIds) {
+    public synchronized void dissociateRulesFromEnvironment(String envName, List<String> ruleIds) {
         for (String ruleId : ruleIds) {
             Rule rule = getRule(ruleId);
             if (rule == null) continue;
