@@ -32,6 +32,17 @@ public class BaafooAgent {
 
     private static volatile ConcurrentHashMap<String, GlobalRouteState.HostPort> bootstrapRoutes;
 
+    private static volatile Class<?> bootstrapGRSClass;
+    private static volatile java.lang.reflect.Constructor<?> bootstrapHostPortCtor;
+
+    public static Class<?> getBootstrapGRSClass() {
+        return bootstrapGRSClass;
+    }
+
+    public static java.lang.reflect.Constructor<?> getBootstrapHostPortCtor() {
+        return bootstrapHostPortCtor;
+    }
+
     public static void premain(String agentArgs, Instrumentation inst) {
         try {
             log.info("=== Baafoo Agent {} starting ===", getVersion());
@@ -317,6 +328,7 @@ public class BaafooAgent {
                     ((ConcurrentHashMap) bootRoutes).put(entry.getKey(), bootHostPort);
                 }
                 bootstrapRoutes = bootRoutes;
+                bootstrapHostPortCtor = ctor;
                 log.info("Synced {} routes to Bootstrap CL GlobalRouteState.ROUTES", bootRoutes.size());
             }
 
@@ -325,6 +337,8 @@ public class BaafooAgent {
             bootGRS.getField("SERVER_HOST").set(null, GlobalRouteState.SERVER_HOST);
 
             bootGRS.getField("SERVER_PORT").setInt(null, GlobalRouteState.SERVER_PORT);
+
+            bootstrapGRSClass = bootGRS;
 
             log.info("Synced GlobalRouteState fields to Bootstrap CL: CURRENT_MODE={}, SERVER_HOST={}, SERVER_PORT={}",
                     GlobalRouteState.CURRENT_MODE, GlobalRouteState.SERVER_HOST, GlobalRouteState.SERVER_PORT);

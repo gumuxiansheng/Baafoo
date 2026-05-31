@@ -228,12 +228,11 @@ public final class RouteManager {
 
     private static void syncModeToBootstrapCL(int modeValue) {
         try {
-            Class<?> bootGRS = Class.forName("com.baafoo.agent.GlobalRouteState");
+            Class<?> bootGRS = BaafooAgent.getBootstrapGRSClass();
+            if (bootGRS == null) return;
             java.lang.reflect.Field field = bootGRS.getField("CURRENT_MODE");
             field.setInt(null, modeValue);
             log.debug("Synced mode {} to Bootstrap CL GlobalRouteState", modeValue);
-        } catch (ClassNotFoundException e) {
-            log.debug("Bootstrap GlobalRouteState not found, skipping mode sync");
         } catch (Exception e) {
             log.error("Failed to sync mode to Bootstrap CL: {}", e.getMessage());
         }
@@ -242,14 +241,12 @@ public final class RouteManager {
     @SuppressWarnings("unchecked")
     private static void syncRoutesToBootstrapCL(ConcurrentHashMap<String, GlobalRouteState.HostPort> newRoutes) {
         ConcurrentHashMap<String, GlobalRouteState.HostPort> bootRoutes = BaafooAgent.getBootstrapRoutes();
-        if (bootRoutes == null) return;
+        java.lang.reflect.Constructor<?> bootCtor = BaafooAgent.getBootstrapHostPortCtor();
+        if (bootRoutes == null || bootCtor == null) return;
         try {
-            Class<?> bootGRS = Class.forName("com.baafoo.agent.GlobalRouteState");
-            Class<?> bootHostPortClass = Class.forName("com.baafoo.agent.GlobalRouteState$HostPort", false, bootGRS.getClassLoader());
-            java.lang.reflect.Constructor<?> ctor = bootHostPortClass.getConstructor(String.class, int.class);
             ((ConcurrentHashMap) bootRoutes).clear();
             for (Map.Entry<String, GlobalRouteState.HostPort> entry : newRoutes.entrySet()) {
-                Object bootHostPort = ctor.newInstance(entry.getValue().host, entry.getValue().port);
+                Object bootHostPort = bootCtor.newInstance(entry.getValue().host, entry.getValue().port);
                 ((ConcurrentHashMap) bootRoutes).put(entry.getKey(), bootHostPort);
             }
             log.info("Synced {} routes to Bootstrap CL GlobalRouteState.ROUTES", bootRoutes.size());
