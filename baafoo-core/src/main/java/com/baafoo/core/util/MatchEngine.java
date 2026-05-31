@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -24,7 +25,7 @@ public class MatchEngine {
     private static final Logger log = LoggerFactory.getLogger(MatchEngine.class);
 
     /** Pre-compiled regex patterns (cached by rule ID + condition index) */
-    private final Map<String, Pattern> patternCache = new HashMap<String, Pattern>();
+    private final Map<String, Pattern> patternCache = new ConcurrentHashMap<String, Pattern>();
 
     /**
      * Match request against a list of rules.
@@ -251,7 +252,13 @@ public class MatchEngine {
 
     private boolean matchRegex(String input, String regex) {
         try {
-            Pattern pattern = patternCache.computeIfAbsent(regex, Pattern::compile);
+            Pattern pattern = patternCache.get(regex);
+            if (pattern == null) {
+                pattern = Pattern.compile(regex);
+                if (patternCache.size() < 256) {
+                    patternCache.putIfAbsent(regex, pattern);
+                }
+            }
             return pattern.matcher(input).matches();
         } catch (PatternSyntaxException e) {
             log.warn("Invalid regex: {}", regex);

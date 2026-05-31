@@ -247,40 +247,46 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                 int statusCode = ((HttpURLConnection) conn).getResponseCode();
                 HttpResponseStatus status = HttpResponseStatus.valueOf(statusCode);
 
-                java.io.InputStream inputStream;
-                if (statusCode >= 400) {
-                    inputStream = ((HttpURLConnection) conn).getErrorStream();
-                } else {
-                    inputStream = conn.getInputStream();
-                }
                 byte[] responseBytes;
-                int contentLength = conn.getContentLength();
-                if (contentLength > 0 && inputStream != null) {
-                    responseBytes = new byte[contentLength];
-                    int totalRead = 0;
-                    while (totalRead < contentLength) {
-                        int n = inputStream.read(responseBytes, totalRead, contentLength - totalRead);
-                        if (n < 0) break;
-                        totalRead += n;
+                java.io.InputStream inputStream = null;
+                try {
+                    if (statusCode >= 400) {
+                        inputStream = conn.getErrorStream();
+                    } else {
+                        inputStream = conn.getInputStream();
                     }
-                    if (totalRead < contentLength) {
-                        byte[] trimmed = new byte[totalRead];
-                        System.arraycopy(responseBytes, 0, trimmed, 0, totalRead);
-                        responseBytes = trimmed;
-                    }
-                } else if (inputStream != null) {
-                    java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-                    byte[] buffer = new byte[8192];
-                    int bytesRead;
-                    while ((bytesRead = inputStream.read(buffer)) != -1) {
-                        baos.write(buffer, 0, bytesRead);
-                    }
-                    responseBytes = baos.toByteArray();
-                } else {
-                    responseBytes = new byte[0];
+                } catch (java.io.FileNotFoundException e) {
                 }
-                if (inputStream != null) {
-                    inputStream.close();
+                if (inputStream == null) {
+                    responseBytes = new byte[0];
+                } else {
+                    try {
+                        int contentLength = conn.getContentLength();
+                        if (contentLength > 0) {
+                            responseBytes = new byte[contentLength];
+                            int totalRead = 0;
+                            while (totalRead < contentLength) {
+                                int n = inputStream.read(responseBytes, totalRead, contentLength - totalRead);
+                                if (n < 0) break;
+                                totalRead += n;
+                            }
+                            if (totalRead < contentLength) {
+                                byte[] trimmed = new byte[totalRead];
+                                System.arraycopy(responseBytes, 0, trimmed, 0, totalRead);
+                                responseBytes = trimmed;
+                            }
+                        } else {
+                            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                            byte[] buffer = new byte[8192];
+                            int bytesRead;
+                            while ((bytesRead = inputStream.read(buffer)) != -1) {
+                                baos.write(buffer, 0, bytesRead);
+                            }
+                            responseBytes = baos.toByteArray();
+                        }
+                    } finally {
+                        inputStream.close();
+                    }
                 }
 
                 long elapsed = System.currentTimeMillis() - startTime;
@@ -440,44 +446,46 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                 log.debug("Passthrough got response: status={}, contentLength={}", statusCode, conn.getContentLength());
                 HttpResponseStatus status = HttpResponseStatus.valueOf(statusCode);
 
-                java.io.InputStream inputStream;
-                if (statusCode >= 400) {
-                    inputStream = ((HttpURLConnection) conn).getErrorStream();
-                } else {
-                    inputStream = conn.getInputStream();
-                }
                 byte[] responseBytes;
-                int contentLength = conn.getContentLength();
-                log.debug("Passthrough reading body: contentLength={}", contentLength);
-                if (contentLength > 0 && inputStream != null) {
-                    responseBytes = new byte[contentLength];
-                    int totalRead = 0;
-                    while (totalRead < contentLength) {
-                        int n = inputStream.read(responseBytes, totalRead, contentLength - totalRead);
-                        if (n < 0) break;
-                        totalRead += n;
+                java.io.InputStream inputStream = null;
+                try {
+                    if (statusCode >= 400) {
+                        inputStream = conn.getErrorStream();
+                    } else {
+                        inputStream = conn.getInputStream();
                     }
-                    if (totalRead < contentLength) {
-                        byte[] trimmed = new byte[totalRead];
-                        System.arraycopy(responseBytes, 0, trimmed, 0, totalRead);
-                        responseBytes = trimmed;
-                    }
-                    log.debug("Passthrough read body with contentLength: {} bytes", totalRead);
-                } else if (inputStream != null) {
-                    java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-                    byte[] buffer = new byte[8192];
-                    int bytesRead;
-                    while ((bytesRead = inputStream.read(buffer)) != -1) {
-                        baos.write(buffer, 0, bytesRead);
-                    }
-                    responseBytes = baos.toByteArray();
-                    log.debug("Passthrough read body with fallback: {} bytes", responseBytes.length);
-                } else {
-                    responseBytes = new byte[0];
-                    log.debug("Passthrough no body");
+                } catch (java.io.FileNotFoundException e) {
                 }
-                if (inputStream != null) {
-                    inputStream.close();
+                if (inputStream == null) {
+                    responseBytes = new byte[0];
+                } else {
+                    try {
+                        int contentLength = conn.getContentLength();
+                        if (contentLength > 0) {
+                            responseBytes = new byte[contentLength];
+                            int totalRead = 0;
+                            while (totalRead < contentLength) {
+                                int n = inputStream.read(responseBytes, totalRead, contentLength - totalRead);
+                                if (n < 0) break;
+                                totalRead += n;
+                            }
+                            if (totalRead < contentLength) {
+                                byte[] trimmed = new byte[totalRead];
+                                System.arraycopy(responseBytes, 0, trimmed, 0, totalRead);
+                                responseBytes = trimmed;
+                            }
+                        } else {
+                            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                            byte[] buffer = new byte[8192];
+                            int bytesRead;
+                            while ((bytesRead = inputStream.read(buffer)) != -1) {
+                                baos.write(buffer, 0, bytesRead);
+                            }
+                            responseBytes = baos.toByteArray();
+                        }
+                    } finally {
+                        inputStream.close();
+                    }
                 }
 
                 if (!ctx.channel().isActive()) {

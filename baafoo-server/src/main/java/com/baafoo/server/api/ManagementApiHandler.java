@@ -102,6 +102,10 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
     }
 
     private Object handleApiRequest(String path, String method, FullHttpRequest request) throws Exception {
+        if ("OPTIONS".equals(method)) {
+            return ApiResponse.ok("OK", null);
+        }
+
         // --- Rules ---
         if (path.equals(API_PREFIX + "rules")) {
             if ("GET".equals(method)) {

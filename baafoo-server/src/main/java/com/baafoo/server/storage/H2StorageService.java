@@ -973,9 +973,22 @@ public class H2StorageService implements StorageService {
 
     @Override
     public synchronized void addRecordings(List<RecordingEntry> batch) {
-        for (RecordingEntry r : batch) {
-            addRecording(r);
+        try {
+            conn.setAutoCommit(false);
+            for (RecordingEntry r : batch) {
+                if (r.getId() == null || r.getId().isEmpty()) {
+                    r.setId(IdGenerator.uuid());
+                }
+                r.setRecordedAt(System.currentTimeMillis());
+                insertRecording(r);
+            }
+            conn.commit();
+            conn.setAutoCommit(true);
+        } catch (Exception e) {
+            try { conn.rollback(); conn.setAutoCommit(true); } catch (SQLException ex) { log.error("Rollback error: {}", ex.getMessage()); }
+            log.error("Failed to batch insert recordings: {}", e.getMessage());
         }
+        trimRecordings();
     }
 
     @Override
