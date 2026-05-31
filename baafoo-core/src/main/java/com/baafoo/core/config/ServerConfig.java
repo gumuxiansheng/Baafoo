@@ -49,6 +49,9 @@ public class ServerConfig {
     /** Maximum agents per environment */
     private int maxAgentsPerEnvironment;
 
+    /** Unmatched request default behavior: passthrough or 404 */
+    private String unmatchedDefault;
+
     public ServerConfig() {
         this.httpPort = 8080;
         this.protocolPorts = new java.util.HashMap<String, Integer>();
@@ -65,6 +68,7 @@ public class ServerConfig {
         this.corsEnabled = true;
         this.agentHeartbeatTimeoutSec = 60;
         this.maxAgentsPerEnvironment = 50;
+        this.unmatchedDefault = "passthrough";
     }
 
     // --- Getters / Setters ---
@@ -112,6 +116,9 @@ public class ServerConfig {
 
     public int getMaxAgentsPerEnvironment() { return maxAgentsPerEnvironment; }
     public void setMaxAgentsPerEnvironment(int maxAgentsPerEnvironment) { this.maxAgentsPerEnvironment = maxAgentsPerEnvironment; }
+
+    public String getUnmatchedDefault() { return unmatchedDefault; }
+    public void setUnmatchedDefault(String unmatchedDefault) { this.unmatchedDefault = unmatchedDefault; }
 
     @Override
     public String toString() {

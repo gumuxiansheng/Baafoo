@@ -121,7 +121,7 @@ public class BaafooServer {
                         ChannelPipeline p = ch.pipeline();
                         p.addLast(new HttpServerCodec());
                         p.addLast(new HttpObjectAggregator(65536));
-                        p.addLast(new HttpStubHandler(storage));
+                        p.addLast(new HttpStubHandler(storage, config));
                     }
                 });
 

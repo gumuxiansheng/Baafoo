@@ -44,3 +44,8 @@ agentHeartbeatTimeoutSec: 60
 
 # Maximum agents per environment
 maxAgentsPerEnvironment: 50
+
+# Unmatched request default behavior: passthrough (default) or 404
+# - passthrough: forward to real downstream and log
+# - 404: return 404 response and log (strict stub mode)
+unmatchedDefault: passthrough

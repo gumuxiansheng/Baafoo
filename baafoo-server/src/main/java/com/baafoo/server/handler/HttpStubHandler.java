@@ -1,5 +1,6 @@
 package com.baafoo.server.handler;
 
+import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.model.Environment;
 import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.RecordingEntry;
@@ -64,9 +65,11 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
 
     private final StorageService storage;
     private final MatchEngine matchEngine;
+    private final ServerConfig config;
 
-    public HttpStubHandler(StorageService storage) {
+    public HttpStubHandler(StorageService storage, ServerConfig config) {
         this.storage = storage;
+        this.config = config;
         this.matchEngine = new MatchEngine();
     }
 
@@ -136,9 +139,25 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
 
             sendStubResponse(ctx, entry, result.getRule().getId());
         } else {
-            log.info("No Baafoo rule matched: {} {} — passthrough", method, path);
-            sendPassthroughResponse(ctx, method, path, headers, queryParams, body, host, port);
+            String unmatchedDefault = config.getUnmatchedDefault();
+            if ("404".equalsIgnoreCase(unmatchedDefault)) {
+                log.info("No Baafoo rule matched: {} {} — returning 404", method, path);
+                send404Response(ctx, method, path);
+            } else {
+                log.info("No Baafoo rule matched: {} {} — passthrough", method, path);
+                sendPassthroughResponse(ctx, method, path, headers, queryParams, body, host, port);
+            }
         }
+    }
+
+    private void send404Response(ChannelHandlerContext ctx, String method, String path) {
+        String body = "{\"error\": \"No matching rule found\", \"path\": \"" + path + "\"}";
+        FullHttpResponse response = new DefaultFullHttpResponse(
+                HTTP_1_1, NOT_FOUND,
+                Unpooled.copiedBuffer(body.getBytes(StandardCharsets.UTF_8)));
+        response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json");
+        response.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length());
+        ctx.writeAndFlush(response);
     }
 
     private boolean isRecording() {
