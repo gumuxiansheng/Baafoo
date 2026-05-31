@@ -208,6 +208,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                                            Map<String, String> headers, String requestBody,
                                            MatchEngine.MatchResult matchResult, String agentEnvironment) {
         PASSTHROUGH_EXECUTOR.submit(() -> {
+            long startTime = System.currentTimeMillis();
             try {
                 PassthroughResult result = doPassthrough(method, host, port, path, queryParams, headers, requestBody);
 
@@ -242,6 +243,22 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                 }
             } catch (Exception e) {
                 log.error("Passthrough+record error: {}", e.getMessage());
+                if (agentEnvironment != null) {
+                    RecordingEntry recording = new RecordingEntry();
+                    recording.setRuleId(matchResult.getRule() != null ? matchResult.getRule().getId() : null);
+                    recording.setEnvironmentId(agentEnvironment);
+                    recording.setProtocol("http");
+                    recording.setHost(host);
+                    recording.setPort(port);
+                    recording.setMethod(method);
+                    recording.setPath(path);
+                    recording.setRequestHeaders(headers);
+                    recording.setRequestBody(requestBody);
+                    recording.setResponseStatusCode(502);
+                    recording.setResponseBody("Passthrough failed: " + e.getMessage());
+                    recording.setResponseTimeMs(System.currentTimeMillis() - startTime);
+                    storage.addRecording(recording);
+                }
                 sendError(ctx, HttpResponseStatus.BAD_GATEWAY, "Passthrough failed: " + e.getMessage());
             }
         });
