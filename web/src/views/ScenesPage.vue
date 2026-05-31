@@ -19,6 +19,14 @@
             <el-switch v-model="row.active" @change="toggleScene(row)" size="small" />
           </template>
         </el-table-column>
+        <el-table-column label="生效环境" min-width="120">
+          <template #default="{ row }">
+            <template v-if="row.environments && row.environments.length > 0">
+              <el-tag v-for="env in row.environments" :key="env" size="small" type="info" style="margin-right: 4px">{{ env }}</el-tag>
+            </template>
+            <el-tag v-else size="small" type="warning">未关联</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="创建时间" width="170">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
         </el-table-column>
@@ -48,6 +56,12 @@
             <el-option v-for="r in allRules" :key="r.id" :label="r.name" :value="r.id" />
           </el-select>
         </el-form-item>
+        <el-form-item label="生效环境">
+          <el-select v-model="form.environments" multiple filterable allow-create default-first-option placeholder="选择或输入环境名" style="width: 100%">
+            <el-option v-for="env in allEnvironments" :key="env.name" :label="env.name" :value="env.name" />
+          </el-select>
+          <div style="font-size: 12px; color: #909399; margin-top: 4px">未选择环境时场景集不生效</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -68,12 +82,13 @@ export default {
   setup() {
     const scenes = ref([])
     const allRules = ref([])
+    const allEnvironments = ref([])
     const loading = ref(false)
     const saving = ref(false)
     const dialogVisible = ref(false)
     const isEdit = ref(false)
     const editId = ref(null)
-    const form = reactive({ name: '', description: '', itemIds: [], active: false })
+    const form = reactive({ name: '', description: '', itemIds: [], environments: [], active: false })
 
     async function loadScenes() {
       loading.value = true
@@ -87,12 +102,18 @@ export default {
       if (res.success) allRules.value = res.data
     }
 
+    async function loadEnvironments() {
+      const res = await api.getEnvironments()
+      if (res.success) allEnvironments.value = res.data
+    }
+
     function showCreateDialog() {
       isEdit.value = false
       editId.value = null
       form.name = ''
       form.description = ''
       form.itemIds = []
+      form.environments = []
       form.active = false
       dialogVisible.value = true
     }
@@ -103,6 +124,7 @@ export default {
       form.name = scene.name || ''
       form.description = scene.description || ''
       form.itemIds = scene.itemIds ? [...scene.itemIds] : []
+      form.environments = scene.environments ? [...scene.environments] : []
       form.active = scene.active !== false
       dialogVisible.value = true
     }
@@ -110,7 +132,7 @@ export default {
     async function createScene() {
       if (!form.name) return
       saving.value = true
-      const res = await api.createScene({ name: form.name, description: form.description, active: false, itemIds: form.itemIds || [] })
+      const res = await api.createScene({ name: form.name, description: form.description, active: false, itemIds: form.itemIds || [], environments: form.environments || [] })
       saving.value = false
       if (res.success) {
         dialogVisible.value = false
@@ -124,6 +146,7 @@ export default {
         name: form.name,
         description: form.description,
         itemIds: form.itemIds || [],
+        environments: form.environments || [],
         active: form.active
       })
       saving.value = false
@@ -134,7 +157,7 @@ export default {
     }
 
     async function toggleScene(scene) {
-      await api.updateScene(scene.id, { active: scene.active, name: scene.name, description: scene.description, itemIds: scene.itemIds || [] })
+      await api.updateScene(scene.id, { active: scene.active, name: scene.name, description: scene.description, itemIds: scene.itemIds || [], environments: scene.environments || [] })
     }
 
     async function deleteSceneItem(id) {
@@ -144,8 +167,8 @@ export default {
 
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
 
-    onMounted(() => { loadScenes(); loadRules() })
-    return { scenes, allRules, loading, saving, dialogVisible, isEdit, form, showCreateDialog, showEditDialog, createScene, updateScene, toggleScene, deleteSceneItem, formatTime }
+    onMounted(() => { loadScenes(); loadRules(); loadEnvironments() })
+    return { scenes, allRules, allEnvironments, loading, saving, dialogVisible, isEdit, form, showCreateDialog, showEditDialog, createScene, updateScene, toggleScene, deleteSceneItem, formatTime }
   }
 }
 </script>

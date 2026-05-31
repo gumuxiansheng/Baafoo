@@ -138,7 +138,39 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         }
 
         if (path.startsWith(API_PREFIX + "environments/")) {
-            String id = extractId(path, API_PREFIX + "environments/", null);
+            String id;
+            boolean isRulesSubPath = path.endsWith("/rules");
+            if (isRulesSubPath) {
+                id = extractId(path, API_PREFIX + "environments/", "/rules");
+            } else {
+                id = extractId(path, API_PREFIX + "environments/", null);
+            }
+            log.debug("Environment route: path={} id={} isRulesSubPath={} method={}", path, id, isRulesSubPath, method);
+
+            // POST /environments/{id}/rules - batch associate rules to environment
+            if (isRulesSubPath && "POST".equals(method)) {
+                Map<String, Object> body = mapper.readValue(
+                        request.content().toString(StandardCharsets.UTF_8), Map.class);
+                @SuppressWarnings("unchecked")
+                List<String> ruleIds = (List<String>) body.get("ruleIds");
+                Environment env = storage.getEnvironment(id);
+                if (env == null) return ApiResponse.notFound("Environment not found");
+                storage.associateRulesToEnvironment(env.getName(), ruleIds != null ? ruleIds : new ArrayList<String>());
+                return ApiResponse.ok("Associated " + (ruleIds != null ? ruleIds.size() : 0) + " rules", null);
+            }
+
+            // DELETE /environments/{id}/rules - batch dissociate rules from environment
+            if (isRulesSubPath && "DELETE".equals(method)) {
+                Map<String, Object> body = mapper.readValue(
+                        request.content().toString(StandardCharsets.UTF_8), Map.class);
+                @SuppressWarnings("unchecked")
+                List<String> ruleIds = (List<String>) body.get("ruleIds");
+                Environment env = storage.getEnvironment(id);
+                if (env == null) return ApiResponse.notFound("Environment not found");
+                storage.dissociateRulesFromEnvironment(env.getName(), ruleIds != null ? ruleIds : new ArrayList<String>());
+                return ApiResponse.ok("Dissociated " + (ruleIds != null ? ruleIds.size() : 0) + " rules", null);
+            }
+
             if ("GET".equals(method)) {
                 Environment env = storage.getEnvironment(id);
                 return env != null ? ApiResponse.ok(env) : ApiResponse.notFound("Environment not found");

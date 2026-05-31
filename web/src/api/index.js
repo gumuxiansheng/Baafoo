@@ -34,6 +34,8 @@ export default {
   createEnvironment: (data) => http.post('/environments', data),
   updateEnvironment: (id, data) => http.put(`/environments/${id}`, data),
   deleteEnvironment: (id) => http.delete(`/environments/${id}`),
+  associateRulesToEnv: (id, ruleIds) => http.post(`/environments/${id}/rules`, { ruleIds }),
+  dissociateRulesFromEnv: (id, ruleIds) => http.delete(`/environments/${id}/rules`, { data: { ruleIds } }),
 
   // --- Scenes ---
   getScenes: () => http.get('/scenes'),

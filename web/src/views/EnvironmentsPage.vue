@@ -20,6 +20,11 @@
         <el-table-column label="Agents" width="80" align="center">
           <template #default="{ row }">{{ (row.agentIds || []).length }}</template>
         </el-table-column>
+        <el-table-column label="关联规则" width="100" align="center">
+          <template #default="{ row }">
+            <el-link type="primary" @click="showAssociateDialog(row)">{{ getRuleCountForEnv(row.name) }}</el-link>
+          </template>
+        </el-table-column>
         <el-table-column label="创建时间" width="180">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
         </el-table-column>
@@ -66,6 +71,23 @@
         <el-button type="primary" @click="createEnv">创建</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="associateVisible" :title="`关联规则 - ${currentEnv.name || ''}`" width="600px">
+      <el-form label-width="80px">
+        <el-form-item label="当前环境">
+          <el-tag>{{ currentEnv.name }}</el-tag>
+        </el-form-item>
+        <el-form-item label="关联规则">
+          <el-select v-model="selectedRuleIds" multiple filterable placeholder="选择要关联的规则" style="width: 100%">
+            <el-option v-for="r in allRules" :key="r.id" :label="r.name" :value="r.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="associateVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveAssociation" :loading="saving">保存关联</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -79,8 +101,13 @@ export default {
   setup() {
     const router = useRouter()
     const environments = ref([])
+    const allRules = ref([])
     const loading = ref(false)
+    const saving = ref(false)
     const dialogVisible = ref(false)
+    const associateVisible = ref(false)
+    const currentEnv = reactive({ id: '', name: '' })
+    const selectedRuleIds = ref([])
     const form = reactive({ name: '', mode: 'stub' })
 
     async function loadEnvs() {
@@ -88,6 +115,43 @@ export default {
       const res = await api.getEnvironments()
       if (res.success) environments.value = res.data
       loading.value = false
+    }
+
+    async function loadRules() {
+      const res = await api.getRules()
+      if (res.success) allRules.value = res.data
+    }
+
+    function getRuleCountForEnv(envName) {
+      return allRules.value.filter(r => r.environments && r.environments.includes(envName)).length
+    }
+
+    function showAssociateDialog(env) {
+      currentEnv.id = env.id
+      currentEnv.name = env.name
+      selectedRuleIds.value = allRules.value
+        .filter(r => r.environments && r.environments.includes(env.name))
+        .map(r => r.id)
+      associateVisible.value = true
+    }
+
+    async function saveAssociation() {
+      saving.value = true
+      const envName = currentEnv.name
+      const currentAssociated = allRules.value
+        .filter(r => r.environments && r.environments.includes(envName))
+        .map(r => r.id)
+      const toAdd = selectedRuleIds.value.filter(id => !currentAssociated.includes(id))
+      const toRemove = currentAssociated.filter(id => !selectedRuleIds.value.includes(id))
+      if (toAdd.length > 0) {
+        await api.associateRulesToEnv(currentEnv.id, toAdd)
+      }
+      if (toRemove.length > 0) {
+        await api.dissociateRulesFromEnv(currentEnv.id, toRemove)
+      }
+      saving.value = false
+      associateVisible.value = false
+      await loadRules()
     }
 
     function modeTagType(mode) {
@@ -130,8 +194,8 @@ export default {
 
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
 
-    onMounted(loadEnvs)
-    return { environments, loading, dialogVisible, form, showCreateDialog, createEnv, changeMode, viewDetail, deleteEnv, modeTagType, modeLabel, formatTime }
+    onMounted(() => { loadEnvs(); loadRules() })
+    return { environments, allRules, loading, saving, dialogVisible, associateVisible, currentEnv, selectedRuleIds, form, showCreateDialog, createEnv, changeMode, viewDetail, deleteEnv, modeTagType, modeLabel, formatTime, getRuleCountForEnv, showAssociateDialog, saveAssociation }
   }
 }
 </script>

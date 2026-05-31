@@ -41,6 +41,9 @@ public class Rule {
     /** Rule tags */
     private List<String> tags;
 
+    /** Environments where this rule is active (empty = not active anywhere, must explicitly associate) */
+    private List<String> environments;
+
     /** Rule version for undo support */
     private int version;
 
@@ -54,6 +57,7 @@ public class Rule {
         this.conditions = Collections.emptyList();
         this.responses = Collections.emptyList();
         this.tags = Collections.emptyList();
+        this.environments = Collections.emptyList();
         this.enabled = true;
         this.priority = 100;
         this.version = 1;
@@ -93,6 +97,9 @@ public class Rule {
 
     public List<String> getTags() { return tags; }
     public void setTags(List<String> tags) { this.tags = tags; }
+
+    public List<String> getEnvironments() { return environments; }
+    public void setEnvironments(List<String> environments) { this.environments = environments; }
 
     public int getVersion() { return version; }
     public void setVersion(int version) { this.version = version; }

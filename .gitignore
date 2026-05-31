@@ -48,3 +48,5 @@ dist/
 *.swp
 *.swo
 *~
+
+.test/

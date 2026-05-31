@@ -57,6 +57,12 @@
         <el-form-item label="标签">
           <el-input v-model="form.tagsStr" placeholder="逗号分隔" />
         </el-form-item>
+        <el-form-item label="生效环境">
+          <el-select v-model="form.environments" multiple filterable allow-create default-first-option placeholder="选择或输入环境名" style="width: 100%">
+            <el-option v-for="env in allEnvironments" :key="env.name" :label="env.name" :value="env.name" />
+          </el-select>
+          <div style="font-size: 12px; color: #909399; margin-top: 4px">未选择环境时规则不生效，需显式关联环境后才参与匹配</div>
+        </el-form-item>
 
         <!-- Match Conditions -->
         <el-divider content-position="left">匹配条件
@@ -139,6 +145,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useRulesStore } from '@/store'
+import api from '@/api'
 
 export default {
   name: 'RuleEditorPage',
@@ -149,11 +156,12 @@ export default {
     const rule = ref(null)
     const loading = ref(true)
     const saving = ref(false)
+    const allEnvironments = ref([])
 
     const form = reactive({
       name: '', protocol: 'http', host: '', port: null,
       serviceName: '', priority: 100, enabled: true,
-      tagsStr: '', conditions: [], responses: []
+      tagsStr: '', environments: [], conditions: [], responses: []
     })
 
     onMounted(async () => {
@@ -169,6 +177,7 @@ export default {
         form.priority = rule.value.priority || 100
         form.enabled = rule.value.enabled !== false
         form.tagsStr = (rule.value.tags || []).join(',')
+        form.environments = rule.value.environments || []
         form.conditions = JSON.parse(JSON.stringify(rule.value.conditions || []))
         form.responses = JSON.parse(JSON.stringify(rule.value.responses || []))
         if (form.responses.length === 0) {
@@ -205,6 +214,7 @@ export default {
         priority: form.priority,
         enabled: form.enabled,
         tags: form.tagsStr ? form.tagsStr.split(',').map(s => s.trim()).filter(Boolean) : [],
+        environments: form.environments || [],
         conditions: form.conditions,
         responses: form.responses.filter(r => r.name || r.body)
       }
@@ -214,7 +224,14 @@ export default {
       router.back()
     }
 
-    return { rule, loading, saving, form, addCondition, removeCondition, addResponse, removeResponse, saveRule }
+    async function loadEnvironments() {
+      const res = await api.getEnvironments()
+      if (res.success) allEnvironments.value = res.data
+    }
+
+    loadEnvironments()
+
+    return { rule, loading, saving, form, allEnvironments, addCondition, removeCondition, addResponse, removeResponse, saveRule }
   }
 }
 </script>

@@ -27,6 +27,9 @@ public class SceneSet {
     /** Tags */
     private List<String> tags;
 
+    /** Environments where this scene set is active (empty = not active anywhere) */
+    private List<String> environments;
+
     /** Created timestamp */
     private long createdAt;
 
@@ -36,6 +39,7 @@ public class SceneSet {
     public SceneSet() {
         this.itemIds = Collections.emptyList();
         this.tags = Collections.emptyList();
+        this.environments = Collections.emptyList();
         this.active = false;
     }
 
@@ -58,6 +62,9 @@ public class SceneSet {
 
     public List<String> getTags() { return tags; }
     public void setTags(List<String> tags) { this.tags = tags; }
+
+    public List<String> getEnvironments() { return environments; }
+    public void setEnvironments(List<String> environments) { this.environments = environments; }
 
     public long getCreatedAt() { return createdAt; }
     public void setCreatedAt(long createdAt) { this.createdAt = createdAt; }

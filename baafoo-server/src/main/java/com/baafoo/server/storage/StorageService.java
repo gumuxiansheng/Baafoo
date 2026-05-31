@@ -83,6 +83,12 @@ public interface StorageService {
 
     List<AgentRegistration> getAgentsForEnvironment(String envName);
 
+    // --- Environment-Rule Association ---
+
+    void associateRulesToEnvironment(String envName, List<String> ruleIds);
+
+    void dissociateRulesFromEnvironment(String envName, List<String> ruleIds);
+
     // --- DTO ---
 
     /**

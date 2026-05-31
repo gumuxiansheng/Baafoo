@@ -84,11 +84,19 @@ public class H2StorageService implements StorageService {
                 "  enabled BOOLEAN DEFAULT TRUE," +
                 "  priority INT DEFAULT 100," +
                 "  tags_json TEXT," +
+                "  environments_json TEXT," +
                 "  version INT DEFAULT 1," +
                 "  created_at BIGINT," +
                 "  updated_at BIGINT" +
                 ")"
             );
+
+            // Add environments_json column if not exists (migration for existing DBs)
+            try {
+                stmt.executeUpdate("ALTER TABLE rules ADD COLUMN environments_json TEXT");
+            } catch (SQLException e) {
+                // Column already exists, ignore
+            }
 
             // Rule version history (for undo)
             stmt.executeUpdate(
@@ -123,10 +131,18 @@ public class H2StorageService implements StorageService {
                 "  item_ids_json TEXT," +
                 "  active BOOLEAN DEFAULT FALSE," +
                 "  tags_json TEXT," +
+                "  environments_json TEXT," +
                 "  created_at BIGINT," +
                 "  updated_at BIGINT" +
                 ")"
             );
+
+            // Add environments_json column if not exists (migration for existing DBs)
+            try {
+                stmt.executeUpdate("ALTER TABLE scene_sets ADD COLUMN environments_json TEXT");
+            } catch (SQLException e) {
+                // Column already exists, ignore
+            }
 
             // Rule sets table
             stmt.executeUpdate(
@@ -235,8 +251,8 @@ public class H2StorageService implements StorageService {
         rule.setUpdatedAt(now);
 
         String sql = "INSERT INTO rules (id, name, protocol, service_name, host, port, " +
-                "conditions_json, responses_json, enabled, priority, tags_json, version, " +
-                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                "conditions_json, responses_json, enabled, priority, tags_json, environments_json, version, " +
+                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, rule.getId());
             setRuleParams(ps, rule, 2);
@@ -267,15 +283,16 @@ public class H2StorageService implements StorageService {
         existing.setEnabled(update.isEnabled());
         existing.setPriority(update.getPriority());
         if (update.getTags() != null) existing.setTags(update.getTags());
+        if (update.getEnvironments() != null) existing.setEnvironments(update.getEnvironments());
         existing.setVersion(existing.getVersion() + 1);
         existing.setUpdatedAt(System.currentTimeMillis());
 
         String sql = "UPDATE rules SET name=?, protocol=?, service_name=?, host=?, port=?, " +
                 "conditions_json=?, responses_json=?, enabled=?, priority=?, tags_json=?, " +
-                "version=?, created_at=?, updated_at=? WHERE id=?";
+                "environments_json=?, version=?, created_at=?, updated_at=? WHERE id=?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             setRuleParams(ps, existing, 1);
-            ps.setString(14, id);
+            ps.setString(15, id);
             ps.executeUpdate();
             return existing;
         } catch (SQLException e) {
@@ -319,10 +336,10 @@ public class H2StorageService implements StorageService {
                 // Replace current rule with the snapshot
                 String updateSql = "UPDATE rules SET name=?, protocol=?, service_name=?, " +
                         "host=?, port=?, conditions_json=?, responses_json=?, enabled=?, " +
-                        "priority=?, tags_json=?, version=?, created_at=?, updated_at=? WHERE id=?";
+                        "priority=?, tags_json=?, environments_json=?, version=?, created_at=?, updated_at=? WHERE id=?";
                 try (PreparedStatement ups = conn.prepareStatement(updateSql)) {
                     setRuleParams(ups, previous, 1);
-                    ups.setString(14, id);
+                    ups.setString(15, id);
                     ups.executeUpdate();
                 }
 
@@ -393,6 +410,10 @@ public class H2StorageService implements StorageService {
             if (tagsJson != null && !tagsJson.isEmpty()) {
                 r.setTags(mapper.readValue(tagsJson, new TypeReference<List<String>>() {}));
             }
+            String envJson = rs.getString("environments_json");
+            if (envJson != null && !envJson.isEmpty()) {
+                r.setEnvironments(mapper.readValue(envJson, new TypeReference<List<String>>() {}));
+            }
         } catch (Exception e) {
             log.warn("Failed to deserialize rule fields: {}", e.getMessage());
         }
@@ -420,12 +441,14 @@ public class H2StorageService implements StorageService {
         ps.setInt(offset + 8, r.getPriority());
         try {
             ps.setString(offset + 9, r.getTags() != null ? mapper.writeValueAsString(r.getTags()) : null);
+            ps.setString(offset + 10, r.getEnvironments() != null ? mapper.writeValueAsString(r.getEnvironments()) : null);
         } catch (Exception e) {
             ps.setString(offset + 9, null);
+            ps.setString(offset + 10, null);
         }
-        ps.setInt(offset + 10, r.getVersion());
-        ps.setLong(offset + 11, r.getCreatedAt());
-        ps.setLong(offset + 12, r.getUpdatedAt());
+        ps.setInt(offset + 11, r.getVersion());
+        ps.setLong(offset + 12, r.getCreatedAt());
+        ps.setLong(offset + 13, r.getUpdatedAt());
     }
 
     // ==================== Environment CRUD ====================
@@ -625,7 +648,7 @@ public class H2StorageService implements StorageService {
         scene.setUpdatedAt(now);
 
         String sql = "INSERT INTO scene_sets (id, name, description, item_ids_json, " +
-                "active, tags_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                "active, tags_json, environments_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, scene.getId());
             setSceneSetInsertParams(ps, scene);
@@ -645,14 +668,15 @@ public class H2StorageService implements StorageService {
         if (update.getName() != null) existing.setName(update.getName());
         if (update.getDescription() != null) existing.setDescription(update.getDescription());
         if (update.getItemIds() != null) existing.setItemIds(update.getItemIds());
+        if (update.getEnvironments() != null) existing.setEnvironments(update.getEnvironments());
         existing.setActive(update.isActive());
         existing.setUpdatedAt(System.currentTimeMillis());
 
         String sql = "UPDATE scene_sets SET name=?, description=?, item_ids_json=?, " +
-                "active=?, tags_json=?, updated_at=? WHERE id=?";
+                "active=?, tags_json=?, environments_json=?, updated_at=? WHERE id=?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             setSceneSetParams(ps, existing);
-            ps.setString(7, id);
+            ps.setString(8, id);
             ps.executeUpdate();
             return existing;
         } catch (SQLException e) {
@@ -690,6 +714,10 @@ public class H2StorageService implements StorageService {
             if (tagsJson != null && !tagsJson.isEmpty()) {
                 s.setTags(mapper.readValue(tagsJson, new TypeReference<List<String>>() {}));
             }
+            String envJson = rs.getString("environments_json");
+            if (envJson != null && !envJson.isEmpty()) {
+                s.setEnvironments(mapper.readValue(envJson, new TypeReference<List<String>>() {}));
+            }
         } catch (Exception e) {
             log.warn("Failed to deserialize scene set fields: {}", e.getMessage());
         }
@@ -703,8 +731,9 @@ public class H2StorageService implements StorageService {
             ps.setString(4, s.getItemIds() != null ? mapper.writeValueAsString(s.getItemIds()) : null);
             ps.setBoolean(5, s.isActive());
             ps.setString(6, s.getTags() != null ? mapper.writeValueAsString(s.getTags()) : null);
-            ps.setLong(7, s.getCreatedAt());
-            ps.setLong(8, s.getUpdatedAt());
+            ps.setString(7, s.getEnvironments() != null ? mapper.writeValueAsString(s.getEnvironments()) : null);
+            ps.setLong(8, s.getCreatedAt());
+            ps.setLong(9, s.getUpdatedAt());
         } catch (Exception e) {
             log.error("Failed to serialize scene set fields: {}", e.getMessage());
         }
@@ -717,7 +746,8 @@ public class H2StorageService implements StorageService {
             ps.setString(3, s.getItemIds() != null ? mapper.writeValueAsString(s.getItemIds()) : null);
             ps.setBoolean(4, s.isActive());
             ps.setString(5, s.getTags() != null ? mapper.writeValueAsString(s.getTags()) : null);
-            ps.setLong(6, s.getUpdatedAt());
+            ps.setString(6, s.getEnvironments() != null ? mapper.writeValueAsString(s.getEnvironments()) : null);
+            ps.setLong(7, s.getUpdatedAt());
         } catch (Exception e) {
             log.error("Failed to serialize scene set fields: {}", e.getMessage());
         }
@@ -1048,5 +1078,34 @@ public class H2StorageService implements StorageService {
             log.warn("Failed to deserialize agent protocols: {}", e.getMessage());
         }
         return reg;
+    }
+
+    // ==================== Environment-Rule Association ====================
+
+    @Override
+    public void associateRulesToEnvironment(String envName, List<String> ruleIds) {
+        for (String ruleId : ruleIds) {
+            Rule rule = getRule(ruleId);
+            if (rule == null) continue;
+            List<String> envs = new ArrayList<String>(rule.getEnvironments() != null ? rule.getEnvironments() : Collections.<String>emptyList());
+            if (!envs.contains(envName)) {
+                envs.add(envName);
+                rule.setEnvironments(envs);
+                updateRule(ruleId, rule);
+            }
+        }
+    }
+
+    @Override
+    public void dissociateRulesFromEnvironment(String envName, List<String> ruleIds) {
+        for (String ruleId : ruleIds) {
+            Rule rule = getRule(ruleId);
+            if (rule == null) continue;
+            List<String> envs = new ArrayList<String>(rule.getEnvironments() != null ? rule.getEnvironments() : Collections.<String>emptyList());
+            if (envs.remove(envName)) {
+                rule.setEnvironments(envs);
+                updateRule(ruleId, rule);
+            }
+        }
     }
 }

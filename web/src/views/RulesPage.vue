@@ -34,7 +34,7 @@
       <el-table :data="filteredRules" stripe v-loading="loading" size="small">
         <el-table-column prop="name" label="规则名称" min-width="180">
           <template #default="{ row }">
-            <el-link type="primary" @click="editRule(row.id)">{{ row.name }}</el-link>
+            <el-link type="primary" @click="editRule(row)">{{ row.name }}</el-link>
           </template>
         </el-table-column>
         <el-table-column prop="id" label="ID" width="160" show-overflow-tooltip />
@@ -55,10 +55,18 @@
             <el-switch v-model="row.enabled" @change="toggleRule(row)" size="small" />
           </template>
         </el-table-column>
+        <el-table-column label="生效环境" min-width="120">
+          <template #default="{ row }">
+            <template v-if="row.environments && row.environments.length > 0">
+              <el-tag v-for="env in row.environments" :key="env" size="small" type="info" style="margin-right: 4px">{{ env }}</el-tag>
+            </template>
+            <el-tag v-else size="small" type="warning">未关联</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="version" label="版本" width="60" align="center" />
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" text @click="editRule(row.id)">编辑</el-button>
+            <el-button size="small" text @click="editRule(row)">编辑</el-button>
             <el-button size="small" text @click="undoRuleItem(row)" :disabled="row.version <= 1">撤销</el-button>
             <el-popconfirm title="确定删除此规则？" @confirm="deleteRuleItem(row.id)">
               <template #reference>
@@ -112,6 +120,12 @@
         <el-form-item label="延迟(ms)">
           <el-input-number v-model="form.delayMs" :min="0" :max="60000" />
         </el-form-item>
+        <el-form-item label="生效环境">
+          <el-select v-model="form.environments" multiple filterable allow-create default-first-option placeholder="选择或输入环境名" style="width: 100%">
+            <el-option v-for="env in allEnvironments" :key="env.name" :label="env.name" :value="env.name" />
+          </el-select>
+          <div style="font-size: 12px; color: #909399; margin-top: 4px">未选择环境时规则不生效</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -125,6 +139,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRulesStore } from '@/store'
 import { useRouter } from 'vue-router'
+import api from '@/api'
 
 export default {
   name: 'RulesPage',
@@ -134,12 +149,13 @@ export default {
     const loading = ref(false)
     const dialogVisible = ref(false)
     const editingRuleId = ref(null)
+    const allEnvironments = ref([])
     const filter = reactive({ protocol: '', keyword: '' })
 
     const form = reactive({
       name: '', protocol: 'http', host: '', port: null,
       serviceName: '', priority: 100, statusCode: 200,
-      responseBody: '', delayMs: 0
+      responseBody: '', delayMs: 0, environments: []
     })
 
     const filteredRules = computed(() => {
@@ -158,6 +174,11 @@ export default {
       loading.value = false
     }
 
+    async function loadEnvironments() {
+      const res = await api.getEnvironments()
+      if (res.success) allEnvironments.value = res.data
+    }
+
     function resetFilter() {
       filter.protocol = ''
       filter.keyword = ''
@@ -168,13 +189,26 @@ export default {
       Object.assign(form, {
         name: '', protocol: 'http', host: '', port: null,
         serviceName: '', priority: 100, statusCode: 200,
-        responseBody: '', delayMs: 0
+        responseBody: '', delayMs: 0, environments: []
       })
       dialogVisible.value = true
     }
 
-    function editRule(id) {
-      router.push(`/rules/${id}`)
+    function editRule(rule) {
+      editingRuleId.value = rule.id
+      Object.assign(form, {
+        name: rule.name,
+        protocol: rule.protocol,
+        host: rule.host || '',
+        port: rule.port,
+        serviceName: rule.serviceName || '',
+        priority: rule.priority,
+        statusCode: rule.responses && rule.responses[0] ? rule.responses[0].statusCode : 200,
+        responseBody: rule.responses && rule.responses[0] ? rule.responses[0].body || '' : '',
+        delayMs: rule.responses && rule.responses[0] ? rule.responses[0].delayMs || 0 : 0,
+        environments: rule.environments || []
+      })
+      dialogVisible.value = true
     }
 
     async function saveRule() {
@@ -186,6 +220,7 @@ export default {
         serviceName: form.serviceName || null,
         priority: form.priority,
         enabled: true,
+        environments: form.environments || [],
         conditions: [],
         responses: [{
           name: '默认响应',
@@ -216,10 +251,10 @@ export default {
       await rulesStore.undoRule(rule.id)
     }
 
-    onMounted(loadRules)
+    onMounted(() => { loadRules(); loadEnvironments() })
 
     return {
-      loading, dialogVisible, editingRuleId, filter, form,
+      loading, dialogVisible, editingRuleId, allEnvironments, filter, form,
       filteredRules, showCreateDialog, editRule, saveRule,
       toggleRule, deleteRuleItem, undoRuleItem, loadRules, resetFilter
     }
