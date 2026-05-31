@@ -278,8 +278,10 @@ public class H2StorageService implements StorageService {
         if (update.getServiceName() != null) existing.setServiceName(update.getServiceName());
         if (update.getHost() != null) existing.setHost(update.getHost());
         if (update.getPort() != null) existing.setPort(update.getPort());
-        if (update.getConditions() != null) existing.setConditions(update.getConditions());
-        if (update.getResponses() != null) existing.setResponses(update.getResponses());
+        if (update.getConditions() != null && !update.getConditions().isEmpty())
+            existing.setConditions(update.getConditions());
+        if (update.getResponses() != null && !update.getResponses().isEmpty())
+            existing.setResponses(update.getResponses());
         existing.setEnabled(update.isEnabled());
         existing.setPriority(update.getPriority());
         if (update.getTags() != null) existing.setTags(update.getTags());
