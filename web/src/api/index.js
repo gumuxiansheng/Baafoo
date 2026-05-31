@@ -23,6 +23,7 @@ export default {
   updateRule: (id, data) => http.put(`/rules/${id}`, data),
   deleteRule: (id) => http.delete(`/rules/${id}`),
   undoRule: (id) => http.post(`/rules/${id}/undo`),
+  getInheritedEnvironments: (id) => http.get(`/rules/${id}/inherited-environments`),
 
   // --- Rule Sets ---
   getRuleSets: () => http.get('/rulesets'),

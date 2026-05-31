@@ -58,6 +58,24 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         this.mapper = new ObjectMapper();
     }
 
+    private List<String> getInheritedEnvironments(String ruleId) {
+        List<String> inherited = new ArrayList<String>();
+        for (SceneSet scene : storage.listScenes()) {
+            if (!scene.isActive()) continue;
+            List<String> items = scene.getItemIds();
+            if (items == null || !items.contains(ruleId)) continue;
+            List<String> envs = scene.getEnvironments();
+            if (envs != null) {
+                for (String env : envs) {
+                    if (!inherited.contains(env)) {
+                        inherited.add(env);
+                    }
+                }
+            }
+        }
+        return inherited;
+    }
+
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest request) {
         String uri = request.uri();
@@ -102,6 +120,12 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
                     : ApiResponse.notFound("Rule not found or no undo history");
         }
 
+        if (path.startsWith(API_PREFIX + "rules/") && path.contains("/inherited-environments")) {
+            String id = extractId(path, API_PREFIX + "rules/", "/inherited-environments");
+            List<String> inherited = getInheritedEnvironments(id);
+            return ApiResponse.ok(inherited);
+        }
+
         if (path.startsWith(API_PREFIX + "rules/")) {
             String id = extractId(path, API_PREFIX + "rules/", null);
             if ("GET".equals(method)) {
@@ -110,6 +134,17 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             }
             if ("PUT".equals(method)) {
                 Rule update = mapper.readValue(request.content().toString(StandardCharsets.UTF_8), Rule.class);
+                Rule existing = storage.getRule(id);
+                if (existing == null) return ApiResponse.notFound("Rule not found");
+                List<String> inheritedEnvs = getInheritedEnvironments(id);
+                List<String> requestedEnvs = update.getEnvironments() != null ? update.getEnvironments() : new ArrayList<String>();
+                List<String> mergedEnvs = new ArrayList<String>(requestedEnvs);
+                for (String inherited : inheritedEnvs) {
+                    if (!mergedEnvs.contains(inherited)) {
+                        mergedEnvs.add(inherited);
+                    }
+                }
+                update.setEnvironments(mergedEnvs);
                 Rule updated = storage.updateRule(id, update);
                 return updated != null ? ApiResponse.ok(updated) : ApiResponse.notFound("Rule not found");
             }

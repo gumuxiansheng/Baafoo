@@ -58,10 +58,18 @@
           <el-input v-model="form.tagsStr" placeholder="逗号分隔" />
         </el-form-item>
         <el-form-item label="生效环境">
+          <div v-if="inheritedEnvs.length > 0" style="margin-bottom: 6px">
+            <el-tag v-for="env in inheritedEnvs" :key="env" size="small" type="warning" closable disable-transitions style="margin-right: 4px; margin-bottom: 2px">
+              {{ env }} (场景集继承)
+            </el-tag>
+          </div>
           <el-select v-model="form.environments" multiple filterable allow-create default-first-option placeholder="选择或输入环境名" style="width: 100%">
             <el-option v-for="env in allEnvironments" :key="env.name" :label="env.name" :value="env.name" />
           </el-select>
-          <div style="font-size: 12px; color: #909399; margin-top: 4px">未选择环境时规则不生效，需显式关联环境后才参与匹配</div>
+          <div style="font-size: 12px; color: #909399; margin-top: 4px">
+            未选择环境时规则不生效，需显式关联环境后才参与匹配
+            <span v-if="inheritedEnvs.length > 0" style="color: #E6A23C">；橙色标签为场景集继承的环境，不可删除</span>
+          </div>
         </el-form-item>
 
         <!-- Match Conditions -->
@@ -246,6 +254,11 @@ export default {
     const loading = ref(true)
     const saving = ref(false)
     const allEnvironments = ref([])
+    const inheritedEnvs = ref([])
+
+    const envTagType = (val) => {
+      return inheritedEnvs.value.includes(val) ? 'warning' : ''
+    }
 
     const templateVarHint = '支持模板变量: <code>{{request.body.xxx}}</code> <code>{{request.header.xxx}}</code> <code>{{request.query.xxx}}</code>'
 
@@ -275,6 +288,11 @@ export default {
         form.responses = JSON.parse(JSON.stringify(rule.value.responses || []))
         if (form.responses.length === 0) {
           form.responses.push({ name: '默认', statusCode: 200, delayMs: 0, body: '', headers: {}, condition: null })
+        }
+        const res = await api.getInheritedEnvironments(id)
+        if (res.success && res.data) {
+          inheritedEnvs.value = res.data
+          form.environments = (form.environments || []).filter(e => !inheritedEnvs.value.includes(e))
         }
       }
       loading.value = false
@@ -396,7 +414,7 @@ export default {
     loadEnvironments()
 
     return {
-      rule, loading, saving, form, allEnvironments, templateVarHint, bodyPlaceholder,
+      rule, loading, saving, form, allEnvironments, inheritedEnvs, envTagType, templateVarHint, bodyPlaceholder,
       addCondition, removeCondition,
       addResponse, removeResponse, addResponseCondition,
       getResponseHeaders, addResponseHeader, removeResponseHeader,

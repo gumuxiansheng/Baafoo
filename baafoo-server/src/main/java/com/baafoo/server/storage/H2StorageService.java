@@ -665,6 +665,13 @@ public class H2StorageService implements StorageService {
         SceneSet existing = getScene(id);
         if (existing == null) return null;
 
+        List<String> oldEnvironments = existing.getEnvironments() != null
+                ? new ArrayList<String>(existing.getEnvironments())
+                : new ArrayList<String>();
+        List<String> oldItemIds = existing.getItemIds() != null
+                ? new ArrayList<String>(existing.getItemIds())
+                : new ArrayList<String>();
+
         if (update.getName() != null) existing.setName(update.getName());
         if (update.getDescription() != null) existing.setDescription(update.getDescription());
         if (update.getItemIds() != null) existing.setItemIds(update.getItemIds());
@@ -678,11 +685,60 @@ public class H2StorageService implements StorageService {
             setSceneSetParams(ps, existing);
             ps.setString(8, id);
             ps.executeUpdate();
-            return existing;
         } catch (SQLException e) {
             log.error("Failed to update scene {}: {}", id, e.getMessage());
             return null;
         }
+
+        syncSceneEnvironmentsToRules(existing, oldEnvironments, oldItemIds);
+
+        return existing;
+    }
+
+    private void syncSceneEnvironmentsToRules(SceneSet scene, List<String> oldEnvironments, List<String> oldItemIds) {
+        List<String> newEnvironments = scene.getEnvironments() != null ? scene.getEnvironments() : Collections.<String>emptyList();
+        List<String> currentItemIds = scene.getItemIds() != null ? scene.getItemIds() : Collections.<String>emptyList();
+
+        Set<String> allRuleIds = new HashSet<String>();
+        allRuleIds.addAll(oldItemIds);
+        allRuleIds.addAll(currentItemIds);
+
+        for (String ruleId : allRuleIds) {
+            Rule rule = getRule(ruleId);
+            if (rule == null) continue;
+
+            List<String> ruleEnvs = new ArrayList<String>(rule.getEnvironments() != null ? rule.getEnvironments() : Collections.<String>emptyList());
+
+            for (String oldEnv : oldEnvironments) {
+                if (!newEnvironments.contains(oldEnv)) {
+                    boolean stillInherited = isEnvironmentInheritedFromOtherScene(ruleId, oldEnv, scene.getId());
+                    if (!stillInherited) {
+                        ruleEnvs.remove(oldEnv);
+                    }
+                }
+            }
+
+            for (String newEnv : newEnvironments) {
+                if (!ruleEnvs.contains(newEnv)) {
+                    ruleEnvs.add(newEnv);
+                }
+            }
+
+            rule.setEnvironments(ruleEnvs);
+            updateRule(ruleId, rule);
+        }
+    }
+
+    private boolean isEnvironmentInheritedFromOtherScene(String ruleId, String envName, String excludeSceneId) {
+        for (SceneSet otherScene : listScenes()) {
+            if (otherScene.getId().equals(excludeSceneId)) continue;
+            if (!otherScene.isActive()) continue;
+            List<String> envs = otherScene.getEnvironments();
+            if (envs == null || !envs.contains(envName)) continue;
+            List<String> items = otherScene.getItemIds();
+            if (items != null && items.contains(ruleId)) return true;
+        }
+        return false;
     }
 
     @Override
