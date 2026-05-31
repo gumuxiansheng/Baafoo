@@ -62,7 +62,7 @@ database:
 # Authentication configuration (RBAC)
 auth:
   # Whether to enable authentication. When disabled, all requests get admin role.
-  enabled: true
+  enabled: false
   # Whether to auto-grant admin role for local requests (127.0.0.1 / ::1)
   localBypass: true
   # JWT signing secret (at least 32 characters). If not set, auto-generated key is used.

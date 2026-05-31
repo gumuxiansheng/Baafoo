@@ -271,6 +271,11 @@ public class AuthService {
             this.message = message;
             this.username = username;
         }
+
+        public String getRole() { return role; }
+        public String getUsername() { return username; }
+        public String getMessage() { return message; }
+        public boolean isSuccess() { return success; }
     }
 
     public static class LoginResult {
@@ -285,6 +290,11 @@ public class AuthService {
             this.role = role;
             this.message = message;
         }
+
+        public String getToken() { return token; }
+        public String getRole() { return role; }
+        public String getMessage() { return message; }
+        public boolean isSuccess() { return success; }
     }
 
     public static class PasswordValidation {
@@ -295,5 +305,8 @@ public class AuthService {
             this.valid = valid;
             this.message = message;
         }
+
+        public String getMessage() { return message; }
+        public boolean isValid() { return valid; }
     }
 }

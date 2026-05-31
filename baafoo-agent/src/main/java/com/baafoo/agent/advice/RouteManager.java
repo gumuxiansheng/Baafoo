@@ -233,11 +233,13 @@ public final class RouteManager {
     }
 
     private static void syncModeToBootstrapCL(int modeValue) {
-        java.lang.reflect.Field field = BaafooAgent.getBootstrapCurrentModeField();
-        if (field == null) return;
         try {
+            Class<?> bootGRS = Class.forName("com.baafoo.agent.GlobalRouteState");
+            java.lang.reflect.Field field = bootGRS.getField("CURRENT_MODE");
             field.setInt(null, modeValue);
             log.debug("Synced mode {} to Bootstrap CL GlobalRouteState", modeValue);
+        } catch (ClassNotFoundException e) {
+            log.debug("Bootstrap GlobalRouteState not found, skipping mode sync");
         } catch (Exception e) {
             log.error("Failed to sync mode to Bootstrap CL: {}", e.getMessage());
         }

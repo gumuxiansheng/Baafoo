@@ -1,0 +1,101 @@
+{
+  "timestamp": "2026-05-31T22:23:07.718703",
+  "summary": {
+    "total": 9,
+    "passed": 0,
+    "failed": 9,
+    "pass_rate": "0.00%"
+  },
+  "details": [
+    {
+      "name": "获取系统状态",
+      "method": "GET",
+      "url": "http://localhost:8080/__baafoo__/api/status",
+      "expected_status": 200,
+      "actual_status": 0,
+      "response": "None",
+      "timestamp": "2026-05-31T22:22:35.070415",
+      "error": "HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /__baafoo__/api/status (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [WinError 10061] 由于目标计算机积极拒绝，无法连接。\"))"
+    },
+    {
+      "name": "列出所有规则",
+      "method": "GET",
+      "url": "http://localhost:8080/__baafoo__/api/rules",
+      "expected_status": 200,
+      "actual_status": 0,
+      "response": "None",
+      "timestamp": "2026-05-31T22:22:39.139635",
+      "error": "HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /__baafoo__/api/rules (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [WinError 10061] 由于目标计算机积极拒绝，无法连接。\"))"
+    },
+    {
+      "name": "列出规则（带分页参数）",
+      "method": "GET",
+      "url": "http://localhost:8080/__baafoo__/api/rules?page=1&size=10",
+      "expected_status": 200,
+      "actual_status": 0,
+      "response": "None",
+      "timestamp": "2026-05-31T22:22:43.233913",
+      "error": "HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /__baafoo__/api/rules?page=1&size=10 (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [WinError 10061] 由于目标计算机积极拒绝，无法连接。\"))"
+    },
+    {
+      "name": "创建规则（正常场景）",
+      "method": "POST",
+      "url": "http://localhost:8080/__baafoo__/api/rules",
+      "expected_status": 200,
+      "actual_status": 0,
+      "response": "None",
+      "timestamp": "2026-05-31T22:22:47.308839",
+      "error": "HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /__baafoo__/api/rules (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [WinError 10061] 由于目标计算机积极拒绝，无法连接。\"))"
+    },
+    {
+      "name": "列出所有环境",
+      "method": "GET",
+      "url": "http://localhost:8080/__baafoo__/api/environments",
+      "expected_status": 200,
+      "actual_status": 0,
+      "response": "None",
+      "timestamp": "2026-05-31T22:22:51.367960",
+      "error": "HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /__baafoo__/api/environments (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [WinError 10061] 由于目标计算机积极拒绝，无法连接。\"))"
+    },
+    {
+      "name": "创建环境",
+      "method": "POST",
+      "url": "http://localhost:8080/__baafoo__/api/environments",
+      "expected_status": 200,
+      "actual_status": 0,
+      "response": "None",
+      "timestamp": "2026-05-31T22:22:55.459470",
+      "error": "HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /__baafoo__/api/environments (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [WinError 10061] 由于目标计算机积极拒绝，无法连接。\"))"
+    },
+    {
+      "name": "列出所有场景集",
+      "method": "GET",
+      "url": "http://localhost:8080/__baafoo__/api/scenes",
+      "expected_status": 200,
+      "actual_status": 0,
+      "response": "None",
+      "timestamp": "2026-05-31T22:22:59.555636",
+      "error": "HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /__baafoo__/api/scenes (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [WinError 10061] 由于目标计算机积极拒绝，无法连接。\"))"
+    },
+    {
+      "name": "Agent 注册",
+      "method": "POST",
+      "url": "http://localhost:8080/__baafoo__/api/agent/register",
+      "expected_status": 200,
+      "actual_status": 0,
+      "response": "None",
+      "timestamp": "2026-05-31T22:23:03.635413",
+      "error": "HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /__baafoo__/api/agent/register (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [WinError 10061] 由于目标计算机积极拒绝，无法连接。\"))"
+    },
+    {
+      "name": "Agent 心跳",
+      "method": "POST",
+      "url": "http://localhost:8080/__baafoo__/api/agent/heartbeat",
+      "expected_status": 200,
+      "actual_status": 0,
+      "response": "None",
+      "timestamp": "2026-05-31T22:23:07.717708",
+      "error": "HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /__baafoo__/api/agent/heartbeat (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [WinError 10061] 由于目标计算机积极拒绝，无法连接。\"))"
+    }
+  ]
+}

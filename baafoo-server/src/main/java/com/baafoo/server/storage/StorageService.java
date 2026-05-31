@@ -120,5 +120,8 @@ public interface StorageService {
         public List<String> protocols;
         public long registeredAt;
         public long lastHeartbeat;
+
+        public String getAgentId() { return agentId; }
+        public long getLastHeartbeat() { return lastHeartbeat; }
     }
 }

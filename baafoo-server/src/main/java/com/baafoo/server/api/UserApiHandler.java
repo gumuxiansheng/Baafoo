@@ -1,0 +1,217 @@
+package com.baafoo.server.api;
+
+import com.baafoo.core.api.ApiResponse;
+import com.baafoo.core.model.User;
+import com.baafoo.server.auth.AuthService;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+class UserApiHandler implements ResourceHandler {
+    @Override
+    public Object handle(String method, String path, String body, ApiContext ctx) throws Exception {
+        String API_PREFIX = "/__baafoo__/api/";
+
+        if (path.equals(API_PREFIX + "users") && "GET".equals(method)) {
+            ctx.requirePermission("user", "read");
+            List<User> users = ctx.storage.listUsers();
+            List<Map<String, Object>> safeUsers = new ArrayList<Map<String, Object>>();
+            for (User u : users) {
+                safeUsers.add(toSafeMap(u));
+            }
+            return ApiResponse.ok(safeUsers);
+        }
+
+        if (path.equals(API_PREFIX + "users") && "POST".equals(method)) {
+            ctx.requirePermission("user", "create");
+            Map<String, Object> reqBody = ctx.mapper.readValue(body, Map.class);
+            String username = (String) reqBody.get("username");
+            String password = (String) reqBody.get("password");
+            String displayName = (String) reqBody.get("displayName");
+            String email = (String) reqBody.get("email");
+            String role = (String) reqBody.get("role");
+            if (username == null || username.isEmpty()) {
+                return ApiResponse.fail(400, "Username is required");
+            }
+            AuthService.PasswordValidation pv = AuthService.validatePassword(password);
+            if (!pv.isValid()) {
+                return ApiResponse.fail(400, pv.getMessage());
+            }
+            if (role == null || !ApiUtils.isValidRole(role)) {
+                return ApiResponse.fail(400, "Invalid role. Must be one of: admin, developer, tester, guest");
+            }
+            if (ctx.storage.getUserByUsername(username) != null) {
+                return ApiResponse.fail(409, "User already exists: " + username);
+            }
+            User user = new User();
+            user.setUsername(username);
+            user.setPasswordHash(ctx.authService.hashPassword(password));
+            user.setDisplayName(displayName != null ? displayName : username);
+            user.setEmail(email);
+            user.setRole(role);
+            User created = ctx.storage.createUser(user);
+            return ApiResponse.created(toSafeMap(created));
+        }
+
+        if (path.equals(API_PREFIX + "users/import") && "POST".equals(method)) {
+            ctx.requirePermission("user", "create");
+            return handleCsvImport(body, ctx);
+        }
+
+        if (path.startsWith(API_PREFIX + "users/") && path.endsWith("/role") && "PUT".equals(method)) {
+            ctx.requirePermission("user", "update");
+            String username = ApiUtils.extractId(path, API_PREFIX + "users/", "/role");
+            Map<String, Object> reqBody = ctx.mapper.readValue(body, Map.class);
+            String newRole = (String) reqBody.get("role");
+            if (newRole == null || !ApiUtils.isValidRole(newRole)) {
+                return ApiResponse.fail(400, "Invalid role. Must be one of: admin, developer, tester, guest");
+            }
+            boolean updated = ctx.storage.updateUserRole(username, newRole);
+            return updated ? ApiResponse.ok("Role updated", null) : ApiResponse.notFound("User not found");
+        }
+
+        if (path.startsWith(API_PREFIX + "users/") && path.endsWith("/api-key") && "POST".equals(method)) {
+            ctx.requirePermission("user", "update");
+            String username = ApiUtils.extractId(path, API_PREFIX + "users/", "/api-key");
+            String newApiKey = ctx.authService.generateApiKey();
+            boolean updated = ctx.storage.updateUserApiKey(username, newApiKey);
+            if (!updated) return ApiResponse.notFound("User not found");
+            Map<String, Object> result = new HashMap<String, Object>();
+            result.put("apiKey", newApiKey);
+            return ApiResponse.ok(result);
+        }
+
+        if (path.startsWith(API_PREFIX + "users/") && path.endsWith("/api-key") && "DELETE".equals(method)) {
+            ctx.requirePermission("user", "update");
+            String username = ApiUtils.extractId(path, API_PREFIX + "users/", "/api-key");
+            boolean updated = ctx.storage.updateUserApiKey(username, null);
+            return updated ? ApiResponse.ok("API key revoked", null) : ApiResponse.notFound("User not found");
+        }
+
+        if (path.startsWith(API_PREFIX + "users/") && "DELETE".equals(method)) {
+            ctx.requirePermission("user", "delete");
+            String username = ApiUtils.extractId(path, API_PREFIX + "users/", null);
+            if (username.equals(ctx.auth.getUsername())) {
+                return ApiResponse.fail(400, "Cannot delete yourself");
+            }
+            boolean deleted = ctx.storage.deleteUser(username);
+            return deleted ? ApiResponse.ok("Deleted", null) : ApiResponse.notFound("User not found");
+        }
+
+        return null;
+    }
+
+    private Map<String, Object> toSafeMap(User u) {
+        Map<String, Object> safe = new HashMap<String, Object>();
+        safe.put("id", u.getId());
+        safe.put("username", u.getUsername());
+        safe.put("displayName", u.getDisplayName());
+        safe.put("email", u.getEmail());
+        safe.put("role", u.getRole());
+        safe.put("apiKey", u.getApiKey() != null);
+        safe.put("createdAt", u.getCreatedAt());
+        safe.put("updatedAt", u.getUpdatedAt());
+        safe.put("lastLoginAt", u.getLastLoginAt());
+        return safe;
+    }
+
+    private Object handleCsvImport(String csv, ApiContext ctx) {
+        String[] lines = csv.split("\r?\n");
+        if (lines.length < 2) {
+            return ApiResponse.fail(400, "CSV文件至少需要包含标题行和一行数据");
+        }
+        String[] headers = lines[0].split(",");
+        for (int i = 0; i < headers.length; i++) {
+            headers[i] = headers[i].trim().replace("\"", "");
+        }
+        int usernameIdx = -1, passwordIdx = -1, displayNameIdx = -1, emailIdx = -1, roleIdx = -1;
+        for (int i = 0; i < headers.length; i++) {
+            String h = headers[i];
+            if ("用户名".equals(h) || "username".equalsIgnoreCase(h)) usernameIdx = i;
+            else if ("密码".equals(h) || "password".equalsIgnoreCase(h)) passwordIdx = i;
+            else if ("显示名称".equals(h) || "displayName".equalsIgnoreCase(h) || "display_name".equalsIgnoreCase(h)) displayNameIdx = i;
+            else if ("邮箱".equals(h) || "email".equalsIgnoreCase(h)) emailIdx = i;
+            else if ("角色代码".equals(h) || "role".equalsIgnoreCase(h) || "roleCode".equalsIgnoreCase(h)) roleIdx = i;
+        }
+        if (usernameIdx < 0 || passwordIdx < 0) {
+            return ApiResponse.fail(400, "CSV必须包含\"用户名\"和\"密码\"列");
+        }
+        int created = 0, skipped = 0, failed = 0;
+        List<String> errors = new ArrayList<String>();
+        for (int i = 1; i < lines.length; i++) {
+            String line = lines[i].trim();
+            if (line.isEmpty()) continue;
+            String[] cols = parseCsvLine(line);
+            String username = usernameIdx < cols.length ? cols[usernameIdx].trim() : "";
+            String password = passwordIdx < cols.length ? cols[passwordIdx].trim() : "";
+            String displayName = displayNameIdx >= 0 && displayNameIdx < cols.length ? cols[displayNameIdx].trim() : "";
+            String email = emailIdx >= 0 && emailIdx < cols.length ? cols[emailIdx].trim() : "";
+            String role = roleIdx >= 0 && roleIdx < cols.length ? cols[roleIdx].trim() : "guest";
+            if (username.isEmpty() || password.isEmpty()) {
+                failed++;
+                errors.add("第" + (i + 1) + "行: 用户名或密码为空");
+                continue;
+            }
+            if (ctx.storage.getUserByUsername(username) != null) {
+                skipped++;
+                continue;
+            }
+            AuthService.PasswordValidation pv = AuthService.validatePassword(password);
+            if (!pv.isValid()) {
+                failed++;
+                errors.add("第" + (i + 1) + "行(" + username + "): " + pv.getMessage());
+                continue;
+            }
+            if (!ApiUtils.isValidRole(role)) {
+                failed++;
+                errors.add("第" + (i + 1) + "行(" + username + "): 无效角色代码 '" + role + "'");
+                continue;
+            }
+            User user = new User();
+            user.setUsername(username);
+            user.setPasswordHash(ctx.authService.hashPassword(password));
+            user.setDisplayName(displayName.isEmpty() ? username : displayName);
+            user.setEmail(email.isEmpty() ? null : email);
+            user.setRole(role);
+            User result = ctx.storage.createUser(user);
+            if (result != null) {
+                created++;
+            } else {
+                failed++;
+                errors.add("第" + (i + 1) + "行(" + username + "): 创建失败");
+            }
+        }
+        Map<String, Object> summary = new HashMap<String, Object>();
+        summary.put("created", created);
+        summary.put("skipped", skipped);
+        summary.put("failed", failed);
+        summary.put("errors", errors);
+        return ApiResponse.ok(summary);
+    }
+
+    private String[] parseCsvLine(String line) {
+        List<String> result = new ArrayList<String>();
+        StringBuilder sb = new StringBuilder();
+        boolean inQuotes = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '"') {
+                if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                    sb.append('"');
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (c == ',' && !inQuotes) {
+                result.add(sb.toString());
+                sb = new StringBuilder();
+            } else {
+                sb.append(c);
+            }
+        }
+        result.add(sb.toString());
+        return result.toArray(new String[0]);
+    }
+}
