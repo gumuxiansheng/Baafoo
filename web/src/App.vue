@@ -4,7 +4,7 @@
       <!-- Header -->
       <el-header height="56px" class="baafoo-header">
         <div class="header-left">
-          <span class="logo">⚡ Baafoo</span>
+          <span class="logo">🫧 Baafoo</span>
           <el-tag size="small" type="info" effect="plain">v1.0</el-tag>
         </div>
         <div class="header-right">

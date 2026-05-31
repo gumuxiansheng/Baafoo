@@ -1,7 +1,8 @@
 # Baafoo Web 控制台 — 前端界面框架设计
 
 > **文档状态**：v1.5  
-> **关联文档**：[概念设计说明书 v0.7](../.concepts/baafoo-concept-design.md) | [产品需求文档 v1.5](../.prd/baafoo-prd.md)  
+> **对齐状态**：⚠️ PRD 已迭代至 v2.2，本文档尚未同步 RBAC 用户管理界面（R-W7）等 v2.2 变更  
+> **关联文档**：[概念设计说明书 v0.8](../1_concepts/baafoo-concept-design.md) | [产品需求文档 v2.2](../2_prd/baafoo-prd.md)  
 > **目标读者**：前端开发工程师、UI 设计师  
 > **技术栈**：Vue 3 + Element Plus + Pinia + Axios + ECharts  
 > **最后更新**：2026-05-29  
