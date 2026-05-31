@@ -286,31 +286,31 @@ Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
 
 ## 十二、坏味道汇总
 
-| # | 类型 | 严重度 | 位置 | 描述 |
-|---|------|--------|------|------|
-| S1 | God Class | 🔴 高 | ManagementApiHandler | 728 行，30+ 路由分支 |
-| S2 | God Class | 🔴 高 | H2StorageService | 1195 行，6 种实体 CRUD |
-| S3 | Long Method | 🟡 中 | ManagementApiHandler.handleApiRequest | 420 行 |
-| S4 | Long Method | 🟢 低 | ManagementApiHandler.handleCsvImport | 72 行 |
-| S5 | Long Method | 🟡 中 | BaafooAgent.premain | 110 行 |
-| S6 | Duplicated Code | 🔴 高 | HttpStubHandler 两个 passthrough 方法 | 80% 代码重复 |
-| S7 | Duplicated Code | 🟡 中 | H2StorageService mapXxx/setXxx | 6 次重复模式 |
-| S8 | Duplicated Code | 🟢 低 | ManagementApiHandler not found 响应 | 10+ 次重复 |
-| S9 | Duplicated Code | 🟢 低 | ControlChannel ApiResponse 解包 | 2 次重复 |
-| S10 | Primitive Obsession | 🟡 中 | GlobalRouteState 路由值 | 字符串代替结构化类型 |
-| S11 | Primitive Obsession | 🟡 中 | ManagementApiHandler 响应构造 | Map 代替 DTO |
-| S12 | Feature Envy | 🟢 低 | ManagementApiHandler | 直接操作 User 字段 |
-| S13 | Feature Envy | 🟡 中 | ManagementApiHandler | 包含 CSV 解析逻辑 |
-| S14 | Dead Code | 🟢 低 | BaafooAgent 反射字段缓存 | 赋值后未读取 |
-| S15 | Dead Code | 🟡 中 | MyBatis Mapper/Entity | 未启用的备用实现 |
-| S16 | Inappropriate Intimacy | 🟢 低 | ManagementApiHandler ↔ AuthService | 直接访问内部类字段 |
-| S17 | Inappropriate Intimacy | 🟡 中 | ControlChannel → AgentConfig | 直接修改配置对象 |
-| S18 | Shotgun Surgery | 🟡 中 | ManagementApiHandler | 新端点需改 3 处 |
-| S19 | Speculative Generality | 🟢 低 | PluginManager/PluginClassLoader | 已实现未使用 |
-| S20 | Speculative Generality | 🟢 低 | TransformRegistry | 只写不读 |
-| S21 | Mutable Static State | 🟡 中 | AgentManifest | public static 可变字段 |
-| S22 | Mutable Static State | 🟡 中 | GlobalRouteState | public static 可变字段 |
-| S23 | 临时字段传参 | 🟡 中 | ManagementApiHandler.currentUri | 实例字段代替方法参数 |
-| S24 | 无界线程池 | 🔴 高 | HttpStubHandler.PASSTHROUGH_EXECUTOR | 可能 OOM |
-| S25 | 字符串常量权限 | 🟢 低 | AuthService.hasPermission | 应使用枚举 |
-| S26 | 代码风格不一致 | 🟢 低 | BaafooAgent.premain | 匿名类应用 lambda |
+| # | 类型 | 严重度 | 位置 | 描述 | 状态 |
+|---|------|--------|------|------|------|
+| S1 | God Class | 🔴 高 | ManagementApiHandler | 728 行，30+ 路由分支 | ✅ 已修复 |
+| S2 | God Class | 🔴 高 | H2StorageService | 1195 行，6 种实体 CRUD | ✅ 已修复 |
+| S3 | Long Method | 🟡 中 | ManagementApiHandler.handleApiRequest | 420 行 | ✅ 已修复 |
+| S4 | Long Method | 🟢 低 | ManagementApiHandler.handleCsvImport | 72 行 | ✅ 已修复 |
+| S5 | Long Method | 🟡 中 | BaafooAgent.premain | 110 行 | ✅ 已修复 |
+| S6 | Duplicated Code | 🔴 高 | HttpStubHandler 两个 passthrough 方法 | 80% 代码重复 | ✅ 已修复 |
+| S7 | Duplicated Code | 🟡 中 | H2StorageService mapXxx/setXxx | 6 次重复模式 | ✅ 已修复 |
+| S8 | Duplicated Code | 🟢 低 | ManagementApiHandler not found 响应 | 10+ 次重复 | ✅ 已修复 |
+| S9 | Duplicated Code | 🟢 低 | ControlChannel ApiResponse 解包 | 2 次重复 | ✅ 已修复 |
+| S10 | Primitive Obsession | 🟡 中 | GlobalRouteState 路由值 | 字符串代替结构化类型 | ✅ 已修复 |
+| S11 | Primitive Obsession | 🟡 中 | ManagementApiHandler 响应构造 | Map 代替 DTO | ✅ 已修复 |
+| S12 | Feature Envy | 🟢 低 | ManagementApiHandler | 直接操作 User 字段 | ✅ 已修复 |
+| S13 | Feature Envy | 🟡 中 | ManagementApiHandler | 包含 CSV 解析逻辑 | ✅ 已修复 |
+| S14 | Dead Code | 🟢 低 | BaafooAgent 反射字段缓存 | 赋值后未读取 | ✅ 已修复 |
+| S15 | Dead Code | 🟡 中 | MyBatis Mapper/Entity | 未启用的备用实现 | ✅ 已修复 |
+| S16 | Inappropriate Intimacy | 🟢 低 | ManagementApiHandler ↔ AuthService | 直接访问内部类字段 | ✅ 已修复 |
+| S17 | Inappropriate Intimacy | 🟡 中 | ControlChannel → AgentConfig | 直接修改配置对象 | ✅ 已修复 |
+| S18 | Shotgun Surgery | 🟡 中 | ManagementApiHandler | 新端点需改 3 处 | ✅ 已修复 |
+| S19 | Speculative Generality | 🟢 低 | PluginManager/PluginClassLoader | 已实现未使用 | ✅ 已文档化 |
+| S20 | Speculative Generality | 🟢 低 | TransformRegistry | 只写不读 | ✅ 已文档化 |
+| S21 | Mutable Static State | 🟡 中 | AgentManifest | public static 可变字段 | ✅ 已修复 |
+| S22 | Mutable Static State | 🟡 中 | GlobalRouteState | public static 可变字段 | ✅ 已修复 |
+| S23 | 临时字段传参 | 🟡 中 | ManagementApiHandler.currentUri | 实例字段代替方法参数 | ✅ 已修复 |
+| S24 | 无界线程池 | 🔴 高 | HttpStubHandler.PASSTHROUGH_EXECUTOR | 可能 OOM | ✅ 已修复 |
+| S25 | 字符串常量权限 | 🟢 低 | AuthService.hasPermission | 应使用枚举 | ✅ 已修复 |
+| S26 | 代码风格不一致 | 🟢 低 | BaafooAgent.premain | 匿名类应用 lambda | ✅ 已修复 |
