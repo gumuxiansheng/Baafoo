@@ -31,12 +31,12 @@ public final class GlobalRouteState {
         return ROUTES.get("svc:" + serviceName);
     }
 
-    public static boolean isStubMode() {
-        return CURRENT_MODE == MODE_STUB || CURRENT_MODE == MODE_RECORD_AND_STUB;
-    }
-
     public static boolean isPassthrough() {
         return CURRENT_MODE == MODE_PASSTHROUGH;
+    }
+
+    public static boolean isRecording() {
+        return CURRENT_MODE == MODE_RECORD || CURRENT_MODE == MODE_RECORD_AND_STUB;
     }
 
     public static String parseHost(String routeValue) {

@@ -24,7 +24,7 @@ public final class RouteManager {
 
     private static final MatchEngine MATCH_ENGINE = new MatchEngine();
 
-    private static volatile EnvironmentMode currentMode = EnvironmentMode.STUB;
+    private static volatile EnvironmentMode currentMode = EnvironmentMode.RECORD_AND_STUB;
 
     private static volatile boolean recording = false;
 
@@ -192,16 +192,11 @@ public final class RouteManager {
                     result.rule.getName(),
                     result.responseEntry != null ? result.responseEntry.getName() : "default");
         } else {
-            if (isStubMode()) {
-                result.unmatched404 = true;
-            }
+            log.debug("No rule matched for {}://{}:{}{}, request will passthrough",
+                    protocol, host, port, path != null ? path : "");
         }
 
         return result;
-    }
-
-    private static boolean isStubMode() {
-        return currentMode == EnvironmentMode.STUB || currentMode == EnvironmentMode.RECORD_AND_STUB;
     }
 
     public static void addRecording(RecordingEntry recording) {
@@ -232,7 +227,6 @@ public final class RouteManager {
         public String method;
         public String path;
         public boolean matched;
-        public boolean unmatched404;
         public Rule rule;
         public ResponseEntry responseEntry;
         public int responseIndex;

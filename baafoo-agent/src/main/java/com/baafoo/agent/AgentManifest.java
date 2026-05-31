@@ -58,15 +58,6 @@ public final class AgentManifest {
     private AgentManifest() {}
 
     /**
-     * Check if current mode is stub or record-and-stub (i.e., should we block unmatched).
-     *
-     * @return true if in stub-like mode
-     */
-    public static boolean isStubMode() {
-        return currentMode == MODE_STUB || currentMode == MODE_RECORD_AND_STUB;
-    }
-
-    /**
      * Check if current mode is passthrough (i.e., should we skip interception).
      *
      * @return true if in passthrough mode

@@ -195,20 +195,7 @@ export default {
     }
 
     function editRule(rule) {
-      editingRuleId.value = rule.id
-      Object.assign(form, {
-        name: rule.name,
-        protocol: rule.protocol,
-        host: rule.host || '',
-        port: rule.port,
-        serviceName: rule.serviceName || '',
-        priority: rule.priority,
-        statusCode: rule.responses && rule.responses[0] ? rule.responses[0].statusCode : 200,
-        responseBody: rule.responses && rule.responses[0] ? rule.responses[0].body || '' : '',
-        delayMs: rule.responses && rule.responses[0] ? rule.responses[0].delayMs || 0 : 0,
-        environments: rule.environments || []
-      })
-      dialogVisible.value = true
+      router.push({ name: 'RuleEditor', params: { id: rule.id } })
     }
 
     async function saveRule() {
@@ -226,7 +213,9 @@ export default {
           name: '默认响应',
           statusCode: form.statusCode,
           body: form.responseBody,
-          delayMs: form.delayMs
+          delayMs: form.delayMs,
+          headers: null,
+          condition: null
         }]
       }
 

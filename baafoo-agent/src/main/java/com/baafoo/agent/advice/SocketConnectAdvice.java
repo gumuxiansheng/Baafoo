@@ -33,12 +33,6 @@ public class SocketConnectAdvice {
                 String stubHost = GlobalRouteState.parseHost(routeValue);
                 int stubPort = GlobalRouteState.parsePort(routeValue);
                 endpoint = new InetSocketAddress(stubHost, stubPort);
-            } else {
-                if (GlobalRouteState.isStubMode()) {
-                    throw new RuntimeException(
-                            "Baafoo: No rule matched for " + host + ":" + port
-                                    + " (stub mode — connection blocked)");
-                }
             }
         } catch (RuntimeException e) {
             throw e;

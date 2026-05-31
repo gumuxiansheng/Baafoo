@@ -108,7 +108,7 @@ export default {
     const associateVisible = ref(false)
     const currentEnv = reactive({ id: '', name: '' })
     const selectedRuleIds = ref([])
-    const form = reactive({ name: '', mode: 'stub' })
+    const form = reactive({ name: '', mode: 'record-and-stub' })
 
     async function loadEnvs() {
       loading.value = true
@@ -166,7 +166,7 @@ export default {
 
     function showCreateDialog() {
       form.name = ''
-      form.mode = 'stub'
+      form.mode = 'record-and-stub'
       dialogVisible.value = true
     }
 

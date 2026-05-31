@@ -141,6 +141,15 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         }
     }
 
+    private boolean isRecording() {
+        for (Environment env : storage.listEnvironments()) {
+            if (env.getMode() == EnvironmentMode.RECORD || env.getMode() == EnvironmentMode.RECORD_AND_STUB) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void sendStubResponse(ChannelHandlerContext ctx, ResponseEntry entry, String ruleId) {
         try {
             // Apply delay if configured
@@ -351,15 +360,6 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         return headers;
     }
 
-    private boolean isRecording() {
-        for (Environment env : storage.listEnvironments()) {
-            if (env.getMode() == EnvironmentMode.RECORD || env.getMode() == EnvironmentMode.RECORD_AND_STUB) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private String resolveAgentEnvironment(String host, int port) {
         for (StorageService.AgentRegistration agent : storage.listAgents()) {
             long onlineThreshold = System.currentTimeMillis() - 90000;
@@ -375,7 +375,10 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         for (Rule rule : rules) {
             if (!rule.isEnabled()) continue;
             List<String> envs = rule.getEnvironments();
-            if (envs == null || envs.isEmpty()) continue;
+            if (envs == null || envs.isEmpty()) {
+                filtered.add(rule);
+                continue;
+            }
             if (agentEnvironment != null && envs.contains(agentEnvironment)) {
                 filtered.add(rule);
             }

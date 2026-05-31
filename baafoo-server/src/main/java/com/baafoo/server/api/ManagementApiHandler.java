@@ -200,7 +200,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             StorageService.AgentRegistration reg = storage.registerAgent(agentId, env, hostname, version, protocols);
 
             Environment environment = storage.getEnvironmentByName(env);
-            String mode = environment != null ? environment.getMode().getValue() : "stub";
+            String mode = environment != null ? environment.getMode().getValue() : "record-and-stub";
 
             java.util.Map<String, Object> result = new java.util.HashMap<String, Object>();
             result.put("agentId", reg.agentId);
@@ -222,7 +222,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             List<Rule> rules = storage.listRules();
 
             // Get environment mode for this agent
-            String mode = "stub";
+            String mode = "record-and-stub";
             for (StorageService.AgentRegistration reg : storage.listAgents()) {
                 if (reg.agentId != null && reg.agentId.equals(agentId)) {
                     Environment env = storage.getEnvironmentByName(reg.environment);

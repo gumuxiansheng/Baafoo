@@ -889,6 +889,17 @@ public class H2StorageService implements StorageService {
         }
         recording.setRecordedAt(System.currentTimeMillis());
         insertRecording(recording);
+        trimRecordings();
+    }
+
+    private void trimRecordings() {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "DELETE FROM recordings WHERE id NOT IN " +
+                "(SELECT id FROM recordings ORDER BY recorded_at DESC LIMIT 1000)")) {
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            log.warn("Failed to trim recordings: {}", e.getMessage());
+        }
     }
 
     @Override

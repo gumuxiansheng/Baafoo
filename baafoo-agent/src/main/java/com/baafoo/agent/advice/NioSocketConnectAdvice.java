@@ -33,12 +33,6 @@ public class NioSocketConnectAdvice {
                 String stubHost = GlobalRouteState.parseHost(routeValue);
                 int stubPort = GlobalRouteState.parsePort(routeValue);
                 remote = new InetSocketAddress(stubHost, stubPort);
-            } else {
-                if (GlobalRouteState.isStubMode()) {
-                    throw new RuntimeException(
-                            "Baafoo: No rule matched for " + host + ":" + port
-                                    + " (stub mode — NIO connection blocked)");
-                }
             }
         } catch (RuntimeException e) {
             throw e;

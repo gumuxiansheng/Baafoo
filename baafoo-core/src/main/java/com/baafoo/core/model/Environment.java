@@ -35,7 +35,7 @@ public class Environment {
     private long updatedAt;
 
     public Environment() {
-        this.mode = EnvironmentMode.STUB;
+        this.mode = EnvironmentMode.RECORD_AND_STUB;
         this.agentIds = new java.util.ArrayList<String>();
         this.variables = Collections.emptyMap();
         this.metadata = Collections.emptyMap();
