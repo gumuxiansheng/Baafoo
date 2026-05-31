@@ -1,5 +1,6 @@
 package com.baafoo.core.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.Collections;
 import java.util.Map;
 
@@ -67,8 +68,10 @@ public class Environment {
     public long getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(long updatedAt) { this.updatedAt = updatedAt; }
 
+    @JsonIgnore
     public boolean isStubMode() { return mode == EnvironmentMode.STUB || mode == EnvironmentMode.RECORD_AND_STUB; }
 
+    @JsonIgnore
     public boolean isRecording() { return mode == EnvironmentMode.RECORD || mode == EnvironmentMode.RECORD_AND_STUB; }
 
     @Override
