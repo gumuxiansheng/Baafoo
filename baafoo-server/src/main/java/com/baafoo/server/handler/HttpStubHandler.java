@@ -147,13 +147,21 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
     }
 
     private void send404Response(ChannelHandlerContext ctx, String method, String path) {
-        String body = "{\"error\": \"No matching rule found\", \"path\": \"" + path + "\"}";
-        FullHttpResponse response = new DefaultFullHttpResponse(
-                HTTP_1_1, NOT_FOUND,
-                Unpooled.copiedBuffer(body.getBytes(StandardCharsets.UTF_8)));
-        response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json");
-        response.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length());
-        ctx.writeAndFlush(response);
+        try {
+            java.util.Map<String, Object> errorMap = new java.util.HashMap<String, Object>();
+            errorMap.put("error", "No matching rule found");
+            errorMap.put("path", path);
+            String body = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(errorMap);
+            FullHttpResponse response = new DefaultFullHttpResponse(
+                    HTTP_1_1, NOT_FOUND,
+                    Unpooled.copiedBuffer(body.getBytes(StandardCharsets.UTF_8)));
+            response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json; charset=UTF-8");
+            response.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.getBytes(StandardCharsets.UTF_8).length);
+            ctx.writeAndFlush(response);
+        } catch (Exception e) {
+            log.error("Error serializing 404 response: {}", e.getMessage());
+            ctx.close();
+        }
     }
 
     private EnvironmentMode resolveEnvironmentMode(String agentEnvironment) {
@@ -527,16 +535,24 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
     }
 
     private void sendError(ChannelHandlerContext ctx, HttpResponseStatus status, String message) {
-        String json = "{\"error\":\"" + message + "\",\"stubbed\":false}";
-        FullHttpResponse response = new DefaultFullHttpResponse(
-                HTTP_1_1, status,
-                Unpooled.copiedBuffer(json, StandardCharsets.UTF_8));
-        response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json; charset=UTF-8");
-        response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
-        response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
-        response.headers().set("X-Baafoo-Stub", "unmatched");
+        try {
+            java.util.Map<String, Object> errorMap = new java.util.HashMap<String, Object>();
+            errorMap.put("error", message);
+            errorMap.put("stubbed", false);
+            String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(errorMap);
+            FullHttpResponse response = new DefaultFullHttpResponse(
+                    HTTP_1_1, status,
+                    Unpooled.copiedBuffer(json, StandardCharsets.UTF_8));
+            response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json; charset=UTF-8");
+            response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
+            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+            response.headers().set("X-Baafoo-Stub", "unmatched");
 
-        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+        } catch (Exception e) {
+            log.error("Error serializing error response: {}", e.getMessage());
+            ctx.close();
+        }
     }
 
     private String determineProtocol(String host, int port, Map<String, String> headers) {

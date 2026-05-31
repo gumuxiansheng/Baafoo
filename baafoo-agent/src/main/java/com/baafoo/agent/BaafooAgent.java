@@ -163,27 +163,23 @@ public class BaafooAgent {
 
     private static void initAgentManifest(AgentConfig cfg) {
         if (cfg.getServerUrl() != null) {
-            String url = cfg.getServerUrl();
-            String host = url;
-            int port = 8080;
-
-            if (host.startsWith("http://")) {
-                host = host.substring(7);
-            } else if (host.startsWith("https://")) {
-                host = host.substring(8);
-            }
-
-            int colonIdx = host.lastIndexOf(':');
-            if (colonIdx > 0) {
-                try {
-                    port = Integer.parseInt(host.substring(colonIdx + 1));
-                    host = host.substring(0, colonIdx);
-                } catch (NumberFormatException e) {
+            try {
+                java.net.URI uri = new java.net.URI(cfg.getServerUrl());
+                String host = uri.getHost();
+                int port = uri.getPort();
+                if (host == null) {
+                    host = "127.0.0.1";
                 }
+                if (port < 0) {
+                    port = "https".equals(uri.getScheme()) ? 443 : 8080;
+                }
+                AgentManifest.serverHost = host;
+                AgentManifest.serverPort = port;
+            } catch (Exception e) {
+                log.warn("Failed to parse server URL: {}, using defaults", cfg.getServerUrl());
+                AgentManifest.serverHost = "127.0.0.1";
+                AgentManifest.serverPort = 8080;
             }
-
-            AgentManifest.serverHost = host;
-            AgentManifest.serverPort = port;
         }
 
         AgentManifest.environmentId = cfg.getEnvironment() != null ? cfg.getEnvironment() : "default";

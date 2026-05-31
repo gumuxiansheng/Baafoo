@@ -144,56 +144,28 @@ public class BaafooServer {
         channels.add(ch);
     }
 
+    private void startProtocolStubServer(String protocol, int port) throws Exception {
+        ServerBootstrap b = new ServerBootstrap();
+        b.group(bossGroup, workerGroup)
+                .channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel ch) {
+                        ch.pipeline().addLast(new TcpStubHandler(storage));
+                    }
+                });
+        Channel ch = b.bind(port).sync().channel();
+        channels.add(ch);
+        log.info("{} stub (Beta) on port {}", protocol, port);
+    }
+
     private void startProtocolServers() throws Exception {
-        // Kafka stub
-        Integer kafkaPort = config.getPortForProtocol("kafka");
-        if (kafkaPort > 0) {
-            ServerBootstrap b = new ServerBootstrap();
-            b.group(bossGroup, workerGroup)
-                    .channel(NioServerSocketChannel.class)
-                    .childHandler(new ChannelInitializer<SocketChannel>() {
-                        @Override
-                        protected void initChannel(SocketChannel ch) {
-                            ch.pipeline().addLast(new TcpStubHandler(storage));
-                        }
-                    });
-            Channel ch = b.bind(kafkaPort).sync().channel();
-            channels.add(ch);
-            log.info("Kafka stub (Beta) on port {}", kafkaPort);
-        }
-
-        // Pulsar stub
-        Integer pulsarPort = config.getPortForProtocol("pulsar");
-        if (pulsarPort > 0) {
-            ServerBootstrap b = new ServerBootstrap();
-            b.group(bossGroup, workerGroup)
-                    .channel(NioServerSocketChannel.class)
-                    .childHandler(new ChannelInitializer<SocketChannel>() {
-                        @Override
-                        protected void initChannel(SocketChannel ch) {
-                            ch.pipeline().addLast(new TcpStubHandler(storage));
-                        }
-                    });
-            Channel ch = b.bind(pulsarPort).sync().channel();
-            channels.add(ch);
-            log.info("Pulsar stub (Beta) on port {}", pulsarPort);
-        }
-
-        // JMS stub
-        Integer jmsPort = config.getPortForProtocol("jms");
-        if (jmsPort > 0) {
-            ServerBootstrap b = new ServerBootstrap();
-            b.group(bossGroup, workerGroup)
-                    .channel(NioServerSocketChannel.class)
-                    .childHandler(new ChannelInitializer<SocketChannel>() {
-                        @Override
-                        protected void initChannel(SocketChannel ch) {
-                            ch.pipeline().addLast(new TcpStubHandler(storage));
-                        }
-                    });
-            Channel ch = b.bind(jmsPort).sync().channel();
-            channels.add(ch);
-            log.info("JMS stub (Beta) on port {}", jmsPort);
+        String[] protocols = {"kafka", "pulsar", "jms"};
+        for (String protocol : protocols) {
+            Integer port = config.getPortForProtocol(protocol);
+            if (port != null && port > 0) {
+                startProtocolStubServer(protocol, port);
+            }
         }
     }
 

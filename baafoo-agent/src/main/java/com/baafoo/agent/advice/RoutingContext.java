@@ -25,4 +25,20 @@ public final class RoutingContext {
     public static void clear() {
         CURRENT.remove();
     }
+
+    public static void runAndClear(Runnable task) {
+        try {
+            task.run();
+        } finally {
+            CURRENT.remove();
+        }
+    }
+
+    public static <T> T executeAndClear(java.util.concurrent.Callable<T> task) throws Exception {
+        try {
+            return task.call();
+        } finally {
+            CURRENT.remove();
+        }
+    }
 }

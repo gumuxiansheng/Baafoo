@@ -30,7 +30,7 @@
 
         <!-- Core -->
         <jackson.version>2.15.3</jackson.version>
-        <snakeyaml.version>1.33</snakeyaml.version>
+        <snakeyaml.version>2.2</snakeyaml.version>
 
         <!-- Agent -->
         <byte-buddy.version>1.14.14</byte-buddy.version>

@@ -59,13 +59,15 @@ public final class GlobalRouteState {
         }
     }
 
+    private static final java.util.Set<Integer> INTERNAL_PORTS = java.util.Collections.unmodifiableSet(
+            new java.util.HashSet<Integer>(java.util.Arrays.asList(8080, 9000, 9001, 9002, 9003, 9004)));
+
     public static boolean isInternal(String host, int port) {
-        if ("127.0.0.1".equals(host) || "localhost".equals(host)) {
-            if (port == SERVER_PORT) return true;
-            if (port == 8080 || port == 9000 || port == 9001 || port == 9002
-                    || port == 9003 || port == 9004) return true;
+        if (!"127.0.0.1".equals(host) && !"localhost".equals(host)) {
+            return false;
         }
-        return false;
+        if (port == SERVER_PORT) return true;
+        return INTERNAL_PORTS.contains(port);
     }
 
     public static void putRoute(String host, int port, String stubHost, int stubPort, String protocol) {
