@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.baafoo.server.mapper.RuleMapper">
+
+    <resultMap id="RuleResultMap" type="RuleEntity">
+        <id property="id" column="id"/>
+        <result property="name" column="name"/>
+        <result property="protocol" column="protocol"/>
+        <result property="serviceName" column="service_name"/>
+        <result property="host" column="host"/>
+        <result property="port" column="port"/>
+        <result property="conditionsJson" column="conditions_json"/>
+        <result property="responsesJson" column="responses_json"/>
+        <result property="enabled" column="enabled"/>
+        <result property="priority" column="priority"/>
+        <result property="tagsJson" column="tags_json"/>
+        <result property="environmentsJson" column="environments_json"/>
+        <result property="version" column="version"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <select id="selectAll" resultMap="RuleResultMap">
+        SELECT * FROM rules ORDER BY priority ASC
+    </select>
+
+    <select id="selectById" resultMap="RuleResultMap">
+        SELECT * FROM rules WHERE id = #{id}
+    </select>
+
+    <insert id="insert" parameterType="RuleEntity">
+        INSERT INTO rules (id, name, protocol, service_name, host, port,
+            conditions_json, responses_json, enabled, priority, tags_json,
+            environments_json, version, created_at, updated_at)
+        VALUES (#{id}, #{name}, #{protocol}, #{serviceName}, #{host}, #{port},
+            #{conditionsJson}, #{responsesJson}, #{enabled}, #{priority}, #{tagsJson},
+            #{environmentsJson}, #{version}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="update" parameterType="RuleEntity">
+        UPDATE rules SET
+            name = #{name},
+            protocol = #{protocol},
+            service_name = #{serviceName},
+            host = #{host},
+            port = #{port},
+            conditions_json = #{conditionsJson},
+            responses_json = #{responsesJson},
+            enabled = #{enabled},
+            priority = #{priority},
+            tags_json = #{tagsJson},
+            environments_json = #{environmentsJson},
+            version = #{version},
+            created_at = #{createdAt},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM rules WHERE id = #{id}
+    </delete>
+
+    <insert id="insertHistory">
+        INSERT INTO rule_history (rule_id, rule_snapshot, created_at)
+        VALUES (#{ruleId}, #{snapshot}, #{createdAt})
+    </insert>
+
+    <select id="selectLatestHistory" resultType="string">
+        SELECT rule_snapshot FROM rule_history
+        WHERE rule_id = #{ruleId}
+        ORDER BY created_at DESC LIMIT 1
+    </select>
+
+    <delete id="deleteOldHistory">
+        DELETE FROM rule_history
+        WHERE rule_id = #{ruleId}
+        AND id NOT IN (
+            SELECT id FROM rule_history
+            WHERE rule_id = #{ruleId}
+            ORDER BY created_at DESC LIMIT #{keepCount}
+        )
+    </delete>
+
+    <delete id="deleteHistoryByRuleId">
+        DELETE FROM rule_history WHERE rule_id = #{ruleId}
+    </delete>
+
+</mapper>

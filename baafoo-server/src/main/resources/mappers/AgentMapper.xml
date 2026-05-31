@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.baafoo.server.mapper.AgentMapper">
+
+    <resultMap id="AgentResultMap" type="AgentEntity">
+        <id property="agentId" column="agent_id"/>
+        <result property="environment" column="environment"/>
+        <result property="hostname" column="hostname"/>
+        <result property="version" column="version"/>
+        <result property="protocolsJson" column="protocols_json"/>
+        <result property="registeredAt" column="registered_at"/>
+        <result property="lastHeartbeat" column="last_heartbeat"/>
+    </resultMap>
+
+    <select id="selectAll" resultMap="AgentResultMap">
+        SELECT * FROM agents
+    </select>
+
+    <select id="selectByEnvironment" resultMap="AgentResultMap">
+        SELECT * FROM agents WHERE environment = #{environment}
+    </select>
+
+    <insert id="merge" parameterType="AgentEntity">
+        MERGE INTO agents (agent_id, environment, hostname, version,
+            protocols_json, registered_at, last_heartbeat) KEY(agent_id)
+        VALUES (#{agentId}, #{environment}, #{hostname}, #{version},
+            #{protocolsJson}, #{registeredAt}, #{lastHeartbeat})
+    </insert>
+
+    <update id="updateHeartbeat">
+        UPDATE agents SET last_heartbeat = #{heartbeatTime} WHERE agent_id = #{agentId}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM agents WHERE agent_id = #{agentId}
+    </delete>
+
+</mapper>
