@@ -240,21 +240,21 @@ Kafka/Pulsar/JMS 的 stub server 启动代码几乎完全相同。
 
 | # | 严重度 | 问题 | 状态 |
 |---|--------|------|------|
-| 1 | 🔴 严重 | H2StorageService 线程安全 | 待修复 |
-| 2 | 🔴 严重 | Passthrough 查询参数 Bug | 待修复 |
-| 3 | 🔴 严重 | Passthrough 不支持 HTTPS | 待修复 |
-| 4 | 🔴 严重 | undoRule SQL 未参数化 | 待修复 |
+| 1 | 🔴 严重 | H2StorageService 线程安全 | ✅ 已修复 |
+| 2 | 🔴 严重 | Passthrough 查询参数 Bug | ✅ 已修复 |
+| 3 | 🔴 严重 | Passthrough 不支持 HTTPS | ✅ 已修复 |
+| 4 | 🔴 严重 | undoRule SQL 未参数化 | ✅ 已修复 |
 | 5 | 🟡 设计 | GlobalRouteState + RouteTable 双存储 | 非Bug（设计方案） |
-| 6 | 🟡 重要 | MatchEngine patternCache 无界 | 待修复 |
-| 7 | 🟡 重要 | MatchEngine 线程不安全 | 待修复 |
+| 6 | 🟡 重要 | MatchEngine patternCache 无界 | ✅ 已修复 |
+| 7 | 🟡 重要 | MatchEngine 线程不安全 | ✅ 已修复 |
 | 8 | 🟡 注意 | Kafka/Pulsar Advice 非 Bootstrap CL 引用 | 可工作（风险评估通过） |
-| 9 | 🟡 重要 | Passthrough 无 body 响应处理 | 待修复 |
-| 10 | 🟡 重要 | CORS OPTIONS 预检缺失 | 待修复 |
-| 11 | 🟡 重要 | 批量插入效率低 | 待修复 |
-| 12 | 🟢 一般 | URL 解析不健壮 | 待修复 |
-| 13 | 🟢 一般 | ThreadLocal 泄漏 | 待修复 |
-| 14 | 🟢 一般 | 魔法端口号 | 待修复 |
+| 9 | 🟡 重要 | Passthrough 无 body 响应处理 | ✅ 已修复 |
+| 10 | 🟡 重要 | CORS OPTIONS 预检缺失 | ✅ 已修复 |
+| 11 | 🟡 重要 | 批量插入效率低 | ✅ 已修复 |
+| 12 | 🟢 一般 | URL 解析不健壮 | ✅ 已修复 |
+| 13 | 🟢 一般 | ThreadLocal 泄漏 | ✅ 已修复 |
+| 14 | 🟢 一般 | 魔法端口号 | ✅ 已修复 |
 | 15 | 🟢 一般 | 缺少单元测试 | 后续迭代 |
-| 16 | 🟢 一般 | SnakeYAML 安全漏洞 | 待修复 |
-| 17 | 🟢 一般 | JSON 拼接不安全 | 待修复 |
-| 18 | 🟢 一般 | 代码重复 | 待修复 |
+| 16 | 🟢 一般 | SnakeYAML 安全漏洞 | ✅ 已修复 |
+| 17 | 🟢 一般 | JSON 拼接不安全 | ✅ 已修复 |
+| 18 | 🟢 一般 | 代码重复 | ✅ 已修复 |
