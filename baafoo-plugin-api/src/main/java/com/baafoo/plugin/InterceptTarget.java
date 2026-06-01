@@ -24,5 +24,8 @@ public enum InterceptTarget {
     CONSUL_DNS,
 
     /** Consul HTTP API (SDK mode) */
-    CONSUL_API
+    CONSUL_API,
+
+    /** Feign declarative HTTP client */
+    FEIGN
 }
