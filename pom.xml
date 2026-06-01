@@ -19,6 +19,7 @@
         <module>baafoo-server</module>
         <module>baafoo-cli</module>
         <module>baafoo-test-app</module>
+        <module>baafoo-test-spring</module>
     </modules>
 
     <properties>
@@ -47,6 +48,9 @@
 
         <!-- JWT -->
         <jjwt.version>0.11.5</jjwt.version>
+
+        <!-- Spring Boot -->
+        <spring-boot.version>2.7.18</spring-boot.version>
 
         <!-- Test -->
         <junit.version>4.13.2</junit.version>
@@ -164,6 +168,15 @@
                 <version>${logback.version}</version>
             </dependency>
 
+            <!-- Spring Boot BOM -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
             <!-- Test -->
             <dependency>
                 <groupId>junit</groupId>
@@ -211,6 +224,11 @@
                     <groupId>org.jacoco</groupId>
                     <artifactId>jacoco-maven-plugin</artifactId>
                     <version>${jacoco.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>${spring-boot.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>
