@@ -2,7 +2,7 @@
   <div class="rules-page">
     <div class="page-header">
       <h2>规则管理</h2>
-      <el-button type="primary" @click="showCreateDialog" v-if="authStore.canWriteRule">
+      <el-button type="primary" @click="createRule" v-if="authStore.canWriteRule">
         <el-icon><Plus /></el-icon> 新建规则
       </el-button>
     </div>
@@ -77,61 +77,6 @@
         </el-table-column>
       </el-table>
     </el-card>
-
-    <!-- Create/Edit Dialog -->
-    <el-dialog
-      v-model="dialogVisible"
-      :title="editingRuleId ? '编辑规则' : '新建规则'"
-      width="700px"
-      destroy-on-close
-    >
-      <el-form :model="form" label-width="100px" size="small">
-        <el-form-item label="规则名称" required>
-          <el-input v-model="form.name" placeholder="如: GET /api/users" />
-        </el-form-item>
-        <el-form-item label="协议" required>
-          <el-select v-model="form.protocol" style="width: 100%">
-            <el-option label="HTTP" value="http" />
-            <el-option label="TCP" value="tcp" />
-            <el-option label="Kafka" value="kafka" />
-            <el-option label="Pulsar" value="pulsar" />
-            <el-option label="JMS" value="jms" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="目标主机">
-          <el-input v-model="form.host" placeholder="如: api.example.com（留空匹配所有）" />
-        </el-form-item>
-        <el-form-item label="目标端口">
-          <el-input-number v-model="form.port" :min="0" :max="65535" placeholder="0=所有" />
-        </el-form-item>
-        <el-form-item label="服务名(Consul)">
-          <el-input v-model="form.serviceName" placeholder="如: user-service" />
-        </el-form-item>
-        <el-form-item label="优先级">
-          <el-input-number v-model="form.priority" :min="1" :max="1000" />
-        </el-form-item>
-        <el-form-item label="状态码">
-          <el-input-number v-model="form.statusCode" :min="100" :max="599" />
-        </el-form-item>
-        <el-form-item label="响应体">
-          <el-input v-model="form.responseBody" type="textarea" :rows="6"
-            placeholder='{"code": 0, "data": [], "message": "success"}' />
-        </el-form-item>
-        <el-form-item label="延迟(ms)">
-          <el-input-number v-model="form.delayMs" :min="0" :max="60000" />
-        </el-form-item>
-        <el-form-item label="生效环境">
-          <el-select v-model="form.environments" multiple filterable allow-create default-first-option placeholder="选择或输入环境名" style="width: 100%">
-            <el-option v-for="env in allEnvironments" :key="env.name" :label="env.name" :value="env.name" />
-          </el-select>
-          <div style="font-size: 12px; color: #909399; margin-top: 4px">未选择环境时规则不生效</div>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveRule">保存</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
@@ -139,7 +84,6 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRulesStore, useAuthStore } from '@/store'
 import { useRouter } from 'vue-router'
-import api from '@/api'
 
 export default {
   name: 'RulesPage',
@@ -148,16 +92,7 @@ export default {
     const rulesStore = useRulesStore()
     const authStore = useAuthStore()
     const loading = ref(false)
-    const dialogVisible = ref(false)
-    const editingRuleId = ref(null)
-    const allEnvironments = ref([])
     const filter = reactive({ protocol: '', keyword: '' })
-
-    const form = reactive({
-      name: '', protocol: 'http', host: '', port: null,
-      serviceName: '', priority: 100, statusCode: 200,
-      responseBody: '', delayMs: 0, environments: []
-    })
 
     const filteredRules = computed(() => {
       let list = rulesStore.rules
@@ -175,58 +110,17 @@ export default {
       loading.value = false
     }
 
-    async function loadEnvironments() {
-      const res = await api.getEnvironments()
-      if (res.success) allEnvironments.value = res.data
-    }
-
     function resetFilter() {
       filter.protocol = ''
       filter.keyword = ''
     }
 
-    function showCreateDialog() {
-      editingRuleId.value = null
-      Object.assign(form, {
-        name: '', protocol: 'http', host: '', port: null,
-        serviceName: '', priority: 100, statusCode: 200,
-        responseBody: '', delayMs: 0, environments: []
-      })
-      dialogVisible.value = true
+    function createRule() {
+      router.push({ name: 'RuleEditor', params: { id: 'new' } })
     }
 
     function editRule(rule) {
       router.push({ name: 'RuleEditor', params: { id: rule.id } })
-    }
-
-    async function saveRule() {
-      const ruleData = {
-        name: form.name,
-        protocol: form.protocol,
-        host: form.host || null,
-        port: form.port || null,
-        serviceName: form.serviceName || null,
-        priority: form.priority,
-        enabled: true,
-        environments: form.environments || [],
-        conditions: [],
-        responses: [{
-          name: '默认响应',
-          statusCode: form.statusCode,
-          body: form.responseBody,
-          delayMs: form.delayMs,
-          headers: null,
-          condition: null
-        }]
-      }
-
-      if (editingRuleId.value) {
-        await rulesStore.updateRule(editingRuleId.value, ruleData)
-      } else {
-        await rulesStore.createRule(ruleData)
-      }
-
-      dialogVisible.value = false
     }
 
     async function toggleRule(rule) {
@@ -241,12 +135,12 @@ export default {
       await rulesStore.undoRule(rule.id)
     }
 
-    onMounted(() => { loadRules(); loadEnvironments() })
+    onMounted(() => { loadRules() })
 
     return {
-      loading, dialogVisible, editingRuleId, allEnvironments, filter, form,
-      filteredRules, showCreateDialog, editRule, saveRule,
-      toggleRule, deleteRuleItem, undoRuleItem, loadRules, resetFilter, authStore
+      loading, filter, filteredRules,
+      createRule, editRule, loadRules, resetFilter,
+      toggleRule, deleteRuleItem, undoRuleItem, authStore
     }
   }
 }

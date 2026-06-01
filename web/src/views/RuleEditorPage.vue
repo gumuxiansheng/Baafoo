@@ -4,10 +4,10 @@
       <el-button text @click="$router.back()">
         <el-icon><ArrowLeft /></el-icon> 返回
       </el-button>
-      <h2>{{ rule ? '编辑规则' : '加载中...' }}</h2>
+      <h2>{{ isNew ? '新建规则' : '编辑规则' }}</h2>
     </div>
 
-    <el-card shadow="never" style="margin-top: 16px" v-if="rule" v-loading="loading">
+    <el-card shadow="never" style="margin-top: 16px" v-if="isNew || rule" v-loading="loading">
       <el-form :model="form" label-width="100px" size="small">
         <!-- Basic Info -->
         <el-divider content-position="left">基本信息</el-divider>
@@ -240,7 +240,7 @@
 </template>
 
 <script>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useRulesStore, useAuthStore } from '@/store'
 import api from '@/api'
@@ -253,10 +253,12 @@ export default {
     const rulesStore = useRulesStore()
     const authStore = useAuthStore()
     const rule = ref(null)
-    const loading = ref(true)
+    const loading = ref(false)
     const saving = ref(false)
     const allEnvironments = ref([])
     const inheritedEnvs = ref([])
+
+    const isNew = computed(() => route.params.id === 'new')
 
     const envTagType = (val) => {
       return inheritedEnvs.value.includes(val) ? 'warning' : ''
@@ -273,6 +275,13 @@ export default {
     })
 
     onMounted(async () => {
+      if (isNew.value) {
+        form.responses.push({ name: '默认', statusCode: 200, delayMs: 0, body: '', headers: {}, condition: null })
+        loading.value = false
+        return
+      }
+
+      loading.value = true
       const id = route.params.id
       await rulesStore.fetchRule(id)
       rule.value = rulesStore.currentRule
@@ -403,7 +412,11 @@ export default {
         responses: responsesData
       }
 
-      await rulesStore.updateRule(route.params.id, data)
+      if (isNew.value) {
+        await rulesStore.createRule(data)
+      } else {
+        await rulesStore.updateRule(route.params.id, data)
+      }
       saving.value = false
       router.back()
     }
@@ -416,7 +429,7 @@ export default {
     loadEnvironments()
 
     return {
-      rule, loading, saving, form, allEnvironments, inheritedEnvs, envTagType, templateVarHint, bodyPlaceholder,
+      isNew, rule, loading, saving, form, allEnvironments, inheritedEnvs, envTagType, templateVarHint, bodyPlaceholder,
       addCondition, removeCondition,
       addResponse, removeResponse, addResponseCondition,
       getResponseHeaders, addResponseHeader, removeResponseHeader,
