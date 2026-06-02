@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.baafoo.server.storage.mapper.RuleMapper">
+
+    <!-- Result map for Rule with JSON columns -->
+    <resultMap id="ruleResultMap" type="com.baafoo.core.model.Rule">
+        <id property="id" column="id"/>
+        <result property="name" column="name"/>
+        <result property="protocol" column="protocol"/>
+        <result property="serviceName" column="service_name"/>
+        <result property="host" column="host"/>
+        <result property="port" column="port"/>
+        <result property="enabled" column="enabled"/>
+        <result property="priority" column="priority"/>
+        <result property="version" column="version"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="conditions" column="conditions_json"
+                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                javaType="java.util.List"/>
+        <result property="responses" column="responses_json"
+                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                javaType="java.util.List"/>
+        <result property="tags" column="tags_json"
+                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                javaType="java.util.List"/>
+        <result property="environments" column="environments_json"
+                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                javaType="java.util.List"/>
+    </resultMap>
+
+    <!-- Result map for RuleSet -->
+    <resultMap id="ruleSetResultMap" type="com.baafoo.core.model.RuleSet">
+        <id property="id" column="id"/>
+        <result property="name" column="name"/>
+        <result property="description" column="description"/>
+        <result property="enabled" column="enabled"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="ruleIds" column="rule_ids_json"
+                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                javaType="java.util.List"/>
+        <result property="tags" column="tags_json"
+                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                javaType="java.util.List"/>
+    </resultMap>
+
+    <!-- List all rules -->
+    <select id="listRules" resultMap="ruleResultMap">
+        SELECT * FROM rules ORDER BY priority ASC
+    </select>
+
+    <!-- Count rules with optional filters -->
+    <select id="countRules" resultType="long">
+        SELECT COUNT(*) FROM rules WHERE 1=1
+        <if test="protocol != null and protocol != ''">
+            AND protocol = #{protocol}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (LOWER(name) LIKE '%' || LOWER(#{keyword}) || '%' OR LOWER(id) LIKE '%' || LOWER(#{keyword}) || '%')
+        </if>
+    </select>
+
+    <!-- List rules paged with optional filters -->
+    <select id="listRulesPaged" resultMap="ruleResultMap">
+        SELECT * FROM rules WHERE 1=1
+        <if test="protocol != null and protocol != ''">
+            AND protocol = #{protocol}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (LOWER(name) LIKE '%' || LOWER(#{keyword}) || '%' OR LOWER(id) LIKE '%' || LOWER(#{keyword}) || '%')
+        </if>
+        ORDER BY priority ASC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- Get rule by ID -->
+    <select id="getRule" resultMap="ruleResultMap">
+        SELECT * FROM rules WHERE id = #{id}
+    </select>
+
+    <!-- Create rule -->
+    <insert id="createRule">
+        INSERT INTO rules (id, name, protocol, service_name, host, port,
+            conditions_json, responses_json, enabled, priority, tags_json,
+            environments_json, version, created_at, updated_at)
+        VALUES (#{id}, #{name}, #{protocol}, #{serviceName}, #{host}, #{port},
+            #{conditions, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{responses, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{enabled}, #{priority},
+            #{tags, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{environments, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{version}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <!-- Update rule -->
+    <update id="updateRule">
+        UPDATE rules SET
+            name = #{name},
+            protocol = #{protocol},
+            service_name = #{serviceName},
+            host = #{host},
+            port = #{port},
+            conditions_json = #{conditions, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            responses_json = #{responses, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            enabled = #{enabled},
+            priority = #{priority},
+            tags_json = #{tags, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            environments_json = #{environments, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            version = #{version},
+            created_at = #{createdAt},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <!-- Delete rule -->
+    <delete id="deleteRule">
+        DELETE FROM rules WHERE id = #{id}
+    </delete>
+
+    <!-- Insert rule history -->
+    <insert id="insertRuleHistory">
+        INSERT INTO rule_history (rule_id, rule_snapshot, created_at)
+        VALUES (#{ruleId}, #{ruleSnapshot}, #{createdAt})
+    </insert>
+
+    <!-- Delete old rule history (keep only the latest N) - H2 dialect -->
+    <delete id="deleteOldRuleHistory" databaseId="h2">
+        DELETE FROM rule_history WHERE rule_id = #{ruleId}
+            AND id NOT IN (SELECT id FROM rule_history WHERE rule_id = #{ruleId} ORDER BY created_at DESC LIMIT #{keepCount})
+    </delete>
+
+    <!-- Delete old rule history (keep only the latest N) - PostgreSQL dialect -->
+    <delete id="deleteOldRuleHistory" databaseId="postgresql">
+        DELETE FROM rule_history WHERE rule_id = #{ruleId}
+            AND id NOT IN (SELECT id FROM rule_history WHERE rule_id = #{ruleId} ORDER BY created_at DESC LIMIT #{keepCount})
+    </delete>
+
+    <!-- Get latest rule snapshot -->
+    <select id="getLatestRuleSnapshot" resultType="string">
+        SELECT rule_snapshot FROM rule_history
+        WHERE rule_id = #{ruleId} ORDER BY created_at DESC LIMIT 1
+    </select>
+
+    <!-- Get latest rule history ID -->
+    <select id="getLatestRuleHistoryId" resultType="long">
+        SELECT id FROM rule_history
+        WHERE rule_id = #{ruleId} ORDER BY created_at DESC LIMIT 1
+    </select>
+
+    <!-- Delete rule history by ID -->
+    <delete id="deleteRuleHistoryById">
+        DELETE FROM rule_history WHERE rule_id = #{ruleId} AND id = #{historyId}
+    </delete>
+
+    <!-- Delete all rule history for a rule -->
+    <delete id="deleteRuleHistoryByRuleId">
+        DELETE FROM rule_history WHERE rule_id = #{ruleId}
+    </delete>
+
+    <!-- List rule sets -->
+    <select id="listRuleSets" resultMap="ruleSetResultMap">
+        SELECT * FROM rule_sets
+    </select>
+
+    <!-- Create rule set -->
+    <insert id="createRuleSet">
+        INSERT INTO rule_sets (id, name, description, rule_ids_json, enabled, tags_json, created_at, updated_at)
+        VALUES (#{id}, #{name}, #{description},
+            #{ruleIds, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{enabled},
+            #{tags, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{createdAt}, #{updatedAt})
+    </insert>
+
+    <!-- Delete rule set -->
+    <delete id="deleteRuleSet">
+        DELETE FROM rule_sets WHERE id = #{id}
+    </delete>
+
+</mapper>

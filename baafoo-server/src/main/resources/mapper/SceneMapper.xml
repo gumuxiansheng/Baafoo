@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.baafoo.server.storage.mapper.SceneMapper">
+
+    <resultMap id="sceneSetResultMap" type="com.baafoo.core.model.SceneSet">
+        <id property="id" column="id"/>
+        <result property="name" column="name"/>
+        <result property="description" column="description"/>
+        <result property="active" column="active"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="itemIds" column="item_ids_json"
+                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                javaType="java.util.List"/>
+        <result property="tags" column="tags_json"
+                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                javaType="java.util.List"/>
+        <result property="environments" column="environments_json"
+                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                javaType="java.util.List"/>
+    </resultMap>
+
+    <select id="listScenes" resultMap="sceneSetResultMap">
+        SELECT * FROM scene_sets
+    </select>
+
+    <select id="getScene" resultMap="sceneSetResultMap">
+        SELECT * FROM scene_sets WHERE id = #{id}
+    </select>
+
+    <insert id="createScene">
+        INSERT INTO scene_sets (id, name, description, item_ids_json, active, tags_json,
+            environments_json, created_at, updated_at)
+        VALUES (#{id}, #{name}, #{description},
+            #{itemIds, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{active},
+            #{tags, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{environments, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="updateScene">
+        UPDATE scene_sets SET
+            name = #{name},
+            description = #{description},
+            item_ids_json = #{itemIds, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            active = #{active},
+            tags_json = #{tags, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            environments_json = #{environments, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteScene">
+        DELETE FROM scene_sets WHERE id = #{id}
+    </delete>
+
+</mapper>

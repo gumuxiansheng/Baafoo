@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.baafoo.server.storage.mapper.RecordingMapper">
+
+    <resultMap id="recordingResultMap" type="com.baafoo.core.model.RecordingEntry">
+        <id property="id" column="id"/>
+        <result property="ruleId" column="rule_id"/>
+        <result property="environmentId" column="environment_id"/>
+        <result property="agentId" column="agent_id"/>
+        <result property="protocol" column="protocol"/>
+        <result property="host" column="host"/>
+        <result property="port" column="port"/>
+        <result property="serviceName" column="service_name"/>
+        <result property="method" column="method"/>
+        <result property="path" column="path"/>
+        <result property="requestBody" column="request_body"/>
+        <result property="responseStatusCode" column="response_status_code"/>
+        <result property="responseBody" column="response_body"/>
+        <result property="responseTimeMs" column="response_time_ms"/>
+        <result property="recordedAt" column="recorded_at"/>
+        <result property="requestHeaders" column="request_headers_json"
+                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                javaType="java.util.Map"/>
+        <result property="responseHeaders" column="response_headers_json"
+                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                javaType="java.util.Map"/>
+        <result property="tags" column="tags_json"
+                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                javaType="java.util.Map"/>
+    </resultMap>
+
+    <select id="listRecordings" resultMap="recordingResultMap">
+        SELECT * FROM recordings
+        <if test="ruleId != null and ruleId != ''">
+            WHERE rule_id = #{ruleId}
+        </if>
+        ORDER BY recorded_at DESC LIMIT #{limit}
+    </select>
+
+    <select id="countRecordings" resultType="long">
+        SELECT COUNT(*) FROM recordings
+        <if test="ruleId != null and ruleId != ''">
+            WHERE rule_id = #{ruleId}
+        </if>
+    </select>
+
+    <select id="listRecordingsPaged" resultMap="recordingResultMap">
+        SELECT * FROM recordings
+        <if test="ruleId != null and ruleId != ''">
+            WHERE rule_id = #{ruleId}
+        </if>
+        ORDER BY recorded_at DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <insert id="insertRecording">
+        INSERT INTO recordings (id, rule_id, environment_id, agent_id, protocol,
+            host, port, service_name, method, path, request_headers_json, request_body,
+            response_status_code, response_headers_json, response_body, response_time_ms,
+            recorded_at, tags_json)
+        VALUES (#{id}, #{ruleId}, #{environmentId}, #{agentId}, #{protocol},
+            #{host}, #{port}, #{serviceName}, #{method}, #{path},
+            #{requestHeaders, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{requestBody},
+            #{responseStatusCode},
+            #{responseHeaders, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{responseBody}, #{responseTimeMs}, #{recordedAt},
+            #{tags, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler})
+    </insert>
+
+    <!-- Trim recordings - H2 dialect -->
+    <delete id="trimRecordings" databaseId="h2">
+        DELETE FROM recordings WHERE id NOT IN
+            (SELECT id FROM recordings ORDER BY recorded_at DESC LIMIT #{keepCount})
+    </delete>
+
+    <!-- Trim recordings - PostgreSQL dialect -->
+    <delete id="trimRecordings" databaseId="postgresql">
+        DELETE FROM recordings WHERE id NOT IN
+            (SELECT id FROM recordings ORDER BY recorded_at DESC LIMIT #{keepCount})
+    </delete>
+
+    <delete id="deleteRecording">
+        DELETE FROM recordings WHERE id = #{id}
+    </delete>
+
+</mapper>

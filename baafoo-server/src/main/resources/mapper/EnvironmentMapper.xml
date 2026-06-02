@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.baafoo.server.storage.mapper.EnvironmentMapper">
+
+    <resultMap id="environmentResultMap" type="com.baafoo.core.model.Environment">
+        <id property="id" column="id"/>
+        <result property="name" column="name"/>
+        <result property="mode" column="mode"
+                typeHandler="com.baafoo.server.storage.mybatis.EnvironmentModeTypeHandler"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="agentIds" column="agent_ids_json"
+                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                javaType="java.util.List"/>
+        <result property="variables" column="variables_json"
+                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                javaType="java.util.Map"/>
+        <result property="metadata" column="metadata_json"
+                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                javaType="java.util.Map"/>
+    </resultMap>
+
+    <select id="listEnvironments" resultMap="environmentResultMap">
+        SELECT * FROM environments
+    </select>
+
+    <select id="getEnvironment" resultMap="environmentResultMap">
+        SELECT * FROM environments WHERE id = #{id}
+    </select>
+
+    <select id="getEnvironmentByName" resultMap="environmentResultMap">
+        SELECT * FROM environments WHERE name = #{name}
+    </select>
+
+    <insert id="createEnvironment">
+        INSERT INTO environments (id, name, mode, agent_ids_json, variables_json,
+            metadata_json, created_at, updated_at)
+        VALUES (#{id}, #{name},
+            #{mode, typeHandler=com.baafoo.server.storage.mybatis.EnvironmentModeTypeHandler},
+            #{agentIds, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{variables, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{metadata, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="updateEnvironment">
+        UPDATE environments SET
+            name = #{name},
+            mode = #{mode, typeHandler=com.baafoo.server.storage.mybatis.EnvironmentModeTypeHandler},
+            agent_ids_json = #{agentIds, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            variables_json = #{variables, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            metadata_json = #{metadata, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteEnvironment">
+        DELETE FROM environments WHERE id = #{id}
+    </delete>
+
+</mapper>

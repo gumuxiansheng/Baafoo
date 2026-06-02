@@ -8,7 +8,7 @@ import com.baafoo.server.auth.AuthService;
 import com.baafoo.server.handler.HttpStubHandler;
 import com.baafoo.server.handler.TcpStubHandler;
 import com.baafoo.server.storage.StorageService;
-import com.baafoo.server.storage.H2StorageService;
+import com.baafoo.server.storage.JdbcStorageService;
 import com.baafoo.server.web.StaticFileHandler;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
@@ -51,7 +51,7 @@ public class BaafooServer {
 
     public BaafooServer(ServerConfig config) {
         this.config = config;
-        this.storage = new H2StorageService(config);
+        this.storage = new JdbcStorageService(config);
         this.authService = createAuthService(config, storage);
         this.bossGroup = new NioEventLoopGroup(1);
         this.workerGroup = new NioEventLoopGroup();

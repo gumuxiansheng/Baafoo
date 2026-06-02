@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.baafoo.server.storage.mapper.AgentMapper">
+
+    <resultMap id="agentResultMap" type="com.baafoo.server.storage.StorageService$AgentRegistration">
+        <id property="agentId" column="agent_id"/>
+        <result property="environment" column="environment"/>
+        <result property="hostname" column="hostname"/>
+        <result property="version" column="version"/>
+        <result property="registeredAt" column="registered_at"/>
+        <result property="lastHeartbeat" column="last_heartbeat"/>
+        <result property="protocols" column="protocols_json"
+                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                javaType="java.util.List"/>
+    </resultMap>
+
+    <!-- Upsert agent - H2 dialect (MERGE INTO) -->
+    <insert id="upsertAgent" databaseId="h2" parameterType="com.baafoo.server.storage.StorageService$AgentRegistration">
+        MERGE INTO agents (agent_id, environment, hostname, version, protocols_json, registered_at, last_heartbeat)
+        KEY(agent_id)
+        VALUES (#{agentId}, #{environment}, #{hostname}, #{version},
+            #{protocols, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{registeredAt}, #{lastHeartbeat})
+    </insert>
+
+    <!-- Upsert agent - PostgreSQL dialect (INSERT ON CONFLICT) -->
+    <insert id="upsertAgent" databaseId="postgresql" parameterType="com.baafoo.server.storage.StorageService$AgentRegistration">
+        INSERT INTO agents (agent_id, environment, hostname, version, protocols_json, registered_at, last_heartbeat)
+        VALUES (#{agentId}, #{environment}, #{hostname}, #{version},
+            #{protocols, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{registeredAt}, #{lastHeartbeat})
+        ON CONFLICT(agent_id) DO UPDATE SET
+            environment = EXCLUDED.environment,
+            hostname = EXCLUDED.hostname,
+            version = EXCLUDED.version,
+            protocols_json = EXCLUDED.protocols_json,
+            registered_at = EXCLUDED.registered_at,
+            last_heartbeat = EXCLUDED.last_heartbeat
+    </insert>
+
+    <update id="updateHeartbeat">
+        UPDATE agents SET last_heartbeat = #{lastHeartbeat} WHERE agent_id = #{agentId}
+    </update>
+
+    <select id="listAgents" resultMap="agentResultMap">
+        SELECT * FROM agents
+    </select>
+
+    <select id="getAgentsForEnvironment" resultMap="agentResultMap">
+        SELECT * FROM agents WHERE environment = #{environment}
+    </select>
+
+</mapper>
