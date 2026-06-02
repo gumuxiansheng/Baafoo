@@ -1,6 +1,7 @@
 package com.baafoo.server.api;
 
 import com.baafoo.core.api.ApiResponse;
+import com.baafoo.core.api.PaginatedResult;
 import com.baafoo.core.model.*;
 
 import java.util.ArrayList;
@@ -12,7 +13,27 @@ class RuleApiHandler implements ResourceHandler {
         String API_PREFIX = "/__baafoo__/api/";
 
         if (path.equals(API_PREFIX + "rules")) {
-            if ("GET".equals(method)) return ApiResponse.ok(ctx.storage.listRules());
+            if ("GET".equals(method)) {
+                // Pagination support: page & size params
+                String pageStr = ctx.queryParam("page");
+                String sizeStr = ctx.queryParam("size");
+
+                if (pageStr != null || sizeStr != null) {
+                    // Paginated mode with server-side filtering
+                    int page = ctx.queryParamInt("page", 1);
+                    int size = ctx.queryParamInt("size", 20);
+                    if (page < 1) page = 1;
+                    if (size < 1) size = 20;
+                    if (size > 100) size = 100;
+                    String protocol = ctx.queryParam("protocol");
+                    String keyword = ctx.queryParam("keyword");
+                    PaginatedResult<Rule> result = ctx.storage.listRulesPaged(protocol, keyword, page, size);
+                    return ApiResponse.ok(result);
+                } else {
+                    // Legacy mode: return all rules (backward compatible)
+                    return ApiResponse.ok(ctx.storage.listRules());
+                }
+            }
             if ("POST".equals(method)) {
                 ctx.requirePermission("rule", "create");
                 Rule rule = ctx.mapper.readValue(body, Rule.class);

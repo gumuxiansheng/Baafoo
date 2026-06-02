@@ -1,0 +1,12 @@
+/* Global overrides — popper-level components are teleported to <body>, scoped styles cannot reach them */
+
+/* Pagination size dropdown */
+.el-pagination .el-pagination__sizes .el-select .el-select__wrapper {
+  font-size: 12px;
+  min-height: 24px;
+}
+.el-pagination .el-select-dropdown__item {
+  font-size: 12px;
+  height: 28px;
+  line-height: 28px;
+}

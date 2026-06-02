@@ -1,5 +1,6 @@
 package com.baafoo.server.storage;
 
+import com.baafoo.core.api.PaginatedResult;
 import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.model.*;
 import com.baafoo.server.storage.repo.*;
@@ -236,6 +237,13 @@ public class H2StorageService implements StorageService {
     public List<Rule> listRules() { return ruleRepo.listRules(); }
 
     @Override
+    public PaginatedResult<Rule> listRulesPaged(String protocol, String keyword, int page, int size) {
+        long total = ruleRepo.countRules(protocol, keyword);
+        List<Rule> items = ruleRepo.listRulesPaged(protocol, keyword, page, size);
+        return new PaginatedResult<>(page, size, total, items);
+    }
+
+    @Override
     public Rule getRule(String id) { return ruleRepo.getRule(id); }
 
     @Override
@@ -294,6 +302,13 @@ public class H2StorageService implements StorageService {
 
     @Override
     public List<RecordingEntry> listRecordings(String ruleId, int limit) { return recordingRepo.listRecordings(ruleId, limit); }
+
+    @Override
+    public PaginatedResult<RecordingEntry> listRecordingsPaged(String ruleId, int page, int size) {
+        long total = recordingRepo.countRecordings(ruleId);
+        List<RecordingEntry> items = recordingRepo.listRecordingsPaged(ruleId, page, size);
+        return new PaginatedResult<>(page, size, total, items);
+    }
 
     @Override
     public void addRecording(RecordingEntry recording) { recordingRepo.addRecording(recording); }

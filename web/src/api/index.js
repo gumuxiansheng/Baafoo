@@ -52,6 +52,12 @@ export default {
 
   // --- Rules ---
   getRules: () => http.get('/rules'),
+  getRulesPaged: (protocol, keyword, page = 1, size = 20) => {
+    const params = new URLSearchParams({ page, size })
+    if (protocol) params.set('protocol', protocol)
+    if (keyword) params.set('keyword', keyword)
+    return http.get(`/rules?${params.toString()}`)
+  },
   getRule: (id) => http.get(`/rules/${id}`),
   createRule: (data) => http.post('/rules', data),
   updateRule: (id, data) => http.put(`/rules/${id}`, data),
@@ -80,6 +86,7 @@ export default {
 
   // --- Recordings ---
   getRecordings: (ruleId, limit = 100) => http.get(`/recordings?ruleId=${ruleId || ''}&limit=${limit}`),
+  getRecordingsPaged: (ruleId, page = 1, size = 20) => http.get(`/recordings?ruleId=${ruleId || ''}&page=${page}&size=${size}`),
   deleteRecording: (id) => http.delete(`/recordings/${id}`),
 
   // --- Agents ---

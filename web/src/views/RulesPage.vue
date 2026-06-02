@@ -9,9 +9,9 @@
 
     <!-- Filters -->
     <el-card shadow="never" style="margin-top: 16px">
-      <el-form :inline="true" size="small">
+      <el-form :inline="true" size="small" @submit.prevent="doSearch">
         <el-form-item label="协议">
-          <el-select v-model="filter.protocol" placeholder="全部" clearable style="width: 120px">
+          <el-select v-model="filter.protocol" placeholder="全部" clearable style="width: 120px" @change="doSearch">
             <el-option label="HTTP" value="http" />
             <el-option label="TCP" value="tcp" />
             <el-option label="Kafka" value="kafka" />
@@ -20,10 +20,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="搜索">
-          <el-input v-model="filter.keyword" placeholder="规则名称/ID..." clearable style="width: 200px" />
+          <el-input v-model="filter.keyword" placeholder="规则名称/ID..." clearable style="width: 200px" @clear="doSearch" @keyup.enter="doSearch" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="loadRules">查询</el-button>
+          <el-button type="primary" @click="doSearch">查询</el-button>
           <el-button @click="resetFilter">重置</el-button>
         </el-form-item>
       </el-form>
@@ -31,7 +31,7 @@
 
     <!-- Rule Table -->
     <el-card shadow="never" style="margin-top: 16px">
-      <el-table :data="filteredRules" stripe v-loading="loading" size="small">
+      <el-table :data="rulesStore.rules" stripe v-loading="rulesStore.loading" size="small">
         <el-table-column prop="name" label="规则名称" min-width="180">
           <template #default="{ row }">
             <el-link type="primary" @click="editRule(row)">{{ row.name }}</el-link>
@@ -76,12 +76,24 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pagination-wrap" v-if="rulesStore.pagination.total > 0">
+        <el-pagination
+          background
+          layout="total, prev, pager, next, sizes"
+          :total="rulesStore.pagination.total"
+          :page-size="rulesStore.pagination.size"
+          :current-page="rulesStore.pagination.page"
+          :page-sizes="[10, 20, 50, 100]"
+          @current-change="onPageChange"
+          @size-change="onSizeChange"
+        />
+      </div>
     </el-card>
   </div>
 </template>
 
 <script>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { reactive, onMounted } from 'vue'
 import { useRulesStore, useAuthStore } from '@/store'
 import { useRouter } from 'vue-router'
 
@@ -91,28 +103,28 @@ export default {
     const router = useRouter()
     const rulesStore = useRulesStore()
     const authStore = useAuthStore()
-    const loading = ref(false)
     const filter = reactive({ protocol: '', keyword: '' })
 
-    const filteredRules = computed(() => {
-      let list = rulesStore.rules
-      if (filter.protocol) list = list.filter(r => r.protocol === filter.protocol)
-      if (filter.keyword) {
-        const kw = filter.keyword.toLowerCase()
-        list = list.filter(r => r.name.toLowerCase().includes(kw) || r.id.toLowerCase().includes(kw))
-      }
-      return list
-    })
-
-    async function loadRules() {
-      loading.value = true
-      await rulesStore.fetchRules()
-      loading.value = false
+    function doSearch() {
+      rulesStore.setFilter({ protocol: filter.protocol, keyword: filter.keyword })
+      rulesStore.fetchRulesPaged()
     }
 
     function resetFilter() {
       filter.protocol = ''
       filter.keyword = ''
+      rulesStore.setFilter({ protocol: '', keyword: '' })
+      rulesStore.fetchRulesPaged()
+    }
+
+    function onPageChange(page) {
+      rulesStore.setPage(page)
+      rulesStore.fetchRulesPaged()
+    }
+
+    function onSizeChange(size) {
+      rulesStore.setPageSize(size)
+      rulesStore.fetchRulesPaged()
     }
 
     function createRule() {
@@ -135,12 +147,12 @@ export default {
       await rulesStore.undoRule(rule.id)
     }
 
-    onMounted(() => { loadRules() })
+    onMounted(() => { rulesStore.fetchRulesPaged() })
 
     return {
-      loading, filter, filteredRules,
-      createRule, editRule, loadRules, resetFilter,
-      toggleRule, deleteRuleItem, undoRuleItem, authStore
+      filter, rulesStore, authStore,
+      doSearch, resetFilter, onPageChange, onSizeChange,
+      createRule, editRule, toggleRule, deleteRuleItem, undoRuleItem
     }
   }
 }
@@ -149,4 +161,13 @@ export default {
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; }
 .page-header h2 { font-size: 20px; font-weight: 600; color: #303133; }
+.pagination-wrap { margin-top: 16px; display: flex; justify-content: flex-end; }
+:deep(.el-pagination) { font-size: 12px; }
+:deep(.el-pagination .el-pagination__total) { font-size: 12px; }
+:deep(.el-pagination .el-pagination__sizes) { font-size: 12px; }
+:deep(.el-pagination .el-pagination__sizes .el-input__wrapper) { font-size: 12px; height: 24px; }
+:deep(.el-pagination .el-pagination__sizes .el-input__inner) { font-size: 12px; height: 24px; }
+:deep(.el-pagination .btn-prev) { font-size: 12px; min-width: 24px; height: 24px; line-height: 24px; }
+:deep(.el-pagination .btn-next) { font-size: 12px; min-width: 24px; height: 24px; line-height: 24px; }
+:deep(.el-pagination .el-pager li) { font-size: 12px; min-width: 24px; height: 24px; line-height: 24px; }
 </style>

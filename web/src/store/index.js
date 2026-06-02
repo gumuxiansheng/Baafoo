@@ -24,7 +24,10 @@ export const useRulesStore = defineStore('rules', {
   state: () => ({
     rules: [],
     currentRule: null,
-    loading: false
+    loading: false,
+    // Pagination state
+    pagination: { page: 1, size: 20, total: 0 },
+    filter: { protocol: '', keyword: '' }
   }),
   actions: {
     async fetchRules() {
@@ -36,28 +39,52 @@ export const useRulesStore = defineStore('rules', {
         this.loading = false
       }
     },
+    async fetchRulesPaged() {
+      this.loading = true
+      try {
+        const res = await api.getRulesPaged(this.filter.protocol, this.filter.keyword, this.pagination.page, this.pagination.size)
+        if (res.success && res.data) {
+          this.rules = res.data.items || []
+          this.pagination.total = res.data.total || 0
+        }
+      } finally {
+        this.loading = false
+      }
+    },
+    setPage(page) {
+      this.pagination.page = page
+    },
+    setPageSize(size) {
+      this.pagination.size = size
+      this.pagination.page = 1
+    },
+    setFilter({ protocol, keyword }) {
+      if (protocol !== undefined) this.filter.protocol = protocol
+      if (keyword !== undefined) this.filter.keyword = keyword
+      this.pagination.page = 1
+    },
     async fetchRule(id) {
       const res = await api.getRule(id)
       if (res.success) this.currentRule = res.data
     },
     async createRule(rule) {
       const res = await api.createRule(rule)
-      if (res.success) await this.fetchRules()
+      if (res.success) await this.fetchRulesPaged()
       return res
     },
     async updateRule(id, rule) {
       const res = await api.updateRule(id, rule)
-      if (res.success) await this.fetchRules()
+      if (res.success) await this.fetchRulesPaged()
       return res
     },
     async deleteRule(id) {
       const res = await api.deleteRule(id)
-      if (res.success) await this.fetchRules()
+      if (res.success) await this.fetchRulesPaged()
       return res
     },
     async undoRule(id) {
       const res = await api.undoRule(id)
-      if (res.success) await this.fetchRules()
+      if (res.success) await this.fetchRulesPaged()
       return res
     }
   }

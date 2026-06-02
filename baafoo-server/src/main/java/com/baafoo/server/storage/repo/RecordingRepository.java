@@ -47,6 +47,67 @@ public class RecordingRepository {
         return result;
     }
 
+    /**
+     * Count recordings matching the optional ruleId filter.
+     */
+    public long countRecordings(String ruleId) {
+        StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM recordings");
+        boolean filterByRuleId = ruleId != null && !ruleId.isEmpty();
+        if (filterByRuleId) {
+            sql.append(" WHERE rule_id = ?");
+        }
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+            if (filterByRuleId) {
+                ps.setString(1, ruleId);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getLong(1);
+                }
+            }
+        } catch (SQLException e) {
+            log.error("Failed to count recordings: {}", e.getMessage());
+        }
+        return 0;
+    }
+
+    /**
+     * List recordings with pagination.
+     *
+     * @param ruleId optional rule ID filter (null/empty = no filter)
+     * @param page   1-based page number
+     * @param size   page size
+     * @return list of recordings for the given page
+     */
+    public List<RecordingEntry> listRecordingsPaged(String ruleId, int page, int size) {
+        StringBuilder sql = new StringBuilder("SELECT * FROM recordings");
+        boolean filterByRuleId = ruleId != null && !ruleId.isEmpty();
+        if (filterByRuleId) {
+            sql.append(" WHERE rule_id = ?");
+        }
+        sql.append(" ORDER BY recorded_at DESC LIMIT ? OFFSET ?");
+        int offset = (page - 1) * size;
+        List<RecordingEntry> result = new ArrayList<>();
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+            int idx = 1;
+            if (filterByRuleId) {
+                ps.setString(idx++, ruleId);
+            }
+            ps.setInt(idx++, size);
+            ps.setInt(idx, offset);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    result.add(mapRecording(rs));
+                }
+            }
+        } catch (SQLException e) {
+            log.error("Failed to list recordings paged: {}", e.getMessage());
+        }
+        return result;
+    }
+
     public void addRecording(RecordingEntry recording) {
         if (recording.getId() == null || recording.getId().isEmpty()) {
             recording.setId(IdGenerator.uuid());

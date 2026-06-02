@@ -1,5 +1,6 @@
 package com.baafoo.server.storage;
 
+import com.baafoo.core.api.PaginatedResult;
 import com.baafoo.core.model.*;
 import java.util.List;
 
@@ -18,6 +19,8 @@ public interface StorageService {
     // --- Rule CRUD ---
 
     List<Rule> listRules();
+
+    PaginatedResult<Rule> listRulesPaged(String protocol, String keyword, int page, int size);
 
     Rule getRule(String id);
 
@@ -66,6 +69,8 @@ public interface StorageService {
     // --- Recording ---
 
     List<RecordingEntry> listRecordings(String ruleId, int limit);
+
+    PaginatedResult<RecordingEntry> listRecordingsPaged(String ruleId, int page, int size);
 
     void addRecording(RecordingEntry recording);
 

@@ -36,6 +36,77 @@ public class RuleRepository {
         return result;
     }
 
+    /**
+     * Count rules matching optional filters.
+     */
+    public long countRules(String protocol, String keyword) {
+        StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM rules WHERE 1=1");
+        List<Object> params = new ArrayList<>();
+        appendFilters(sql, params, protocol, keyword);
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+            bindFilterParams(ps, params);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return rs.getLong(1);
+            }
+        } catch (SQLException e) {
+            log.error("Failed to count rules: {}", e.getMessage());
+        }
+        return 0;
+    }
+
+    /**
+     * List rules with pagination and optional filters.
+     *
+     * @param protocol optional protocol filter (null/empty = all)
+     * @param keyword  optional keyword filter on name/id (null/empty = all)
+     * @param page     1-based page number
+     * @param size     page size
+     * @return list of rules for the given page
+     */
+    public List<Rule> listRulesPaged(String protocol, String keyword, int page, int size) {
+        StringBuilder sql = new StringBuilder("SELECT * FROM rules WHERE 1=1");
+        List<Object> params = new ArrayList<>();
+        appendFilters(sql, params, protocol, keyword);
+        sql.append(" ORDER BY priority ASC LIMIT ? OFFSET ?");
+        int offset = (page - 1) * size;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+            bindFilterParams(ps, params);
+            ps.setInt(params.size() + 1, size);
+            ps.setInt(params.size() + 2, offset);
+            try (ResultSet rs = ps.executeQuery()) {
+                List<Rule> result = new ArrayList<>();
+                while (rs.next()) {
+                    result.add(mapRule(rs));
+                }
+                return result;
+            }
+        } catch (SQLException e) {
+            log.error("Failed to list rules paged: {}", e.getMessage());
+        }
+        return Collections.emptyList();
+    }
+
+    private void appendFilters(StringBuilder sql, List<Object> params, String protocol, String keyword) {
+        if (protocol != null && !protocol.isEmpty()) {
+            sql.append(" AND protocol = ?");
+            params.add(protocol);
+        }
+        if (keyword != null && !keyword.isEmpty()) {
+            sql.append(" AND (LOWER(name) LIKE ? OR LOWER(id) LIKE ?)");
+            String like = "%" + keyword.toLowerCase() + "%";
+            params.add(like);
+            params.add(like);
+        }
+    }
+
+    private void bindFilterParams(PreparedStatement ps, List<Object> params) throws SQLException {
+        for (int i = 0; i < params.size(); i++) {
+            ps.setObject(i + 1, params.get(i));
+        }
+    }
+
     public Rule getRule(String id) {
         String sql = "SELECT * FROM rules WHERE id = ?";
         try (Connection conn = dataSource.getConnection();
