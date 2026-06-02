@@ -96,7 +96,10 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                         payload);
                 body = TemplateEngine.render(rawBody, templateCtx);
             }
-            ByteBuf response = Unpooled.copiedBuffer(body, StandardCharsets.UTF_8);
+            // Resolve charset from entry (default UTF-8)
+            String charsetName = entry.getCharset() != null && !entry.getCharset().isEmpty() ? entry.getCharset() : "UTF-8";
+            java.nio.charset.Charset charset = java.nio.charset.Charset.forName(charsetName);
+            ByteBuf response = Unpooled.copiedBuffer(body, charset);
 
             ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
             log.debug("TCP stub response: {} bytes", body.length());

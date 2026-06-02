@@ -239,7 +239,9 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     recording.setRequestBody(requestBody);
                     recording.setResponseStatusCode(result.statusCode);
                     recording.setResponseHeaders(result.responseHeaders);
-                    recording.setResponseBody(new String(result.responseBody, StandardCharsets.UTF_8));
+                    // Detect charset from downstream Content-Type, fallback UTF-8
+                    java.nio.charset.Charset recordCharset = parseCharsetFromContentType(result.responseHeaders.get("Content-Type"));
+                    recording.setResponseBody(new String(result.responseBody, recordCharset));
                     recording.setResponseTimeMs(result.responseTimeMs);
                     storage.addRecording(recording);
                 }
@@ -288,12 +290,17 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
             }
             HttpResponseStatus status = HttpResponseStatus.valueOf(statusCode);
 
+            // Resolve charset from entry (default UTF-8)
+            String charsetName = entry.getCharset() != null && !entry.getCharset().isEmpty() ? entry.getCharset() : "UTF-8";
+            java.nio.charset.Charset charset = java.nio.charset.Charset.forName(charsetName);
+
             FullHttpResponse response = new DefaultFullHttpResponse(
                     HTTP_1_1, status,
-                    Unpooled.copiedBuffer(responseBody, StandardCharsets.UTF_8));
+                    Unpooled.copiedBuffer(responseBody, charset));
 
             // Set headers
-            response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json; charset=UTF-8");
+            String contentType = "application/json; charset=" + charsetName;
+            response.headers().set(HttpHeaderNames.CONTENT_TYPE, contentType);
             response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
             response.headers().set("X-Baafoo-Rule-Id", ruleId);
             response.headers().set("X-Baafoo-Stub", "true");
@@ -550,6 +557,29 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
             }
         }
         return filtered;
+    }
+
+    /**
+     * Parse charset from Content-Type header value.
+     * E.g. "text/html; charset=GBK" → GBK, "application/json" → UTF-8
+     */
+    private static java.nio.charset.Charset parseCharsetFromContentType(String contentType) {
+        if (contentType != null) {
+            String lower = contentType.toLowerCase();
+            int idx = lower.indexOf("charset=");
+            if (idx >= 0) {
+                String cs = contentType.substring(idx + 8).trim();
+                // Strip trailing semicolon or space
+                int semi = cs.indexOf(';');
+                if (semi > 0) cs = cs.substring(0, semi).trim();
+                try {
+                    return java.nio.charset.Charset.forName(cs);
+                } catch (Exception e) {
+                    log.warn("Unknown charset '{}', falling back to UTF-8", cs);
+                }
+            }
+        }
+        return StandardCharsets.UTF_8;
     }
 
     @Override

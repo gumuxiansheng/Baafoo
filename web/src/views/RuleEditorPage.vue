@@ -148,6 +148,20 @@
                 <el-input-number v-model="resp.delayMs" :min="0" :max="60000" size="small" />
               </el-form-item>
             </el-col>
+            <el-col :span="4">
+              <el-form-item label="编码" size="small">
+                <el-select v-model="resp.charset" size="small" clearable placeholder="UTF-8" style="width: 100%">
+                  <el-option label="UTF-8" value="UTF-8" />
+                  <el-option label="GBK" value="GBK" />
+                  <el-option label="GB2312" value="GB2312" />
+                  <el-option label="Big5" value="Big5" />
+                  <el-option label="ISO-8859-1" value="ISO-8859-1" />
+                  <el-option label="Shift_JIS" value="Shift_JIS" />
+                  <el-option label="EUC-KR" value="EUC-KR" />
+                  <el-option label="Windows-1252" value="Windows-1252" />
+                </el-select>
+              </el-form-item>
+            </el-col>
           </el-row>
 
           <!-- Response Condition -->

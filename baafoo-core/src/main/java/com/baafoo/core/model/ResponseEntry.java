@@ -28,6 +28,9 @@ public class ResponseEntry {
     /** Match condition for this response (empty = always match / default) */
     private MatchCondition condition;
 
+    /** Response body charset (null = UTF-8). Supports GBK, GB2312, Big5, ISO-8859-1, etc. */
+    private String charset;
+
     public ResponseEntry() {
         this.statusCode = 200;
         this.headers = Collections.emptyMap();
@@ -53,6 +56,9 @@ public class ResponseEntry {
 
     public MatchCondition getCondition() { return condition; }
     public void setCondition(MatchCondition condition) { this.condition = condition; }
+
+    public String getCharset() { return charset; }
+    public void setCharset(String charset) { this.charset = charset; }
 
     @Override
     public String toString() {
