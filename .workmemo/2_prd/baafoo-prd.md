@@ -1,11 +1,11 @@
 # Baafoo 挡板系统 - 产品需求文档(PRD)
 
-> **文档状态**:PRD v2.2
+> **文档状态**:PRD v2.3
 > **对齐状态**:✅ 最新
 > **目标读者**:产品团队、工程团队、QA 团队
 > **关联文档**:[概念设计说明书 v0.8](../1_concepts/baafoo-concept-design.md)
-> **最后更新**:2026-05-31
-> **变更摘要**:v2.2 - **新增需求**:用户角色权限控制(RBAC),定义管理员/开发/测试/游客四类角色,按角色控制规则/场景/环境的增删改查权限,新增 R-S7.7(权限控制 API)、R-W7(用户管理界面)、权限配置项及风险项;v2.1 - **需求变更**:1) 场景集关联环境时,其包含的规则自动继承环境关联且不可删除;2) 新增 `GET /api/rules/{id}/inherited-environments` API 查询规则继承的场景集环境;v2.0 - 1) 未匹配规则的请求默认改为**透传**(原 404),`baafoo.stub.unmatched-default` 默认值改为 `passthrough`;2) 规则及场景集新增 `environments` 细粒度控制,可配置在哪些环境生效(新规则默认不生效、新环境默认旧规则不生效);Q8 决议更新为规则与环境双向绑定;N6 非目标删除
+> **最后更新**:2026-06-03
+> **变更摘要**:v2.3 - **新增需求**:R-S2 AC-11 Faker 动态数据函数(`{{faker.phone}}`/`{{faker.email}}`/`{{faker.name}}`等);R-S2 AC-12 响应多编码格式支持(GBK/GB2312/Big5等),每个响应分支可独立设置 charset,Passthrough 录制自动解析下游编码;v2.2 - **新增需求**:用户角色权限控制(RBAC),定义管理员/开发/测试/游客四类角色,按角色控制规则/场景/环境的增删改查权限,新增 R-S7.7(权限控制 API)、R-W7(用户管理界面)、权限配置项及风险项;v2.1 - **需求变更**:1) 场景集关联环境时,其包含的规则自动继承环境关联且不可删除;2) 新增 `GET /api/rules/{id}/inherited-environments` API 查询规则继承的场景集环境;v2.0 - 1) 未匹配规则的请求默认改为**透传**(原 404),`baafoo.stub.unmatched-default` 默认值改为 `passthrough`;2) 规则及场景集新增 `environments` 细粒度控制,可配置在哪些环境生效(新规则默认不生效、新环境默认旧规则不生效);Q8 决议更新为规则与环境双向绑定;N6 非目标删除
 ---
 
 ## 1. 问题陈述
@@ -313,6 +313,8 @@
 | **AC-08** | 支持异常模拟:`READ_TIMEOUT`(读超时)、`CONNECTION_RESET`(连接重置)、`HTTP_502` 等 |
 | **AC-09** | 未匹配到任何 HTTP 规则时,默认透传(连接真实下游)并记录 INFO 日志(受 `baafoo.stub.unmatched-default` 配置项控制,见 R-A9 AC-05) |
 | **AC-10** | 响应 body 支持模板变量:`{{path.xxx}}`(路径参数)、`{{query.xxx}}`(Query 参数)、`{{header.xxx}}`(请求头)、`{{body.xxx}}`(请求体 JSONPath 提取值) |
+| **AC-11** | 响应 body 支持 Faker 动态数据函数:`{{faker.phone}}`(手机号)、`{{faker.email}}`(邮箱)、`{{faker.name}}`(姓名)、`{{faker.idCard}}`(身份证号)、`{{faker.address}}`(地址)、`{{faker.company}}`(公司名)、`{{faker.url}}`(URL)、`{{faker.ip}}`(IP 地址)、`{{faker.uuid}}`(UUID)、`{{faker.timestamp}}`(时间戳)等，每次请求生成不同随机值，无需硬编码测试数据 |
+| **AC-12** | 响应支持多编码格式:每个响应分支可独立设置 `charset`(默认 UTF-8)，支持 GBK/GB2312/Big5/Shift_JIS/EUC-KR/ISO-8859-1/Windows-1252 等编码，响应体按指定编码输出，Content-Type 自动携带对应 charset 声明；Passthrough 模式录制时从下游响应 Content-Type 解析实际编码，避免非 UTF-8 响应录制乱码 |
 
 #### R-S3:Raw TCP Mock Handler - P0
 
