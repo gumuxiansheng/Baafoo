@@ -7,6 +7,7 @@ import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.Rule;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.util.MatchEngine;
+import com.baafoo.core.util.TemplateEngine;
 import com.baafoo.server.storage.StorageService;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFutureListener;
@@ -137,7 +138,8 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     RecordingEntry rec = buildRecordingFromStub(result, host, port, method, path, headers, body);
                     storage.addRecording(rec);
                 }
-                sendStubResponse(ctx, result.getResponse(), result.getRule().getId());
+                sendStubResponse(ctx, result.getResponse(), result.getRule().getId(),
+                        method, path, host, headers, queryParams, body);
             }
         } else {
             String unmatchedDefault = config.getUnmatchedDefault();
@@ -264,7 +266,10 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         });
     }
 
-    private void sendStubResponse(ChannelHandlerContext ctx, ResponseEntry entry, String ruleId) {
+    private void sendStubResponse(ChannelHandlerContext ctx, ResponseEntry entry, String ruleId,
+                                      String method, String path, String host,
+                                      Map<String, String> headers, Map<String, String> queryParams,
+                                      String requestBody) {
         try {
             // Apply delay if configured
             if (entry.getDelayMs() > 0) {
@@ -272,7 +277,15 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
             }
 
             int statusCode = entry.getStatusCode();
-            String responseBody = entry.getBody() != null ? entry.getBody() : "";
+            String rawBody = entry.getBody() != null ? entry.getBody() : "";
+
+            // Render template variables ({{request.*}}, {{faker.*}})
+            String responseBody = rawBody;
+            if (rawBody.contains("{{")) {
+                TemplateEngine.RequestContext templateCtx = new TemplateEngine.RequestContext(
+                        method, path, host, headers, queryParams, requestBody);
+                responseBody = TemplateEngine.render(rawBody, templateCtx);
+            }
             HttpResponseStatus status = HttpResponseStatus.valueOf(statusCode);
 
             FullHttpResponse response = new DefaultFullHttpResponse(

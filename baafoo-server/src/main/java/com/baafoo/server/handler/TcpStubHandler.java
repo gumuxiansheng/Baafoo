@@ -6,6 +6,7 @@ import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.model.Rule;
 import com.baafoo.core.util.MatchEngine;
+import com.baafoo.core.util.TemplateEngine;
 import com.baafoo.server.storage.StorageService;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -71,7 +72,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                 storage.addRecording(rec);
             }
 
-            sendTcpResponse(ctx, entry);
+            sendTcpResponse(ctx, entry, payload);
         } else {
             // TCP unmatched = close connection
             log.debug("No TCP rule matched, closing connection");
@@ -79,13 +80,22 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
         }
     }
 
-    private void sendTcpResponse(ChannelHandlerContext ctx, ResponseEntry entry) {
+    private void sendTcpResponse(ChannelHandlerContext ctx, ResponseEntry entry, String payload) {
         try {
             if (entry.getDelayMs() > 0) {
                 Thread.sleep(entry.getDelayMs());
             }
 
-            String body = entry.getBody() != null ? entry.getBody() : "";
+            String rawBody = entry.getBody() != null ? entry.getBody() : "";
+            String body = rawBody;
+            if (rawBody.contains("{{")) {
+                TemplateEngine.RequestContext templateCtx = new TemplateEngine.RequestContext(
+                        null, null, null,
+                        Collections.<String, String>emptyMap(),
+                        Collections.<String, String>emptyMap(),
+                        payload);
+                body = TemplateEngine.render(rawBody, templateCtx);
+            }
             ByteBuf response = Unpooled.copiedBuffer(body, StandardCharsets.UTF_8);
 
             ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);

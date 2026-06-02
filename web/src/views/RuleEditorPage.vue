@@ -226,6 +226,30 @@
           <el-form-item label="响应体" size="small">
             <el-input v-model="resp.body" type="textarea" :rows="6" :placeholder="bodyPlaceholder" />
             <div style="font-size: 12px; color: #909399; margin-top: 4px" v-html="templateVarHint"></div>
+            <!-- Faker Quick Insert -->
+            <div v-if="showFakerRef" class="faker-ref-panel">
+              <div class="faker-ref-title">动态数据函数 — 点击插入</div>
+              <div class="faker-ref-group">
+                <div class="faker-ref-label">个人信息</div>
+                <el-tag v-for="fn in fakerGroups.personal" :key="fn" size="small" class="faker-tag" @click="insertFakerVar(resp, fn)" v-text="'{{' + fn + '}}'"></el-tag>
+              </div>
+              <div class="faker-ref-group">
+                <div class="faker-ref-label">地址</div>
+                <el-tag v-for="fn in fakerGroups.address" :key="fn" size="small" class="faker-tag" @click="insertFakerVar(resp, fn)" v-text="'{{' + fn + '}}'"></el-tag>
+              </div>
+              <div class="faker-ref-group">
+                <div class="faker-ref-label">公司/网络</div>
+                <el-tag v-for="fn in fakerGroups.network" :key="fn" size="small" class="faker-tag" @click="insertFakerVar(resp, fn)" v-text="'{{' + fn + '}}'"></el-tag>
+              </div>
+              <div class="faker-ref-group">
+                <div class="faker-ref-label">数字/时间</div>
+                <el-tag v-for="fn in fakerGroups.numeric" :key="fn" size="small" class="faker-tag" @click="insertFakerVar(resp, fn)" v-text="'{{' + fn + '}}'"></el-tag>
+              </div>
+              <div class="faker-ref-group">
+                <div class="faker-ref-label">其他</div>
+                <el-tag v-for="fn in fakerGroups.misc" :key="fn" size="small" class="faker-tag" @click="insertFakerVar(resp, fn)" v-text="'{{' + fn + '}}'"></el-tag>
+              </div>
+            </div>
           </el-form-item>
         </div>
 
@@ -257,6 +281,15 @@ export default {
     const saving = ref(false)
     const allEnvironments = ref([])
     const inheritedEnvs = ref([])
+    const showFakerRef = ref(false)
+
+    const fakerGroups = {
+      personal: ['faker.name', 'faker.firstName', 'faker.lastName', 'faker.phone', 'faker.email', 'faker.idCard'],
+      address: ['faker.address', 'faker.province', 'faker.city', 'faker.zipCode', 'faker.street'],
+      network: ['faker.company', 'faker.url', 'faker.ip', 'faker.ipv6', 'faker.mac', 'faker.userAgent'],
+      numeric: ['faker.int', 'faker.int.1.100', 'faker.float', 'faker.boolean', 'faker.uuid', 'faker.timestamp', 'faker.date', 'faker.dateTime'],
+      misc: ['faker.hex', 'faker.hexColor', 'faker.alphaNumeric', 'faker.locale', 'faker.statusCode']
+    }
 
     const isNew = computed(() => route.params.id === 'new')
 
@@ -264,7 +297,14 @@ export default {
       return inheritedEnvs.value.includes(val) ? 'warning' : ''
     }
 
-    const templateVarHint = '支持模板变量: <code>{{request.body.xxx}}</code> <code>{{request.header.xxx}}</code> <code>{{request.query.xxx}}</code>'
+    const templateVarHint = '支持模板变量: <code>{{request.body.xxx}}</code> <code>{{request.header.xxx}}</code> <code>{{request.query.xxx}}</code> <code>{{request.path}}</code><br/>动态数据: <code>{{faker.phone}}</code> <code>{{faker.email}}</code> <code>{{faker.name}}</code> <code>{{faker.address}}</code> <code>{{faker.idCard}}</code> <code>{{faker.uuid}}</code> <code>{{faker.int.1.100}}</code> <a href="javascript:void(0)" onclick="document.dispatchEvent(new CustomEvent(\'toggle-faker-ref\'))" style="color:#409EFF">更多函数...</a>'
+
+    // Listen for toggle-faker-ref event from v-html link
+    if (typeof document !== 'undefined') {
+      document.addEventListener('toggle-faker-ref', () => {
+        showFakerRef.value = !showFakerRef.value
+      })
+    }
 
     const bodyPlaceholder = '{"code": 0, "data": {}}'
 
@@ -314,6 +354,19 @@ export default {
         cond.operator = 'equals'
       } else if (cond.type === 'bodyContains') {
         cond.operator = 'contains'
+      }
+    }
+
+    function insertFakerVar(resp, variable) {
+      const ta = document.querySelector('.response-card textarea')
+      if (ta && resp) {
+        const start = ta.selectionStart
+        const end = ta.selectionEnd
+        const before = (resp.body || '').substring(0, start)
+        const after = (resp.body || '').substring(end)
+        resp.body = before + '{{' + variable + '}}' + after
+      } else if (resp) {
+        resp.body = (resp.body || '') + '{{' + variable + '}}'
       }
     }
 
@@ -430,6 +483,7 @@ export default {
 
     return {
       isNew, rule, loading, saving, form, allEnvironments, inheritedEnvs, envTagType, templateVarHint, bodyPlaceholder,
+      showFakerRef, fakerGroups, insertFakerVar,
       addCondition, removeCondition,
       addResponse, removeResponse, addResponseCondition,
       getResponseHeaders, addResponseHeader, removeResponseHeader,
@@ -469,5 +523,37 @@ export default {
 }
 .response-headers-section {
   margin-bottom: 12px;
+}
+.faker-ref-panel {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  border: 1px solid #e8e8e8;
+}
+.faker-ref-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 8px;
+}
+.faker-ref-group {
+  margin-bottom: 6px;
+}
+.faker-ref-label {
+  font-size: 12px;
+  color: #606266;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+.faker-tag {
+  margin-right: 4px;
+  margin-bottom: 2px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.faker-tag:hover {
+  color: #409EFF;
+  border-color: #409EFF;
 }
 </style>
