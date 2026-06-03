@@ -186,7 +186,7 @@ public class ManagementApiHandlerTest {
     public void testAgentRegister() throws Exception {
         StorageService.AgentRegistration reg = new StorageService.AgentRegistration();
         reg.agentId = "agent-1";
-        when(storage.registerAgent(anyString(), anyString(), anyString(), anyString(), anyList()))
+        when(storage.registerAgent(anyString(), anyString(), anyString(), anyString(), anyList(), anyString()))
                 .thenReturn(reg);
         when(storage.getEnvironmentByName(anyString())).thenReturn(null);
 

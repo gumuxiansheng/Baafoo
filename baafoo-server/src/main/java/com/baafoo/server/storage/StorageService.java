@@ -80,9 +80,9 @@ public interface StorageService {
 
     // --- Agent Management ---
 
-    AgentRegistration registerAgent(String agentId, String environment, String hostname, String version, List<String> protocols);
+    AgentRegistration registerAgent(String agentId, String environment, String hostname, String version, List<String> protocols, String agentIp);
 
-    void agentHeartbeat(String agentId);
+    void agentHeartbeat(String agentId, String agentIp);
 
     List<AgentRegistration> listAgents();
 
@@ -123,6 +123,7 @@ public interface StorageService {
         public String hostname;
         public String version;
         public List<String> protocols;
+        public String agentIp;
         public long registeredAt;
         public long lastHeartbeat;
 

@@ -316,15 +316,15 @@ public class FileStorageTest {
 
     @Test
     public void testRegisterAgent() {
-        FileStorage.AgentRegistration reg = storage.registerAgent("agent-1", "dev", "host1", "1.0", Arrays.asList("http"));
+        FileStorage.AgentRegistration reg = storage.registerAgent("agent-1", "dev", "host1", "1.0", Arrays.asList("http"), "192.168.1.1");
         assertNotNull(reg);
         assertEquals("agent-1", reg.agentId);
     }
 
     @Test
     public void testAgentHeartbeat() {
-        storage.registerAgent("agent-1", "dev", "host1", "1.0", Arrays.asList("http"));
-        storage.agentHeartbeat("agent-1");
+        storage.registerAgent("agent-1", "dev", "host1", "1.0", Arrays.asList("http"), "192.168.1.1");
+        storage.agentHeartbeat("agent-1", null);
 
         List<FileStorage.AgentRegistration> agents = storage.listAgents();
         assertEquals(1, agents.size());
@@ -332,14 +332,14 @@ public class FileStorageTest {
 
     @Test
     public void testAgentHeartbeatUnknown() {
-        storage.agentHeartbeat("nonexistent");
+        storage.agentHeartbeat("nonexistent", null);
         assertTrue(storage.listAgents().isEmpty());
     }
 
     @Test
     public void testListAgents() {
-        storage.registerAgent("a1", "dev", "h1", "1.0", Arrays.asList("http"));
-        storage.registerAgent("a2", "prod", "h2", "1.0", Arrays.asList("tcp"));
+        storage.registerAgent("a1", "dev", "h1", "1.0", Arrays.asList("http"), "192.168.1.1");
+        storage.registerAgent("a2", "prod", "h2", "1.0", Arrays.asList("tcp"), "10.0.0.1");
 
         assertEquals(2, storage.listAgents().size());
         assertEquals(1, storage.getAgentsForEnvironment("dev").size());

@@ -33,6 +33,7 @@ public class DdlBuilder {
             createRecordingsTable(stmt);
             addColumnIfMissing(stmt, "recordings", "agent_ip", "VARCHAR(45)");
             createAgentsTable(stmt);
+            addColumnIfMissing(stmt, "agents", "agent_ip", "VARCHAR(45)");
             createUsersTable(stmt);
             createIndexes(stmt);
         }
@@ -154,6 +155,7 @@ public class DdlBuilder {
             "  hostname VARCHAR(255)," +
             "  version VARCHAR(50)," +
             "  protocols_json TEXT," +
+            "  agent_ip VARCHAR(45)," +
             "  registered_at BIGINT," +
             "  last_heartbeat BIGINT" +
             ")"

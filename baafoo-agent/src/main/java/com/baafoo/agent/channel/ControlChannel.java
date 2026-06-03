@@ -15,6 +15,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -117,12 +118,18 @@ public class ControlChannel {
 
     private boolean register() {
         try {
+            String hostname = java.net.InetAddress.getLocalHost().getHostName();
             AgentRegisterRequest req = new AgentRegisterRequest();
-            req.agentId = config.getAgentId();
+            String agentId = config.getAgentId();
+            if (agentId == null || agentId.trim().isEmpty()) {
+                agentId = hostname;
+            }
+            req.agentId = agentId;
             req.environment = config.getEnvironment();
-            req.hostname = java.net.InetAddress.getLocalHost().getHostName();
+            req.hostname = hostname;
             req.version = "1.0.0";
             req.protocols = config.getProtocols();
+            req.agentIp = resolveLocalIp();
 
             String json = mapper.writeValueAsString(req);
             HttpURLConnection conn = post(API_BASE + "/agent/register", json);
@@ -167,6 +174,7 @@ public class ControlChannel {
             HeartbeatRequest req = new HeartbeatRequest();
             req.agentId = config.getAgentId();
             req.timestamp = System.currentTimeMillis();
+            req.agentIp = resolveLocalIp();
 
             String json = mapper.writeValueAsString(req);
             HttpURLConnection conn = post(API_BASE + "/agent/heartbeat", json);
@@ -280,6 +288,36 @@ public class ControlChannel {
         public String hostname;
         public String version;
         public List<String> protocols;
+        public String agentIp;
+    }
+
+    /**
+     * Resolve the agent's non-loopback IPv4 address.
+     * Iterates network interfaces to find the first non-loopback IPv4 address.
+     * Falls back to InetAddress.getLocalHost() or 127.0.0.1.
+     */
+    private static String resolveLocalIp() {
+        try {
+            Enumeration<java.net.NetworkInterface> interfaces = java.net.NetworkInterface.getNetworkInterfaces();
+            while (interfaces != null && interfaces.hasMoreElements()) {
+                java.net.NetworkInterface ni = interfaces.nextElement();
+                if (ni.isLoopback() || !ni.isUp()) continue;
+                Enumeration<java.net.InetAddress> addrs = ni.getInetAddresses();
+                while (addrs.hasMoreElements()) {
+                    java.net.InetAddress addr = addrs.nextElement();
+                    if (addr instanceof java.net.Inet4Address && !addr.isLoopbackAddress()) {
+                        return addr.getHostAddress();
+                    }
+                }
+            }
+            java.net.InetAddress local = java.net.InetAddress.getLocalHost();
+            if (!local.isLoopbackAddress()) {
+                return local.getHostAddress();
+            }
+        } catch (Exception e) {
+            // fall through
+        }
+        return "127.0.0.1";
     }
 
     public static class AgentRegisterResponse {
@@ -291,6 +329,7 @@ public class ControlChannel {
     public static class HeartbeatRequest {
         public String agentId;
         public long timestamp;
+        public String agentIp;
     }
 
     public static class PollResponse {

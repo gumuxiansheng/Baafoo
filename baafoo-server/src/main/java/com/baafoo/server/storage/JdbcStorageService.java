@@ -597,13 +597,14 @@ public class JdbcStorageService implements StorageService {
 
     @Override
     public AgentRegistration registerAgent(String agentId, String environment, String hostname,
-                                            String version, List<String> protocols) {
+                                            String version, List<String> protocols, String agentIp) {
         AgentRegistration reg = new AgentRegistration();
         reg.agentId = agentId;
         reg.environment = environment;
         reg.hostname = hostname;
         reg.version = version;
         reg.protocols = protocols;
+        reg.agentIp = agentIp;
         reg.registeredAt = System.currentTimeMillis();
         reg.lastHeartbeat = System.currentTimeMillis();
 
@@ -629,9 +630,9 @@ public class JdbcStorageService implements StorageService {
     }
 
     @Override
-    public void agentHeartbeat(String agentId) {
+    public void agentHeartbeat(String agentId, String agentIp) {
         try (SqlSession session = openSession()) {
-            session.getMapper(AgentMapper.class).updateHeartbeat(agentId, System.currentTimeMillis());
+            session.getMapper(AgentMapper.class).updateHeartbeat(agentId, System.currentTimeMillis(), agentIp);
         } catch (Exception e) {
             log.error("Failed to update heartbeat for agent {}: {}", agentId, e.getMessage());
         }

@@ -23,10 +23,11 @@ class AgentApiHandler implements ResourceHandler {
             String env = (String) reqBody.getOrDefault("environment", "default");
             String hostname = (String) reqBody.getOrDefault("hostname", "unknown");
             String version = (String) reqBody.getOrDefault("version", "1.0.0");
+            String agentIp = (String) reqBody.getOrDefault("agentIp", ctx.remoteAddr);
             @SuppressWarnings("unchecked")
             List<String> protocols = (List<String>) reqBody.getOrDefault("protocols", new ArrayList<String>());
 
-            StorageService.AgentRegistration reg = ctx.storage.registerAgent(agentId, env, hostname, version, protocols);
+            StorageService.AgentRegistration reg = ctx.storage.registerAgent(agentId, env, hostname, version, protocols, agentIp);
 
             Environment environment = ctx.storage.getEnvironmentByName(env);
             String mode = environment != null ? environment.getMode().getValue() : "record-and-stub";
@@ -41,7 +42,8 @@ class AgentApiHandler implements ResourceHandler {
         if (path.equals(API_PREFIX + "agent/heartbeat") && "POST".equals(method)) {
             Map<String, Object> reqBody = ctx.mapper.readValue(body, Map.class);
             String agentId = (String) reqBody.get("agentId");
-            ctx.storage.agentHeartbeat(agentId);
+            String agentIp = (String) reqBody.get("agentIp");
+            ctx.storage.agentHeartbeat(agentId, agentIp);
             return ApiResponse.ok("OK", null);
         }
 
@@ -69,12 +71,14 @@ class AgentApiHandler implements ResourceHandler {
             ctx.requirePermission("recording", "create");
             List<RecordingEntry> batch = ctx.mapper.readValue(body,
                     ctx.mapper.getTypeFactory().constructCollectionType(List.class, RecordingEntry.class));
-            String agentIp = ctx.remoteAddr;
-            if (agentIp != null && !agentIp.isEmpty()) {
-                for (RecordingEntry rec : batch) {
-                    if (rec.getAgentIp() == null || rec.getAgentIp().isEmpty()) {
-                        rec.setAgentIp(agentIp);
-                    }
+            String agentId = ctx.queryParam("agentId");
+            String agentIp = resolveAgentIp(ctx);
+            for (RecordingEntry rec : batch) {
+                if (rec.getAgentId() == null || rec.getAgentId().isEmpty()) {
+                    rec.setAgentId(agentId);
+                }
+                if (rec.getAgentIp() == null || rec.getAgentIp().isEmpty()) {
+                    rec.setAgentIp(agentIp);
                 }
             }
             ctx.storage.addRecordings(batch);
@@ -86,5 +90,17 @@ class AgentApiHandler implements ResourceHandler {
         }
 
         return null;
+    }
+
+    private String resolveAgentIp(ApiContext ctx) {
+        String agentId = ctx.queryParam("agentId");
+        if (agentId != null && !agentId.isEmpty()) {
+            for (StorageService.AgentRegistration agent : ctx.storage.listAgents()) {
+                if (agentId.equals(agent.getAgentId()) && agent.agentIp != null && !agent.agentIp.isEmpty()) {
+                    return agent.agentIp;
+                }
+            }
+        }
+        return ctx.remoteAddr;
     }
 }

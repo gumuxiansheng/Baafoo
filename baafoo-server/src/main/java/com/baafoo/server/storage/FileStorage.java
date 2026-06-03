@@ -384,7 +384,7 @@ public class FileStorage {
 
     // --- Agent Management ---
 
-    public AgentRegistration registerAgent(String agentId, String environment, String hostname, String version, List<String> protocols) {
+    public AgentRegistration registerAgent(String agentId, String environment, String hostname, String version, List<String> protocols, String agentIp) {
         lock.writeLock().lock();
         try {
             AgentRegistration reg = new AgentRegistration();
@@ -393,6 +393,7 @@ public class FileStorage {
             reg.hostname = hostname;
             reg.version = version;
             reg.protocols = protocols;
+            reg.agentIp = agentIp;
             reg.registeredAt = System.currentTimeMillis();
             reg.lastHeartbeat = System.currentTimeMillis();
 
@@ -411,10 +412,13 @@ public class FileStorage {
         }
     }
 
-    public void agentHeartbeat(String agentId) {
+    public void agentHeartbeat(String agentId, String agentIp) {
         AgentRegistration reg = agents.get(agentId);
         if (reg != null) {
             reg.lastHeartbeat = System.currentTimeMillis();
+            if (agentIp != null && !agentIp.isEmpty()) {
+                reg.agentIp = agentIp;
+            }
         }
     }
 
@@ -570,6 +574,7 @@ public class FileStorage {
         public String hostname;
         public String version;
         public List<String> protocols;
+        public String agentIp;
         public long registeredAt;
         public long lastHeartbeat;
     }

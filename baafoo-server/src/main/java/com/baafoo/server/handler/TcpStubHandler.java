@@ -69,7 +69,9 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                 rec.setResponseStatusCode(entry.getStatusCode());
                 rec.setResponseBody(entry.getBody());
                 rec.setResponseTimeMs(entry.getDelayMs());
-                rec.setAgentIp(resolveAgentIp(ctx));
+                String agentId = resolveAgentId();
+                rec.setAgentId(agentId);
+                rec.setAgentIp(resolveAgentIp());
                 storage.addRecording(rec);
             }
 
@@ -110,12 +112,26 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
         }
     }
 
-    private String resolveAgentIp(ChannelHandlerContext ctx) {
-        if (ctx.channel().remoteAddress() != null) {
-            String addr = ctx.channel().remoteAddress().toString();
-            if (addr.startsWith("/")) addr = addr.substring(1);
-            int colonIdx = addr.indexOf(':');
-            return colonIdx > 0 ? addr.substring(0, colonIdx) : addr;
+    private String resolveAgentId() {
+        for (StorageService.AgentRegistration agent : storage.listAgents()) {
+            long onlineThreshold = System.currentTimeMillis() - 90000;
+            if (agent.lastHeartbeat > onlineThreshold
+                    && agent.agentId != null
+                    && !agent.agentId.isEmpty()) {
+                return agent.agentId;
+            }
+        }
+        return null;
+    }
+
+    private String resolveAgentIp() {
+        for (StorageService.AgentRegistration agent : storage.listAgents()) {
+            long onlineThreshold = System.currentTimeMillis() - 90000;
+            if (agent.lastHeartbeat > onlineThreshold
+                    && agent.agentIp != null
+                    && !agent.agentIp.isEmpty()) {
+                return agent.agentIp;
+            }
         }
         return null;
     }

@@ -92,9 +92,6 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         Map<String, String> headers = extractHeaders(request);
         String body = request.content().toString(StandardCharsets.UTF_8);
 
-        // Resolve agent IP from the incoming connection
-        String agentIp = resolveAgentIp(ctx);
-
         // Extract original host and port from Host header
         // Agent redirects httpbin.org:80 → 127.0.0.1:9000, but
         // HttpURLConnection still sends "Host: httpbin.org" (or "Host: httpbin.org:80")
@@ -119,6 +116,18 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         // Match against rules (filter by environments)
         List<Rule> rules = storage.listRules();
         String agentEnvironment = resolveAgentEnvironment(host, port);
+        String agentId = resolveAgentId(agentEnvironment);
+        String agentIp = resolveAgentIp(agentEnvironment);
+        if (agentIp == null) {
+            String channelIp = resolveAgentIpFromChannel(ctx);
+            // Only use channel IP if it's not loopback and we have no registered IP
+            if (channelIp != null && !"127.0.0.1".equals(channelIp) && !"0:0:0:0:0:0:0:1".equals(channelIp)) {
+                agentIp = channelIp;
+            } else if (channelIp != null && agentIp == null) {
+                // Last resort: use channel IP even if loopback
+                agentIp = channelIp;
+            }
+        }
         List<Rule> filteredRules = filterRulesByEnvironment(rules, agentEnvironment);
         MatchEngine.MatchResult result = matchEngine.match(
                 filteredRules, "http", host, port, null,
@@ -136,10 +145,11 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
             if (currentMode == EnvironmentMode.PASSTHROUGH || currentMode == EnvironmentMode.RECORD) {
                 log.info("Mode {} — passthrough for matched rule: {} {}", currentMode.getValue(), method, path);
                 sendPassthroughAndRecord(ctx, method, host, port, path, queryParams, headers, body,
-                        result, agentEnvironment, agentIp);
+                        result, agentEnvironment, agentId, agentIp);
             } else {
                 if (currentMode == EnvironmentMode.RECORD_AND_STUB) {
                     RecordingEntry rec = buildRecordingFromStub(result, host, port, method, path, headers, body);
+                    rec.setAgentId(agentId);
                     rec.setAgentIp(agentIp);
                     storage.addRecording(rec);
                 }
@@ -214,7 +224,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                                            String path, Map<String, String> queryParams,
                                            Map<String, String> headers, String requestBody,
                                            MatchEngine.MatchResult matchResult, String agentEnvironment,
-                                           String agentIp) {
+                                           String agentId, String agentIp) {
         PASSTHROUGH_EXECUTOR.submit(() -> {
             long startTime = System.currentTimeMillis();
             try {
@@ -249,6 +259,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     java.nio.charset.Charset recordCharset = parseCharsetFromContentType(result.responseHeaders.get("Content-Type"));
                     recording.setResponseBody(new String(result.responseBody, recordCharset));
                     recording.setResponseTimeMs(result.responseTimeMs);
+                    recording.setAgentId(agentId);
                     recording.setAgentIp(agentIp);
                     storage.addRecording(recording);
                 }
@@ -268,6 +279,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     recording.setResponseStatusCode(502);
                     recording.setResponseBody("Passthrough failed: " + e.getMessage());
                     recording.setResponseTimeMs(System.currentTimeMillis() - startTime);
+                    recording.setAgentId(agentId);
                     recording.setAgentIp(agentIp);
                     storage.addRecording(recording);
                 }
@@ -550,6 +562,8 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
     }
 
     private String resolveAgentEnvironment(String host, int port) {
+        // 1. Try to match by host:port from registered agents' environments
+        //    (agents register the environment they belong to)
         for (StorageService.AgentRegistration agent : storage.listAgents()) {
             long onlineThreshold = System.currentTimeMillis() - 90000;
             if (agent.lastHeartbeat > onlineThreshold && agent.environment != null) {
@@ -575,7 +589,60 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         return filtered;
     }
 
-    private String resolveAgentIp(ChannelHandlerContext ctx) {
+    private String resolveAgentId(String agentEnvironment) {
+        if (agentEnvironment == null) return null;
+        for (StorageService.AgentRegistration agent : storage.listAgents()) {
+            long onlineThreshold = System.currentTimeMillis() - 90000;
+            if (agent.lastHeartbeat > onlineThreshold
+                    && agentEnvironment.equals(agent.environment)
+                    && agent.agentId != null
+                    && !agent.agentId.isEmpty()) {
+                return agent.agentId;
+            }
+        }
+        return null;
+    }
+
+    private String resolveAgentIp(String agentEnvironment) {
+        // 1. Try to get IP from agent registration (agentIp field, reported by agent via resolveLocalIp())
+        if (agentEnvironment != null) {
+            for (StorageService.AgentRegistration agent : storage.listAgents()) {
+                long onlineThreshold = System.currentTimeMillis() - 90000;
+                if (agent.lastHeartbeat > onlineThreshold
+                        && agentEnvironment.equals(agent.environment)
+                        && agent.agentIp != null
+                        && !agent.agentIp.isEmpty()
+                        && !"127.0.0.1".equals(agent.agentIp)) {
+                    return agent.agentIp;
+                }
+            }
+        }
+        // 2. Fallback: any online agent with a non-loopback IP
+        for (StorageService.AgentRegistration agent : storage.listAgents()) {
+            long onlineThreshold = System.currentTimeMillis() - 90000;
+            if (agent.lastHeartbeat > onlineThreshold
+                    && agent.agentIp != null
+                    && !agent.agentIp.isEmpty()
+                    && !"127.0.0.1".equals(agent.agentIp)) {
+                return agent.agentIp;
+            }
+        }
+        // 3. Fallback: use registered IP even if it's 127.0.0.1
+        for (StorageService.AgentRegistration agent : storage.listAgents()) {
+            long onlineThreshold = System.currentTimeMillis() - 90000;
+            if (agent.lastHeartbeat > onlineThreshold
+                    && agent.agentIp != null
+                    && !agent.agentIp.isEmpty()) {
+                return agent.agentIp;
+            }
+        }
+        return null;
+    }
+
+    private String resolveAgentIpFromChannel(ChannelHandlerContext ctx) {
+        // 1. Check X-Forwarded-For header (if behind a proxy)
+        // This won't help for direct agent connections but is good practice
+        // 2. Fall back to channel remote address
         if (ctx.channel().remoteAddress() != null) {
             String addr = ctx.channel().remoteAddress().toString();
             if (addr.startsWith("/")) addr = addr.substring(1);

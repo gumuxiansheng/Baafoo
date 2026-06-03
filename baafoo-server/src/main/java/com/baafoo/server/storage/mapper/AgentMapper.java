@@ -9,7 +9,7 @@ public interface AgentMapper {
 
     int upsertAgent(AgentRegistration registration);
 
-    int updateHeartbeat(@Param("agentId") String agentId, @Param("lastHeartbeat") long lastHeartbeat);
+    int updateHeartbeat(@Param("agentId") String agentId, @Param("lastHeartbeat") long lastHeartbeat, @Param("agentIp") String agentIp);
 
     List<AgentRegistration> listAgents();
 
