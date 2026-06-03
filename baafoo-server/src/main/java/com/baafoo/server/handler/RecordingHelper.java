@@ -17,13 +17,13 @@ public final class RecordingHelper {
 
     private RecordingHelper() {}
 
-    public static RecordingEntry buildFromStub(MatchEngine.MatchResult result, String host, int port,
-                                                String method, String path,
+    public static RecordingEntry buildFromStub(MatchEngine.MatchResult result, String protocol,
+                                                String host, int port, String method, String path,
                                                 Map<String, String> headers, String body) {
         ResponseEntry entry = result.getResponse();
         RecordingEntry rec = new RecordingEntry();
         rec.setRuleId(result.getRule().getId());
-        rec.setProtocol("http");
+        rec.setProtocol(protocol);
         rec.setHost(host);
         rec.setPort(port);
         rec.setMethod(method);

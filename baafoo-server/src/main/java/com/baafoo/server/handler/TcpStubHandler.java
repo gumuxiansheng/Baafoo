@@ -1,6 +1,5 @@
 package com.baafoo.server.handler;
 
-import com.baafoo.core.model.Environment;
 import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.ResponseEntry;
@@ -32,10 +31,12 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
     private final StorageService storage;
     private final MatchEngine matchEngine;
+    private final AgentResolver agentResolver;
 
     public TcpStubHandler(StorageService storage) {
         this.storage = storage;
         this.matchEngine = new MatchEngine();
+        this.agentResolver = new AgentResolver(storage);
     }
 
     @Override
@@ -49,10 +50,24 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
         msg.readBytes(data);
         String payload = new String(data, StandardCharsets.UTF_8);
 
+        // Resolve agent info (host/port unused for TCP: agent routes via 127.0.0.1)
+        String agentEnvironment = agentResolver.resolveAgentEnvironment(null, 0);
+        String agentId = agentResolver.resolveAgentId(agentEnvironment);
+        String agentIp = agentResolver.resolveAgentIp(agentEnvironment);
+        if (agentIp == null) {
+            String channelIp = agentResolver.resolveAgentIpFromChannel(ctx);
+            if (channelIp != null && !"127.0.0.1".equals(channelIp) && !"0:0:0:0:0:0:0:1".equals(channelIp)) {
+                agentIp = channelIp;
+            } else if (channelIp != null && agentIp == null) {
+                agentIp = channelIp;
+            }
+        }
+
         // Match TCP rules
         List<Rule> rules = storage.listRules();
+        List<Rule> filteredRules = agentResolver.filterRulesByEnvironment(rules, agentEnvironment);
         MatchEngine.MatchResult result = matchEngine.match(
-                rules, "tcp", "127.0.0.1", 0, null,
+                filteredRules, "tcp", "127.0.0.1", 0, null,
                 null, null,
                 Collections.<String, String>emptyMap(),
                 Collections.<String, String>emptyMap(),
@@ -60,24 +75,19 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
         if (result.isMatched()) {
             ResponseEntry entry = result.getResponse();
+            EnvironmentMode currentMode = agentResolver.resolveEnvironmentMode(agentEnvironment);
 
-            if (isRecording()) {
-                RecordingEntry rec = new RecordingEntry();
-                rec.setRuleId(result.getRule().getId());
-                rec.setProtocol("tcp");
-                rec.setRequestBody(payload);
-                rec.setResponseStatusCode(entry.getStatusCode());
-                rec.setResponseBody(entry.getBody());
-                rec.setResponseTimeMs(entry.getDelayMs());
-                String agentId = resolveAgentId();
+            if (currentMode == EnvironmentMode.RECORD || currentMode == EnvironmentMode.RECORD_AND_STUB) {
+                RecordingEntry rec = RecordingHelper.buildFromStub(
+                        result, "tcp", "127.0.0.1", 0, null, null,
+                        Collections.<String, String>emptyMap(), payload);
                 rec.setAgentId(agentId);
-                rec.setAgentIp(resolveAgentIp());
+                rec.setAgentIp(agentIp);
                 storage.addRecording(rec);
             }
 
             sendTcpResponse(ctx, entry, payload);
         } else {
-            // TCP unmatched = close connection
             log.debug("No TCP rule matched, closing connection");
             ctx.close();
         }
@@ -99,7 +109,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                         payload);
                 body = TemplateEngine.render(rawBody, templateCtx);
             }
-            // Resolve charset from entry (default UTF-8)
+
             String charsetName = entry.getCharset() != null && !entry.getCharset().isEmpty() ? entry.getCharset() : "UTF-8";
             java.nio.charset.Charset charset = java.nio.charset.Charset.forName(charsetName);
             ByteBuf response = Unpooled.copiedBuffer(body, charset);
@@ -110,39 +120,6 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
             log.error("Error sending TCP response: {}", e.getMessage());
             ctx.close();
         }
-    }
-
-    private String resolveAgentId() {
-        for (StorageService.AgentRegistration agent : storage.listAgents()) {
-            long onlineThreshold = System.currentTimeMillis() - 90000;
-            if (agent.lastHeartbeat > onlineThreshold
-                    && agent.agentId != null
-                    && !agent.agentId.isEmpty()) {
-                return agent.agentId;
-            }
-        }
-        return null;
-    }
-
-    private String resolveAgentIp() {
-        for (StorageService.AgentRegistration agent : storage.listAgents()) {
-            long onlineThreshold = System.currentTimeMillis() - 90000;
-            if (agent.lastHeartbeat > onlineThreshold
-                    && agent.agentIp != null
-                    && !agent.agentIp.isEmpty()) {
-                return agent.agentIp;
-            }
-        }
-        return null;
-    }
-
-    private boolean isRecording() {
-        for (Environment env : storage.listEnvironments()) {
-            if (env.getMode() == EnvironmentMode.RECORD || env.getMode() == EnvironmentMode.RECORD_AND_STUB) {
-                return true;
-            }
-        }
-        return false;
     }
 
     @Override

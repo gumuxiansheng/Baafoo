@@ -129,7 +129,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                         result, agentEnvironment, agentId, agentIp);
             } else {
                 if (currentMode == EnvironmentMode.RECORD_AND_STUB) {
-                    RecordingEntry rec = RecordingHelper.buildFromStub(result, host, port, method, path, headers, body);
+                    RecordingEntry rec = RecordingHelper.buildFromStub(result, "http", host, port, method, path, headers, body);
                     rec.setAgentId(agentId);
                     rec.setAgentIp(agentIp);
                     storage.addRecording(rec);
