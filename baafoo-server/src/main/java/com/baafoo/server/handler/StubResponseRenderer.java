@@ -102,7 +102,7 @@ public class StubResponseRenderer {
                     Unpooled.copiedBuffer(body.getBytes(StandardCharsets.UTF_8)));
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json; charset=UTF-8");
             response.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.getBytes(StandardCharsets.UTF_8).length);
-            ctx.writeAndFlush(response);
+            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
         } catch (Exception e) {
             log.error("Error serializing 404 response: {}", e.getMessage());
             ctx.close();

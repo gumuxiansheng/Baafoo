@@ -135,8 +135,9 @@ public class PassthroughProxy {
             // Set body
             if (requestBody != null && !requestBody.isEmpty() &&
                 ("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method))) {
-                request.content().writeBytes(requestBody.getBytes(StandardCharsets.UTF_8));
-                request.headers().set(HttpHeaderNames.CONTENT_LENGTH, requestBody.getBytes(StandardCharsets.UTF_8).length);
+                byte[] bodyBytes = requestBody.getBytes(StandardCharsets.UTF_8);
+                request.content().writeBytes(bodyBytes);
+                request.headers().set(HttpHeaderNames.CONTENT_LENGTH, bodyBytes.length);
             } else {
                 request.headers().set(HttpHeaderNames.CONTENT_LENGTH, 0);
             }
