@@ -8,17 +8,27 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.FileNotFoundException;
+import java.io.InputStream;
 import java.io.RandomAccessFile;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.text.SimpleDateFormat;
 import java.util.*;
 
 /**
  * Static file server for Baafoo Web Console (SPA).
  *
- * <p>Serves files from the configured webConsolePath.
- * Implements SPA fallback: non-file requests serve index.html.
+ * <p>Serves files from the configured webConsolePath (filesystem) or from
+ * the classpath ({@code webconsole/} inside the JAR). Classpath loading
+ * enables single-JAR deployment where the frontend is packaged alongside
+ * the server.</p>
+ *
+ * <p>Resolution order:
+ * <ol>
+ *   <li>If {@code webConsolePath} is set and the file exists on disk → serve from filesystem</li>
+ *   <li>Otherwise → serve from classpath {@code webconsole/}</li>
+ * </ol></p>
+ *
+ * <p>Implements SPA fallback: non-file requests serve index.html.
  * Path prefix: /__baafoo__/</p>
  */
 public class StaticFileHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
@@ -27,14 +37,42 @@ public class StaticFileHandler extends SimpleChannelInboundHandler<FullHttpReque
 
     private static final String SPA_PREFIX = "/__baafoo__/";
     private static final String INDEX_HTML = "index.html";
+    private static final String CLASSPATH_PREFIX = "webconsole";
 
     private final String webRoot;
+    private final boolean filesystemMode;
     private final Map<String, String> mimeTypes;
 
     public StaticFileHandler(String webRoot) {
-        this.webRoot = webRoot != null ? webRoot : "./web";
         this.mimeTypes = new HashMap<String, String>();
         initMimeTypes();
+
+        // Determine serving mode: filesystem if webRoot is explicitly set and exists,
+        // otherwise fall back to classpath
+        if (webRoot != null && !webRoot.isEmpty()) {
+            File dir = new File(webRoot);
+            if (dir.isDirectory()) {
+                this.webRoot = webRoot;
+                this.filesystemMode = true;
+                log.info("Web console: filesystem mode (root={})", webRoot);
+                return;
+            }
+        }
+
+        // Try classpath mode
+        URL indexUrl = getClass().getClassLoader().getResource(CLASSPATH_PREFIX + "/index.html");
+        if (indexUrl != null) {
+            this.webRoot = null;
+            this.filesystemMode = false;
+            log.info("Web console: classpath mode (embedded in JAR)");
+        } else {
+            // Last resort: try ./web directory
+            File fallback = new File("./web");
+            this.webRoot = "./web";
+            this.filesystemMode = fallback.isDirectory();
+            log.warn("Web console: no embedded resources found, falling back to {} (exists={})",
+                    this.webRoot, this.filesystemMode);
+        }
     }
 
     private void initMimeTypes() {
@@ -94,19 +132,27 @@ public class StaticFileHandler extends SimpleChannelInboundHandler<FullHttpReque
     }
 
     private boolean serveStaticFile(ChannelHandlerContext ctx, String path) {
+        // Normalize and secure path
+        String normalizedPath = path.replace("..", "").replace("//", "/");
+        if (normalizedPath.startsWith("/")) {
+            normalizedPath = normalizedPath.substring(1);
+        }
+
+        if (filesystemMode) {
+            return serveFromFilesystem(ctx, normalizedPath);
+        } else {
+            return serveFromClasspath(ctx, normalizedPath);
+        }
+    }
+
+    private boolean serveFromFilesystem(ChannelHandlerContext ctx, String normalizedPath) {
         try {
-            // Normalize and secure path
-            String normalizedPath = path.replace("..", "").replace("//", "/");
             File file = new File(webRoot, normalizedPath);
 
             if (!file.exists() || file.isHidden() || !file.isFile()) {
                 return false;
             }
 
-            // Cache headers (simplified — no If-Modified-Since handling in Phase 1)
-            // String ifModifiedSince = request.headers().get(HttpHeaderNames.IF_MODIFIED_SINCE);
-
-            // Set content type
             String contentType = getContentType(file.getName());
 
             RandomAccessFile raf = new RandomAccessFile(file, "r");
@@ -122,12 +168,55 @@ public class StaticFileHandler extends SimpleChannelInboundHandler<FullHttpReque
             ctx.write(new ChunkedFile(raf, 0, fileLength, 8192));
             ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT).addListener(ChannelFutureListener.CLOSE);
 
-            log.debug("Served: {} ({} bytes)", normalizedPath, fileLength);
+            log.debug("Served from filesystem: {} ({} bytes)", normalizedPath, fileLength);
             return true;
         } catch (Exception e) {
-            log.debug("Could not serve {}: {}", path, e.getMessage());
+            log.debug("Could not serve from filesystem {}: {}", normalizedPath, e.getMessage());
             return false;
         }
+    }
+
+    private boolean serveFromClasspath(ChannelHandlerContext ctx, String normalizedPath) {
+        try {
+            String resourcePath = CLASSPATH_PREFIX + "/" + normalizedPath;
+            InputStream is = getClass().getClassLoader().getResourceAsStream(resourcePath);
+            if (is == null) {
+                return false;
+            }
+
+            try {
+                byte[] bytes = readFully(is);
+                String contentType = getContentType(normalizedPath);
+
+                FullHttpResponse response = new DefaultFullHttpResponse(
+                        HttpVersion.HTTP_1_1, HttpResponseStatus.OK,
+                        Unpooled.wrappedBuffer(bytes));
+                response.headers().set(HttpHeaderNames.CONTENT_TYPE, contentType);
+                response.headers().set(HttpHeaderNames.CONTENT_LENGTH, bytes.length);
+                response.headers().set(HttpHeaderNames.CACHE_CONTROL, "public, max-age=3600");
+                response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+
+                ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+
+                log.debug("Served from classpath: {} ({} bytes)", normalizedPath, bytes.length);
+                return true;
+            } finally {
+                is.close();
+            }
+        } catch (Exception e) {
+            log.debug("Could not serve from classpath {}: {}", normalizedPath, e.getMessage());
+            return false;
+        }
+    }
+
+    private static byte[] readFully(InputStream is) throws Exception {
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int n;
+        while ((n = is.read(buffer)) != -1) {
+            baos.write(buffer, 0, n);
+        }
+        return baos.toByteArray();
     }
 
     private String getContentType(String fileName) {
