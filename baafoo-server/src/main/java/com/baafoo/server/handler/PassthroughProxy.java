@@ -106,7 +106,13 @@ public class PassthroughProxy {
                 boolean first = true;
                 for (Map.Entry<String, String> entry : queryParams.entrySet()) {
                     if (!first) urlBuilder.append("&");
-                    urlBuilder.append(entry.getKey()).append("=").append(entry.getValue());
+                    try {
+                        urlBuilder.append(java.net.URLEncoder.encode(entry.getKey(), "UTF-8"))
+                                .append("=").append(java.net.URLEncoder.encode(entry.getValue(), "UTF-8"));
+                    } catch (java.io.UnsupportedEncodingException e) {
+                        // UTF-8 is always supported
+                        urlBuilder.append(entry.getKey()).append("=").append(entry.getValue());
+                    }
                     first = false;
                 }
             }
