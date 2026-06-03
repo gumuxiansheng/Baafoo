@@ -94,18 +94,11 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
             }
         }
 
-        // Resolve agent info
-        String agentEnvironment = agentResolver.resolveAgentEnvironment(host, port);
-        String agentId = agentResolver.resolveAgentId(agentEnvironment);
-        String agentIp = agentResolver.resolveAgentIp(agentEnvironment);
-        if (agentIp == null) {
-            String channelIp = agentResolver.resolveAgentIpFromChannel(ctx);
-            if (channelIp != null && !"127.0.0.1".equals(channelIp) && !"0:0:0:0:0:0:0:1".equals(channelIp)) {
-                agentIp = channelIp;
-            } else if (channelIp != null && agentIp == null) {
-                agentIp = channelIp;
-            }
-        }
+        // Resolve agent info (single pass over agent list)
+        AgentResolver.AgentInfo agentInfo = agentResolver.resolveAll(ctx);
+        String agentEnvironment = agentInfo.environment;
+        String agentId = agentInfo.agentId;
+        String agentIp = agentInfo.agentIp;
 
         // Match against rules
         List<Rule> rules = storage.listRules();

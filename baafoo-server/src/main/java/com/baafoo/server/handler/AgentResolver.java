@@ -23,64 +23,92 @@ public class AgentResolver {
         this.storage = storage;
     }
 
-    public String resolveAgentEnvironment(String host, int port) {
-        for (StorageService.AgentRegistration agent : storage.listAgents()) {
-            long onlineThreshold = System.currentTimeMillis() - 90000;
-            if (agent.lastHeartbeat > onlineThreshold && agent.environment != null) {
-                return agent.environment;
-            }
-        }
-        return null;
-    }
+    /**
+     * Resolve all agent info in a single pass over the agent list.
+     */
+    public AgentInfo resolveAll(ChannelHandlerContext ctx) {
+        AgentInfo info = new AgentInfo();
+        List<StorageService.AgentRegistration> agents = storage.listAgents();
+        long onlineThreshold = System.currentTimeMillis() - 90000;
 
-    public String resolveAgentId(String agentEnvironment) {
-        if (agentEnvironment == null) return null;
-        for (StorageService.AgentRegistration agent : storage.listAgents()) {
-            long onlineThreshold = System.currentTimeMillis() - 90000;
-            if (agent.lastHeartbeat > onlineThreshold
-                    && agentEnvironment.equals(agent.environment)
-                    && agent.agentId != null
-                    && !agent.agentId.isEmpty()) {
-                return agent.agentId;
-            }
-        }
-        return null;
-    }
+        StorageService.AgentRegistration firstOnline = null;
+        StorageService.AgentRegistration firstNonLoopback = null;
+        StorageService.AgentRegistration anyWithIp = null;
 
-    public String resolveAgentIp(String agentEnvironment) {
-        // 1. Try to get IP from agent registration (non-loopback)
-        if (agentEnvironment != null) {
-            for (StorageService.AgentRegistration agent : storage.listAgents()) {
-                long onlineThreshold = System.currentTimeMillis() - 90000;
-                if (agent.lastHeartbeat > onlineThreshold
-                        && agentEnvironment.equals(agent.environment)
-                        && agent.agentIp != null
-                        && !agent.agentIp.isEmpty()
-                        && !"127.0.0.1".equals(agent.agentIp)) {
-                    return agent.agentIp;
+        for (StorageService.AgentRegistration agent : agents) {
+            if (agent.lastHeartbeat > onlineThreshold) {
+                if (firstOnline == null) {
+                    firstOnline = agent;
+                }
+                if (firstNonLoopback == null && agent.agentIp != null
+                        && !agent.agentIp.isEmpty() && !"127.0.0.1".equals(agent.agentIp)) {
+                    firstNonLoopback = agent;
+                }
+                if (anyWithIp == null && agent.agentIp != null && !agent.agentIp.isEmpty()) {
+                    anyWithIp = agent;
                 }
             }
         }
-        // 2. Fallback: any online agent with a non-loopback IP
-        for (StorageService.AgentRegistration agent : storage.listAgents()) {
-            long onlineThreshold = System.currentTimeMillis() - 90000;
-            if (agent.lastHeartbeat > onlineThreshold
-                    && agent.agentIp != null
-                    && !agent.agentIp.isEmpty()
-                    && !"127.0.0.1".equals(agent.agentIp)) {
-                return agent.agentIp;
+
+        // Environment from first online agent
+        if (firstOnline != null) {
+            info.environment = firstOnline.environment;
+        }
+
+        // Agent ID
+        if (firstOnline != null && firstOnline.agentId != null && !firstOnline.agentId.isEmpty()) {
+            info.agentId = firstOnline.agentId;
+        }
+
+        // Agent IP — three-tier fallback
+        if (info.environment != null) {
+            for (StorageService.AgentRegistration agent : agents) {
+                if (agent.lastHeartbeat > onlineThreshold
+                        && info.environment.equals(agent.environment)
+                        && agent.agentIp != null && !agent.agentIp.isEmpty()
+                        && !"127.0.0.1".equals(agent.agentIp)) {
+                    info.agentIp = agent.agentIp;
+                    break;
+                }
             }
         }
-        // 3. Fallback: use registered IP even if it's 127.0.0.1
-        for (StorageService.AgentRegistration agent : storage.listAgents()) {
-            long onlineThreshold = System.currentTimeMillis() - 90000;
-            if (agent.lastHeartbeat > onlineThreshold
-                    && agent.agentIp != null
-                    && !agent.agentIp.isEmpty()) {
-                return agent.agentIp;
+        if (info.agentIp == null && firstNonLoopback != null) {
+            info.agentIp = firstNonLoopback.agentIp;
+        }
+        if (info.agentIp == null && anyWithIp != null) {
+            info.agentIp = anyWithIp.agentIp;
+        }
+
+        // Channel IP fallback
+        if (info.agentIp == null && ctx != null) {
+            String channelIp = resolveAgentIpFromChannel(ctx);
+            if (channelIp != null) {
+                info.agentIp = channelIp;
             }
         }
-        return null;
+
+        return info;
+    }
+
+    /** Single-pass agent resolution (compatibility). */
+    @Deprecated
+    public String resolveAgentEnvironment(String host, int port) {
+        AgentInfo info = resolveAll(null);
+        return info.environment;
+    }
+
+    /** Single-pass agent resolution (compatibility). */
+    @Deprecated
+    public String resolveAgentId(String agentEnvironment) {
+        AgentInfo info = resolveAll(null);
+        return info.agentId;
+    }
+
+    /** Single-pass agent resolution (compatibility). */
+    @Deprecated
+    public String resolveAgentIp(String agentEnvironment) {
+        AgentInfo info = resolveAll(null);
+        return info.agentIp;
     }
 
     public String resolveAgentIpFromChannel(ChannelHandlerContext ctx) {
@@ -121,5 +149,14 @@ public class AgentResolver {
             return env.getMode();
         }
         return EnvironmentMode.STUB;
+    }
+
+    /**
+     * All resolved agent info from a single agent list traversal.
+     */
+    public static class AgentInfo {
+        public String environment;
+        public String agentId;
+        public String agentIp;
     }
 }

@@ -50,18 +50,11 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
         msg.readBytes(data);
         String payload = new String(data, StandardCharsets.UTF_8);
 
-        // Resolve agent info (host/port unused for TCP: agent routes via 127.0.0.1)
-        String agentEnvironment = agentResolver.resolveAgentEnvironment(null, 0);
-        String agentId = agentResolver.resolveAgentId(agentEnvironment);
-        String agentIp = agentResolver.resolveAgentIp(agentEnvironment);
-        if (agentIp == null) {
-            String channelIp = agentResolver.resolveAgentIpFromChannel(ctx);
-            if (channelIp != null && !"127.0.0.1".equals(channelIp) && !"0:0:0:0:0:0:0:1".equals(channelIp)) {
-                agentIp = channelIp;
-            } else if (channelIp != null && agentIp == null) {
-                agentIp = channelIp;
-            }
-        }
+        // Resolve agent info (single pass over agent list)
+        AgentResolver.AgentInfo agentInfo = agentResolver.resolveAll(ctx);
+        String agentEnvironment = agentInfo.environment;
+        String agentId = agentInfo.agentId;
+        String agentIp = agentInfo.agentIp;
 
         // Match TCP rules
         List<Rule> rules = storage.listRules();
