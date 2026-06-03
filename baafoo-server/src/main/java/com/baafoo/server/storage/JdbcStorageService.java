@@ -40,12 +40,16 @@ public class JdbcStorageService implements StorageService {
     private final DatabaseDialect dialect;
     private HikariDataSource dataSource;
     private SqlSessionFactory sqlSessionFactory;
-    private RuleMapper ruleMapper;
-    private EnvironmentMapper envMapper;
-    private SceneMapper sceneMapper;
-    private RecordingMapper recordingMapper;
-    private AgentMapper agentMapper;
-    private UserMapper userMapper;
+
+    // --- Local caches for high-frequency reads ---
+    private volatile List<Rule> rulesCache;
+    private volatile long rulesCacheTime;
+    private volatile List<Environment> environmentsCache;
+    private volatile long environmentsCacheTime;
+    private volatile List<AgentRegistration> agentsCache;
+    private volatile long agentsCacheTime;
+    private static final long CACHE_TTL_MS = 2000; // 2 seconds
+    private static final long AGENTS_CACHE_TTL_MS = 5000; // 5 seconds (heartbeat frequent)
 
     public JdbcStorageService(ServerConfig config) {
         this.config = config;
@@ -95,16 +99,6 @@ public class JdbcStorageService implements StorageService {
 
         // Initialize MyBatis
         sqlSessionFactory = buildSqlSessionFactory(dataSource);
-
-        // Initialize mappers
-        try (SqlSession session = sqlSessionFactory.openSession(true)) {
-            ruleMapper = session.getMapper(RuleMapper.class);
-            envMapper = session.getMapper(EnvironmentMapper.class);
-            sceneMapper = session.getMapper(SceneMapper.class);
-            recordingMapper = session.getMapper(RecordingMapper.class);
-            agentMapper = session.getMapper(AgentMapper.class);
-            userMapper = session.getMapper(UserMapper.class);
-        }
 
         log.info("{} storage initialized with HikariCP pool: {}", dialect.getConfigValue().toUpperCase(), jdbcUrl);
     }
@@ -173,12 +167,22 @@ public class JdbcStorageService implements StorageService {
         return sqlSessionFactory.openSession(true);
     }
 
-    // --- Rule CRUD ---
+    private void invalidateRulesCache() {
+        rulesCache = null;
+        rulesCacheTime = 0;
+    }
 
     @Override
     public List<Rule> listRules() {
+        long now = System.currentTimeMillis();
+        if (rulesCache != null && (now - rulesCacheTime) < CACHE_TTL_MS) {
+            return rulesCache;
+        }
         try (SqlSession session = openSession()) {
-            return session.getMapper(RuleMapper.class).listRules();
+            List<Rule> result = session.getMapper(RuleMapper.class).listRules();
+            rulesCache = result;
+            rulesCacheTime = System.currentTimeMillis();
+            return result;
         }
     }
 
@@ -212,6 +216,7 @@ public class JdbcStorageService implements StorageService {
 
         try (SqlSession session = openSession()) {
             session.getMapper(RuleMapper.class).createRule(rule);
+            invalidateRulesCache();
             return rule;
         } catch (Exception e) {
             log.error("Failed to create rule: {}", e.getMessage());
@@ -246,6 +251,7 @@ public class JdbcStorageService implements StorageService {
             saveVersion(rm, id, existing);
 
             rm.updateRule(existing);
+            invalidateRulesCache();
             return existing;
         } catch (Exception e) {
             log.error("Failed to update rule {}: {}", id, e.getMessage());
@@ -268,7 +274,9 @@ public class JdbcStorageService implements StorageService {
         try (SqlSession session = openSession()) {
             RuleMapper rm = session.getMapper(RuleMapper.class);
             rm.deleteRuleHistoryByRuleId(id);
-            return rm.deleteRule(id) > 0;
+            boolean deleted = rm.deleteRule(id) > 0;
+            if (deleted) invalidateRulesCache();
+            return deleted;
         } catch (Exception e) {
             log.error("Failed to delete rule {}: {}", id, e.getMessage());
             return false;
@@ -287,6 +295,7 @@ public class JdbcStorageService implements StorageService {
             if (previous == null) return false;
 
             rm.updateRule(previous);
+            invalidateRulesCache();
 
             Long historyId = rm.getLatestRuleHistoryId(id);
             if (historyId != null && historyId != -1) {
@@ -302,10 +311,22 @@ public class JdbcStorageService implements StorageService {
 
     // --- Environment CRUD ---
 
+    private void invalidateEnvironmentsCache() {
+        environmentsCache = null;
+        environmentsCacheTime = 0;
+    }
+
     @Override
     public List<Environment> listEnvironments() {
+        long now = System.currentTimeMillis();
+        if (environmentsCache != null && (now - environmentsCacheTime) < CACHE_TTL_MS) {
+            return environmentsCache;
+        }
         try (SqlSession session = openSession()) {
-            return session.getMapper(EnvironmentMapper.class).listEnvironments();
+            List<Environment> result = session.getMapper(EnvironmentMapper.class).listEnvironments();
+            environmentsCache = result;
+            environmentsCacheTime = System.currentTimeMillis();
+            return result;
         }
     }
 
@@ -334,6 +355,7 @@ public class JdbcStorageService implements StorageService {
 
         try (SqlSession session = openSession()) {
             session.getMapper(EnvironmentMapper.class).createEnvironment(env);
+            invalidateEnvironmentsCache();
             return env;
         } catch (Exception e) {
             log.error("Failed to create environment: {}", e.getMessage());
@@ -355,6 +377,7 @@ public class JdbcStorageService implements StorageService {
             existing.setUpdatedAt(System.currentTimeMillis());
 
             em.updateEnvironment(existing);
+            invalidateEnvironmentsCache();
             return existing;
         } catch (Exception e) {
             log.error("Failed to update environment {}: {}", id, e.getMessage());
@@ -365,7 +388,9 @@ public class JdbcStorageService implements StorageService {
     @Override
     public boolean deleteEnvironment(String id) {
         try (SqlSession session = openSession()) {
-            return session.getMapper(EnvironmentMapper.class).deleteEnvironment(id) > 0;
+            boolean deleted = session.getMapper(EnvironmentMapper.class).deleteEnvironment(id) > 0;
+            if (deleted) invalidateEnvironmentsCache();
+            return deleted;
         } catch (Exception e) {
             log.error("Failed to delete environment {}: {}", id, e.getMessage());
             return false;
@@ -468,6 +493,8 @@ public class JdbcStorageService implements StorageService {
 
             rule.setEnvironments(ruleEnvs);
             rm.updateRule(rule);
+            invalidateRulesCache();
+            invalidateEnvironmentsCache();
         }
     }
 
@@ -610,6 +637,7 @@ public class JdbcStorageService implements StorageService {
 
         try (SqlSession session = openSession()) {
             session.getMapper(AgentMapper.class).upsertAgent(reg);
+            invalidateAgentsCache();
         } catch (Exception e) {
             log.error("Failed to register agent {}: {}", agentId, e.getMessage());
         }
@@ -629,10 +657,16 @@ public class JdbcStorageService implements StorageService {
         return reg;
     }
 
+    private void invalidateAgentsCache() {
+        agentsCache = null;
+        agentsCacheTime = 0;
+    }
+
     @Override
     public void agentHeartbeat(String agentId, String agentIp) {
         try (SqlSession session = openSession()) {
             session.getMapper(AgentMapper.class).updateHeartbeat(agentId, System.currentTimeMillis(), agentIp);
+            invalidateAgentsCache();
         } catch (Exception e) {
             log.error("Failed to update heartbeat for agent {}: {}", agentId, e.getMessage());
         }
@@ -640,8 +674,15 @@ public class JdbcStorageService implements StorageService {
 
     @Override
     public List<AgentRegistration> listAgents() {
+        long now = System.currentTimeMillis();
+        if (agentsCache != null && (now - agentsCacheTime) < AGENTS_CACHE_TTL_MS) {
+            return agentsCache;
+        }
         try (SqlSession session = openSession()) {
-            return session.getMapper(AgentMapper.class).listAgents();
+            List<AgentRegistration> result = session.getMapper(AgentMapper.class).listAgents();
+            agentsCache = result;
+            agentsCacheTime = System.currentTimeMillis();
+            return result;
         }
     }
 

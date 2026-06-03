@@ -18,7 +18,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * current agent bootstrap flow. It is reserved for future extensibility
  * when third-party protocol interceptors are needed beyond the built-in
  * set (Socket, NIO, Kafka, Pulsar, Consul).</p>
+ *
+ * @deprecated Not yet activated. Reserved for future third-party plugin support.
  */
+@Deprecated
 public class PluginManager {
 
     private static final Logger log = LoggerFactory.getLogger(PluginManager.class);

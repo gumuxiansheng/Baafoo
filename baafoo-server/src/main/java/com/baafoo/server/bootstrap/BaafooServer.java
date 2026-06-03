@@ -8,7 +8,7 @@ import com.baafoo.server.auth.AuthService;
 import com.baafoo.server.handler.HttpStubHandler;
 import com.baafoo.server.handler.TcpStubHandler;
 import com.baafoo.server.storage.StorageService;
-import com.baafoo.server.storage.JdbcStorageService;
+import com.baafoo.server.storage.StorageServiceFactory;
 import com.baafoo.server.web.StaticFileHandler;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
@@ -51,7 +51,7 @@ public class BaafooServer {
 
     public BaafooServer(ServerConfig config) {
         this.config = config;
-        this.storage = new JdbcStorageService(config);
+        this.storage = StorageServiceFactory.create(config);
         this.authService = createAuthService(config, storage);
         this.bossGroup = new NioEventLoopGroup(1);
         this.workerGroup = new NioEventLoopGroup();
@@ -142,7 +142,7 @@ public class BaafooServer {
                         ChannelPipeline p = ch.pipeline();
                         p.addLast(new HttpServerCodec());
                         p.addLast(new HttpObjectAggregator(65536));
-                        p.addLast(new HttpStubHandler(storage, config));
+                        p.addLast(new HttpStubHandler(storage, config, workerGroup));
                     }
                 });
 
@@ -172,6 +172,9 @@ public class BaafooServer {
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     protected void initChannel(SocketChannel ch) {
+                        // Beta: Kafka/Pulsar/JMS currently share TcpStubHandler for basic connectivity.
+                        // Protocol-specific handlers (e.g., KafkaStubHandler) will be needed for
+                        // proper application-layer protocol frame parsing in a future release.
                         ch.pipeline().addLast(new TcpStubHandler(storage));
                     }
                 });
