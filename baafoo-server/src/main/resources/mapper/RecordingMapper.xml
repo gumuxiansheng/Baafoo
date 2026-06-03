@@ -8,6 +8,7 @@
         <result property="ruleId" column="rule_id"/>
         <result property="environmentId" column="environment_id"/>
         <result property="agentId" column="agent_id"/>
+        <result property="agentIp" column="agent_ip"/>
         <result property="protocol" column="protocol"/>
         <result property="host" column="host"/>
         <result property="port" column="port"/>
@@ -54,11 +55,11 @@
     </select>
 
     <insert id="insertRecording">
-        INSERT INTO recordings (id, rule_id, environment_id, agent_id, protocol,
+        INSERT INTO recordings (id, rule_id, environment_id, agent_id, agent_ip, protocol,
             host, port, service_name, method, path, request_headers_json, request_body,
             response_status_code, response_headers_json, response_body, response_time_ms,
             recorded_at, tags_json)
-        VALUES (#{id}, #{ruleId}, #{environmentId}, #{agentId}, #{protocol},
+        VALUES (#{id}, #{ruleId}, #{environmentId}, #{agentId}, #{agentIp}, #{protocol},
             #{host}, #{port}, #{serviceName}, #{method}, #{path},
             #{requestHeaders, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
             #{requestBody},

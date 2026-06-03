@@ -76,7 +76,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             throw new ApiException(401, "Authentication failed: " + auth.getMessage());
         }
 
-        ApiContext apiCtx = new ApiContext(storage, authService, mapper, uri, auth);
+        ApiContext apiCtx = new ApiContext(storage, authService, mapper, uri, auth, remoteAddr);
         String body = request.content().toString(StandardCharsets.UTF_8);
 
         for (ResourceHandler handler : handlers) {

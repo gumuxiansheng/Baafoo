@@ -17,10 +17,10 @@
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
         <result property="conditions" column="conditions_json"
-                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                typeHandler="com.baafoo.server.storage.mybatis.MatchConditionListHandler"
                 javaType="java.util.List"/>
         <result property="responses" column="responses_json"
-                typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
+                typeHandler="com.baafoo.server.storage.mybatis.ResponseEntryListHandler"
                 javaType="java.util.List"/>
         <result property="tags" column="tags_json"
                 typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"

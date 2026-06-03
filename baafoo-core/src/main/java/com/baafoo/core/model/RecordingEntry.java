@@ -60,6 +60,9 @@ public class RecordingEntry {
     /** Recording timestamp */
     private long recordedAt;
 
+    /** Agent server IP address */
+    private String agentIp;
+
     /** Tags for filtering */
     private Map<String, String> tags;
 
@@ -82,6 +85,9 @@ public class RecordingEntry {
 
     public String getAgentId() { return agentId; }
     public void setAgentId(String agentId) { this.agentId = agentId; }
+
+    public String getAgentIp() { return agentIp; }
+    public void setAgentIp(String agentIp) { this.agentIp = agentIp; }
 
     public String getProtocol() { return protocol; }
     public void setProtocol(String protocol) { this.protocol = protocol; }

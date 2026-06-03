@@ -69,6 +69,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                 rec.setResponseStatusCode(entry.getStatusCode());
                 rec.setResponseBody(entry.getBody());
                 rec.setResponseTimeMs(entry.getDelayMs());
+                rec.setAgentIp(resolveAgentIp(ctx));
                 storage.addRecording(rec);
             }
 
@@ -107,6 +108,16 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
             log.error("Error sending TCP response: {}", e.getMessage());
             ctx.close();
         }
+    }
+
+    private String resolveAgentIp(ChannelHandlerContext ctx) {
+        if (ctx.channel().remoteAddress() != null) {
+            String addr = ctx.channel().remoteAddress().toString();
+            if (addr.startsWith("/")) addr = addr.substring(1);
+            int colonIdx = addr.indexOf(':');
+            return colonIdx > 0 ? addr.substring(0, colonIdx) : addr;
+        }
+        return null;
     }
 
     private boolean isRecording() {

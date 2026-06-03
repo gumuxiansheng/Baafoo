@@ -10,7 +10,7 @@
         <el-table-column prop="id" label="ID" width="120" show-overflow-tooltip />
         <el-table-column prop="ruleId" label="规则" width="120" show-overflow-tooltip />
         <el-table-column prop="agentId" label="Agent ID" width="120" show-overflow-tooltip />
-        <el-table-column prop="host" label="Agent IP" width="130" show-overflow-tooltip />
+        <el-table-column prop="agentIp" label="Agent IP" width="130" show-overflow-tooltip />
         <el-table-column prop="protocol" label="协议" width="70">
           <template #default="{ row }"><el-tag size="small">{{ (row.protocol || '').toUpperCase() }}</el-tag></template>
         </el-table-column>
@@ -52,7 +52,8 @@
         <h4>请求</h4>
         <div class="detail-meta" v-if="currentRecording.agentId || currentRecording.host">
           <span v-if="currentRecording.agentId">Agent: {{ currentRecording.agentId }}</span>
-          <span v-if="currentRecording.host">IP: {{ currentRecording.host }}<span v-if="currentRecording.port">:{{ currentRecording.port }}</span></span>
+          <span v-if="currentRecording.agentIp">Agent IP: {{ currentRecording.agentIp }}</span>
+          <span v-if="currentRecording.host">Target: {{ currentRecording.host }}<span v-if="currentRecording.port">:{{ currentRecording.port }}</span></span>
         </div>
         <el-input :model-value="formatHeaders(currentRecording.requestHeaders)" type="textarea" rows="3" readonly />
         <el-input :model-value="currentRecording.requestBody" type="textarea" rows="6" readonly style="margin-top: 8px" />

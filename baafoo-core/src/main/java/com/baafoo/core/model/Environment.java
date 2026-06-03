@@ -17,6 +17,9 @@ public class Environment {
     /** Environment name (e.g., "dev", "staging", "prod") */
     private String name;
 
+    /** Environment description */
+    private String description;
+
     /** Current mode */
     private EnvironmentMode mode;
 
@@ -52,6 +55,9 @@ public class Environment {
 
     public EnvironmentMode getMode() { return mode; }
     public void setMode(EnvironmentMode mode) { this.mode = mode; }
+
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
 
     public java.util.List<String> getAgentIds() { return agentIds; }
     public void setAgentIds(java.util.List<String> agentIds) { this.agentIds = agentIds; }

@@ -126,6 +126,7 @@ public class DdlBuilder {
             "  rule_id VARCHAR(36)," +
             "  environment_id VARCHAR(36)," +
             "  agent_id VARCHAR(36)," +
+            "  agent_ip VARCHAR(45)," +
             "  protocol VARCHAR(50)," +
             "  host VARCHAR(255)," +
             "  port INT," +

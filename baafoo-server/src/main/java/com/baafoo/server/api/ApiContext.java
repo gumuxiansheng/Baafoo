@@ -10,13 +10,15 @@ class ApiContext {
     final ObjectMapper mapper;
     final String uri;
     final AuthService.AuthResult auth;
+    final String remoteAddr;
 
-    ApiContext(StorageService storage, AuthService authService, ObjectMapper mapper, String uri, AuthService.AuthResult auth) {
+    ApiContext(StorageService storage, AuthService authService, ObjectMapper mapper, String uri, AuthService.AuthResult auth, String remoteAddr) {
         this.storage = storage;
         this.authService = authService;
         this.mapper = mapper;
         this.uri = uri;
         this.auth = auth;
+        this.remoteAddr = remoteAddr;
     }
 
     String queryParam(String key) {

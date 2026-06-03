@@ -9,6 +9,8 @@ import com.baafoo.server.storage.dialect.DdlBuilder;
 import com.baafoo.server.storage.mapper.*;
 import com.baafoo.server.storage.mybatis.EnvironmentModeTypeHandler;
 import com.baafoo.server.storage.mybatis.JsonTypeHandler;
+import com.baafoo.server.storage.mybatis.MatchConditionListHandler;
+import com.baafoo.server.storage.mybatis.ResponseEntryListHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.zaxxer.hikari.HikariConfig;
@@ -115,6 +117,8 @@ public class JdbcStorageService implements StorageService {
 
         // Register type handlers
         configuration.getTypeHandlerRegistry().register(JsonTypeHandler.class);
+        configuration.getTypeHandlerRegistry().register(MatchConditionListHandler.class);
+        configuration.getTypeHandlerRegistry().register(ResponseEntryListHandler.class);
         configuration.getTypeHandlerRegistry().register(EnvironmentModeTypeHandler.class);
 
         // Set database ID provider

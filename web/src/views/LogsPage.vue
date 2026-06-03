@@ -5,7 +5,7 @@
       <el-table :data="logs" stripe size="small" max-height="500" empty-text="暂无日志记录">
         <el-table-column prop="ruleId" label="规则ID" width="140" show-overflow-tooltip />
         <el-table-column prop="agentId" label="Agent ID" width="140" show-overflow-tooltip />
-        <el-table-column prop="host" label="Agent IP" width="140" show-overflow-tooltip />
+        <el-table-column prop="agentIp" label="Agent IP" width="140" show-overflow-tooltip />
         <el-table-column prop="protocol" label="协议" width="80">
           <template #default="{ row }"><el-tag size="small">{{ (row.protocol || '').toUpperCase() }}</el-tag></template>
         </el-table-column>

@@ -14,6 +14,7 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.*;
+import io.netty.util.concurrent.ScheduledFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -91,6 +92,9 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         Map<String, String> headers = extractHeaders(request);
         String body = request.content().toString(StandardCharsets.UTF_8);
 
+        // Resolve agent IP from the incoming connection
+        String agentIp = resolveAgentIp(ctx);
+
         // Extract original host and port from Host header
         // Agent redirects httpbin.org:80 → 127.0.0.1:9000, but
         // HttpURLConnection still sends "Host: httpbin.org" (or "Host: httpbin.org:80")
@@ -132,10 +136,11 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
             if (currentMode == EnvironmentMode.PASSTHROUGH || currentMode == EnvironmentMode.RECORD) {
                 log.info("Mode {} — passthrough for matched rule: {} {}", currentMode.getValue(), method, path);
                 sendPassthroughAndRecord(ctx, method, host, port, path, queryParams, headers, body,
-                        result, agentEnvironment);
+                        result, agentEnvironment, agentIp);
             } else {
                 if (currentMode == EnvironmentMode.RECORD_AND_STUB) {
                     RecordingEntry rec = buildRecordingFromStub(result, host, port, method, path, headers, body);
+                    rec.setAgentIp(agentIp);
                     storage.addRecording(rec);
                 }
                 sendStubResponse(ctx, result.getResponse(), result.getRule().getId(),
@@ -208,7 +213,8 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
     private void sendPassthroughAndRecord(ChannelHandlerContext ctx, String method, String host, int port,
                                            String path, Map<String, String> queryParams,
                                            Map<String, String> headers, String requestBody,
-                                           MatchEngine.MatchResult matchResult, String agentEnvironment) {
+                                           MatchEngine.MatchResult matchResult, String agentEnvironment,
+                                           String agentIp) {
         PASSTHROUGH_EXECUTOR.submit(() -> {
             long startTime = System.currentTimeMillis();
             try {
@@ -243,6 +249,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     java.nio.charset.Charset recordCharset = parseCharsetFromContentType(result.responseHeaders.get("Content-Type"));
                     recording.setResponseBody(new String(result.responseBody, recordCharset));
                     recording.setResponseTimeMs(result.responseTimeMs);
+                    recording.setAgentIp(agentIp);
                     storage.addRecording(recording);
                 }
             } catch (Exception e) {
@@ -261,6 +268,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     recording.setResponseStatusCode(502);
                     recording.setResponseBody("Passthrough failed: " + e.getMessage());
                     recording.setResponseTimeMs(System.currentTimeMillis() - startTime);
+                    recording.setAgentIp(agentIp);
                     storage.addRecording(recording);
                 }
                 sendError(ctx, HttpResponseStatus.BAD_GATEWAY, "Passthrough failed: " + e.getMessage());
@@ -273,11 +281,6 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                                       Map<String, String> headers, Map<String, String> queryParams,
                                       String requestBody) {
         try {
-            // Apply delay if configured
-            if (entry.getDelayMs() > 0) {
-                Thread.sleep(entry.getDelayMs());
-            }
-
             int statusCode = entry.getStatusCode();
             String rawBody = entry.getBody() != null ? entry.getBody() : "";
 
@@ -317,7 +320,14 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
             log.debug("Stub response: {} {} body={}bytes", statusCode,
                     entry.getName(), responseBody.length());
 
-            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+            // Use scheduled executor for delay instead of blocking the event loop
+            if (entry.getDelayMs() > 0) {
+                ctx.executor().schedule(() ->
+                    ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE),
+                    entry.getDelayMs(), TimeUnit.MILLISECONDS);
+            } else {
+                ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+            }
         } catch (Exception e) {
             log.error("Error sending stub response: {}", e.getMessage());
             sendError(ctx, INTERNAL_SERVER_ERROR, "Stub response error: " + e.getMessage());
@@ -487,7 +497,13 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
             response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
             response.headers().set("X-Baafoo-Stub", "unmatched");
 
-            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+            ctx.writeAndFlush(response).addListener(
+                    (ChannelFutureListener) future -> {
+                        if (!future.isSuccess()) {
+                            log.error("Failed to send error response: {}", future.cause().getMessage());
+                        }
+                        future.channel().close();
+                    });
         } catch (Exception e) {
             log.error("Error serializing error response: {}", e.getMessage());
             ctx.close();
@@ -557,6 +573,16 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
             }
         }
         return filtered;
+    }
+
+    private String resolveAgentIp(ChannelHandlerContext ctx) {
+        if (ctx.channel().remoteAddress() != null) {
+            String addr = ctx.channel().remoteAddress().toString();
+            if (addr.startsWith("/")) addr = addr.substring(1);
+            int colonIdx = addr.indexOf(':');
+            return colonIdx > 0 ? addr.substring(0, colonIdx) : addr;
+        }
+        return null;
     }
 
     /**

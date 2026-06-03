@@ -69,6 +69,14 @@ class AgentApiHandler implements ResourceHandler {
             ctx.requirePermission("recording", "create");
             List<RecordingEntry> batch = ctx.mapper.readValue(body,
                     ctx.mapper.getTypeFactory().constructCollectionType(List.class, RecordingEntry.class));
+            String agentIp = ctx.remoteAddr;
+            if (agentIp != null && !agentIp.isEmpty()) {
+                for (RecordingEntry rec : batch) {
+                    if (rec.getAgentIp() == null || rec.getAgentIp().isEmpty()) {
+                        rec.setAgentIp(agentIp);
+                    }
+                }
+            }
             ctx.storage.addRecordings(batch);
             return ApiResponse.ok("Recorded " + batch.size(), null);
         }
