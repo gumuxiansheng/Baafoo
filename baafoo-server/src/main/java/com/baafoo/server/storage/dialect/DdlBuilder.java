@@ -31,6 +31,7 @@ public class DdlBuilder {
             createSceneSetsTable(stmt);
             createRuleSetsTable(stmt);
             createRecordingsTable(stmt);
+            addColumnIfMissing(stmt, "recordings", "agent_ip", "VARCHAR(45)");
             createAgentsTable(stmt);
             createUsersTable(stmt);
             createIndexes(stmt);
