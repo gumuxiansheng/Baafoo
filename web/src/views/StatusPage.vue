@@ -20,6 +20,7 @@
         <el-table-column prop="agentId" label="Agent ID" width="200" show-overflow-tooltip />
         <el-table-column prop="environment" label="环境" width="120" />
         <el-table-column prop="hostname" label="主机" width="150" />
+        <el-table-column prop="agentIp" label="Agent IP" width="140" />
         <el-table-column prop="version" label="版本" width="100" />
         <el-table-column label="协议" min-width="200">
           <template #default="{ row }">
