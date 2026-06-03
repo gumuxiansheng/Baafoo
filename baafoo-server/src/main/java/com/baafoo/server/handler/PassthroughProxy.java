@@ -203,7 +203,7 @@ public class PassthroughProxy {
             // Extract response headers
             Map<String, String> responseHeaders = new HashMap<String, String>();
             for (Map.Entry<String, String> entry : response.headers()) {
-                if (entry.getKey() != null && !entry.getValue().isEmpty()) {
+                if (entry.getKey() != null && entry.getValue() != null) {
                     responseHeaders.put(entry.getKey(), entry.getValue());
                 }
             }
