@@ -27,6 +27,8 @@ import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 public class StubResponseRenderer {
 
     private static final Logger log = LoggerFactory.getLogger(StubResponseRenderer.class);
+    private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER =
+            new com.fasterxml.jackson.databind.ObjectMapper();
 
     public static void sendStubResponse(ChannelHandlerContext ctx, ResponseEntry entry, String ruleId,
                                          String method, String path, String host,
@@ -94,7 +96,7 @@ public class StubResponseRenderer {
             Map<String, Object> errorMap = new HashMap<String, Object>();
             errorMap.put("error", "No matching rule found");
             errorMap.put("path", path);
-            String body = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(errorMap);
+            String body = MAPPER.writeValueAsString(errorMap);
             FullHttpResponse response = new DefaultFullHttpResponse(
                     HTTP_1_1, HttpResponseStatus.NOT_FOUND,
                     Unpooled.copiedBuffer(body.getBytes(StandardCharsets.UTF_8)));
@@ -112,7 +114,7 @@ public class StubResponseRenderer {
             Map<String, Object> errorMap = new HashMap<String, Object>();
             errorMap.put("error", message);
             errorMap.put("stubbed", false);
-            String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(errorMap);
+            String json = MAPPER.writeValueAsString(errorMap);
             FullHttpResponse response = new DefaultFullHttpResponse(
                     HTTP_1_1, status,
                     Unpooled.copiedBuffer(json, StandardCharsets.UTF_8));
