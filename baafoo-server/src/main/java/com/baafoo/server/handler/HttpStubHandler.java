@@ -194,7 +194,6 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                         }
 
                         ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-                    }
                 });
     }
 
@@ -226,7 +225,6 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                         response.headers().set(HttpHeaderNames.CONTENT_LENGTH, result.responseBody.length);
                         response.headers().set("X-Baafoo-Stub", "passthrough");
                         ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-                    }
                 });
     }
 
