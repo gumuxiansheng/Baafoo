@@ -127,7 +127,6 @@ public class AgentResolver {
             if (!rule.isEnabled()) continue;
             List<String> envs = rule.getEnvironments();
             if (envs == null || envs.isEmpty()) {
-                filtered.add(rule);
                 continue;
             }
             if (agentEnvironment != null && envs.contains(agentEnvironment)) {
