@@ -11,16 +11,13 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.*;
-import io.netty.util.concurrent.EventLoopGroup;
+import io.netty.channel.EventLoopGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-
-import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 
 /**
  * Netty handler for HTTP stub server (port 9000).
@@ -154,9 +151,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         long startTime = System.currentTimeMillis();
 
         passthroughProxy.forward(method, host, port, path, queryParams, headers, requestBody)
-                .whenComplete(new java.util.function.BiConsumer<PassthroughProxy.PassthroughResult, Throwable>() {
-                    @Override
-                    public void accept(PassthroughProxy.PassthroughResult result, Throwable error) {
+                .whenComplete((result, error) -> {
                         if (error != null) {
                             log.error("Passthrough+record error: {}", error.getMessage());
                             if (agentEnvironment != null) {
@@ -167,13 +162,9 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                                         agentId, agentIp);
                                 storage.addRecording(recording);
                             }
-                            ctx.executor().execute(new Runnable() {
-                                @Override
-                                public void run() {
+                            ctx.executor().execute(() ->
                                     StubResponseRenderer.sendError(ctx, HttpResponseStatus.BAD_GATEWAY,
-                                            "Passthrough failed: " + error.getMessage());
-                                }
-                            });
+                                            "Passthrough failed: " + error.getMessage()));
                             return;
                         }
 
@@ -215,18 +206,12 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
             return;
         }
         passthroughProxy.forward(method, host, port, path, queryParams, headers, requestBody)
-                .whenComplete(new java.util.function.BiConsumer<PassthroughProxy.PassthroughResult, Throwable>() {
-                    @Override
-                    public void accept(PassthroughProxy.PassthroughResult result, Throwable error) {
+                .whenComplete((result, error) -> {
                         if (error != null) {
                             log.error("Passthrough error: {}", error.getMessage());
-                            ctx.executor().execute(new Runnable() {
-                                @Override
-                                public void run() {
+                            ctx.executor().execute(() ->
                                     StubResponseRenderer.sendError(ctx, HttpResponseStatus.BAD_GATEWAY,
-                                            "Passthrough failed: " + error.getMessage());
-                                }
-                            });
+                                            "Passthrough failed: " + error.getMessage()));
                             return;
                         }
 
@@ -251,7 +236,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
     }
 
     private Map<String, String> parseQueryParams(String uri) {
-        Map<String, String> params = new java.util.HashMap<String, String>();
+        Map<String, String> params = new java.util.HashMap<>();
         int queryIdx = uri.indexOf('?');
         if (queryIdx < 0) return params;
 
@@ -266,7 +251,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
     }
 
     private Map<String, String> extractHeaders(HttpRequest request) {
-        Map<String, String> headers = new java.util.HashMap<String, String>();
+        Map<String, String> headers = new java.util.HashMap<>();
         for (Map.Entry<String, String> entry : request.headers()) {
             headers.put(entry.getKey(), entry.getValue());
         }

@@ -6,8 +6,11 @@ import io.netty.channel.*;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.handler.timeout.ReadTimeoutHandler;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GenericFutureListener;
 import io.netty.util.concurrent.Promise;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -89,7 +92,7 @@ public class PassthroughProxy {
                 protected void initChannel(Channel ch) throws Exception {
                     ChannelPipeline p = ch.pipeline();
                     if (isHttps) {
-                        p.addLast(getSslContext().newEngine(ch.alloc(), host, targetPort));
+                        p.addLast(new SslHandler(getSslContext().newEngine(ch.alloc(), host, targetPort)));
                     }
                     p.addLast(new HttpClientCodec());
                     p.addLast(new HttpObjectAggregator(65536));
@@ -155,9 +158,9 @@ public class PassthroughProxy {
                 }
             });
 
-            promise.addListener(new GenericFutureListener<io.netty.util.concurrent.Future<PassthroughResult>>() {
+            promise.addListener(new GenericFutureListener<Future<PassthroughResult>>() {
                 @Override
-                public void operationComplete(io.netty.util.concurrent.Future<PassthroughResult> f) throws Exception {
+                public void operationComplete(Future<PassthroughResult> f) throws Exception {
                     if (f.isSuccess()) {
                         future.complete(f.get());
                     } else {
