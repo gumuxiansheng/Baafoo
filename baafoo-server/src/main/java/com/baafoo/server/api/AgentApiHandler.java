@@ -6,6 +6,7 @@ import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.Rule;
 import com.baafoo.server.api.dto.AgentPollResponseDto;
 import com.baafoo.server.api.dto.AgentRegisterResponseDto;
+import com.baafoo.server.handler.AgentResolver;
 import com.baafoo.server.storage.StorageService;
 
 import java.util.ArrayList;
@@ -49,16 +50,22 @@ class AgentApiHandler implements ResourceHandler {
 
         if (path.equals(API_PREFIX + "agent/poll") && "GET".equals(method)) {
             String agentId = ctx.queryParam("agentId");
-            List<Rule> rules = ctx.storage.listRules();
 
+            // Resolve agent's environment and mode
+            String agentEnvironment = null;
             String mode = "record-and-stub";
             for (StorageService.AgentRegistration reg : ctx.storage.listAgents()) {
                 if (reg.getAgentId() != null && reg.getAgentId().equals(agentId)) {
+                    agentEnvironment = reg.environment;
                     Environment env = ctx.storage.getEnvironmentByName(reg.environment);
                     if (env != null) mode = env.getMode().getValue();
                     break;
                 }
             }
+
+            // Only return rules that belong to this agent's environment
+            List<Rule> rules = new AgentResolver(ctx.storage)
+                    .filterRulesByEnvironment(ctx.storage.listRules(), agentEnvironment);
 
             AgentPollResponseDto result = new AgentPollResponseDto()
                     .rules(rules)

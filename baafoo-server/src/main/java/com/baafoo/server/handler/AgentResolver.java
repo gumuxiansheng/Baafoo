@@ -121,6 +121,11 @@ public class AgentResolver {
         return null;
     }
 
+    /**
+     * Filter rules by agent environment.
+     * Rules with no environment association are excluded (not yet assigned to any environment).
+     * Rules with environments are only included if the agent's environment matches.
+     */
     public List<Rule> filterRulesByEnvironment(List<Rule> rules, String agentEnvironment) {
         List<Rule> filtered = new ArrayList<Rule>();
         for (Rule rule : rules) {

@@ -154,6 +154,34 @@ public class BaafooAgent {
                         .or(nameStartsWith("com.baafoo.agent.shaded."))
                         .or(isSynthetic()));
 
+        // DNS resolution interception — records domain-to-IP mappings so that
+        // SocketConnectAdvice can look up domain-based routes when socket connects
+        // using a resolved IP address instead of the original hostname.
+        // When consulEnabled, ConsulDnsAdvice also handles service name redirection.
+        if (cfg.isConsulEnabled()) {
+            agentBuilder = agentBuilder
+                    .type(named("java.net.InetAddress"))
+                    .transform((builder, typeDesc, classLoader, module, pd) ->
+                            builder.visit(Advice.to(ConsulDnsAdvice.class)
+                                    .on(named("getByName").and(takesArguments(1)))))
+                    .type(named("java.net.InetAddress"))
+                    .transform((builder, typeDesc, classLoader, module, pd) ->
+                            builder.visit(Advice.to(ConsulDnsAdvice.class)
+                                    .on(named("getAllByName").and(takesArguments(1)))));
+            registry.register("java.net.InetAddress", "ConsulDnsAdvice", "dns+consul");
+        } else {
+            agentBuilder = agentBuilder
+                    .type(named("java.net.InetAddress"))
+                    .transform((builder, typeDesc, classLoader, module, pd) ->
+                            builder.visit(Advice.to(DnsResolutionAdvice.class)
+                                    .on(named("getByName").and(takesArguments(1)))))
+                    .type(named("java.net.InetAddress"))
+                    .transform((builder, typeDesc, classLoader, module, pd) ->
+                            builder.visit(Advice.to(DnsResolutionAdvice.class)
+                                    .on(named("getAllByName").and(takesArguments(1)))));
+            registry.register("java.net.InetAddress", "DnsResolutionAdvice", "dns");
+        }
+
         agentBuilder = agentBuilder
                 .type(named("java.net.Socket"))
                 .transform((builder, typeDesc, classLoader, module, pd) ->
@@ -171,17 +199,6 @@ public class BaafooAgent {
         registry.register("sun.nio.ch.SocketChannelImpl", "NioSocketConnectAdvice", "tcp");
 
         if (cfg.isConsulEnabled()) {
-            agentBuilder = agentBuilder
-                    .type(named("java.net.InetAddress"))
-                    .transform((builder, typeDesc, classLoader, module, pd) ->
-                            builder.visit(Advice.to(ConsulDnsAdvice.class)
-                                    .on(named("getByName").and(takesArguments(1)))))
-                    .type(named("java.net.InetAddress"))
-                    .transform((builder, typeDesc, classLoader, module, pd) ->
-                            builder.visit(Advice.to(ConsulDnsAdvice.class)
-                                    .on(named("getAllByName").and(takesArguments(1)))));
-            registry.register("java.net.InetAddress", "ConsulDnsAdvice", "consul-dns");
-
             agentBuilder = agentBuilder
                     .type(named("sun.net.www.http.HttpClient"))
                     .transform((builder, typeDesc, classLoader, module, pd) ->

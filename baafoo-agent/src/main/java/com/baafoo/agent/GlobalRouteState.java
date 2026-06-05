@@ -26,12 +26,39 @@ public final class GlobalRouteState {
     public static volatile String SERVER_HOST = "127.0.0.1";
     public static volatile int SERVER_PORT = 8080;
 
+    /**
+     * DNS resolution cache: maps resolved IP addresses back to original domain names.
+     * Populated when InetAddress.getByName is intercepted.
+     * Used in SocketConnectAdvice/NioSocketConnectAdvice to look up routes by domain
+     * with an IP address instead of the original hostname.
+     */
+    public static final ConcurrentHashMap<String, String> DNS_CACHE = new ConcurrentHashMap<String, String>();
+
     private GlobalRouteState() {}
 
+    /**
+     * Record a DNS resolution for later route lookup.
+     *
+     * @param domain the original domain name (e.g., "api.example.com")
+     * @param ip     the resolved IP address (e.g., "93.184.216.34")
+     */
+    public static void recordDns(String domain, String ip) {
+        if (domain != null && !domain.isEmpty() && ip != null && !ip.isEmpty()) {
+            DNS_CACHE.putIfAbsent(ip, domain);
+        }
+    }
+
     public static String[] lookup(String host, int port) {
-        HostPort target = ROUTES.get(host + ":" + port);
+        // First try exact host:port match
+        String key = host + ":" + port;
+        HostPort target = ROUTES.get(key);
         if (target != null) {
             return new String[]{target.host, String.valueOf(target.port)};
+        }
+        // Fallback: try host-only match (for rules without specific port)
+        HostPort hostOnly = ROUTES.get(host);
+        if (hostOnly != null) {
+            return new String[]{hostOnly.host, String.valueOf(hostOnly.port)};
         }
         return null;
     }
