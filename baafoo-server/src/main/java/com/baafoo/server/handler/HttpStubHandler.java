@@ -97,13 +97,12 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         String agentId = agentInfo.agentId;
         String agentIp = agentInfo.agentIp;
 
-        // Match against rules — use ALL enabled rules without environment filtering.
-        // The agent has already made the routing decision via GlobalRouteState at the
-        // bytecode interception level. If a request reaches the stub server, it means
-        // the agent matched a rule and redirected it here. Re-filtering by environment
-        // here would be redundant and could incorrectly drop rules when agentEnvironment
-        // is null, expired, or belongs to a different agent.
-        List<Rule> rules = storage.listRules();
+        // Match against rules — only enabled rules for this agent's environment.
+        // The agent redirects ALL traffic to a matched host:port regardless of
+        // per-rule conditions, so the stub server must filter by environment here
+        // to prevent rules from other environments from matching.
+        List<Rule> rules = agentResolver.filterRulesByEnvironment(
+                storage.listRules(), agentEnvironment);
         MatchEngine.MatchResult result = matchEngine.match(
                 rules, "http", host, port, null,
                 method, path, headers, queryParams, body);
