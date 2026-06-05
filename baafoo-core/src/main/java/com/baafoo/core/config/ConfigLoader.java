@@ -2,6 +2,7 @@ package com.baafoo.core.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.fasterxml.jackson.dataformat.yaml.YAMLParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,12 +13,24 @@ import java.io.InputStream;
 
 /**
  * Configuration loader supporting YAML files.
+ *
+ * <p><b>Security note</b>: The YAML ObjectMapper is explicitly configured to
+ * disable native type IDs ({@code !!type} tags) to prevent arbitrary class
+ * instantiation via SnakeYAML. Do <b>not</b> enable {@code defaultTyping} or
+ * {@code USE_NATIVE_TYPE_ID} on this mapper — doing so would expose the
+ * application to deserialization-based RCE attacks.</p>
  */
 public class ConfigLoader {
 
     private static final Logger log = LoggerFactory.getLogger(ConfigLoader.class);
 
-    private static final ObjectMapper YAML_MAPPER = new ObjectMapper(new YAMLFactory());
+    private static final ObjectMapper YAML_MAPPER = createSafeYamlMapper();
+
+    private static ObjectMapper createSafeYamlMapper() {
+        YAMLFactory yamlFactory = new YAMLFactory();
+        yamlFactory.disable(YAMLParser.Feature.USE_NATIVE_TYPE_ID);
+        return new ObjectMapper(yamlFactory);
+    }
 
     /**
      * Load AgentConfig from YAML file.

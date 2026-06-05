@@ -13,8 +13,21 @@ import java.net.InetAddress;
  * <p><b>CRITICAL</b>: This advice is inlined into java.net.InetAddress by ByteBuddy.
  * Since InetAddress is loaded by the Bootstrap ClassLoader, the inlined code
  * runs in the Bootstrap CL context. Only reference Bootstrap CL-visible classes.</p>
+ *
+ * <p><b>Re-entry guard</b>: A ThreadLocal flag prevents infinite recursion when
+ * {@link InetAddress#getByName(String)} is called inside this advice to resolve
+ * a redirected target host. Without this guard, if the target host also matches
+ * a Consul service route, the advice would call itself recursively until
+ * StackOverflowError.</p>
  */
 public final class ConsulDnsAdvice {
+
+    private static final ThreadLocal<Boolean> REENTRY_GUARD = new ThreadLocal<Boolean>() {
+        @Override
+        protected Boolean initialValue() {
+            return Boolean.FALSE;
+        }
+    };
 
     private ConsulDnsAdvice() {}
 
@@ -24,6 +37,10 @@ public final class ConsulDnsAdvice {
             @Advice.Return(readOnly = false) InetAddress result) {
 
         if (GlobalRouteState.isPassthrough()) {
+            return;
+        }
+
+        if (REENTRY_GUARD.get()) {
             return;
         }
 
@@ -44,9 +61,15 @@ public final class ConsulDnsAdvice {
             GlobalRouteState.HostPort target = GlobalRouteState.lookupService(host);
 
             if (target != null) {
-                result = InetAddress.getByName(target.host);
+                REENTRY_GUARD.set(Boolean.TRUE);
+                try {
+                    result = InetAddress.getByName(target.host);
+                } finally {
+                    REENTRY_GUARD.set(Boolean.FALSE);
+                }
             }
         } catch (Throwable t) {
+            REENTRY_GUARD.set(Boolean.FALSE);
         }
     }
 
@@ -56,6 +79,10 @@ public final class ConsulDnsAdvice {
             @Advice.Return(readOnly = false) InetAddress[] result) {
 
         if (GlobalRouteState.isPassthrough()) {
+            return;
+        }
+
+        if (REENTRY_GUARD.get()) {
             return;
         }
 
@@ -80,10 +107,16 @@ public final class ConsulDnsAdvice {
             GlobalRouteState.HostPort target = GlobalRouteState.lookupService(host);
 
             if (target != null) {
-                InetAddress stubAddr = InetAddress.getByName(target.host);
-                result = new InetAddress[]{stubAddr};
+                REENTRY_GUARD.set(Boolean.TRUE);
+                try {
+                    InetAddress stubAddr = InetAddress.getByName(target.host);
+                    result = new InetAddress[]{stubAddr};
+                } finally {
+                    REENTRY_GUARD.set(Boolean.FALSE);
+                }
             }
         } catch (Throwable t) {
+            REENTRY_GUARD.set(Boolean.FALSE);
         }
     }
 }

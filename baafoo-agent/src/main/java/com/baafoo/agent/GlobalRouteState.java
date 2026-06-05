@@ -31,8 +31,18 @@ public final class GlobalRouteState {
      * Populated when InetAddress.getByName is intercepted.
      * Used in SocketConnectAdvice/NioSocketConnectAdvice to look up routes by domain
      * with an IP address instead of the original hostname.
+     *
+     * Bounded at {@link #MAX_DNS_CACHE_SIZE} entries to prevent memory leak.
+     * Eviction strategy: when full, removes all entries — this is a best-effort
+     * cache for route-lookup fallback, so occasional full clears are acceptable.
      */
     public static final ConcurrentHashMap<String, String> DNS_CACHE = new ConcurrentHashMap<String, String>();
+
+    /** Maximum number of entries in {@link #DNS_CACHE} */
+    private static final int MAX_DNS_CACHE_SIZE = 10000;
+
+    private static final java.util.concurrent.atomic.AtomicBoolean DNS_EVICTION_IN_PROGRESS =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private GlobalRouteState() {}
 
@@ -43,12 +53,26 @@ public final class GlobalRouteState {
      * @param ip     the resolved IP address (e.g., "93.184.216.34")
      */
     public static void recordDns(String domain, String ip) {
-        if (domain != null && !domain.isEmpty() && ip != null && !ip.isEmpty()) {
-            DNS_CACHE.putIfAbsent(ip, domain);
+        if (domain == null || domain.isEmpty() || ip == null || ip.isEmpty()) {
+            return;
         }
+        if (DNS_CACHE.size() >= MAX_DNS_CACHE_SIZE) {
+            if (DNS_EVICTION_IN_PROGRESS.compareAndSet(false, true)) {
+                try {
+                    DNS_CACHE.clear();
+                } finally {
+                    DNS_EVICTION_IN_PROGRESS.set(false);
+                }
+            }
+            return;
+        }
+        DNS_CACHE.putIfAbsent(ip, domain);
     }
 
     public static String[] lookup(String host, int port) {
+        if (host == null) {
+            return null;
+        }
         // First try exact host:port match
         String key = host + ":" + port;
         HostPort target = ROUTES.get(key);
