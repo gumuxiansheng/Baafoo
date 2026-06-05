@@ -2,14 +2,12 @@ package com.baafoo.agent;
 
 import com.baafoo.agent.advice.*;
 import com.baafoo.agent.channel.ControlChannel;
-import com.baafoo.agent.loader.PluginClassLoader;
 import com.baafoo.agent.plugin.PluginManager;
 import com.baafoo.agent.transform.TransformRegistry;
 import com.baafoo.core.config.AgentConfig;
 import com.baafoo.core.config.ConfigLoader;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
-import net.bytebuddy.matcher.ElementMatchers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -227,7 +225,6 @@ public class BaafooAgent {
 
     private static void setupBootstrapClassPath(Instrumentation inst) {
         appendToBootstrapClassLoaderSearch(inst);
-        log.info("Agent jar added to Bootstrap ClassLoader search path");
 
         syncGlobalRouteStateToBootstrapCL();
         log.info("GlobalRouteState synced to Bootstrap CL version");
@@ -260,69 +257,68 @@ public class BaafooAgent {
 
     private static void appendToBootstrapClassLoaderSearch(Instrumentation inst) {
         try {
-            java.security.CodeSource codeSource = BaafooAgent.class.getProtectionDomain().getCodeSource();
-            if (codeSource == null) {
-                log.warn("Cannot determine agent jar location (codeSource is null). " +
-                        "Advice classes may fail with ClassNotFoundException.");
-                return;
-            }
-
-            File agentJar = new File(codeSource.getLocation().toURI());
-            if (!agentJar.exists() || !agentJar.getName().endsWith(".jar")) {
-                log.warn("Agent is running from a directory (not a jar): {}. " +
-                        "Bootstrap CL search path not updated. " +
-                        "Advice classes may fail. Use the shaded jar for production.",
-                        agentJar.getAbsolutePath());
-                return;
-            }
-
-            File bootstrapJar = createBootstrapJar(agentJar);
+            File bootstrapJar = createBootstrapJar();
             if (bootstrapJar != null && bootstrapJar.exists()) {
                 inst.appendToBootstrapClassLoaderSearch(new JarFile(bootstrapJar));
                 log.info("Added Bootstrap helper jar to Bootstrap CL: {}", bootstrapJar.getAbsolutePath());
             } else {
-                log.warn("Failed to create Bootstrap helper jar, falling back to full agent jar");
-                inst.appendToBootstrapClassLoaderSearch(new JarFile(agentJar));
-                log.info("Added full agent jar to Bootstrap CL: {}", agentJar.getAbsolutePath());
+                log.error("Failed to create Bootstrap helper jar. " +
+                        "Advice classes will fail with ClassNotFoundException.");
             }
         } catch (Exception e) {
-            log.error("Failed to add agent jar to Bootstrap ClassLoader search path: {}", e.getMessage(), e);
+            log.error("Failed to add Bootstrap helper jar to Bootstrap ClassLoader search path: {}", e.getMessage(), e);
         }
     }
 
-    private static File createBootstrapJar(File agentJar) {
+    /**
+     * Creates a minimal jar containing only the classes needed by inlined Advice code
+     * running in the Bootstrap ClassLoader context (e.g. GlobalRouteState).
+     *
+     * <p>Uses {@code ClassLoader.getResourceAsStream()} instead of {@code JarFile}
+     * so this works regardless of how the agent is packaged — shaded jar, exploded
+     * directory, or IDE classpath. ByteBuddy and other third-party classes are
+     * intentionally excluded to prevent version conflicts with the host application
+     * or other agents.</p>
+     */
+    private static File createBootstrapJar() {
         try {
-            java.util.jar.JarFile jar = new java.util.jar.JarFile(agentJar);
-            File bootstrapJar = new File(agentJar.getParentFile(), "baafoo-bootstrap-helper.jar");
-            java.util.jar.Manifest manifest = new java.util.jar.Manifest();
-            java.util.jar.JarOutputStream jos = new java.util.jar.JarOutputStream(
-                    new java.io.FileOutputStream(bootstrapJar), manifest);
+            File tempJar = File.createTempFile("baafoo-bootstrap-", ".jar");
+            tempJar.deleteOnExit();
 
-            String[] bootstrapClasses = {
+            String[] classResources = {
                     "com/baafoo/agent/GlobalRouteState.class",
                     "com/baafoo/agent/GlobalRouteState$HostPort.class"
             };
 
-            for (String entryName : bootstrapClasses) {
-                java.util.jar.JarEntry entry = jar.getJarEntry(entryName);
-                if (entry != null) {
-                    jos.putNextEntry(new java.util.jar.JarEntry(entryName));
-                    java.io.InputStream is = jar.getInputStream(entry);
-                    byte[] buf = new byte[4096];
-                    int n;
-                    while ((n = is.read(buf)) != -1) {
-                        jos.write(buf, 0, n);
+            java.util.jar.Manifest manifest = new java.util.jar.Manifest();
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(tempJar);
+            java.util.jar.JarOutputStream jos = new java.util.jar.JarOutputStream(fos, manifest);
+
+            try {
+                ClassLoader cl = BaafooAgent.class.getClassLoader();
+                for (String resource : classResources) {
+                    java.io.InputStream is = cl.getResourceAsStream(resource);
+                    if (is != null) {
+                        try {
+                            jos.putNextEntry(new java.util.jar.JarEntry(resource));
+                            byte[] buf = new byte[4096];
+                            int n;
+                            while ((n = is.read(buf)) != -1) {
+                                jos.write(buf, 0, n);
+                            }
+                            jos.closeEntry();
+                        } finally {
+                            is.close();
+                        }
+                    } else {
+                        log.warn("Bootstrap class resource not found: {}", resource);
                     }
-                    is.close();
-                    jos.closeEntry();
-                } else {
-                    log.warn("Bootstrap class not found in agent jar: {}", entryName);
                 }
+            } finally {
+                jos.close();
             }
 
-            jos.close();
-            jar.close();
-            return bootstrapJar;
+            return tempJar;
         } catch (Exception e) {
             log.error("Failed to create Bootstrap helper jar: {}", e.getMessage());
             return null;
