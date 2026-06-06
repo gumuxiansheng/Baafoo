@@ -103,11 +103,11 @@
           <span v-if="currentRecording.agentIp">Agent IP: {{ currentRecording.agentIp }}</span>
           <span v-if="currentRecording.host">Target: {{ currentRecording.host }}<span v-if="currentRecording.port">:{{ currentRecording.port }}</span></span>
         </div>
-        <el-input :model-value="formatHeaders(currentRecording.requestHeaders)" type="textarea" rows="3" readonly />
-        <el-input :model-value="currentRecording.requestBody" type="textarea" rows="6" readonly style="margin-top: 8px" />
+        <el-input :model-value="formatHeaders(currentRecording.requestHeaders)" type="textarea" :rows="3" readonly />
+        <el-input :model-value="currentRecording.requestBody" type="textarea" :rows="6" readonly style="margin-top: 8px" />
         <h4 style="margin-top: 16px">响应 ({{ currentRecording.responseStatusCode }})</h4>
-        <el-input :model-value="formatHeaders(currentRecording.responseHeaders)" type="textarea" rows="3" readonly />
-        <el-input :model-value="currentRecording.responseBody" type="textarea" rows="10" readonly style="margin-top: 8px" />
+        <el-input :model-value="formatHeaders(currentRecording.responseHeaders)" type="textarea" :rows="3" readonly />
+        <el-input :model-value="currentRecording.responseBody" type="textarea" :rows="10" readonly style="margin-top: 8px" />
       </div>
     </el-dialog>
   </div>

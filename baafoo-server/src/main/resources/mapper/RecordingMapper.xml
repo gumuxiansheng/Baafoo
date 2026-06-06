@@ -54,7 +54,16 @@
             <if test="statusCode != null">
                 AND response_status_code = #{statusCode}
             </if>
-            <if test="keyword != null and keyword != ''">
+            <!-- PostgreSQL: full-text search using tsvector + GIN index -->
+            <if test="keyword != null and keyword != '' and _databaseId == 'postgresql'">
+                AND search_vector @@ plainto_tsquery('pg_catalog.english', #{keyword})
+            </if>
+            <!-- H2: full-text search using built-in FT index -->
+            <if test="keyword != null and keyword != '' and _databaseId == 'h2'">
+                AND id IN (SELECT KEYS[1] FROM FT_SEARCH_DATA(#{keyword}, 0, 0))
+            </if>
+            <!-- Other databases: LIKE fallback -->
+            <if test="keyword != null and keyword != '' and _databaseId != 'postgresql' and _databaseId != 'h2'">
                 AND (request_body LIKE '%' || #{keyword} || '%'
                      OR response_body LIKE '%' || #{keyword} || '%'
                      OR path LIKE '%' || #{keyword} || '%'

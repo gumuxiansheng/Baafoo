@@ -12,7 +12,7 @@
         <el-table-column prop="name" label="名称" min-width="150" />
         <el-table-column label="模式" width="160" align="center">
           <template #default="{ row }">
-            <el-tag :type="modeTagType(row.mode)" effect="dark">
+            <el-tag :type="modeTagType(row.mode) || undefined" effect="dark">
               {{ modeLabel(row) }}
             </el-tag>
           </template>

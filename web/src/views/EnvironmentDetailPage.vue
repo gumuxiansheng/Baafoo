@@ -10,7 +10,7 @@
         <el-descriptions-item label="环境ID">{{ env.id }}</el-descriptions-item>
         <el-descriptions-item label="名称">{{ env.name }}</el-descriptions-item>
         <el-descriptions-item label="当前模式">
-          <el-tag :type="modeTagType(env.mode)" effect="dark">{{ env.mode }}</el-tag>
+          <el-tag :type="modeTagType(env.mode) || undefined" effect="dark">{{ env.mode }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="创建时间">{{ formatTime(env.createdAt) }}</el-descriptions-item>
       </el-descriptions>

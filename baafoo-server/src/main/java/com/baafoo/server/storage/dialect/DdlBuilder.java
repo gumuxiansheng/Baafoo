@@ -32,10 +32,12 @@ public class DdlBuilder {
             createRuleSetsTable(stmt);
             createRecordingsTable(stmt);
             addColumnIfMissing(stmt, "recordings", "agent_ip", "VARCHAR(45)");
+            alterRecordingsPathToVarchar(stmt);
             createAgentsTable(stmt);
             addColumnIfMissing(stmt, "agents", "agent_ip", "VARCHAR(45)");
             createUsersTable(stmt);
             createIndexes(stmt);
+            createRecordingsFullTextSearch(stmt);
         }
         log.info("Database tables verified/created (dialect: {})", dialect);
     }
@@ -134,7 +136,7 @@ public class DdlBuilder {
             "  port INT," +
             "  service_name VARCHAR(255)," +
             "  method VARCHAR(20)," +
-            "  path TEXT," +
+            "  path VARCHAR(2000)," +
             "  request_headers_json TEXT," +
             "  request_body TEXT," +
             "  response_status_code INT," +
@@ -145,6 +147,22 @@ public class DdlBuilder {
             "  tags_json TEXT" +
             ")"
         );
+    }
+
+    /**
+     * Migrate existing recordings.path column from TEXT to VARCHAR(2000).
+     */
+    private void alterRecordingsPathToVarchar(Statement stmt) {
+        try {
+            if (dialect == DatabaseDialect.POSTGRESQL) {
+                stmt.executeUpdate("ALTER TABLE recordings ALTER COLUMN path TYPE VARCHAR(2000)");
+            } else {
+                stmt.executeUpdate("ALTER TABLE recordings ALTER COLUMN path VARCHAR(2000)");
+            }
+        } catch (SQLException e) {
+            // Column already VARCHAR(2000) or other non-critical error
+            log.debug("Path column migration skipped: {}", e.getMessage());
+        }
     }
 
     private void createAgentsTable(Statement stmt) throws SQLException {
@@ -186,12 +204,105 @@ public class DdlBuilder {
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_rules_enabled ON rules(enabled)");
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_rules_priority ON rules(priority)");
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_environments_name ON environments(name)");
+        // Recordings indexes
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_recordings_rule_id ON recordings(rule_id)");
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_recordings_recorded_at ON recordings(recorded_at)");
+        stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_recordings_agent_id ON recordings(agent_id)");
+        stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_recordings_protocol ON recordings(protocol)");
+        stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_recordings_method ON recordings(method)");
+        stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_recordings_status_code ON recordings(response_status_code)");
+        stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_recordings_agent_ip ON recordings(agent_ip)");
+        stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_recordings_path ON recordings(path)");
+        // Other indexes
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_agents_environment ON agents(environment)");
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_rule_history_rule_id ON rule_history(rule_id)");
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)");
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_users_api_key ON users(api_key)");
+    }
+
+    /**
+     * Set up full-text search for the recordings table.
+     * PostgreSQL: tsvector column + GIN index + auto-update trigger.
+     * H2: uses LIKE fallback (sufficient for dev/test scale).
+     */
+    private void createRecordingsFullTextSearch(Statement stmt) {
+        if (dialect == DatabaseDialect.POSTGRESQL) {
+            createPostgreSQLFullTextSearch(stmt);
+        } else if (dialect == DatabaseDialect.H2) {
+            createH2FullTextSearch(stmt);
+        }
+    }
+
+    /**
+     * PostgreSQL: tsvector column + GIN index + auto-update trigger.
+     */
+    private void createPostgreSQLFullTextSearch(Statement stmt) {
+        // Add tsvector column
+        addColumnIfMissing(stmt, "recordings", "search_vector", "tsvector");
+
+        try {
+            // GIN index for full-text search
+            stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_recordings_search ON recordings USING GIN(search_vector)");
+
+            // Trigger function to auto-update search_vector on INSERT/UPDATE
+            stmt.executeUpdate(
+                "CREATE OR REPLACE FUNCTION recordings_search_trigger() RETURNS trigger AS $$\n" +
+                "BEGIN\n" +
+                "  NEW.search_vector :=\n" +
+                "    setweight(to_tsvector('pg_catalog.english', COALESCE(NEW.path, '')), 'A') ||\n" +
+                "    setweight(to_tsvector('pg_catalog.english', COALESCE(NEW.request_headers_json, '')), 'B') ||\n" +
+                "    setweight(to_tsvector('pg_catalog.english', COALESCE(NEW.response_headers_json, '')), 'B') ||\n" +
+                "    setweight(to_tsvector('pg_catalog.english', COALESCE(NEW.request_body, '')), 'C') ||\n" +
+                "    setweight(to_tsvector('pg_catalog.english', COALESCE(NEW.response_body, '')), 'C');\n" +
+                "  RETURN NEW;\n" +
+                "END;\n" +
+                "$$ LANGUAGE plpgsql"
+            );
+
+            // Create trigger (drop first if exists to avoid errors)
+            stmt.executeUpdate("DROP TRIGGER IF EXISTS recordings_search_update ON recordings");
+            stmt.executeUpdate(
+                "CREATE TRIGGER recordings_search_update\n" +
+                "  BEFORE INSERT OR UPDATE ON recordings\n" +
+                "  FOR EACH ROW EXECUTE FUNCTION recordings_search_trigger()"
+            );
+
+            // Populate search_vector for existing rows
+            stmt.executeUpdate(
+                "UPDATE recordings SET search_vector =\n" +
+                "  setweight(to_tsvector('pg_catalog.english', COALESCE(path, '')), 'A') ||\n" +
+                "  setweight(to_tsvector('pg_catalog.english', COALESCE(request_headers_json, '')), 'B') ||\n" +
+                "  setweight(to_tsvector('pg_catalog.english', COALESCE(response_headers_json, '')), 'B') ||\n" +
+                "  setweight(to_tsvector('pg_catalog.english', COALESCE(request_body, '')), 'C') ||\n" +
+                "  setweight(to_tsvector('pg_catalog.english', COALESCE(response_body, '')), 'C')\n" +
+                "WHERE search_vector IS NULL"
+            );
+
+            log.info("PostgreSQL full-text search index created for recordings table");
+        } catch (SQLException e) {
+            log.warn("Failed to create full-text search for recordings: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * H2: built-in org.h2.fulltext.FullText search index.
+     * Uses FT_CREATE_INDEX to index text columns, and FT_SEARCH_DATA for querying.
+     */
+    private void createH2FullTextSearch(Statement stmt) {
+        try {
+            // Initialize H2 full-text search (idempotent)
+            stmt.executeUpdate("CREATE ALIAS IF NOT EXISTS FT_INIT FOR \"org.h2.fulltext.FullText.init\"");
+            stmt.executeUpdate("CALL FT_INIT()");
+
+            // Create full-text index on recordings table (NULL = index all columns)
+            // FT_CREATE_INDEX is idempotent if called with same parameters
+            stmt.executeUpdate("CALL FT_CREATE_INDEX('PUBLIC', 'RECORDINGS', NULL)");
+
+            log.info("H2 full-text search index created for recordings table");
+        } catch (SQLException e) {
+            // Already initialized or other non-critical error
+            log.debug("H2 full-text search setup: {}", e.getMessage());
+        }
     }
 
     /**
