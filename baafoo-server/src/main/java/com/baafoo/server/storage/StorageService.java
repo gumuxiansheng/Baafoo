@@ -70,7 +70,10 @@ public interface StorageService {
 
     List<RecordingEntry> listRecordings(String ruleId, int limit);
 
-    PaginatedResult<RecordingEntry> listRecordingsPaged(String ruleId, int page, int size);
+    PaginatedResult<RecordingEntry> listRecordingsPaged(String ruleId, String agentId, String agentIp,
+                                                         String protocol, String method, String path,
+                                                         Integer statusCode, String keyword,
+                                                         int page, int size);
 
     void addRecording(RecordingEntry recording);
 

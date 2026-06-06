@@ -86,7 +86,20 @@ export default {
 
   // --- Recordings ---
   getRecordings: (ruleId, limit = 100) => http.get(`/recordings?ruleId=${ruleId || ''}&limit=${limit}`),
-  getRecordingsPaged: (ruleId, page = 1, size = 20) => http.get(`/recordings?ruleId=${ruleId || ''}&page=${page}&size=${size}`),
+  getRecordingsPaged: (params, page = 1, size = 20) => {
+    const p = new URLSearchParams({ page, size })
+    if (params) {
+      if (params.ruleId) p.set('ruleId', params.ruleId)
+      if (params.agentId) p.set('agentId', params.agentId)
+      if (params.agentIp) p.set('agentIp', params.agentIp)
+      if (params.protocol) p.set('protocol', params.protocol)
+      if (params.method) p.set('method', params.method)
+      if (params.path) p.set('path', params.path)
+      if (params.statusCode) p.set('statusCode', params.statusCode)
+      if (params.keyword) p.set('keyword', params.keyword)
+    }
+    return http.get(`/recordings?${p.toString()}`)
+  },
   deleteRecording: (id) => http.delete(`/recordings/${id}`),
 
   // --- Agents ---

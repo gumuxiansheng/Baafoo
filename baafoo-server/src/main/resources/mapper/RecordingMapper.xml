@@ -31,6 +31,39 @@
                 javaType="java.util.Map"/>
     </resultMap>
 
+    <sql id="searchConditions">
+        <where>
+            <if test="ruleId != null and ruleId != ''">
+                AND rule_id = #{ruleId}
+            </if>
+            <if test="agentId != null and agentId != ''">
+                AND agent_id = #{agentId}
+            </if>
+            <if test="agentIp != null and agentIp != ''">
+                AND agent_ip LIKE '%' || #{agentIp} || '%'
+            </if>
+            <if test="protocol != null and protocol != ''">
+                AND protocol = #{protocol}
+            </if>
+            <if test="method != null and method != ''">
+                AND method = #{method}
+            </if>
+            <if test="path != null and path != ''">
+                AND path LIKE '%' || #{path} || '%'
+            </if>
+            <if test="statusCode != null">
+                AND response_status_code = #{statusCode}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (request_body LIKE '%' || #{keyword} || '%'
+                     OR response_body LIKE '%' || #{keyword} || '%'
+                     OR path LIKE '%' || #{keyword} || '%'
+                     OR request_headers_json LIKE '%' || #{keyword} || '%'
+                     OR response_headers_json LIKE '%' || #{keyword} || '%')
+            </if>
+        </where>
+    </sql>
+
     <select id="listRecordings" resultMap="recordingResultMap">
         SELECT * FROM recordings
         <if test="ruleId != null and ruleId != ''">
@@ -41,16 +74,12 @@
 
     <select id="countRecordings" resultType="long">
         SELECT COUNT(*) FROM recordings
-        <if test="ruleId != null and ruleId != ''">
-            WHERE rule_id = #{ruleId}
-        </if>
+        <include refid="searchConditions"/>
     </select>
 
     <select id="listRecordingsPaged" resultMap="recordingResultMap">
         SELECT * FROM recordings
-        <if test="ruleId != null and ruleId != ''">
-            WHERE rule_id = #{ruleId}
-        </if>
+        <include refid="searchConditions"/>
         ORDER BY recorded_at DESC LIMIT #{limit} OFFSET #{offset}
     </select>
 

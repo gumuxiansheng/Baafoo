@@ -22,7 +22,22 @@ class RecordingApiHandler implements ResourceHandler {
                 if (page < 1) page = 1;
                 if (size < 1) size = 20;
                 if (size > 100) size = 100;
-                PaginatedResult<RecordingEntry> result = ctx.storage.listRecordingsPaged(ruleId, page, size);
+
+                // Search filters
+                String agentId = ctx.queryParam("agentId");
+                String agentIp = ctx.queryParam("agentIp");
+                String protocol = ctx.queryParam("protocol");
+                String reqMethod = ctx.queryParam("method");
+                String reqPath = ctx.queryParam("path");
+                String statusCodeStr = ctx.queryParam("statusCode");
+                Integer statusCode = null;
+                if (statusCodeStr != null && !statusCodeStr.isEmpty()) {
+                    try { statusCode = Integer.parseInt(statusCodeStr); } catch (NumberFormatException ignored) {}
+                }
+                String keyword = ctx.queryParam("keyword");
+
+                PaginatedResult<RecordingEntry> result = ctx.storage.listRecordingsPaged(
+                        ruleId, agentId, agentIp, protocol, reqMethod, reqPath, statusCode, keyword, page, size);
                 return ApiResponse.ok(result);
             } else {
                 // Legacy mode: limit-based (backward compatible)

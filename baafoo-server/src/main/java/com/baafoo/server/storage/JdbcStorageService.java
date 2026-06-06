@@ -567,12 +567,15 @@ public class JdbcStorageService implements StorageService {
     }
 
     @Override
-    public PaginatedResult<RecordingEntry> listRecordingsPaged(String ruleId, int page, int size) {
+    public PaginatedResult<RecordingEntry> listRecordingsPaged(String ruleId, String agentId, String agentIp,
+                                                                String protocol, String method, String path,
+                                                                Integer statusCode, String keyword,
+                                                                int page, int size) {
         try (SqlSession session = openSession()) {
             RecordingMapper rcm = session.getMapper(RecordingMapper.class);
-            long total = rcm.countRecordings(ruleId);
+            long total = rcm.countRecordings(ruleId, agentId, agentIp, protocol, method, path, statusCode, keyword);
             int offset = (page - 1) * size;
-            List<RecordingEntry> items = rcm.listRecordingsPaged(ruleId, size, offset);
+            List<RecordingEntry> items = rcm.listRecordingsPaged(ruleId, agentId, agentIp, protocol, method, path, statusCode, keyword, size, offset);
             return new PaginatedResult<>(page, size, total, items);
         }
     }

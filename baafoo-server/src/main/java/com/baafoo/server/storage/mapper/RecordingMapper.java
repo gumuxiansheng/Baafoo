@@ -9,9 +9,23 @@ public interface RecordingMapper {
 
     List<RecordingEntry> listRecordings(@Param("ruleId") String ruleId, @Param("limit") int limit);
 
-    long countRecordings(@Param("ruleId") String ruleId);
+    long countRecordings(@Param("ruleId") String ruleId,
+                         @Param("agentId") String agentId,
+                         @Param("agentIp") String agentIp,
+                         @Param("protocol") String protocol,
+                         @Param("method") String method,
+                         @Param("path") String path,
+                         @Param("statusCode") Integer statusCode,
+                         @Param("keyword") String keyword);
 
     List<RecordingEntry> listRecordingsPaged(@Param("ruleId") String ruleId,
+                                             @Param("agentId") String agentId,
+                                             @Param("agentIp") String agentIp,
+                                             @Param("protocol") String protocol,
+                                             @Param("method") String method,
+                                             @Param("path") String path,
+                                             @Param("statusCode") Integer statusCode,
+                                             @Param("keyword") String keyword,
                                              @Param("limit") int limit,
                                              @Param("offset") int offset);
 

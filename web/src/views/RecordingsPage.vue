@@ -5,6 +5,54 @@
       <el-button @click="loadRecordings">刷新</el-button>
     </div>
 
+    <el-card shadow="never" style="margin-top: 16px">
+      <el-form :inline="true" size="small" @submit.prevent="onSearch">
+        <el-form-item label="规则">
+          <el-input v-model="searchParams.ruleId" placeholder="规则ID" clearable style="width: 120px" />
+        </el-form-item>
+        <el-form-item label="Agent ID">
+          <el-input v-model="searchParams.agentId" placeholder="Agent ID" clearable style="width: 120px" />
+        </el-form-item>
+        <el-form-item label="Agent IP">
+          <el-input v-model="searchParams.agentIp" placeholder="Agent IP" clearable style="width: 130px" />
+        </el-form-item>
+        <el-form-item label="协议">
+          <el-select v-model="searchParams.protocol" placeholder="全部" clearable style="width: 90px">
+            <el-option label="HTTP" value="http" />
+            <el-option label="HTTPS" value="https" />
+            <el-option label="TCP" value="tcp" />
+            <el-option label="UDP" value="udp" />
+            <el-option label="GRPC" value="grpc" />
+            <el-option label="DUBBO" value="dubbo" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="方法">
+          <el-select v-model="searchParams.method" placeholder="全部" clearable style="width: 90px">
+            <el-option label="GET" value="GET" />
+            <el-option label="POST" value="POST" />
+            <el-option label="PUT" value="PUT" />
+            <el-option label="DELETE" value="DELETE" />
+            <el-option label="PATCH" value="PATCH" />
+            <el-option label="HEAD" value="HEAD" />
+            <el-option label="OPTIONS" value="OPTIONS" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="路径">
+          <el-input v-model="searchParams.path" placeholder="路径" clearable style="width: 130px" />
+        </el-form-item>
+        <el-form-item label="状态码">
+          <el-input v-model="searchParams.statusCode" placeholder="如 200" clearable style="width: 90px" />
+        </el-form-item>
+        <el-form-item label="详情">
+          <el-input v-model="searchParams.keyword" placeholder="搜索详情内容" clearable style="width: 140px" />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="onSearch">搜索</el-button>
+          <el-button @click="onReset">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
     <el-card shadow="never" style="margin-top: 16px" v-loading="loading">
       <el-table :data="recordings" stripe size="small" max-height="500" empty-text="暂无录制数据">
         <el-table-column prop="id" label="ID" width="120" show-overflow-tooltip />
@@ -66,7 +114,7 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useAuthStore } from '@/store'
 import api from '@/api'
 
@@ -82,14 +130,56 @@ export default {
     const pageSize = ref(20)
     const total = ref(0)
 
+    const searchParams = reactive({
+      ruleId: '',
+      agentId: '',
+      agentIp: '',
+      protocol: '',
+      method: '',
+      path: '',
+      statusCode: '',
+      keyword: ''
+    })
+
+    function getSearchParams() {
+      const params = {}
+      if (searchParams.ruleId) params.ruleId = searchParams.ruleId
+      if (searchParams.agentId) params.agentId = searchParams.agentId
+      if (searchParams.agentIp) params.agentIp = searchParams.agentIp
+      if (searchParams.protocol) params.protocol = searchParams.protocol
+      if (searchParams.method) params.method = searchParams.method
+      if (searchParams.path) params.path = searchParams.path
+      if (searchParams.statusCode) params.statusCode = searchParams.statusCode
+      if (searchParams.keyword) params.keyword = searchParams.keyword
+      return params
+    }
+
     async function loadRecordings() {
       loading.value = true
-      const res = await api.getRecordingsPaged('', currentPage.value, pageSize.value)
+      const res = await api.getRecordingsPaged(getSearchParams(), currentPage.value, pageSize.value)
       if (res.success && res.data) {
         recordings.value = res.data.items || []
         total.value = res.data.total || 0
       }
       loading.value = false
+    }
+
+    function onSearch() {
+      currentPage.value = 1
+      loadRecordings()
+    }
+
+    function onReset() {
+      searchParams.ruleId = ''
+      searchParams.agentId = ''
+      searchParams.agentIp = ''
+      searchParams.protocol = ''
+      searchParams.method = ''
+      searchParams.path = ''
+      searchParams.statusCode = ''
+      searchParams.keyword = ''
+      currentPage.value = 1
+      loadRecordings()
     }
 
     function onPageChange(page) {
@@ -123,8 +213,8 @@ export default {
     onMounted(loadRecordings)
     return {
       recordings, loading, detailVisible, currentRecording,
-      currentPage, pageSize, total,
-      loadRecordings, onPageChange, onSizeChange,
+      currentPage, pageSize, total, searchParams,
+      loadRecordings, onSearch, onReset, onPageChange, onSizeChange,
       viewDetail, deleteItem, formatHeaders, formatTime, authStore
     }
   }
@@ -146,4 +236,5 @@ h4 { margin: 8px 0; color: #606266; }
 :deep(.el-pagination .el-pager li) { font-size: 12px; min-width: 24px; height: 24px; line-height: 24px; }
 .detail-meta { margin-bottom: 8px; font-size: 13px; color: #909399; }
 .detail-meta span { margin-right: 16px; }
+:deep(.el-form--inline .el-form-item) { margin-right: 12px; margin-bottom: 8px; }
 </style>
