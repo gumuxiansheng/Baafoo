@@ -2,7 +2,8 @@
   <div class="login-container">
     <div class="login-card">
       <div class="login-header">
-        <span class="logo">⚡ Baafoo</span>
+        <BaafooLogo class="login-logo" variant="login" />
+        <h1 class="logo">Baafoo</h1>
         <p class="subtitle">挡板系统控制台</p>
       </div>
       <el-form :model="form" :rules="rules" ref="formRef" @submit.prevent="handleLogin" autocomplete="off">
@@ -53,9 +54,11 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store'
 import { ElMessage } from 'element-plus'
+import BaafooLogo from '@/components/BaafooLogo.vue'
 
 export default {
   name: 'LoginPage',
+  components: { BaafooLogo },
   setup() {
     const router = useRouter()
     const authStore = useAuthStore()
@@ -123,6 +126,14 @@ export default {
 .login-header {
   text-align: center;
   margin-bottom: 32px;
+}
+
+.login-logo {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 12px;
+  display: block;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
 }
 
 .logo {

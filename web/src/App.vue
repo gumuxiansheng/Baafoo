@@ -4,7 +4,8 @@
       <!-- Header -->
       <el-header height="56px" class="baafoo-header">
         <div class="header-left">
-          <span class="logo">🫧 Baafoo</span>
+          <BaafooLogo class="logo-icon" />
+          <span class="logo">Baafoo</span>
           <el-tag size="small" type="info" effect="plain">v1.0</el-tag>
         </div>
         <div class="header-right">
@@ -86,9 +87,11 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStatusStore, useAuthStore } from '@/store'
+import BaafooLogo from '@/components/BaafooLogo.vue'
 
 export default {
   name: 'App',
+  components: { BaafooLogo },
   setup() {
     const route = useRoute()
     const router = useRouter()
@@ -151,6 +154,7 @@ body {
 }
 
 .header-left { display: flex; align-items: center; gap: 10px; }
+.logo-icon { width: 32px; height: 32px; flex-shrink: 0; }
 .logo { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
 
 .header-right { display: flex; align-items: center; gap: 10px; }
