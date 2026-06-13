@@ -119,28 +119,31 @@ public final class RouteManager {
             }
         }
 
-        GlobalRouteState.ROUTES.clear();
-        GlobalRouteState.ROUTES.putAll(newRoutes);
+        // Atomic swap: replace the entire map reference instead of clear+putAll
+        // to avoid a window where concurrent readers see an empty route table
+        GlobalRouteState.ROUTES = newRoutes;
 
-        AgentManifest.ROUTE_TABLE.get().clear();
+        // Build a new RouteTable and swap atomically
+        RouteTable newTable = new RouteTable();
         for (Map.Entry<String, GlobalRouteState.HostPort> entry : newRoutes.entrySet()) {
             String key = entry.getKey();
             GlobalRouteState.HostPort value = entry.getValue();
             if (key.startsWith("svc:")) {
                 String serviceName = key.substring(4);
-                AgentManifest.ROUTE_TABLE.get().putService(serviceName, value.host, value.port);
+                newTable.putService(serviceName, value.host, value.port);
             } else {
                 int colonIdx = key.indexOf(':');
                 if (colonIdx > 0) {
                     String host = key.substring(0, colonIdx);
                     int port = Integer.parseInt(key.substring(colonIdx + 1));
-                    AgentManifest.ROUTE_TABLE.get().put(host, port, value.host, value.port);
+                    newTable.put(host, port, value.host, value.port);
                 } else {
-                    AgentManifest.ROUTE_TABLE.get().getRoutes().put(key, value);
+                    newTable.getRoutes().put(key, value);
                 }
             }
         }
-        AgentManifest.ROUTE_TABLE.get().incrementVersion();
+        newTable.incrementVersion();
+        AgentManifest.ROUTE_TABLE.set(newTable);
 
         log.info("RouteTable rebuilt: {} routes (GlobalRouteState.ROUTES size={})", newRoutes.size(), GlobalRouteState.ROUTES.size());
 
@@ -244,11 +247,14 @@ public final class RouteManager {
         java.lang.reflect.Constructor<?> bootCtor = BaafooAgent.getBootstrapHostPortCtor();
         if (bootRoutes == null || bootCtor == null) return;
         try {
-            ((ConcurrentHashMap) bootRoutes).clear();
+            // Build new map first, then clear+putAll to minimize the empty-window
+            ConcurrentHashMap<Object, Object> newBootRoutes = new ConcurrentHashMap<Object, Object>();
             for (Map.Entry<String, GlobalRouteState.HostPort> entry : newRoutes.entrySet()) {
                 Object bootHostPort = bootCtor.newInstance(entry.getValue().host, entry.getValue().port);
-                ((ConcurrentHashMap) bootRoutes).put(entry.getKey(), bootHostPort);
+                newBootRoutes.put(entry.getKey(), bootHostPort);
             }
+            bootRoutes.clear();
+            bootRoutes.putAll(newBootRoutes);
             log.info("Synced {} routes to Bootstrap CL GlobalRouteState.ROUTES", bootRoutes.size());
         } catch (Exception e) {
             log.error("Failed to sync routes to Bootstrap CL: {}", e.getMessage());
