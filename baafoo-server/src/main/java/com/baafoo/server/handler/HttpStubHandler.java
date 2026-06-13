@@ -253,7 +253,14 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         for (String pair : query.split("&")) {
             int eqIdx = pair.indexOf('=');
             if (eqIdx > 0) {
-                params.put(pair.substring(0, eqIdx), pair.substring(eqIdx + 1));
+                try {
+                    String key = java.net.URLDecoder.decode(pair.substring(0, eqIdx), "UTF-8");
+                    String value = java.net.URLDecoder.decode(pair.substring(eqIdx + 1), "UTF-8");
+                    params.put(key, value);
+                } catch (java.io.UnsupportedEncodingException e) {
+                    // UTF-8 is always available, but fallback to raw values
+                    params.put(pair.substring(0, eqIdx), pair.substring(eqIdx + 1));
+                }
             }
         }
         return params;
