@@ -5,6 +5,9 @@ import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.model.User;
 import com.baafoo.server.api.*;
 import com.baafoo.server.auth.AuthService;
+import com.baafoo.server.broker.JmsMockBroker;
+import com.baafoo.server.broker.KafkaMockBroker;
+import com.baafoo.server.broker.PulsarMockBroker;
 import com.baafoo.server.handler.HttpStubHandler;
 import com.baafoo.server.handler.TcpStubHandler;
 import com.baafoo.server.storage.StorageService;
@@ -48,6 +51,9 @@ public class BaafooServer {
     private final EventLoopGroup bossGroup;
     private final EventLoopGroup workerGroup;
     private final List<Channel> channels;
+    private KafkaMockBroker kafkaBroker;
+    private PulsarMockBroker pulsarBroker;
+    private JmsMockBroker jmsBroker;
 
     public BaafooServer(ServerConfig config) {
         this.config = config;
@@ -94,6 +100,10 @@ public class BaafooServer {
         Integer tcpPort = config.getPortForProtocol("tcp");
         if (tcpPort > 0) startTcpStubServer(tcpPort);
 
+        Integer kafkaPort = config.getPortForProtocol("kafka");
+        Integer pulsarPort = config.getPortForProtocol("pulsar");
+        Integer jmsPort = config.getPortForProtocol("jms");
+
         // Protocol-specific stub servers (Kafka, Pulsar, JMS — Beta)
         startProtocolServers();
 
@@ -101,6 +111,9 @@ public class BaafooServer {
         log.info("Management API: http://localhost:{}", config.getHttpPort());
         log.info("Stub HTTP:      localhost:{}", httpPort);
         log.info("Stub TCP:       localhost:{}", tcpPort);
+        log.info("Stub Kafka:     localhost:{}", kafkaPort);
+        log.info("Stub Pulsar:    localhost:{}", pulsarPort);
+        log.info("Stub JMS:       localhost:{}", jmsPort);
         log.info("Web Console:    http://localhost:{}/__baafoo__/", config.getHttpPort());
 
         // Wait for shutdown
@@ -184,12 +197,26 @@ public class BaafooServer {
     }
 
     private void startProtocolServers() throws Exception {
-        String[] protocols = {"kafka", "pulsar", "jms"};
-        for (String protocol : protocols) {
-            Integer port = config.getPortForProtocol(protocol);
-            if (port != null && port > 0) {
-                startProtocolStubServer(protocol, port);
-            }
+        // Kafka uses the dedicated KafkaMockBroker with binary protocol parsing
+        Integer kafkaPort = config.getPortForProtocol("kafka");
+        if (kafkaPort > 0) {
+            kafkaBroker = new KafkaMockBroker(kafkaPort, storage, bossGroup, workerGroup);
+            kafkaBroker.start();
+        }
+
+        // Pulsar uses the dedicated PulsarMockBroker with binary protocol parsing
+        Integer pulsarPort = config.getPortForProtocol("pulsar");
+        if (pulsarPort > 0) {
+            pulsarBroker = new PulsarMockBroker(pulsarPort, bossGroup, workerGroup, storage);
+            pulsarBroker.start();
+        }
+
+        // JMS uses the embedded Artemis broker with OpenWire protocol support
+        Integer jmsPort = config.getPortForProtocol("jms");
+        if (jmsPort != null && jmsPort > 0) {
+            jmsBroker = new JmsMockBroker(jmsPort);
+            jmsBroker.start();
+            jmsBroker.loadRules(storage.listRules());
         }
     }
 
@@ -231,6 +258,19 @@ public class BaafooServer {
 
     private void stop() {
         log.info("Shutting down Baafoo Server...");
+        if (jmsBroker != null) {
+            try {
+                jmsBroker.stop();
+            } catch (Exception e) {
+                log.warn("Error stopping JMS broker: {}", e.getMessage());
+            }
+        }
+        if (kafkaBroker != null) {
+            kafkaBroker.stop();
+        }
+        if (pulsarBroker != null) {
+            pulsarBroker.stop();
+        }
         storage.shutdown();
         for (Channel ch : channels) {
             ch.close();

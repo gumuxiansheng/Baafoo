@@ -38,6 +38,7 @@
 
         <!-- Server -->
         <netty.version>4.1.100.Final</netty.version>
+        <artemis.version>2.19.1</artemis.version>
         <h2.version>2.2.224</h2.version>
         <hikaricp.version>4.0.3</hikaricp.version>
         <postgresql.version>42.7.1</postgresql.version>

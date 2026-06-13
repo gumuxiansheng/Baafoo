@@ -1,0 +1,857 @@
+package com.baafoo.server.broker;
+
+import com.baafoo.server.storage.StorageService;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.SimpleChannelInboundHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Netty handler that implements a subset of the Kafka binary protocol.
+ *
+ * <p>Handles: Metadata (3), Produce (0), Fetch (1), ApiVersions (18).
+ * Returns empty/default responses for all other API keys so that
+ * Kafka clients don't crash on unsupported operations.</p>
+ *
+ * <p>The Kafka protocol is big-endian. Request frame format:
+ * 4 bytes size | 2 bytes API key | 2 bytes API version | 4 bytes correlation_id | string client_id | payload</p>
+ */
+public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
+
+    private static final Logger log = LoggerFactory.getLogger(KafkaProtocolDecoder.class);
+
+    // Kafka API keys
+    private static final short PRODUCE = 0;
+    private static final short FETCH = 1;
+    private static final short METADATA = 3;
+    private static final short OFFSET_COMMIT = 8;
+    private static final short OFFSET_FETCH = 9;
+    private static final short FIND_COORDINATOR = 10;
+    private static final short JOIN_GROUP = 11;
+    private static final short HEARTBEAT = 12;
+    private static final short LEAVE_GROUP = 13;
+    private static final short SYNC_GROUP = 14;
+    private static final short DESCRIBE_GROUPS = 15;
+    private static final short LIST_GROUPS = 16;
+    private static final short API_VERSIONS = 18;
+    private static final short DESCRIBE_CONFIGS = 32;
+
+    // Kafka error codes
+    private static final short NONE = 0;
+    private static final short UNKNOWN_SERVER_ERROR = -1;
+    private static final short UNSUPPORTED_VERSION = 35;
+
+    private final KafkaMessageStore messageStore;
+    private final StorageService storage;
+    private final int brokerPort;
+
+    public KafkaProtocolDecoder(KafkaMessageStore messageStore, StorageService storage, int brokerPort) {
+        this.messageStore = messageStore;
+        this.storage = storage;
+        this.brokerPort = brokerPort;
+    }
+
+    @Override
+    public void channelActive(ChannelHandlerContext ctx) {
+        log.debug("Kafka client connected: {}", ctx.channel().remoteAddress());
+    }
+
+    @Override
+    protected void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) {
+        // The LengthFieldBasedFrameDecoder already stripped the 4-byte size prefix
+        // Read the request header
+        short apiKey = msg.readShort();
+        short apiVersion = msg.readShort();
+        int correlationId = msg.readInt();
+        String clientId = readNullableString(msg);
+
+        log.debug("Kafka request: apiKey={}, apiVersion={}, correlationId={}, clientId={}",
+                apiKey, apiVersion, correlationId, clientId);
+
+        ByteBuf response;
+        try {
+            switch (apiKey) {
+                case PRODUCE:
+                    response = handleProduce(msg, apiVersion, correlationId);
+                    break;
+                case FETCH:
+                    response = handleFetch(msg, apiVersion, correlationId);
+                    break;
+                case METADATA:
+                    response = handleMetadata(msg, apiVersion, correlationId);
+                    break;
+                case API_VERSIONS:
+                    response = handleApiVersions(apiVersion, correlationId);
+                    break;
+                case OFFSET_COMMIT:
+                    response = handleOffsetCommit(apiVersion, correlationId);
+                    break;
+                case OFFSET_FETCH:
+                    response = handleOffsetFetch(msg, apiVersion, correlationId);
+                    break;
+                case FIND_COORDINATOR:
+                    response = handleFindCoordinator(apiVersion, correlationId);
+                    break;
+                case JOIN_GROUP:
+                    response = handleJoinGroup(apiVersion, correlationId);
+                    break;
+                case HEARTBEAT:
+                    response = handleHeartbeat(apiVersion, correlationId);
+                    break;
+                case LEAVE_GROUP:
+                    response = handleLeaveGroup(apiVersion, correlationId);
+                    break;
+                case SYNC_GROUP:
+                    response = handleSyncGroup(apiVersion, correlationId);
+                    break;
+                case DESCRIBE_GROUPS:
+                    response = handleDescribeGroups(apiVersion, correlationId);
+                    break;
+                case LIST_GROUPS:
+                    response = handleListGroups(apiVersion, correlationId);
+                    break;
+                case DESCRIBE_CONFIGS:
+                    response = handleDescribeConfigs(apiVersion, correlationId);
+                    break;
+                default:
+                    log.debug("Unsupported Kafka API key={}, returning empty response", apiKey);
+                    response = buildEmptyResponse(correlationId);
+                    break;
+            }
+        } catch (Exception e) {
+            log.error("Error handling Kafka request apiKey={}: {}", apiKey, e.getMessage());
+            response = buildErrorResponse(correlationId, UNKNOWN_SERVER_ERROR);
+        }
+
+        ctx.writeAndFlush(response);
+    }
+
+    // --- Metadata (API key 3) ---
+
+    private ByteBuf handleMetadata(ByteBuf msg, short apiVersion, int correlationId) {
+        // Request: [topics array] + allow_auto_topic_creation (v4+)
+        int topicCount = msg.readInt();
+        List<String> topics = new ArrayList<String>();
+        for (int i = 0; i < topicCount; i++) {
+            topics.add(readNullableString(msg));
+        }
+
+        // Build response
+        ByteBuf buf = Unpooled.buffer();
+
+        // Correlation ID
+        buf.writeInt(correlationId);
+
+        // Throttle_time_ms (v3+)
+        if (apiVersion >= 3) {
+            buf.writeInt(0);
+        }
+
+        // Brokers array (1 broker = ourselves)
+        buf.writeInt(1); // array count
+        writeNullableString(buf, resolveBrokerHost());
+        buf.writeInt(brokerPort);
+        buf.writeInt(0); // broker_id = 0
+
+        // Cluster authorized operations (v8+)
+        if (apiVersion >= 8) {
+            buf.writeInt(0);
+        }
+
+        // Topic metadata array
+        buf.writeInt(topics.size());
+        for (String topic : topics) {
+            buf.writeShort(NONE); // error_code
+            writeNullableString(buf, topic);
+            buf.writeBoolean(false); // is_internal (v1+)
+
+            // Partition array — 1 partition per topic
+            buf.writeInt(1); // partition count
+            buf.writeShort(NONE); // error_code
+            buf.writeInt(0); // partition_index
+            buf.writeInt(0); // leader_id (broker 0 = us)
+            // replica_nodes
+            buf.writeInt(1);
+            buf.writeInt(0);
+            // isr_nodes
+            buf.writeInt(1);
+            buf.writeInt(0);
+            // offline_replicas (v5+)
+            if (apiVersion >= 5) {
+                buf.writeInt(0);
+            }
+
+            // Topic authorized operations (v8+)
+            if (apiVersion >= 8) {
+                buf.writeInt(0);
+            }
+        }
+
+        return frameResponse(buf);
+    }
+
+    // --- Produce (API key 0) ---
+
+    private ByteBuf handleProduce(ByteBuf msg, short apiVersion, int correlationId) {
+        // Request: transactional_id (nullable string, v3+) + acks + timeout_ms + topics array
+        if (apiVersion >= 3) {
+            readNullableString(msg); // transactional_id
+        }
+        msg.readShort(); // acks
+        msg.readInt(); // timeout_ms
+
+        int topicCount = msg.readInt();
+        // Collect results for response
+        List<ProduceTopicResult> results = new ArrayList<ProduceTopicResult>();
+
+        for (int t = 0; t < topicCount; t++) {
+            String topic = readNullableString(msg);
+            int partitionCount = msg.readInt();
+            List<ProducePartitionResult> partitionResults = new ArrayList<ProducePartitionResult>();
+
+            for (int p = 0; p < partitionCount; p++) {
+                int partition = msg.readInt();
+                // Record batch: 8 bytes baseOffset + ...
+                // For simplicity, read the record batch length then the batch
+                int batchLength = msg.readInt();
+                byte[] batchData = new byte[batchLength];
+                msg.readBytes(batchData);
+
+                // Parse base offset from the batch (first 8 bytes of the record batch)
+                long baseOffset = 0;
+                int numRecords = 0;
+                if (batchLength >= 22) {
+                    // RecordBatch: baseOffset(8) + batchLength(4) + partitionLeaderEpoch(4) + magic(1) + crc(4) + attributes(2) + lastOffsetDelta(4) + ...
+                    baseOffset = readLongFromBytes(batchData, 0);
+                    // lastOffsetDelta at offset 20 (8+4+4+1+4+2-1=22... let me just use next offset)
+                    // We'll use the messageStore's next offset
+                }
+
+                // Store each record in the batch
+                // For simplicity, store the entire batch as a single message
+                long offset = messageStore.append(topic, partition, null, batchData);
+                partitionResults.add(new ProducePartitionResult(partition, offset));
+            }
+            results.add(new ProduceTopicResult(topic, partitionResults));
+        }
+
+        // Build response
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(correlationId);
+
+        // throttle_time_ms (v1+, comes before topics in Kafka protocol)
+        if (apiVersion >= 1) {
+            buf.writeInt(0);
+        }
+
+        // Topics array
+        buf.writeInt(results.size());
+        for (ProduceTopicResult topicResult : results) {
+            writeNullableString(buf, topicResult.topic);
+            buf.writeInt(topicResult.partitions.size());
+            for (ProducePartitionResult partResult : topicResult.partitions) {
+                buf.writeShort(NONE); // error_code
+                buf.writeInt(partResult.partition);
+                buf.writeLong(partResult.offset);
+                // timestamp (v2+)
+                if (apiVersion >= 2) {
+                    buf.writeLong(System.currentTimeMillis());
+                }
+                // log_start_offset (v5+)
+                if (apiVersion >= 5) {
+                    buf.writeLong(0);
+                }
+            }
+        }
+
+        return frameResponse(buf);
+    }
+
+    // --- Fetch (API key 1) ---
+
+    private ByteBuf handleFetch(ByteBuf msg, short apiVersion, int correlationId) {
+        // Request varies by version
+        // v0: replica_id + max_wait_ms + min_bytes + topics
+        // v3+: isolation_level added
+        // v7+: session_id + session_epoch added
+        if (apiVersion >= 7) {
+            msg.readInt(); // replica_id (or forgotten_topics in newer)
+            msg.readInt(); // max_wait_ms
+            msg.readInt(); // min_bytes
+            if (apiVersion >= 4) {
+                msg.readInt(); // max_bytes
+            }
+            if (apiVersion >= 5) {
+                msg.readByte(); // isolation_level
+            }
+            msg.readInt(); // session_id
+            msg.readInt(); // session_epoch
+        } else {
+            msg.readInt(); // replica_id
+            msg.readInt(); // max_wait_ms
+            msg.readInt(); // min_bytes
+            if (apiVersion >= 3) {
+                msg.readInt(); // max_bytes
+            }
+            if (apiVersion >= 4) {
+                msg.readByte(); // isolation_level
+            }
+        }
+
+        int topicCount = msg.readInt();
+        List<FetchTopicResult> results = new ArrayList<FetchTopicResult>();
+
+        for (int t = 0; t < topicCount; t++) {
+            String topic = readNullableString(msg);
+            int partitionCount = msg.readInt();
+            List<FetchPartitionResult> partitionResults = new ArrayList<FetchPartitionResult>();
+
+            for (int p = 0; p < partitionCount; p++) {
+                int partition = msg.readInt();
+                long fetchOffset = msg.readLong();
+                msg.readInt(); // log_start_offset (v5+)
+                int partitionMaxBytes = msg.readInt();
+
+                // Fetch messages from store
+                List<KafkaMessageStore.StoredMessage> messages =
+                        messageStore.fetch(topic, partition, fetchOffset, partitionMaxBytes);
+
+                partitionResults.add(new FetchPartitionResult(partition, messages));
+            }
+            results.add(new FetchTopicResult(topic, partitionResults));
+        }
+
+        // Build response
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(correlationId);
+
+        // throttle_time_ms (v1+)
+        if (apiVersion >= 1) {
+            buf.writeInt(0);
+        }
+
+        // error_code (v7+)
+        if (apiVersion >= 7) {
+            buf.writeShort(NONE);
+        }
+
+        // session_id (v7+)
+        if (apiVersion >= 7) {
+            buf.writeInt(0);
+        }
+
+        // Topics array
+        buf.writeInt(results.size());
+        for (FetchTopicResult topicResult : results) {
+            writeNullableString(buf, topicResult.topic);
+            buf.writeInt(topicResult.partitions.size());
+
+            for (FetchPartitionResult partResult : topicResult.partitions) {
+                buf.writeShort(NONE); // error_code
+                buf.writeInt(partResult.partition);
+                buf.writeLong(messageStore.getOffset(topicResult.topic, partResult.partition)); // high_watermark
+                // last_stable_offset (v4+)
+                if (apiVersion >= 4) {
+                    buf.writeLong(messageStore.getOffset(topicResult.topic, partResult.partition));
+                }
+                // log_start_offset (v5+)
+                if (apiVersion >= 5) {
+                    buf.writeLong(0);
+                }
+                // aborted_transactions (v4+)
+                if (apiVersion >= 4) {
+                    buf.writeInt(0); // no aborted transactions
+                }
+                // preferred_read_replica (v11+)
+                if (apiVersion >= 11) {
+                    buf.writeInt(-1);
+                }
+
+                // Record data — write as a single byte buffer
+                ByteBuf recordData = buildRecordSet(partResult.messages);
+                buf.writeBytes(recordData);
+                recordData.release();
+            }
+        }
+
+        return frameResponse(buf);
+    }
+
+    private ByteBuf buildRecordSet(List<KafkaMessageStore.StoredMessage> messages) {
+        ByteBuf buf = Unpooled.buffer();
+        if (messages.isEmpty()) {
+            // Empty record set: write 0 bytes (just the length prefix of 0)
+            // In Kafka protocol, empty record set is represented as -1 (0xFFFFFFFF) for the length
+            // or 0 length. Let's use 0.
+            buf.writeInt(0);
+            return buf;
+        }
+
+        // Build all records first, then wrap in a length-prefixed buffer
+        ByteBuf records = Unpooled.buffer();
+        for (KafkaMessageStore.StoredMessage msg : messages) {
+            // If the value looks like a full RecordBatch (produced by our Produce handler),
+            // write it directly. Otherwise, wrap in a simple record.
+            if (msg.value != null && msg.value.length > 22 && isRecordBatch(msg.value)) {
+                // Re-write baseOffset to match the stored offset
+                writeLongToBytes(msg.value, 0, msg.offset);
+                records.writeBytes(msg.value);
+            } else {
+                // Simple record wrapper for preset messages
+                writeSimpleRecord(records, msg.offset, msg.key, msg.value);
+            }
+        }
+
+        buf.writeInt(records.readableBytes());
+        buf.writeBytes(records);
+        records.release();
+        return buf;
+    }
+
+    private boolean isRecordBatch(byte[] data) {
+        // A RecordBatch starts with baseOffset(8) + batchLength(4) + partitionLeaderEpoch(4) + magic=2(1)
+        return data.length > 17 && data[16] == 2;
+    }
+
+    private void writeSimpleRecord(ByteBuf buf, long offset, byte[] key, byte[] value) {
+        // Write a minimal RecordBatch containing one record
+        // RecordBatch format:
+        // baseOffset(8) + batchLength(4) + partitionLeaderEpoch(4) + magic(1) + crc(4) + attributes(2)
+        // + lastOffsetDelta(4) + baseTimestamp(8) + maxTimestamp(8) + producerId(8) + producerEpoch(2)
+        // + baseSequence(4) + recordsCount(4) + [records]
+
+        // Build the inner record first
+        ByteBuf recordBuf = Unpooled.buffer();
+        // Record: attributes(1) + timestampDelta(varint) + offsetDelta(varint) + keyLength(varint) + key + valueLength(varint) + value + headers
+        recordBuf.writeByte(0); // attributes: no compression, no timestamp type
+        writeVarint(recordBuf, 0); // timestampDelta
+        writeVarint(recordBuf, 0); // offsetDelta
+        if (key != null) {
+            writeVarint(recordBuf, key.length);
+            recordBuf.writeBytes(key);
+        } else {
+            writeVarint(recordBuf, -1);
+        }
+        if (value != null) {
+            writeVarint(recordBuf, value.length);
+            recordBuf.writeBytes(value);
+        } else {
+            writeVarint(recordBuf, -1);
+        }
+        writeVarint(recordBuf, 0); // headers count
+
+        int recordLen = recordBuf.readableBytes();
+
+        // Now build the batch
+        ByteBuf batchBuf = Unpooled.buffer();
+        batchBuf.writeLong(offset); // baseOffset
+        // batchLength: everything after this field
+        // partitionLeaderEpoch(4) + magic(1) + crc(4) + attributes(2) + lastOffsetDelta(4) +
+        // baseTimestamp(8) + maxTimestamp(8) + producerId(8) + producerEpoch(2) + baseSequence(4) + recordsCount(4) + recordData
+        int batchLength = 4 + 1 + 4 + 2 + 4 + 8 + 8 + 8 + 2 + 4 + 4 + recordLen;
+        batchBuf.writeInt(batchLength);
+        batchBuf.writeInt(0); // partitionLeaderEpoch
+        batchBuf.writeByte(2); // magic = 2
+        batchBuf.writeInt(0); // CRC (0 for mock — clients don't validate this)
+        batchBuf.writeShort(0); // attributes
+        batchBuf.writeInt(0); // lastOffsetDelta
+        batchBuf.writeLong(System.currentTimeMillis()); // baseTimestamp
+        batchBuf.writeLong(System.currentTimeMillis()); // maxTimestamp
+        batchBuf.writeLong(0); // producerId
+        batchBuf.writeShort(0); // producerEpoch
+        batchBuf.writeInt(0); // baseSequence
+        batchBuf.writeInt(1); // recordsCount
+        batchBuf.writeBytes(recordBuf);
+        recordBuf.release();
+
+        buf.writeBytes(batchBuf);
+        batchBuf.release();
+    }
+
+    // --- ApiVersions (API key 18) ---
+
+    private ByteBuf handleApiVersions(short apiVersion, int correlationId) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(correlationId);
+        buf.writeShort(NONE); // error_code
+
+        // Supported API versions
+        int[][] supportedApis = {
+                {PRODUCE, 0, 9},
+                {FETCH, 0, 12},
+                {METADATA, 0, 12},
+                {OFFSET_COMMIT, 0, 8},
+                {OFFSET_FETCH, 0, 8},
+                {FIND_COORDINATOR, 0, 4},
+                {JOIN_GROUP, 0, 7},
+                {HEARTBEAT, 0, 4},
+                {LEAVE_GROUP, 0, 4},
+                {SYNC_GROUP, 0, 5},
+                {DESCRIBE_GROUPS, 0, 5},
+                {LIST_GROUPS, 0, 4},
+                {API_VERSIONS, 0, 3},
+                {DESCRIBE_CONFIGS, 0, 4}
+        };
+
+        buf.writeInt(supportedApis.length);
+        for (int[] api : supportedApis) {
+            buf.writeShort(api[0]); // apiKey
+            buf.writeShort(api[1]); // minVersion
+            buf.writeShort(api[2]); // maxVersion
+        }
+
+        // throttle_time_ms (v1+)
+        if (apiVersion >= 1) {
+            buf.writeInt(0);
+        }
+
+        return frameResponse(buf);
+    }
+
+    // --- OffsetCommit (API key 8) ---
+
+    private ByteBuf handleOffsetCommit(short apiVersion, int correlationId) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(correlationId);
+
+        // v0-v1: topics array with partition results
+        // v2+: throttle_time_ms first
+        if (apiVersion >= 2) {
+            buf.writeInt(0); // throttle_time_ms
+        }
+
+        // Topics array
+        buf.writeInt(0); // no topics in response for simplicity
+        // Actually for v0-v1 we need topic results
+        // Let's return an empty topics array
+        buf.writeInt(0);
+
+        return frameResponse(buf);
+    }
+
+    // --- OffsetFetch (API key 9) ---
+
+    private ByteBuf handleOffsetFetch(ByteBuf msg, short apiVersion, int correlationId) {
+        // Read request to consume the bytes
+        int topicCount = msg.readInt();
+        for (int t = 0; t < topicCount; t++) {
+            readNullableString(msg); // topic
+            int partitionCount = msg.readInt();
+            for (int p = 0; p < partitionCount; p++) {
+                msg.readInt(); // partition
+            }
+        }
+        if (apiVersion >= 2) {
+            msg.readByte(); // require_stable
+        }
+
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(correlationId);
+
+        // Topics array — return 0 offset for everything
+        buf.writeInt(0);
+
+        // error_code (v2+)
+        if (apiVersion >= 2) {
+            buf.writeShort(NONE);
+        }
+
+        return frameResponse(buf);
+    }
+
+    // --- FindCoordinator (API key 10) ---
+
+    private ByteBuf handleFindCoordinator(short apiVersion, int correlationId) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(correlationId);
+
+        // throttle_time_ms (v1+)
+        if (apiVersion >= 1) {
+            buf.writeInt(0);
+        }
+
+        buf.writeShort(NONE); // error_code
+        writeNullableString(buf, resolveBrokerHost()); // host
+        buf.writeInt(brokerPort); // port
+        buf.writeInt(0); // node_id
+
+        return frameResponse(buf);
+    }
+
+    // --- JoinGroup (API key 11) ---
+
+    private ByteBuf handleJoinGroup(short apiVersion, int correlationId) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(correlationId);
+
+        // throttle_time_ms (v1+)
+        if (apiVersion >= 1) {
+            buf.writeInt(0);
+        }
+
+        buf.writeShort(NONE); // error_code
+        buf.writeInt(0); // generation_id
+        writeNullableString(buf, ""); // protocol_name
+        writeNullableString(buf, ""); // leader
+        writeNullableString(buf, ""); // skip_assignment (v5+ handled below)
+
+        // members array — empty
+        buf.writeInt(0);
+
+        return frameResponse(buf);
+    }
+
+    // --- Heartbeat (API key 12) ---
+
+    private ByteBuf handleHeartbeat(short apiVersion, int correlationId) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(correlationId);
+
+        // throttle_time_ms (v1+)
+        if (apiVersion >= 1) {
+            buf.writeInt(0);
+        }
+
+        buf.writeShort(NONE); // error_code
+
+        return frameResponse(buf);
+    }
+
+    // --- LeaveGroup (API key 13) ---
+
+    private ByteBuf handleLeaveGroup(short apiVersion, int correlationId) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(correlationId);
+
+        // throttle_time_ms (v1+)
+        if (apiVersion >= 1) {
+            buf.writeInt(0);
+        }
+
+        buf.writeShort(NONE); // error_code
+
+        // members array (v3+)
+        if (apiVersion >= 3) {
+            buf.writeInt(0);
+        }
+
+        return frameResponse(buf);
+    }
+
+    // --- SyncGroup (API key 14) ---
+
+    private ByteBuf handleSyncGroup(short apiVersion, int correlationId) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(correlationId);
+
+        // throttle_time_ms (v1+)
+        if (apiVersion >= 1) {
+            buf.writeInt(0);
+        }
+
+        buf.writeShort(NONE); // error_code
+        writeNullableBytes(buf, new byte[0]); // assignment
+
+        return frameResponse(buf);
+    }
+
+    // --- DescribeGroups (API key 15) ---
+
+    private ByteBuf handleDescribeGroups(short apiVersion, int correlationId) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(correlationId);
+
+        // throttle_time_ms (v1+)
+        if (apiVersion >= 1) {
+            buf.writeInt(0);
+        }
+
+        // groups array — empty
+        buf.writeInt(0);
+
+        return frameResponse(buf);
+    }
+
+    // --- ListGroups (API key 16) ---
+
+    private ByteBuf handleListGroups(short apiVersion, int correlationId) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(correlationId);
+
+        // throttle_time_ms (v1+)
+        if (apiVersion >= 1) {
+            buf.writeInt(0);
+        }
+
+        buf.writeShort(NONE); // error_code
+
+        // groups array — empty
+        buf.writeInt(0);
+
+        return frameResponse(buf);
+    }
+
+    // --- DescribeConfigs (API key 32) ---
+
+    private ByteBuf handleDescribeConfigs(short apiVersion, int correlationId) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(correlationId);
+
+        // throttle_time_ms (v0+)
+        buf.writeInt(0);
+
+        // configs array — empty
+        buf.writeInt(0);
+
+        return frameResponse(buf);
+    }
+
+    // --- Helper methods ---
+
+    private ByteBuf buildEmptyResponse(int correlationId) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(correlationId);
+        buf.writeShort(NONE); // error_code
+        return frameResponse(buf);
+    }
+
+    private ByteBuf buildErrorResponse(int correlationId, short errorCode) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(correlationId);
+        buf.writeShort(errorCode);
+        return frameResponse(buf);
+    }
+
+    /**
+     * Wrap the response payload in a 4-byte size frame.
+     */
+    private ByteBuf frameResponse(ByteBuf payload) {
+        ByteBuf frame = Unpooled.buffer(4 + payload.readableBytes());
+        frame.writeInt(payload.readableBytes());
+        frame.writeBytes(payload);
+        payload.release();
+        return frame;
+    }
+
+    private String readNullableString(ByteBuf buf) {
+        short length = buf.readShort();
+        if (length < 0) return null;
+        byte[] bytes = new byte[length];
+        buf.readBytes(bytes);
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    private void writeNullableString(ByteBuf buf, String value) {
+        if (value == null) {
+            buf.writeShort(-1);
+        } else {
+            byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+            buf.writeShort(bytes.length);
+            buf.writeBytes(bytes);
+        }
+    }
+
+    private void writeNullableBytes(ByteBuf buf, byte[] value) {
+        if (value == null) {
+            buf.writeInt(-1);
+        } else {
+            buf.writeInt(value.length);
+            buf.writeBytes(value);
+        }
+    }
+
+    private void writeVarint(ByteBuf buf, int value) {
+        // Unsigned varint encoding (zigzag + varint)
+        int zigzag = (value << 1) ^ (value >> 31);
+        while ((zigzag & ~0x7F) != 0) {
+            buf.writeByte((byte) ((zigzag & 0x7F) | 0x80));
+            zigzag >>>= 7;
+        }
+        buf.writeByte((byte) zigzag);
+    }
+
+    private long readLongFromBytes(byte[] data, int offset) {
+        return ((long) (data[offset] & 0xFF) << 56)
+                | ((long) (data[offset + 1] & 0xFF) << 48)
+                | ((long) (data[offset + 2] & 0xFF) << 40)
+                | ((long) (data[offset + 3] & 0xFF) << 32)
+                | ((long) (data[offset + 4] & 0xFF) << 24)
+                | ((long) (data[offset + 5] & 0xFF) << 16)
+                | ((long) (data[offset + 6] & 0xFF) << 8)
+                | ((long) (data[offset + 7] & 0xFF));
+    }
+
+    private void writeLongToBytes(byte[] data, int offset, long value) {
+        data[offset] = (byte) (value >> 56);
+        data[offset + 1] = (byte) (value >> 48);
+        data[offset + 2] = (byte) (value >> 40);
+        data[offset + 3] = (byte) (value >> 32);
+        data[offset + 4] = (byte) (value >> 24);
+        data[offset + 5] = (byte) (value >> 16);
+        data[offset + 6] = (byte) (value >> 8);
+        data[offset + 7] = (byte) value;
+    }
+
+    private String resolveBrokerHost() {
+        try {
+            return java.net.InetAddress.getLocalHost().getHostAddress();
+        } catch (Exception e) {
+            return "127.0.0.1";
+        }
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        log.error("KafkaProtocolDecoder error: {}", cause.getMessage());
+        ctx.close();
+    }
+
+    // --- Result containers ---
+
+    private static final class ProduceTopicResult {
+        final String topic;
+        final List<ProducePartitionResult> partitions;
+
+        ProduceTopicResult(String topic, List<ProducePartitionResult> partitions) {
+            this.topic = topic;
+            this.partitions = partitions;
+        }
+    }
+
+    private static final class ProducePartitionResult {
+        final int partition;
+        final long offset;
+
+        ProducePartitionResult(int partition, long offset) {
+            this.partition = partition;
+            this.offset = offset;
+        }
+    }
+
+    private static final class FetchTopicResult {
+        final String topic;
+        final List<FetchPartitionResult> partitions;
+
+        FetchTopicResult(String topic, List<FetchPartitionResult> partitions) {
+            this.topic = topic;
+            this.partitions = partitions;
+        }
+    }
+
+    private static final class FetchPartitionResult {
+        final int partition;
+        final List<KafkaMessageStore.StoredMessage> messages;
+
+        FetchPartitionResult(int partition, List<KafkaMessageStore.StoredMessage> messages) {
+            this.partition = partition;
+            this.messages = messages;
+        }
+    }
+}

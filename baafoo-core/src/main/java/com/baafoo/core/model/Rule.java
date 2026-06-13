@@ -44,6 +44,27 @@ public class Rule {
     /** Environments where this rule is active (empty = not active anywhere, must explicitly associate) */
     private List<String> environments;
 
+    /** TCP-specific: multi-round interaction rounds (R-S3 AC-03) */
+    private List<TcpRound> tcpRounds;
+
+    /** TCP-specific: whether to loop back to round 1 after all rounds are exhausted (default: false = close) */
+    private boolean tcpLoop;
+
+    /** TCP-specific: regex pattern applied to hex string of request bytes (R-S3 AC-02) */
+    private String tcpPattern;
+
+    /** TCP-specific: prefix hex matching for single-round rules */
+    private String tcpPrefixHex;
+
+    /** TCP-specific: byte offset start (inclusive) for offset matching (R-S3 AC-05) */
+    private int tcpOffsetStart;
+
+    /** TCP-specific: byte offset end (exclusive) for offset matching */
+    private int tcpOffsetEnd;
+
+    /** TCP-specific: expected hex value at the byte offset range */
+    private String tcpOffsetHex;
+
     /** Rule version for undo support */
     private int version;
 
@@ -58,9 +79,12 @@ public class Rule {
         this.responses = Collections.emptyList();
         this.tags = Collections.emptyList();
         this.environments = Collections.emptyList();
+        this.tcpRounds = Collections.emptyList();
         this.enabled = true;
         this.priority = 100;
         this.version = 1;
+        this.tcpOffsetStart = -1;
+        this.tcpOffsetEnd = -1;
     }
 
     // --- Getters / Setters ---
@@ -109,6 +133,27 @@ public class Rule {
 
     public long getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(long updatedAt) { this.updatedAt = updatedAt; }
+
+    public List<TcpRound> getTcpRounds() { return tcpRounds; }
+    public void setTcpRounds(List<TcpRound> tcpRounds) { this.tcpRounds = tcpRounds; }
+
+    public boolean isTcpLoop() { return tcpLoop; }
+    public void setTcpLoop(boolean tcpLoop) { this.tcpLoop = tcpLoop; }
+
+    public String getTcpPattern() { return tcpPattern; }
+    public void setTcpPattern(String tcpPattern) { this.tcpPattern = tcpPattern; }
+
+    public String getTcpPrefixHex() { return tcpPrefixHex; }
+    public void setTcpPrefixHex(String tcpPrefixHex) { this.tcpPrefixHex = tcpPrefixHex; }
+
+    public int getTcpOffsetStart() { return tcpOffsetStart; }
+    public void setTcpOffsetStart(int tcpOffsetStart) { this.tcpOffsetStart = tcpOffsetStart; }
+
+    public int getTcpOffsetEnd() { return tcpOffsetEnd; }
+    public void setTcpOffsetEnd(int tcpOffsetEnd) { this.tcpOffsetEnd = tcpOffsetEnd; }
+
+    public String getTcpOffsetHex() { return tcpOffsetHex; }
+    public void setTcpOffsetHex(String tcpOffsetHex) { this.tcpOffsetHex = tcpOffsetHex; }
 
     @Override
     public String toString() {
