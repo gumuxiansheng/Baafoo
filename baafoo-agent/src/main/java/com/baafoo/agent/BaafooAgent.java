@@ -265,7 +265,8 @@ public class BaafooAgent {
         registry.register("org.apache.kafka.clients.consumer.KafkaConsumer", "KafkaConsumerAdvice", "kafka");
 
         agentBuilder = agentBuilder
-                .type(named("org.apache.pulsar.client.api.ClientBuilder"))
+                .type(named("org.apache.pulsar.client.api.ClientBuilder")
+                        .or(named("org.apache.pulsar.client.impl.PulsarClientBuilder")))
                 .transform((builder, typeDesc, classLoader, module, pd) ->
                         builder.visit(Advice.to(PulsarClientAdvice.class)
                                 .on(named("serviceUrl").and(takesArguments(1)))));
