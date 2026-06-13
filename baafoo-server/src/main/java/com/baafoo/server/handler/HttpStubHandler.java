@@ -159,6 +159,8 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
 
         passthroughProxy.forward(method, host, port, path, queryParams, headers, requestBody)
                 .whenComplete((result, error) -> {
+                    // Ensure all Netty operations run on the EventLoop thread
+                    ctx.executor().execute(() -> {
                         if (error != null) {
                             log.error("Passthrough+record error: {}", error.getMessage());
                             if (agentEnvironment != null) {
@@ -169,9 +171,8 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                                         agentId, agentIp);
                                 storage.addRecording(recording);
                             }
-                            ctx.executor().execute(() ->
-                                    StubResponseRenderer.sendError(ctx, HttpResponseStatus.BAD_GATEWAY,
-                                            "Passthrough failed: " + error.getMessage()));
+                            StubResponseRenderer.sendError(ctx, HttpResponseStatus.BAD_GATEWAY,
+                                    "Passthrough failed: " + error.getMessage());
                             return;
                         }
 
@@ -201,6 +202,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                         }
 
                         ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+                    });
                 });
     }
 
@@ -213,11 +215,12 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         }
         passthroughProxy.forward(method, host, port, path, queryParams, headers, requestBody)
                 .whenComplete((result, error) -> {
+                    // Ensure all Netty operations run on the EventLoop thread
+                    ctx.executor().execute(() -> {
                         if (error != null) {
                             log.error("Passthrough error: {}", error.getMessage());
-                            ctx.executor().execute(() ->
-                                    StubResponseRenderer.sendError(ctx, HttpResponseStatus.BAD_GATEWAY,
-                                            "Passthrough failed: " + error.getMessage()));
+                            StubResponseRenderer.sendError(ctx, HttpResponseStatus.BAD_GATEWAY,
+                                    "Passthrough failed: " + error.getMessage());
                             return;
                         }
 
@@ -232,6 +235,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                         response.headers().set(HttpHeaderNames.CONTENT_LENGTH, result.responseBody.length);
                         response.headers().set("X-Baafoo-Stub", "passthrough");
                         ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+                    });
                 });
     }
 
