@@ -33,11 +33,12 @@ public final class RecordingHelper {
         rec.setResponseStatusCode(entry.getStatusCode());
         rec.setResponseHeaders(entry.getHeaders() != null ? entry.getHeaders() : new HashMap<String, String>());
         rec.setResponseBody(entry.getBody());
-        rec.setResponseTimeMs(entry.getDelayMs());
+        rec.setResponseTimeMs(0);
         return rec;
     }
 
     public static RecordingEntry buildFromPassthrough(String ruleId, String agentEnvironment,
+                                                       String protocol,
                                                        String host, int port, String method, String path,
                                                        Map<String, String> requestHeaders, String requestBody,
                                                        int statusCode, Map<String, String> responseHeaders,
@@ -46,7 +47,7 @@ public final class RecordingHelper {
         RecordingEntry recording = new RecordingEntry();
         recording.setRuleId(ruleId);
         recording.setEnvironmentId(agentEnvironment);
-        recording.setProtocol("http");
+        recording.setProtocol(protocol != null ? protocol : "http");
         recording.setHost(host);
         recording.setPort(port);
         recording.setMethod(method);
@@ -63,6 +64,7 @@ public final class RecordingHelper {
     }
 
     public static RecordingEntry buildError(String ruleId, String agentEnvironment,
+                                             String protocol,
                                              String host, int port, String method, String path,
                                              Map<String, String> requestHeaders, String requestBody,
                                              String errorMessage, long elapsedMs,
@@ -70,7 +72,7 @@ public final class RecordingHelper {
         RecordingEntry recording = new RecordingEntry();
         recording.setRuleId(ruleId);
         recording.setEnvironmentId(agentEnvironment);
-        recording.setProtocol("http");
+        recording.setProtocol(protocol != null ? protocol : "http");
         recording.setHost(host);
         recording.setPort(port);
         recording.setMethod(method);

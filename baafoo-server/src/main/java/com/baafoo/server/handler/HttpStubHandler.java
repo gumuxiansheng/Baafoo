@@ -164,7 +164,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                             if (agentEnvironment != null) {
                                 RecordingEntry recording = RecordingHelper.buildError(
                                         matchResult.getRule() != null ? matchResult.getRule().getId() : null,
-                                        agentEnvironment, host, port, method, path, headers, requestBody,
+                                        agentEnvironment, "http", host, port, method, path, headers, requestBody,
                                         error.getMessage(), System.currentTimeMillis() - startTime,
                                         agentId, agentIp);
                                 storage.addRecording(recording);
@@ -194,7 +194,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                             String responseBodyStr = new String(result.responseBody, recordCharset);
                             RecordingEntry recording = RecordingHelper.buildFromPassthrough(
                                     matchResult.getRule() != null ? matchResult.getRule().getId() : null,
-                                    agentEnvironment, host, port, method, path, headers, requestBody,
+                                    agentEnvironment, "http", host, port, method, path, headers, requestBody,
                                     result.statusCode, result.responseHeaders, responseBodyStr,
                                     result.responseTimeMs, agentId, agentIp);
                             storage.addRecording(recording);
