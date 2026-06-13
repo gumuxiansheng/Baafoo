@@ -61,7 +61,7 @@ public class NioTcpCaller implements BaafooTestApp.Caller {
             ByteBuffer readBuf = ByteBuffer.allocate(4096);
             int len = channel.read(readBuf);
             if (len > 0) {
-                readBuf.flip();
+                ((java.nio.Buffer) readBuf).flip();
                 byte[] data = new byte[readBuf.remaining()];
                 readBuf.get(data);
                 String response = new String(data, StandardCharsets.UTF_8);
