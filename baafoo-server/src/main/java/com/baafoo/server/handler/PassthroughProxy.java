@@ -46,9 +46,16 @@ public class PassthroughProxy {
     private final EventLoopGroup eventLoopGroup;
     private final Bootstrap bootstrap;
     private volatile SslContext sslContext;
+    private volatile SslContext insecureSslContext;
+    private final boolean sslVerifyDisabled;
 
     public PassthroughProxy(EventLoopGroup eventLoopGroup) {
+        this(eventLoopGroup, false);
+    }
+
+    public PassthroughProxy(EventLoopGroup eventLoopGroup, boolean sslVerifyDisabled) {
         this.eventLoopGroup = eventLoopGroup;
+        this.sslVerifyDisabled = sslVerifyDisabled;
         this.bootstrap = new Bootstrap()
                 .group(eventLoopGroup)
                 .channel(io.netty.channel.socket.nio.NioSocketChannel.class)
@@ -57,16 +64,31 @@ public class PassthroughProxy {
     }
 
     private SslContext getSslContext() throws Exception {
+        if (sslVerifyDisabled) {
+            return getInsecureSslContext();
+        }
         if (sslContext == null) {
             synchronized (this) {
                 if (sslContext == null) {
-                    sslContext = SslContextBuilder.forClient()
+                    sslContext = SslContextBuilder.forClient().build();
+                }
+            }
+        }
+        return sslContext;
+    }
+
+    private SslContext getInsecureSslContext() throws Exception {
+        if (insecureSslContext == null) {
+            synchronized (this) {
+                if (insecureSslContext == null) {
+                    log.warn("SSL certificate verification is DISABLED - only use in test environments");
+                    insecureSslContext = SslContextBuilder.forClient()
                             .trustManager(InsecureTrustManagerFactory.INSTANCE)
                             .build();
                 }
             }
         }
-        return sslContext;
+        return insecureSslContext;
     }
 
     /**

@@ -50,7 +50,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         this.config = config;
         this.matchEngine = new MatchEngine();
         this.agentResolver = new AgentResolver(storage);
-        this.passthroughProxy = new PassthroughProxy(workerGroup);
+        this.passthroughProxy = new PassthroughProxy(workerGroup, config.isPassthroughSslVerifyDisabled());
     }
 
     /**
