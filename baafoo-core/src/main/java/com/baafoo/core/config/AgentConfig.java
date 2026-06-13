@@ -45,6 +45,14 @@ public class AgentConfig {
     /** Whether to enable hot-reload of rule files */
     private boolean hotReload;
 
+    /**
+     * Fail-open mode: when true, Agent initialization failures are silently ignored
+     * and all requests pass through. When false (default), Agent logs ERROR and
+     * all requests still pass through, but the error is visible.
+     * Corresponds to {@code baafoo.agent.fail-open} config key.
+     */
+    private boolean failOpen;
+
     /** Retry count for server connection */
     private int connectionRetries;
 
@@ -99,6 +107,9 @@ public class AgentConfig {
 
     public boolean isHotReload() { return hotReload; }
     public void setHotReload(boolean hotReload) { this.hotReload = hotReload; }
+
+    public boolean isFailOpen() { return failOpen; }
+    public void setFailOpen(boolean failOpen) { this.failOpen = failOpen; }
 
     public int getConnectionRetries() { return connectionRetries; }
     public void setConnectionRetries(int connectionRetries) { this.connectionRetries = connectionRetries; }

@@ -93,8 +93,14 @@ public class BaafooAgent {
             log.info("=== Baafoo Agent started successfully ===");
 
         } catch (Throwable e) {
-            log.error("FAILED to start Baafoo Agent (fail-closed). " +
-                    "All requests will pass through to real downstreams. Error: {}", e.getMessage(), e);
+            boolean failOpen = config != null && config.isFailOpen();
+            if (failOpen) {
+                log.warn("Baafoo Agent initialization failed (fail-open mode). " +
+                        "All requests will pass through silently. Error: {}", e.getMessage());
+            } else {
+                log.error("FAILED to start Baafoo Agent (fail-closed). " +
+                        "All requests will pass through to real downstreams. Error: {}", e.getMessage(), e);
+            }
             initialized = false;
         }
     }

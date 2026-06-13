@@ -46,6 +46,11 @@ rulesFilePath: ""
 # Whether to enable hot-reload of rule files
 hotReload: true
 
+# Fail-open mode: when true, Agent initialization failures are silently ignored.
+# When false (default), Agent logs ERROR but all requests still pass through.
+# Corresponds to baafoo.agent.fail-open config key.
+failOpen: false
+
 # Retry count for server connection
 connectionRetries: 3
 
