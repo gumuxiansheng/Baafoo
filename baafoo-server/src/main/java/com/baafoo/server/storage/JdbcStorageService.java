@@ -70,6 +70,8 @@ public class JdbcStorageService implements StorageService {
         String jdbcUrl = dbConfig.getUrl();
         if (jdbcUrl == null || jdbcUrl.isEmpty()) {
             String dataDir = config.getDataDir();
+            // Resolve system property placeholders like ${user.home}
+            dataDir = resolvePath(dataDir);
             java.io.File dbDir = new java.io.File(dataDir);
             if (!dbDir.exists()) {
                 dbDir.mkdirs();
@@ -340,12 +342,23 @@ public class JdbcStorageService implements StorageService {
     @Override
     public Environment getEnvironmentByName(String name) {
         try (SqlSession session = openSession()) {
-            return session.getMapper(EnvironmentMapper.class).getEnvironmentByName(name);
+            List<Environment> list = session.getMapper(EnvironmentMapper.class).listEnvironments();
+            for (Environment env : list) {
+                if (name.equals(env.getName())) {
+                    return env;
+                }
+            }
+            return null;
         }
     }
 
     @Override
     public Environment createEnvironment(Environment env) {
+        // Check for duplicate name first
+        Environment existing = getEnvironmentByName(env.getName());
+        if (existing != null) {
+            return existing;
+        }
         if (env.getId() == null || env.getId().isEmpty()) {
             env.setId(IdGenerator.uuid());
         }
@@ -647,11 +660,10 @@ public class JdbcStorageService implements StorageService {
 
         // Update environment's agent list
         try (SqlSession session = openSession()) {
-            EnvironmentMapper em = session.getMapper(EnvironmentMapper.class);
-            Environment env = em.getEnvironmentByName(environment);
+            Environment env = getEnvironmentByName(environment);
             if (env != null && !env.getAgentIds().contains(agentId)) {
                 env.getAgentIds().add(agentId);
-                em.updateEnvironment(env);
+                session.getMapper(EnvironmentMapper.class).updateEnvironment(env);
             }
         } catch (Exception e) {
             log.warn("Failed to update environment agent list: {}", e.getMessage());
@@ -804,5 +816,28 @@ public class JdbcStorageService implements StorageService {
             log.error("Failed to delete user {}: {}", username, e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Resolve system property placeholders in a path string.
+     * E.g., "${user.home}/.baafoo" → "C:/Users/john/.baafoo"
+     * Also handles "~/" as user home shorthand.
+     */
+    private static String resolvePath(String path) {
+        if (path == null) return path;
+        // Handle ~/ shorthand
+        if (path.startsWith("~/")) {
+            path = System.getProperty("user.home") + path.substring(1);
+        }
+        // Handle ${property.name} placeholders
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\$\\{([^}]+)\\}");
+        java.util.regex.Matcher matcher = pattern.matcher(path);
+        StringBuffer sb = new StringBuffer();
+        while (matcher.find()) {
+            String prop = System.getProperty(matcher.group(1));
+            matcher.appendReplacement(sb, prop != null ? java.util.regex.Matcher.quoteReplacement(prop) : "");
+        }
+        matcher.appendTail(sb);
+        return sb.toString();
     }
 }

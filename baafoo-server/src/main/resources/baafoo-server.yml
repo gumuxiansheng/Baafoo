@@ -13,13 +13,13 @@ protocolPorts:
   jms: 9004
 
 # Data storage directory
-dataDir: "${user.home}/.baafoo/data"
+dataDir: "~/.baafoo/data"
 
 # Rule storage directory
-rulesDir: "${user.home}/.baafoo/data/rules"
+rulesDir: "~/.baafoo/data/rules"
 
 # Recording storage directory
-recordingsDir: "${user.home}/.baafoo/data/recordings"
+recordingsDir: "~/.baafoo/data/recordings"
 
 # Maximum recording retention days
 recordingRetentionDays: 7

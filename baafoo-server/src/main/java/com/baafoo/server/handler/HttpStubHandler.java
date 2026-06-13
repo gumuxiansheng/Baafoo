@@ -105,8 +105,8 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         // The agent redirects ALL traffic to a matched host:port regardless of
         // per-rule conditions, so the stub server must filter by environment here
         // to prevent rules from other environments from matching.
-        List<Rule> rules = agentResolver.filterRulesByEnvironment(
-                storage.listRules(), agentEnvironment);
+        List<Rule> allRules = storage.listRules();
+        List<Rule> rules = agentResolver.filterRulesByEnvironment(allRules, agentEnvironment);
         // First pass: match with actual host:port
         MatchEngine.MatchResult result = matchEngine.match(
                 rules, "http", host, port, null,
