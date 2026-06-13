@@ -636,6 +636,35 @@ public class JdbcStorageService implements StorageService {
         }
     }
 
+    @Override
+    public int deleteRecordingsOlderThan(int retentionDays) {
+        long cutoffTime = System.currentTimeMillis() - (long) retentionDays * 24 * 60 * 60 * 1000;
+        try (SqlSession session = openSession()) {
+            return session.getMapper(RecordingMapper.class).deleteRecordingsOlderThan(cutoffTime);
+        } catch (Exception e) {
+            log.error("Failed to delete old recordings: {}", e.getMessage());
+            return 0;
+        }
+    }
+
+    @Override
+    public long getRecordingCount() {
+        try (SqlSession session = openSession()) {
+            return session.getMapper(RecordingMapper.class).countAllRecordings();
+        } catch (Exception e) {
+            log.error("Failed to count recordings: {}", e.getMessage());
+            return 0;
+        }
+    }
+
+    @Override
+    public long getRecordingTotalSizeBytes() {
+        // Estimate size based on recording count * average size
+        // Each recording is roughly 2KB on average (headers, body, metadata)
+        long count = getRecordingCount();
+        return count * 2048;
+    }
+
     // --- Agent Management ---
 
     @Override

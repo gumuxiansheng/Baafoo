@@ -28,6 +28,9 @@ public class ServerConfig {
     /** Maximum recording retention days */
     private int recordingRetentionDays;
 
+    /** Maximum total recording storage in MB */
+    private int recordingMaxSizeMb;
+
     /** Maximum rules per page (pagination) */
     private int maxRulesPerPage;
 
@@ -73,6 +76,7 @@ public class ServerConfig {
         this.rulesDir = "./data/rules";
         this.recordingsDir = "./data/recordings";
         this.recordingRetentionDays = 7;
+        this.recordingMaxSizeMb = 500;
         this.maxRulesPerPage = 100;
         this.corsEnabled = true;
         this.agentHeartbeatTimeoutSec = 60;
@@ -106,6 +110,9 @@ public class ServerConfig {
 
     public int getRecordingRetentionDays() { return recordingRetentionDays; }
     public void setRecordingRetentionDays(int recordingRetentionDays) { this.recordingRetentionDays = recordingRetentionDays; }
+
+    public int getRecordingMaxSizeMb() { return recordingMaxSizeMb; }
+    public void setRecordingMaxSizeMb(int recordingMaxSizeMb) { this.recordingMaxSizeMb = recordingMaxSizeMb; }
 
     public int getMaxRulesPerPage() { return maxRulesPerPage; }
     public void setMaxRulesPerPage(int maxRulesPerPage) { this.maxRulesPerPage = maxRulesPerPage; }

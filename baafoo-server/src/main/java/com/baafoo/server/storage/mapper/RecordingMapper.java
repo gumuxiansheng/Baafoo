@@ -34,4 +34,10 @@ public interface RecordingMapper {
     int trimRecordings(@Param("keepCount") int keepCount);
 
     int deleteRecording(@Param("id") String id);
+
+    int deleteRecordingsOlderThan(@Param("cutoffTime") long cutoffTime);
+
+    long countAllRecordings();
+
+    List<RecordingEntry> listOldestRecordings(@Param("limit") int limit);
 }

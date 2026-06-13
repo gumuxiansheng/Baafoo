@@ -11,6 +11,7 @@ import com.baafoo.server.broker.KafkaMockBroker;
 import com.baafoo.server.broker.PulsarMockBroker;
 import com.baafoo.server.handler.HttpStubHandler;
 import com.baafoo.server.handler.TcpStubHandler;
+import com.baafoo.server.storage.RecordingCleanupTask;
 import com.baafoo.server.storage.StorageService;
 import com.baafoo.server.storage.StorageServiceFactory;
 import com.baafoo.server.web.StaticFileHandler;
@@ -55,6 +56,7 @@ public class BaafooServer {
     private KafkaMockBroker kafkaBroker;
     private PulsarMockBroker pulsarBroker;
     private JmsMockBroker jmsBroker;
+    private RecordingCleanupTask recordingCleanupTask;
 
     public BaafooServer(ServerConfig config) {
         this.config = config;
@@ -87,6 +89,10 @@ public class BaafooServer {
 
         // Initialize storage
         storage.init();
+
+        // Start recording cleanup task
+        recordingCleanupTask = new RecordingCleanupTask(storage, config);
+        recordingCleanupTask.start();
 
         // Initialize default admin user if auth is enabled
         ensureDefaultAdmin();
@@ -260,6 +266,9 @@ public class BaafooServer {
 
     private void stop() {
         log.info("Shutting down Baafoo Server...");
+        if (recordingCleanupTask != null) {
+            recordingCleanupTask.stop();
+        }
         if (jmsBroker != null) {
             try {
                 jmsBroker.stop();

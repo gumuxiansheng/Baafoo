@@ -81,6 +81,25 @@ public interface StorageService {
 
     boolean deleteRecording(String id);
 
+    /**
+     * Delete recordings older than the specified number of days.
+     * @param retentionDays number of days to retain
+     * @return number of recordings deleted
+     */
+    int deleteRecordingsOlderThan(int retentionDays);
+
+    /**
+     * Get the total count of recordings.
+     * @return total recording count
+     */
+    long getRecordingCount();
+
+    /**
+     * Get the total size of recordings in bytes (estimated).
+     * @return estimated total size in bytes
+     */
+    long getRecordingTotalSizeBytes();
+
     // --- Agent Management ---
 
     AgentRegistration registerAgent(String agentId, String environment, String hostname, String version, List<String> protocols, String agentIp);

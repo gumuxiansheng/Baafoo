@@ -382,6 +382,28 @@ public class FileStorage {
         return false;
     }
 
+    public int deleteRecordingsOlderThan(int retentionDays) {
+        long cutoffTime = System.currentTimeMillis() - (long) retentionDays * 24 * 60 * 60 * 1000;
+        int deleted = 0;
+        java.util.Iterator<RecordingEntry> it = recordings.iterator();
+        while (it.hasNext()) {
+            RecordingEntry r = it.next();
+            if (r.getRecordedAt() < cutoffTime) {
+                it.remove();
+                deleted++;
+            }
+        }
+        return deleted;
+    }
+
+    public long getRecordingCount() {
+        return recordings.size();
+    }
+
+    public long getRecordingTotalSizeBytes() {
+        return recordings.size() * 2048L;
+    }
+
     // --- Agent Management ---
 
     public AgentRegistration registerAgent(String agentId, String environment, String hostname, String version, List<String> protocols, String agentIp) {

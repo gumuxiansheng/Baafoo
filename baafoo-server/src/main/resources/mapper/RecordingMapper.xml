@@ -128,4 +128,16 @@
         DELETE FROM recordings WHERE id = #{id}
     </delete>
 
+    <delete id="deleteRecordingsOlderThan">
+        DELETE FROM recordings WHERE recorded_at &lt; #{cutoffTime}
+    </delete>
+
+    <select id="countAllRecordings" resultType="long">
+        SELECT COUNT(*) FROM recordings
+    </select>
+
+    <select id="listOldestRecordings" resultMap="recordingResultMap">
+        SELECT * FROM recordings ORDER BY recorded_at ASC LIMIT #{limit}
+    </select>
+
 </mapper>
