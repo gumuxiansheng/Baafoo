@@ -8,7 +8,7 @@ agentId: ""
 environment: "default"
 
 # Baafoo Server base URL
-serverUrl: "http://127.0.0.1:8080"
+serverUrl: "http://127.0.0.1:8084"
 
 # Heartbeat interval in seconds
 heartbeatIntervalSec: 30

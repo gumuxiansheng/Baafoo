@@ -59,7 +59,7 @@ java -javaagent:baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar=config=baafo
 ```
 
 - Java 9+ requires `--add-opens java.base/java.net=ALL-UNNAMED`
-- Server ports: 8080 (API+Web console), 9000–9004 (HTTP/TCP/Kafka/Pulsar/JMS stub)
+- Server ports: 8084 (API+Web console), 9000–9004 (HTTP/TCP/Kafka/Pulsar/JMS stub)
 - All API paths: `/__baafoo__/api/*`
 - Server defaults: H2 embedded DB, `unmatchedDefault: passthrough`
 

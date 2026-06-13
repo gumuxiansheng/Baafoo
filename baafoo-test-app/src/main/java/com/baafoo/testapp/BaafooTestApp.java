@@ -13,7 +13,7 @@ public class BaafooTestApp {
 
     private static final String SEPARATOR = "═══════════════════════════════════════════════════════════";
 
-    private static final String SERVER_URL = "http://127.0.0.1:8080";
+    private static final String SERVER_URL = "http://127.0.0.1:8084";
 
     public static void main(String[] args) throws Exception {
         String serverUrl = args.length > 0 ? args[0] : SERVER_URL;

@@ -52,7 +52,7 @@ public class FileStorageTest {
         rule.setName("test-rule");
         rule.setProtocol("http");
         rule.setHost("api.test.com");
-        rule.setPort(8080);
+        rule.setPort(8084);
 
         Rule created = storage.createRule(rule);
         assertNotNull(created.getId());

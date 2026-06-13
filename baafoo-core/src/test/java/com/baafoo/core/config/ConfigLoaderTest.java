@@ -29,7 +29,7 @@ public class ConfigLoaderTest {
     public void testLoadServerConfigFileNotFound() throws IOException {
         ServerConfig config = ConfigLoader.loadServerConfig("nonexistent-file.yml");
         assertNotNull(config);
-        assertEquals(8080, config.getHttpPort());
+        assertEquals(8084, config.getHttpPort());
     }
 
     @Test
@@ -39,13 +39,13 @@ public class ConfigLoaderTest {
         Map<String, Object> data = new LinkedHashMap<String, Object>();
         data.put("agentId", "test-agent");
         data.put("environment", "staging");
-        data.put("serverUrl", "http://test:8080");
+        data.put("serverUrl", "http://test:8084");
         yamlMapper.writeValue(configFile, data);
 
         AgentConfig config = ConfigLoader.loadAgentConfig(configFile.getAbsolutePath());
         assertEquals("test-agent", config.getAgentId());
         assertEquals("staging", config.getEnvironment());
-        assertEquals("http://test:8080", config.getServerUrl());
+        assertEquals("http://test:8084", config.getServerUrl());
     }
 
     @Test

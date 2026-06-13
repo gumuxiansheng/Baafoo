@@ -6,7 +6,7 @@ Baafoo 挡板系统的多协议外调测试应用。用于验证 Agent 拦截和
 
 - JDK 8+
 - Maven 3.6+
-- Baafoo Server 已启动（默认端口 8080）
+- Baafoo Server 已启动（默认端口 8084）
 - Baafoo Agent 已构建（`baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar`）
 
 ## 构建
@@ -39,7 +39,7 @@ java -javaagent:baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar=config=baafo
      com.baafoo.testapp.BaafooTestApp
 ```
 
-可选参数 `server-url` 默认为 `http://127.0.0.1:8080`。
+可选参数 `server-url` 默认为 `http://127.0.0.1:8084`。
 
 ### 方式二：快速非交互式测试
 

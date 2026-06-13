@@ -44,7 +44,7 @@
       <template #header><span>服务信息</span></template>
       <el-descriptions :column="2" border size="small">
         <el-descriptions-item label="版本">1.0.0-SNAPSHOT</el-descriptions-item>
-        <el-descriptions-item label="HTTP 端口">8080</el-descriptions-item>
+        <el-descriptions-item label="HTTP 端口">8084</el-descriptions-item>
         <el-descriptions-item label="HTTP Stub">9000</el-descriptions-item>
         <el-descriptions-item label="TCP Stub">9001</el-descriptions-item>
         <el-descriptions-item label="启动时间">{{ formatTime(status?.uptime) }}</el-descriptions-item>

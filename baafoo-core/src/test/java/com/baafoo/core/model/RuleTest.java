@@ -26,7 +26,7 @@ public class RuleTest {
         r.setProtocol("http");
         r.setServiceName("svc");
         r.setHost("api.test.com");
-        r.setPort(8080);
+        r.setPort(8084);
         r.setEnabled(false);
         r.setPriority(50);
         r.setTags(Arrays.asList("tag1", "tag2"));
@@ -47,7 +47,7 @@ public class RuleTest {
         assertEquals("http", r.getProtocol());
         assertEquals("svc", r.getServiceName());
         assertEquals("api.test.com", r.getHost());
-        assertEquals(Integer.valueOf(8080), r.getPort());
+        assertEquals(Integer.valueOf(8084), r.getPort());
         assertFalse(r.isEnabled());
         assertEquals(50, r.getPriority());
         assertEquals(2, r.getTags().size());

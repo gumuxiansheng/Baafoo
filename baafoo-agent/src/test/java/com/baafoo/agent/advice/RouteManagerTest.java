@@ -27,7 +27,7 @@ public class RouteManagerTest {
         RouteManager.RouteResult result = new RouteManager.RouteResult();
         result.protocol = "http";
         result.host = "example.com";
-        result.port = 8080;
+        result.port = 8084;
         result.serviceName = "my-service";
         result.method = "GET";
         result.path = "/api/test";
@@ -38,7 +38,7 @@ public class RouteManagerTest {
 
         assertEquals("http", result.protocol);
         assertEquals("example.com", result.host);
-        assertEquals(8080, result.port);
+        assertEquals(8084, result.port);
         assertEquals("my-service", result.serviceName);
         assertEquals("GET", result.method);
         assertEquals("/api/test", result.path);

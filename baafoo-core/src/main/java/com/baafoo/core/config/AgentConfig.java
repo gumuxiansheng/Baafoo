@@ -15,7 +15,7 @@ public class AgentConfig {
     /** Environment name this agent belongs to */
     private String environment;
 
-    /** Baafoo Server base URL (e.g., http://localhost:8080) */
+    /** Baafoo Server base URL (e.g., http://localhost:8084) */
     private String serverUrl;
 
     /** Heartbeat interval in seconds */

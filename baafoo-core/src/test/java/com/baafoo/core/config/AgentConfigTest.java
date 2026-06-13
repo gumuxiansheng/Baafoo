@@ -24,7 +24,7 @@ public class AgentConfigTest {
         AgentConfig c = new AgentConfig();
         c.setAgentId("agent-1");
         c.setEnvironment("prod");
-        c.setServerUrl("http://server:8080");
+        c.setServerUrl("http://server:8084");
         c.setConsulEnabled(true);
         c.setConsulAddress("consul:8500");
         c.setProtocols(Arrays.asList("http", "tcp"));
@@ -35,7 +35,7 @@ public class AgentConfigTest {
 
         assertEquals("agent-1", c.getAgentId());
         assertEquals("prod", c.getEnvironment());
-        assertEquals("http://server:8080", c.getServerUrl());
+        assertEquals("http://server:8084", c.getServerUrl());
         assertTrue(c.isConsulEnabled());
         assertEquals("consul:8500", c.getConsulAddress());
         assertEquals(2, c.getProtocols().size());
@@ -57,10 +57,10 @@ public class AgentConfigTest {
         AgentConfig c = new AgentConfig();
         c.setAgentId("a1");
         c.setEnvironment("dev");
-        c.setServerUrl("http://localhost:8080");
+        c.setServerUrl("http://localhost:8084");
         String s = c.toString();
         assertTrue(s.contains("a1"));
         assertTrue(s.contains("dev"));
-        assertTrue(s.contains("http://localhost:8080"));
+        assertTrue(s.contains("http://localhost:8084"));
     }
 }

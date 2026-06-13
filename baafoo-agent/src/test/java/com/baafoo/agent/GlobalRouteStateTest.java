@@ -11,7 +11,7 @@ public class GlobalRouteStateTest {
         GlobalRouteState.clearRoutes();
         GlobalRouteState.CURRENT_MODE = GlobalRouteState.MODE_STUB;
         GlobalRouteState.SERVER_HOST = "127.0.0.1";
-        GlobalRouteState.SERVER_PORT = 8080;
+        GlobalRouteState.SERVER_PORT = 8084;
     }
 
     @Test
@@ -80,7 +80,7 @@ public class GlobalRouteStateTest {
 
     @Test
     public void testIsInternal() {
-        assertTrue(GlobalRouteState.isInternal("127.0.0.1", 8080));
+        assertTrue(GlobalRouteState.isInternal("127.0.0.1", 8084));
         assertTrue(GlobalRouteState.isInternal("127.0.0.1", 9000));
         assertTrue(GlobalRouteState.isInternal("localhost", 9001));
         assertFalse(GlobalRouteState.isInternal("external.com", 80));

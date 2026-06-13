@@ -101,7 +101,7 @@ public class BaafooCli {
             System.out.println("  2. Review and edit baafoo-agent.yml and baafoo-server.yml");
             System.out.println("  3. Start the server:    ./start-server.sh");
             System.out.println("  4. Start your app with: java -javaagent:baafoo-agent.jar -jar your-app.jar");
-            System.out.println("  5. Open Web console:    http://localhost:8080/__baafoo__/");
+            System.out.println("  5. Open Web console:    http://localhost:8084/__baafoo__/");
             System.out.println();
 
         } catch (Exception e) {
@@ -114,7 +114,7 @@ public class BaafooCli {
         Map<String, Object> config = new LinkedHashMap<String, Object>();
         config.put("agentId", "agent-" + UUID.randomUUID().toString().substring(0, 8));
         config.put("environment", "dev");
-        config.put("serverUrl", "http://localhost:8080");
+        config.put("serverUrl", "http://localhost:8084");
         config.put("heartbeatIntervalSec", 30);
         config.put("pollIntervalSec", 10);
         config.put("consulEnabled", false);
@@ -133,7 +133,7 @@ public class BaafooCli {
 
     private static void writeServerConfig(File file) throws Exception {
         Map<String, Object> config = new LinkedHashMap<String, Object>();
-        config.put("httpPort", 8080);
+        config.put("httpPort", 8084);
 
         Map<String, Integer> ports = new LinkedHashMap<String, Integer>();
         ports.put("http", 9000);
@@ -171,7 +171,7 @@ public class BaafooCli {
         rule1.put("name", "GET /api/users");
         rule1.put("protocol", "http");
         rule1.put("host", "api.example.com");
-        rule1.put("port", 8080);
+        rule1.put("port", 8084);
         rule1.put("enabled", true);
         rule1.put("priority", 10);
 

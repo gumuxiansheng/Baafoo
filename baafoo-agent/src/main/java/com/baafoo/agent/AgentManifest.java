@@ -46,8 +46,8 @@ public final class AgentManifest {
     /** Baafoo server host (e.g., "127.0.0.1") */
     public static volatile String serverHost = "127.0.0.1";
 
-    /** Baafoo server port (e.g., 8080) */
-    public static volatile int serverPort = 8080;
+    /** Baafoo server port (e.g., 8084) */
+    public static volatile int serverPort = 8084;
 
     /** Environment ID this agent belongs to */
     public static volatile String environmentId = "default";

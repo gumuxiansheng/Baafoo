@@ -108,14 +108,14 @@ public class BaafooAgent {
                     host = "127.0.0.1";
                 }
                 if (port < 0) {
-                    port = "https".equals(uri.getScheme()) ? 443 : 8080;
+                    port = "https".equals(uri.getScheme()) ? 443 : 8084;
                 }
                 AgentManifest.setServerHost(host);
                 AgentManifest.setServerPort(port);
             } catch (Exception e) {
                 log.warn("Failed to parse server URL: {}, using defaults", cfg.getServerUrl());
                 AgentManifest.setServerHost("127.0.0.1");
-                AgentManifest.setServerPort(8080);
+                AgentManifest.setServerPort(8084);
             }
         }
 

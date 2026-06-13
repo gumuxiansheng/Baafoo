@@ -6,7 +6,7 @@ Baafoo 挡板系统的 Spring Boot 多协议外调测试应用。通过 REST API
 
 - JDK 8+
 - Maven 3.6+
-- Baafoo Server 已启动（默认端口 8080）
+- Baafoo Server 已启动（默认端口 8084）
 - Baafoo Agent 已构建（`baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar`）
 
 ## 构建
@@ -265,7 +265,7 @@ java -javaagent:baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar=config=baafo
      -jar baafoo-test-spring/target/baafoo-test-spring-1.0.0-SNAPSHOT.jar
 
 # 4. 通过 API 创建挡板规则（或使用 Web 控制台）
-curl -X POST http://localhost:8080/__baafoo__/api/rules \
+curl -X POST http://localhost:8084/__baafoo__/api/rules \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "test-http-rule",

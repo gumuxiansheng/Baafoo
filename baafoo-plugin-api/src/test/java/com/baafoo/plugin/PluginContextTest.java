@@ -23,7 +23,7 @@ public class PluginContextTest {
         PluginContext ctx = new PluginContext();
         ctx.setProtocol("http");
         ctx.setHost("api.test.com");
-        ctx.setPort(8080);
+        ctx.setPort(8084);
         ctx.setServiceName("my-svc");
         ctx.setRuleId("rule-1");
         ctx.setRuleName("test rule");
@@ -48,7 +48,7 @@ public class PluginContextTest {
 
         assertEquals("http", ctx.getProtocol());
         assertEquals("api.test.com", ctx.getHost());
-        assertEquals(8080, ctx.getPort());
+        assertEquals(8084, ctx.getPort());
         assertEquals("my-svc", ctx.getServiceName());
         assertEquals("rule-1", ctx.getRuleId());
         assertEquals("test rule", ctx.getRuleName());

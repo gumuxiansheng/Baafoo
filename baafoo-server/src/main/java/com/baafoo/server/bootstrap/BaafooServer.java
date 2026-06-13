@@ -30,7 +30,7 @@ import java.util.List;
  *
  * <p>Starts multiple Netty servers:
  * <ul>
- *   <li>HTTP Management API + Web Console (port from config, default 8080)</li>
+ *   <li>HTTP Management API + Web Console (port from config, default 8084)</li>
  *   <li>HTTP Stub (port 9000)</li>
  *   <li>TCP Stub (port 9001)</li>
  *   <li>Kafka Stub (port 9002) — Beta</li>

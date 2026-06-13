@@ -51,7 +51,7 @@ public class QuickTest {
         System.out.println();
         System.out.println("[2] Baafoo Server management API...");
         try {
-            URL url = new URL("http://127.0.0.1:8080/__baafoo__/api/rules");
+            URL url = new URL("http://127.0.0.1:8084/__baafoo__/api/rules");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(3000);

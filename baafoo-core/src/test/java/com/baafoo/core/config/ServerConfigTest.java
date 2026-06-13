@@ -10,7 +10,7 @@ public class ServerConfigTest {
     @Test
     public void testDefaults() {
         ServerConfig c = new ServerConfig();
-        assertEquals(8080, c.getHttpPort());
+        assertEquals(8084, c.getHttpPort());
         assertTrue(c.getProtocolPorts().containsKey("http"));
         assertEquals(9000, c.getPortForProtocol("http"));
         assertEquals(9001, c.getPortForProtocol("tcp"));
@@ -97,7 +97,7 @@ public class ServerConfigTest {
     public void testToString() {
         ServerConfig c = new ServerConfig();
         assertNotNull(c.toString());
-        assertTrue(c.toString().contains("8080"));
+        assertTrue(c.toString().contains("8084"));
     }
 
     @Test

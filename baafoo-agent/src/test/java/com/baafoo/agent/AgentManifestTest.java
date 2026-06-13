@@ -59,7 +59,7 @@ public class AgentManifestTest {
     public void testDefaults() {
         assertFalse(AgentManifest.agentLoaded);
         assertEquals("127.0.0.1", AgentManifest.serverHost);
-        assertEquals(8080, AgentManifest.serverPort);
+        assertEquals(8084, AgentManifest.serverPort);
         assertEquals("default", AgentManifest.environmentId);
         assertEquals("", AgentManifest.agentId);
     }

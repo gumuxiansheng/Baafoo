@@ -2,7 +2,7 @@
 # Loaded by com.baafoo.core.config.ConfigLoader
 
 # HTTP port for management API + Web console
-httpPort: 8080
+httpPort: 8084
 
 # Protocol-specific listen ports
 protocolPorts:
