@@ -203,8 +203,8 @@ public class MatchEngine {
 
                 case "bodyJsonPath":
                     // JSONPath matching deferred to plugin (requires Jackson)
-                    log.warn("bodyJsonPath matching not implemented at engine level, assuming pass");
-                    return true;
+                    log.warn("bodyJsonPath matching not implemented at engine level, condition does not match");
+                    return false;
 
                 default:
                     log.warn("Unknown condition type: {}", cond.getType());
