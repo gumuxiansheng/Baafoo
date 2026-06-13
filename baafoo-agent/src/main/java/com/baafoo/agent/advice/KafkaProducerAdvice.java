@@ -1,11 +1,7 @@
 package com.baafoo.agent.advice;
 
-import com.baafoo.core.config.AgentConfig;
-import com.baafoo.agent.BaafooAgent;
 import com.baafoo.core.model.EnvironmentMode;
 import net.bytebuddy.asm.Advice;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.Map;
@@ -17,22 +13,12 @@ import java.util.Map;
  * {@code bootstrap.servers} property with the Baafoo stub Kafka broker
  * address (port 9002 by default).</p>
  *
- * <p>This approach is superior to intercepting send() because it redirects
- * ALL Kafka traffic (produce + metadata requests) to the stub broker,
- * not just individual messages.</p>
- *
- * <p>Supports multiple KafkaProducer constructor overloads:
- * <ul>
- *   <li>{@code KafkaProducer(Properties properties)}</li>
- *   <li>{@code KafkaProducer(Map<String, Object> configs)}</li>
- *   <li>{@code KafkaProducer(Properties properties, Callback callback)} (newer clients)</li>
- * </ul></p>
- *
- * <p>Kafka interception is Beta per PRD v1.5.</p>
+ * <p><b>CRITICAL</b>: This advice is inlined into KafkaProducer by ByteBuddy.
+ * Do NOT reference any fields from this class (including log) in the advice
+ * method — inlined code runs in the target class's context and cannot access
+ * private fields of the advice class. Use System.out for debug output.</p>
  */
 public class KafkaProducerAdvice {
-
-    private static final Logger log = LoggerFactory.getLogger(KafkaProducerAdvice.class);
 
     /**
      * Intercept KafkaProducer constructor to replace bootstrap.servers.
@@ -72,27 +58,22 @@ public class KafkaProducerAdvice {
                     java.util.Properties props = (java.util.Properties) firstArg;
                     String originalServers = props.getProperty("bootstrap.servers", "unknown");
                     props.setProperty("bootstrap.servers", newBootstrapServers);
-                    log.info("Kafka bootstrap.servers replaced: {} → {} (rule: {})",
-                            originalServers, newBootstrapServers, routeResult.rule.getName());
+                    java.lang.System.out.println("[Baafoo] Kafka bootstrap.servers replaced: " + originalServers + " -> " + newBootstrapServers);
 
                 } else if (firstArg instanceof Map) {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> configs = (Map<String, Object>) firstArg;
                     Object originalServers = configs.get("bootstrap.servers");
                     configs.put("bootstrap.servers", newBootstrapServers);
-                    log.info("Kafka bootstrap.servers replaced: {} → {} (rule: {})",
-                            originalServers, newBootstrapServers, routeResult.rule.getName());
+                    java.lang.System.out.println("[Baafoo] Kafka bootstrap.servers replaced: " + originalServers + " -> " + newBootstrapServers);
 
-                } else {
-                    log.debug("KafkaProducer constructor first argument is not Properties/Map: {}",
-                            firstArg != null ? firstArg.getClass().getName() : "null");
                 }
             }
 
             RoutingContext.set(routeResult);
 
         } catch (Exception e) {
-            log.error("Error in KafkaProducerAdvice: {}", e.getMessage());
+            java.lang.System.out.println("[Baafoo] KafkaProducerAdvice error: " + e.getMessage());
             // Fail-closed: let original constructor proceed with real servers
         }
     }

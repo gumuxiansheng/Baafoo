@@ -100,15 +100,12 @@ public final class GlobalRouteState {
         return CURRENT_MODE == MODE_RECORD || CURRENT_MODE == MODE_RECORD_AND_STUB;
     }
 
-    private static final java.util.Set<Integer> INTERNAL_PORTS = java.util.Collections.unmodifiableSet(
-            new java.util.HashSet<Integer>(java.util.Arrays.asList(8084, 9000, 9001, 9002, 9003, 9004)));
-
     public static boolean isInternal(String host, int port) {
         if (!"127.0.0.1".equals(host) && !"localhost".equals(host)) {
             return false;
         }
         if (port == SERVER_PORT) return true;
-        return INTERNAL_PORTS.contains(port);
+        return port == 8084 || port == 9000 || port == 9001 || port == 9002 || port == 9003 || port == 9004;
     }
 
     public static void addRoute(String originalHost, int originalPort, String targetHost, int targetPort) {

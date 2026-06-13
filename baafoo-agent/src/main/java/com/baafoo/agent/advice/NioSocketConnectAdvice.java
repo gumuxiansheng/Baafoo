@@ -17,10 +17,9 @@ import java.net.SocketAddress;
  * class here — it will cause NoClassDefFoundError that is silently caught,
  * making the interception completely fail with no visible error.</p>
  *
- * <p>The route lookup logic is intentionally duplicated from
- * {@link SocketConnectAdvice} because ByteBuddy inlines advice code and
- * cannot delegate to a shared helper in the AppClassLoader.
- * Any changes here MUST be mirrored in SocketConnectAdvice.</p>
+ * <p>Do NOT call methods like isPassthrough() or isInternal() — they reference
+ * fields (INTERNAL_PORTS, SERVER_PORT) that may not be resolvable from the
+ * Bootstrap CL. Use direct field access instead.</p>
  */
 public final class NioSocketConnectAdvice {
 
@@ -29,10 +28,6 @@ public final class NioSocketConnectAdvice {
     @Advice.OnMethodEnter
     public static void onConnect(@Advice.Argument(value = 0, readOnly = false) SocketAddress remote) {
         try {
-            if (GlobalRouteState.isPassthrough()) {
-                return;
-            }
-
             if (!(remote instanceof InetSocketAddress)) {
                 return;
             }
@@ -41,14 +36,21 @@ public final class NioSocketConnectAdvice {
             String host = addr.getHostString();
             int port = addr.getPort();
 
-            if (GlobalRouteState.isInternal(host, port)) {
+            // Skip internal connections (Baafoo server & stub ports)
+            if ("127.0.0.1".equals(host) || "localhost".equals(host)) {
+                if (port == 8084 || port == 9000 || port == 9001 || port == 9002 || port == 9003 || port == 9004) {
+                    return;
+                }
+            }
+
+            // Check passthrough mode (1=PASSTHROUGH)
+            if (GlobalRouteState.CURRENT_MODE == 1) {
                 return;
             }
 
             String[] routeValue = GlobalRouteState.lookup(host, port);
 
-            // DNS cache fallback: if the socket connects using a resolved IP
-            // but the rule was configured with a domain name
+            // DNS cache fallback
             if (routeValue == null && !"127.0.0.1".equals(host) && !"localhost".equals(host)) {
                 String originalDomain = (String) GlobalRouteState.DNS_CACHE.get(host);
                 if (originalDomain != null) {
@@ -57,12 +59,11 @@ public final class NioSocketConnectAdvice {
             }
 
             if (routeValue != null) {
+                java.lang.System.out.println("[Baafoo] NIO Socket redirect: " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
                 remote = new InetSocketAddress(routeValue[0], Integer.parseInt(routeValue[1]));
             }
-        } catch (RuntimeException e) {
-            throw e;
         } catch (Throwable t) {
-            // Fail-open: let the original connection proceed
+            java.lang.System.out.println("[Baafoo] NioSocketConnectAdvice error: " + t);
         }
     }
 }

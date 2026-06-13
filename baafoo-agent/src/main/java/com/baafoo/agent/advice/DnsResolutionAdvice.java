@@ -23,7 +23,8 @@ public final class DnsResolutionAdvice {
             @Advice.Argument(0) String host,
             @Advice.Return(readOnly = false) InetAddress result) {
 
-        if (GlobalRouteState.isPassthrough()) {
+        // Check passthrough mode (1=PASSTHROUGH)
+        if (GlobalRouteState.CURRENT_MODE == 1) {
             return;
         }
 
@@ -46,7 +47,8 @@ public final class DnsResolutionAdvice {
             @Advice.Argument(0) String host,
             @Advice.Return(readOnly = false) InetAddress[] result) {
 
-        if (GlobalRouteState.isPassthrough()) {
+        // Check passthrough mode (1=PASSTHROUGH)
+        if (GlobalRouteState.CURRENT_MODE == 1) {
             return;
         }
 
