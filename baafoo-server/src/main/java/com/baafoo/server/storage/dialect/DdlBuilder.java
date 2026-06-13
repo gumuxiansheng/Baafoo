@@ -32,6 +32,10 @@ public class DdlBuilder {
             createRuleSetsTable(stmt);
             createRecordingsTable(stmt);
             addColumnIfMissing(stmt, "recordings", "agent_ip", "VARCHAR(45)");
+            addColumnIfMissing(stmt, "recordings", "direction", "VARCHAR(20)");
+            addColumnIfMissing(stmt, "recordings", "session_id", "VARCHAR(36)");
+            addColumnIfMissing(stmt, "recordings", "data_hex", "CLOB");
+            addColumnIfMissing(stmt, "recordings", "duration_ms", "BIGINT");
             alterRecordingsPathToVarchar(stmt);
             createAgentsTable(stmt);
             addColumnIfMissing(stmt, "agents", "agent_ip", "VARCHAR(45)");
@@ -213,6 +217,8 @@ public class DdlBuilder {
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_recordings_status_code ON recordings(response_status_code)");
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_recordings_agent_ip ON recordings(agent_ip)");
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_recordings_path ON recordings(path)");
+        stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_recordings_session_id ON recordings(session_id)");
+        stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_recordings_direction ON recordings(direction)");
         // Other indexes
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_agents_environment ON agents(environment)");
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_rule_history_rule_id ON rule_history(rule_id)");

@@ -17,6 +17,7 @@ public class GlobalRouteStateTest {
         GlobalRouteState.KAFKA_PORT = 9002;
         GlobalRouteState.PULSAR_PORT = 9003;
         GlobalRouteState.JMS_PORT = 9004;
+        GlobalRouteState.RECORDING_SESSIONS.clear();
     }
 
     @Test
@@ -116,5 +117,46 @@ public class GlobalRouteStateTest {
         assertEquals(1, GlobalRouteState.ROUTES.size());
         GlobalRouteState.clearRoutes();
         assertEquals(0, GlobalRouteState.ROUTES.size());
+    }
+
+    @Test
+    public void testStartAndStopRecording() {
+        int socketId = 12345;
+        GlobalRouteState.startRecording(socketId, "session-uuid-1", "example.com", 80);
+
+        String[] session = GlobalRouteState.getRecordingSession(socketId);
+        assertNotNull(session);
+        assertEquals("session-uuid-1", session[0]);
+        assertEquals("example.com", session[1]);
+        assertEquals("80", session[2]);
+
+        GlobalRouteState.stopRecording(socketId);
+        assertNull(GlobalRouteState.getRecordingSession(socketId));
+    }
+
+    @Test
+    public void testGetRecordingSessionNotFound() {
+        assertNull(GlobalRouteState.getRecordingSession(99999));
+    }
+
+    @Test
+    public void testMultipleRecordingSessions() {
+        GlobalRouteState.startRecording(1, "session-1", "host1.com", 80);
+        GlobalRouteState.startRecording(2, "session-2", "host2.com", 443);
+
+        String[] session1 = GlobalRouteState.getRecordingSession(1);
+        String[] session2 = GlobalRouteState.getRecordingSession(2);
+
+        assertNotNull(session1);
+        assertNotNull(session2);
+        assertEquals("session-1", session1[0]);
+        assertEquals("session-2", session2[0]);
+
+        GlobalRouteState.stopRecording(1);
+        assertNull(GlobalRouteState.getRecordingSession(1));
+        assertNotNull(GlobalRouteState.getRecordingSession(2));
+
+        GlobalRouteState.stopRecording(2);
+        assertNull(GlobalRouteState.getRecordingSession(2));
     }
 }

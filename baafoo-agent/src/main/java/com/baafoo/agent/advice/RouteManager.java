@@ -201,21 +201,32 @@ public final class RouteManager {
     }
 
     public static void addRecording(RecordingEntry recording) {
-        RECORDING_BUFFER.add(recording);
-
-        if (RECORDING_BUFFER.size() >= 100) {
-            flushRecordings();
+        RecordingBuffer buffer = BaafooAgent.getRecordingBuffer();
+        if (buffer != null) {
+            buffer.add(recording);
+        } else {
+            // Fallback to legacy buffer if RecordingBuffer not initialized
+            RECORDING_BUFFER.add(recording);
+            if (RECORDING_BUFFER.size() >= 100) {
+                flushRecordings();
+            }
         }
     }
 
     public static void flushRecordings() {
-        List<RecordingEntry> batch = new ArrayList<RecordingEntry>(RECORDING_BUFFER);
-        RECORDING_BUFFER.clear();
-
-        if (!batch.isEmpty()) {
-            ControlChannel channel = BaafooAgent.getControlChannel();
-            if (channel != null) {
-                channel.uploadRecordings(batch);
+        RecordingBuffer buffer = BaafooAgent.getRecordingBuffer();
+        if (buffer != null) {
+            buffer.flush();
+        }
+        // Also flush any remaining entries in the legacy buffer
+        if (!RECORDING_BUFFER.isEmpty()) {
+            List<RecordingEntry> batch = new ArrayList<RecordingEntry>(RECORDING_BUFFER);
+            RECORDING_BUFFER.clear();
+            if (!batch.isEmpty()) {
+                ControlChannel channel = BaafooAgent.getControlChannel();
+                if (channel != null) {
+                    channel.uploadRecordings(batch);
+                }
             }
         }
     }

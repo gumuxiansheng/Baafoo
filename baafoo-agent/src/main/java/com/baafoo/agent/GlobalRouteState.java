@@ -76,6 +76,40 @@ public final class GlobalRouteState {
     private static final java.util.concurrent.atomic.AtomicBoolean DNS_EVICTION_IN_PROGRESS =
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
+    // ---- Recording session tracking ----
+    // Maps socket identity (System.identityHashCode) to session info:
+    // String[] { sessionId, host, portString }
+    // Populated by SocketConnectAdvice in RECORD/RECORD_AND_STUB mode.
+    // Consumed by SocketGetStreamAdvice to wrap streams with recording.
+
+    /**
+     * Active recording sessions keyed by socket identity hash.
+     * Value is String[] { sessionId, host, portString }.
+     */
+    public static final ConcurrentHashMap<Integer, String[]> RECORDING_SESSIONS =
+            new ConcurrentHashMap<Integer, String[]>();
+
+    /** Maximum number of concurrent recording sessions (prevents memory leak) */
+    private static final int MAX_RECORDING_SESSIONS = 10000;
+
+    /**
+     * Bridge function to wrap an InputStream with recording.
+     * Set from the App CL (BaafooAgent) with a real implementation.
+     * Arguments: (InputStream, String[] sessionInfo where sessionInfo = {sessionId, host, portString})
+     * Returns: wrapped InputStream.
+     * If null, no recording wrapping is applied.
+     */
+    public static volatile java.util.function.BiFunction<java.io.InputStream, String[], java.io.InputStream> INPUT_STREAM_WRAPPER;
+
+    /**
+     * Bridge function to wrap an OutputStream with recording.
+     * Set from the App CL (BaafooAgent) with a real implementation.
+     * Arguments: (OutputStream, String[] sessionInfo where sessionInfo = {sessionId, host, portString})
+     * Returns: wrapped OutputStream.
+     * If null, no recording wrapping is applied.
+     */
+    public static volatile java.util.function.BiFunction<java.io.OutputStream, String[], java.io.OutputStream> OUTPUT_STREAM_WRAPPER;
+
     private GlobalRouteState() {}
 
     // ---- Logging methods for Bootstrap CL advice ----
@@ -181,5 +215,36 @@ public final class GlobalRouteState {
 
     public static void clearRoutes() {
         ROUTES.clear();
+    }
+
+    /**
+     * Register a socket for recording. Called from SocketConnectAdvice in RECORD mode.
+     * @param socketIdentity System.identityHashCode of the socket
+     * @param sessionId unique session ID for this recording
+     * @param host original target host
+     * @param port original target port
+     */
+    public static void startRecording(int socketIdentity, String sessionId, String host, int port) {
+        if (RECORDING_SESSIONS.size() >= MAX_RECORDING_SESSIONS) {
+            RECORDING_SESSIONS.clear();
+        }
+        RECORDING_SESSIONS.put(socketIdentity, new String[]{sessionId, host, String.valueOf(port)});
+    }
+
+    /**
+     * Remove a socket from recording tracking.
+     * @param socketIdentity System.identityHashCode of the socket
+     */
+    public static void stopRecording(int socketIdentity) {
+        RECORDING_SESSIONS.remove(socketIdentity);
+    }
+
+    /**
+     * Check if a socket is being recorded.
+     * @param socketIdentity System.identityHashCode of the socket
+     * @return session info array or null
+     */
+    public static String[] getRecordingSession(int socketIdentity) {
+        return RECORDING_SESSIONS.get(socketIdentity);
     }
 }

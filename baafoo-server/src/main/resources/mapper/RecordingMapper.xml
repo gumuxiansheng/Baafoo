@@ -29,6 +29,10 @@
         <result property="tags" column="tags_json"
                 typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
                 javaType="java.util.Map"/>
+        <result property="direction" column="direction"/>
+        <result property="sessionId" column="session_id"/>
+        <result property="dataHex" column="data_hex"/>
+        <result property="durationMs" column="duration_ms"/>
     </resultMap>
 
     <sql id="searchConditions">
@@ -96,7 +100,7 @@
         INSERT INTO recordings (id, rule_id, environment_id, agent_id, agent_ip, protocol,
             host, port, service_name, method, path, request_headers_json, request_body,
             response_status_code, response_headers_json, response_body, response_time_ms,
-            recorded_at, tags_json)
+            recorded_at, tags_json, direction, session_id, data_hex, duration_ms)
         VALUES (#{id}, #{ruleId}, #{environmentId}, #{agentId}, #{agentIp}, #{protocol},
             #{host}, #{port}, #{serviceName}, #{method}, #{path},
             #{requestHeaders, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
@@ -104,7 +108,8 @@
             #{responseStatusCode},
             #{responseHeaders, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
             #{responseBody}, #{responseTimeMs}, #{recordedAt},
-            #{tags, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler})
+            #{tags, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{direction}, #{sessionId}, #{dataHex}, #{durationMs})
     </insert>
 
     <!-- Trim recordings - H2 dialect -->

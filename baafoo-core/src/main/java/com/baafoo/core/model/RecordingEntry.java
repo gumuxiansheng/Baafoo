@@ -66,6 +66,18 @@ public class RecordingEntry {
     /** Tags for filtering */
     private Map<String, String> tags;
 
+    /** Direction of recorded data: "request" or "response" (for TCP byte recording) */
+    private String direction;
+
+    /** Session ID grouping request/response pairs for the same connection */
+    private String sessionId;
+
+    /** Raw data as hex string (for TCP byte recording) */
+    private String dataHex;
+
+    /** Duration in milliseconds (for TCP recording, time between request and response) */
+    private long durationMs;
+
     public RecordingEntry() {
         this.requestHeaders = Collections.emptyMap();
         this.responseHeaders = Collections.emptyMap();
@@ -131,6 +143,18 @@ public class RecordingEntry {
     public Map<String, String> getTags() { return tags; }
     public void setTags(Map<String, String> tags) { this.tags = tags; }
 
+    public String getDirection() { return direction; }
+    public void setDirection(String direction) { this.direction = direction; }
+
+    public String getSessionId() { return sessionId; }
+    public void setSessionId(String sessionId) { this.sessionId = sessionId; }
+
+    public String getDataHex() { return dataHex; }
+    public void setDataHex(String dataHex) { this.dataHex = dataHex; }
+
+    public long getDurationMs() { return durationMs; }
+    public void setDurationMs(long durationMs) { this.durationMs = durationMs; }
+
     @Override
     public String toString() {
         return "RecordingEntry{" +
@@ -139,6 +163,8 @@ public class RecordingEntry {
                 ", method='" + method + '\'' +
                 ", path='" + path + '\'' +
                 ", responseStatusCode=" + responseStatusCode +
+                ", direction='" + direction + '\'' +
+                ", sessionId='" + sessionId + '\'' +
                 '}';
     }
 }

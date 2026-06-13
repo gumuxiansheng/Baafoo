@@ -21,12 +21,14 @@ public class SocketInterceptionIntegrationTest {
         GlobalRouteState.CURRENT_MODE = GlobalRouteState.MODE_STUB;
         GlobalRouteState.ROUTES.clear();
         GlobalRouteState.DNS_CACHE.clear();
+        GlobalRouteState.RECORDING_SESSIONS.clear();
     }
 
     @After
     public void teardown() {
         GlobalRouteState.ROUTES.clear();
         GlobalRouteState.DNS_CACHE.clear();
+        GlobalRouteState.RECORDING_SESSIONS.clear();
         GlobalRouteState.CURRENT_MODE = GlobalRouteState.MODE_PASSTHROUGH;
     }
 
@@ -92,5 +94,36 @@ public class SocketInterceptionIntegrationTest {
         // that logic lives in SocketConnectAdvice/NioSocketConnectAdvice.
         // Verify the DNS cache was recorded so the advice can use it.
         assertEquals("example.com", GlobalRouteState.DNS_CACHE.get("93.184.216.34"));
+    }
+
+    @Test
+    public void testRecordModeRegistersSession() {
+        GlobalRouteState.CURRENT_MODE = GlobalRouteState.MODE_RECORD;
+
+        // Simulate what SocketConnectAdvice does in record mode:
+        // register a socket for recording
+        int socketId = 42;
+        String sessionId = java.util.UUID.randomUUID().toString();
+        GlobalRouteState.startRecording(socketId, sessionId, "api.example.com", 8080);
+
+        // Verify the session was registered
+        String[] sessionInfo = GlobalRouteState.getRecordingSession(socketId);
+        assertNotNull(sessionInfo);
+        assertEquals(sessionId, sessionInfo[0]);
+        assertEquals("api.example.com", sessionInfo[1]);
+        assertEquals("8080", sessionInfo[2]);
+
+        // Verify isRecording returns true
+        assertTrue(GlobalRouteState.isRecording());
+
+        // Clean up
+        GlobalRouteState.stopRecording(socketId);
+        assertNull(GlobalRouteState.getRecordingSession(socketId));
+    }
+
+    @Test
+    public void testRecordAndStubModeIsRecording() {
+        GlobalRouteState.CURRENT_MODE = GlobalRouteState.MODE_RECORD_AND_STUB;
+        assertTrue(GlobalRouteState.isRecording());
     }
 }

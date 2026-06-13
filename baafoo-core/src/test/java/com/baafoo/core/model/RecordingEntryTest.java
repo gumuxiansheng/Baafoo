@@ -33,6 +33,10 @@ public class RecordingEntryTest {
         r.setResponseBody("response-body");
         r.setResponseTimeMs(100L);
         r.setRecordedAt(12345L);
+        r.setDirection("request");
+        r.setSessionId("session-uuid-1");
+        r.setDataHex("48454c4c4f");
+        r.setDurationMs(50L);
 
         Map<String, String> reqHeaders = new HashMap<String, String>();
         reqHeaders.put("Accept", "application/json");
@@ -61,6 +65,10 @@ public class RecordingEntryTest {
         assertEquals("response-body", r.getResponseBody());
         assertEquals(100L, r.getResponseTimeMs());
         assertEquals(12345L, r.getRecordedAt());
+        assertEquals("request", r.getDirection());
+        assertEquals("session-uuid-1", r.getSessionId());
+        assertEquals("48454c4c4f", r.getDataHex());
+        assertEquals(50L, r.getDurationMs());
         assertEquals("application/json", r.getRequestHeaders().get("Accept"));
         assertEquals("application/json", r.getResponseHeaders().get("Content-Type"));
         assertEquals("test", r.getTags().get("source"));

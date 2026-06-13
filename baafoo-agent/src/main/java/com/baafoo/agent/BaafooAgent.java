@@ -6,6 +6,7 @@ import com.baafoo.agent.plugin.PluginManager;
 import com.baafoo.agent.transform.TransformRegistry;
 import com.baafoo.core.config.AgentConfig;
 import com.baafoo.core.config.ConfigLoader;
+import com.baafoo.core.model.RecordingEntry;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
@@ -29,6 +30,7 @@ public class BaafooAgent {
     private static volatile AgentConfig config;
     private static volatile ControlChannel controlChannel;
     private static volatile PluginManager pluginManager;
+    private static volatile RecordingBuffer recordingBuffer;
     private static volatile boolean initialized = false;
 
     private static volatile ConcurrentHashMap<String, GlobalRouteState.HostPort> bootstrapRoutes;
@@ -84,6 +86,9 @@ public class BaafooAgent {
             GlobalRouteState.LOG_ERROR_HANDLER = (Consumer<String>) adviceLogger::error;
             // Also sync handlers to the Bootstrap CL copy of GlobalRouteState
             syncLogHandlersToBootstrapCL(adviceLogger);
+
+            // Set up recording infrastructure
+            initRecording(config);
 
             installTransforms(config, inst);
 
@@ -175,6 +180,9 @@ public class BaafooAgent {
         try {
             AgentManifest.agentLoaded = false;
             RouteManager.flushRecordings();
+            if (recordingBuffer != null) {
+                recordingBuffer.stop();
+            }
             if (controlChannel != null) {
                 controlChannel.stop();
             }
@@ -231,8 +239,16 @@ public class BaafooAgent {
                         builder.visit(Advice.to(SocketConnectAdvice.class)
                                 .on(named("connect")
                                         .and(takesArguments(1)
-                                                .or(takesArguments(2))))));
+                                                .or(takesArguments(2)))))
+                        .visit(Advice.to(SocketGetStreamAdvice.class)
+                                .on(named("getInputStream").and(takesArguments(0))))
+                        .visit(Advice.to(SocketGetStreamAdvice.class)
+                                .on(named("getOutputStream").and(takesArguments(0))))
+                        .visit(Advice.to(SocketCloseAdvice.class)
+                                .on(named("close").and(takesArguments(0)))));
         registry.register("java.net.Socket", "SocketConnectAdvice", "tcp");
+        registry.register("java.net.Socket", "SocketGetStreamAdvice", "tcp-recording");
+        registry.register("java.net.Socket", "SocketCloseAdvice", "tcp-recording");
 
         agentBuilder = agentBuilder
                 .type(named("sun.nio.ch.SocketChannelImpl"))
@@ -298,6 +314,10 @@ public class BaafooAgent {
 
     public static ControlChannel getControlChannel() {
         return controlChannel;
+    }
+
+    public static RecordingBuffer getRecordingBuffer() {
+        return recordingBuffer;
     }
 
     public static PluginManager getPluginManager() {
@@ -440,6 +460,67 @@ public class BaafooAgent {
             return Class.forName(name, false, cl);
         } catch (Exception e) {
             return Class.forName(name);
+        }
+    }
+
+    /**
+     * Initialize the recording infrastructure: create RecordingBuffer, set up
+     * stream wrapper bridge functions in GlobalRouteState, and sync them to
+     * the Bootstrap CL copy.
+     */
+    private static void initRecording(AgentConfig cfg) {
+        // Create RecordingBuffer with configurable max size and 30s flush interval
+        int maxBufferSize = 100; // flush after 100 entries
+        recordingBuffer = new RecordingBuffer(maxBufferSize, 30);
+        recordingBuffer.start();
+        log.info("RecordingBuffer initialized (maxSize={}, flushInterval=30s)", maxBufferSize);
+
+        // Set up the INPUT_STREAM_WRAPPER bridge function.
+        // This is called from Bootstrap CL advice (SocketGetStreamAdvice.afterGetInputStream)
+        // to wrap the socket's InputStream with a RecordingInputStream.
+        // The sessionInfo array contains {sessionId, host, portString}.
+        GlobalRouteState.INPUT_STREAM_WRAPPER = (java.io.InputStream in, String[] sessionInfo) -> {
+            String sessionId = sessionInfo[0];
+            String host = sessionInfo[1];
+            int port = Integer.parseInt(sessionInfo[2]);
+            return new RecordingInputStream(in, sessionId, host, port, recordingBuffer);
+        };
+
+        // Set up the OUTPUT_STREAM_WRAPPER bridge function
+        GlobalRouteState.OUTPUT_STREAM_WRAPPER = (java.io.OutputStream out, String[] sessionInfo) -> {
+            String sessionId = sessionInfo[0];
+            String host = sessionInfo[1];
+            int port = Integer.parseInt(sessionInfo[2]);
+            return new RecordingOutputStream(out, sessionId, host, port, recordingBuffer);
+        };
+
+        // Sync wrapper functions to Bootstrap CL
+        syncRecordingWrappersToBootstrapCL();
+
+        log.info("Recording stream wrappers configured and synced to Bootstrap CL");
+    }
+
+    /**
+     * Sync the recording stream wrapper functions to the Bootstrap CL copy of GlobalRouteState.
+     */
+    private static void syncRecordingWrappersToBootstrapCL() {
+        try {
+            Class<?> bootGRS = bootstrapGRSClass;
+            if (bootGRS == null) {
+                log.warn("Bootstrap CL GlobalRouteState class not found, skipping recording wrapper sync");
+                return;
+            }
+
+            java.lang.reflect.Field iswField = bootGRS.getField("INPUT_STREAM_WRAPPER");
+            java.lang.reflect.Field oswField = bootGRS.getField("OUTPUT_STREAM_WRAPPER");
+
+            iswField.set(null, GlobalRouteState.INPUT_STREAM_WRAPPER);
+            oswField.set(null, GlobalRouteState.OUTPUT_STREAM_WRAPPER);
+
+            log.info("Synced recording stream wrappers to Bootstrap CL GlobalRouteState");
+        } catch (Exception e) {
+            log.warn("Failed to sync recording wrappers to Bootstrap CL GlobalRouteState: {}. " +
+                    "Stream recording will not work.", e.getMessage());
         }
     }
 
