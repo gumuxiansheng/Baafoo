@@ -74,9 +74,13 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         String body = request.content().toString(StandardCharsets.UTF_8);
 
         // Extract original host and port from Host header
+        // Note: Netty normalizes header names to lowercase, so we check both cases
         String host = null;
         int port = 80;
-        String hostHeader = headers.get("Host");
+        String hostHeader = headers.get("host");
+        if (hostHeader == null) {
+            hostHeader = headers.get("Host");
+        }
         if (hostHeader != null) {
             int colonIdx = hostHeader.lastIndexOf(':');
             if (colonIdx > 0 && hostHeader.indexOf(']') < 0) {
