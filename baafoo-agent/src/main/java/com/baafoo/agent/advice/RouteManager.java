@@ -110,8 +110,12 @@ public final class RouteManager {
                 if (rule.getPort() != null && rule.getPort() > 0) {
                     String key = rule.getHost() + ":" + rule.getPort();
                     newRoutes.put(key, routeValue);
+                } else {
+                    // Only create host-only entry when no specific port is configured.
+                    // A host-only entry matches ANY port on that host, which is too
+                    // broad when a specific port is intended.
+                    newRoutes.put(rule.getHost(), routeValue);
                 }
-                newRoutes.put(rule.getHost(), routeValue);
             }
 
             if (rule.getServiceName() != null && !rule.getServiceName().isEmpty()) {
