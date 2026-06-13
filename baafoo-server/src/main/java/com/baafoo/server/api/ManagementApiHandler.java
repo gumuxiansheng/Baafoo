@@ -52,7 +52,11 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
 
             if (path.startsWith(API_PREFIX)) {
                 Object result = handleApiRequest(path, method, request, ctx, uri);
-                sendJson(ctx, 200, result);
+                if (result instanceof RawJsonResponse) {
+                    sendRawJson(ctx, 200, (RawJsonResponse) result);
+                } else {
+                    sendJson(ctx, 200, result);
+                }
             } else {
                 ctx.fireChannelRead(request.retain());
             }
@@ -124,6 +128,20 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             log.error("Error serializing response: {}", e.getMessage());
             ctx.close();
         }
+    }
+
+    private void sendRawJson(ChannelHandlerContext ctx, int statusCode, RawJsonResponse raw) {
+        FullHttpResponse response = new DefaultFullHttpResponse(
+                HttpVersion.HTTP_1_1, HttpResponseStatus.valueOf(statusCode),
+                Unpooled.copiedBuffer(raw.getJson(), StandardCharsets.UTF_8));
+        response.headers().set(HttpHeaderNames.CONTENT_TYPE, raw.getContentType() + "; charset=UTF-8");
+        response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
+        response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+        response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, PUT, DELETE, OPTIONS");
+        response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "Content-Type, Authorization, X-Api-Key");
+        response.headers().set("Content-Disposition", "attachment; filename=\"baafoo-export.har\"");
+
+        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
     }
 
     @Override
