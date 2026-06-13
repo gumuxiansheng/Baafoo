@@ -31,8 +31,6 @@ public final class RouteManager {
 
     private static final List<RecordingEntry> RECORDING_BUFFER = new CopyOnWriteArrayList<RecordingEntry>();
 
-    private static final String STUB_HOST = "127.0.0.1";
-
     private RouteManager() {}
 
     public static void updateRules(List<Rule> newRules) {
@@ -104,7 +102,8 @@ public final class RouteManager {
 
             String protocol = rule.getProtocol() != null ? rule.getProtocol().toLowerCase() : "tcp";
             int stubPort = getStubPort(protocol);
-            GlobalRouteState.HostPort routeValue = new GlobalRouteState.HostPort(STUB_HOST, stubPort);
+            String stubHost = GlobalRouteState.SERVER_HOST;
+            GlobalRouteState.HostPort routeValue = new GlobalRouteState.HostPort(stubHost, stubPort);
 
             if (rule.getHost() != null && !rule.getHost().isEmpty()) {
                 if (rule.getPort() != null && rule.getPort() > 0) {
@@ -156,14 +155,14 @@ public final class RouteManager {
     }
 
     private static int getStubPort(String protocol) {
-        if (protocol == null) return 9001;
+        if (protocol == null) return GlobalRouteState.TCP_PORT;
         switch (protocol.toLowerCase()) {
-            case "http": return 9000;
-            case "tcp": return 9001;
-            case "kafka": return 9002;
-            case "pulsar": return 9003;
-            case "jms": return 9004;
-            default: return 9001;
+            case "http": return GlobalRouteState.HTTP_PORT;
+            case "tcp": return GlobalRouteState.TCP_PORT;
+            case "kafka": return GlobalRouteState.KAFKA_PORT;
+            case "pulsar": return GlobalRouteState.PULSAR_PORT;
+            case "jms": return GlobalRouteState.JMS_PORT;
+            default: return GlobalRouteState.TCP_PORT;
         }
     }
 

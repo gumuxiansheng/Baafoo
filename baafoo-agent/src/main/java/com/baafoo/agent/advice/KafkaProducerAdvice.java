@@ -1,5 +1,6 @@
 package com.baafoo.agent.advice;
 
+import com.baafoo.agent.GlobalRouteState;
 import com.baafoo.core.model.EnvironmentMode;
 import net.bytebuddy.asm.Advice;
 import org.slf4j.Logger;
@@ -51,8 +52,8 @@ public class KafkaProducerAdvice {
                 return;
             }
 
-            String stubHost = "127.0.0.1";
-            int stubPort = 9002;
+            String stubHost = GlobalRouteState.SERVER_HOST;
+            int stubPort = GlobalRouteState.KAFKA_PORT;
             String newBootstrapServers = stubHost + ":" + stubPort;
 
             // Find the config argument (Properties or Map) and replace bootstrap.servers

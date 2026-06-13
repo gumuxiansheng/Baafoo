@@ -68,6 +68,21 @@ public class ControlChannel {
         this.running = new AtomicBoolean(false);
     }
 
+    /**
+     * Build the server base URL from config.
+     * Uses server.host + server.apiPort if available, falls back to legacy serverUrl.
+     */
+    private String getServerBaseUrl() {
+        AgentConfig.ServerConnection sc = config.getServer();
+        if (sc != null && sc.getHost() != null && !sc.getHost().isEmpty()) {
+            String scheme = sc.isUseSsl() ? "https" : "http";
+            return scheme + "://" + sc.getHost() + ":" + sc.getApiPort();
+        }
+        // Legacy fallback
+        String url = config.getServerUrl();
+        return (url != null && !url.isEmpty()) ? url : "http://127.0.0.1:8084";
+    }
+
     public void setAgentIdCallback(java.util.function.Consumer<String> callback) {
         this.agentIdCallback = callback;
     }
@@ -92,7 +107,7 @@ public class ControlChannel {
         // 1. Register with server
         boolean registered = register();
         if (!registered) {
-            log.warn("Failed to register with server at {}, will retry", config.getServerUrl());
+            log.warn("Failed to register with server at {}, will retry", getServerBaseUrl());
         }
 
         // 2. Start heartbeat
@@ -189,7 +204,7 @@ public class ControlChannel {
 
     private void pollRules() {
         try {
-            String url = config.getServerUrl() + API_BASE + "/agent/poll?agentId=" +
+            String url = getServerBaseUrl() + API_BASE + "/agent/poll?agentId=" +
                     (config.getAgentId() != null ? config.getAgentId() : "");
 
             HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
@@ -247,7 +262,7 @@ public class ControlChannel {
     // --- HTTP helpers (JDK HttpURLConnection only, NO Netty) ---
 
     private HttpURLConnection post(String path, String json) throws Exception {
-        String url = config.getServerUrl() + path;
+        String url = getServerBaseUrl() + path;
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");

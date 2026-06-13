@@ -12,6 +12,11 @@ public class GlobalRouteStateTest {
         GlobalRouteState.CURRENT_MODE = GlobalRouteState.MODE_STUB;
         GlobalRouteState.SERVER_HOST = "127.0.0.1";
         GlobalRouteState.SERVER_PORT = 8084;
+        GlobalRouteState.HTTP_PORT = 9000;
+        GlobalRouteState.TCP_PORT = 9001;
+        GlobalRouteState.KAFKA_PORT = 9002;
+        GlobalRouteState.PULSAR_PORT = 9003;
+        GlobalRouteState.JMS_PORT = 9004;
     }
 
     @Test

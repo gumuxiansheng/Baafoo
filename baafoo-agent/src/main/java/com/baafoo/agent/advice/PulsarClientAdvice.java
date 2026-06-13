@@ -1,5 +1,6 @@
 package com.baafoo.agent.advice;
 
+import com.baafoo.agent.GlobalRouteState;
 import com.baafoo.core.model.EnvironmentMode;
 import net.bytebuddy.asm.Advice;
 import org.slf4j.Logger;
@@ -48,8 +49,8 @@ public class PulsarClientAdvice {
                     null);
 
             if (routeResult.matched) {
-                String stubHost = "127.0.0.1";
-                int stubPort = 9003;
+                String stubHost = GlobalRouteState.SERVER_HOST;
+                int stubPort = GlobalRouteState.PULSAR_PORT;
 
                 String newServiceUrl = "pulsar://" + stubHost + ":" + stubPort;
                 String originalUrl = serviceUrl;

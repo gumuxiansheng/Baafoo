@@ -20,6 +20,8 @@ public class KafkaProducerAdviceTest {
     public void setup() {
         GlobalRouteState.ROUTES.clear();
         GlobalRouteState.CURRENT_MODE = GlobalRouteState.MODE_PASSTHROUGH;
+        GlobalRouteState.SERVER_HOST = "127.0.0.1";
+        GlobalRouteState.KAFKA_PORT = 9002;
         RouteManager.setMode(EnvironmentMode.PASSTHROUGH);
         RouteManager.updateRules(Collections.<Rule>emptyList());
     }

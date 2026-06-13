@@ -17,9 +17,9 @@ import java.net.SocketAddress;
  * class here — it will cause NoClassDefFoundError that is silently caught,
  * making the interception completely fail with no visible error.</p>
  *
- * <p>Do NOT call methods like isPassthrough() or isInternal() — they reference
- * fields (INTERNAL_PORTS, SERVER_PORT) that may not be resolvable from the
- * Bootstrap CL. Use direct field access instead.</p>
+ * <p>Do NOT call methods from App CL classes — only GlobalRouteState (which is
+ * on the Bootstrap CL) is accessible. Use GlobalRouteState.isInternal() for
+ * internal port checks instead of hardcoded port lists.</p>
  */
 public final class NioSocketConnectAdvice {
 
@@ -37,10 +37,8 @@ public final class NioSocketConnectAdvice {
             int port = addr.getPort();
 
             // Skip internal connections (Baafoo server & stub ports)
-            if ("127.0.0.1".equals(host) || "localhost".equals(host)) {
-                if (port == 8084 || port == 9000 || port == 9001 || port == 9002 || port == 9003 || port == 9004) {
-                    return;
-                }
+            if (GlobalRouteState.isInternal(host, port)) {
+                return;
             }
 
             // Check passthrough mode (1=PASSTHROUGH)

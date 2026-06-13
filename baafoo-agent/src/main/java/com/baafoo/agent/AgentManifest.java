@@ -46,8 +46,23 @@ public final class AgentManifest {
     /** Baafoo server host (e.g., "127.0.0.1") */
     public static volatile String serverHost = "127.0.0.1";
 
-    /** Baafoo server port (e.g., 8084) */
+    /** Baafoo server API port (e.g., 8084) */
     public static volatile int serverPort = 8084;
+
+    /** HTTP stub port (default 9000) */
+    public static volatile int httpPort = 9000;
+
+    /** TCP stub port (default 9001) */
+    public static volatile int tcpPort = 9001;
+
+    /** Kafka stub port (default 9002) */
+    public static volatile int kafkaPort = 9002;
+
+    /** Pulsar stub port (default 9003) */
+    public static volatile int pulsarPort = 9003;
+
+    /** JMS stub port (default 9004) */
+    public static volatile int jmsPort = 9004;
 
     /** Environment ID this agent belongs to */
     public static volatile String environmentId = "default";
@@ -65,6 +80,31 @@ public final class AgentManifest {
     public static void setServerPort(int port) {
         serverPort = port;
         com.baafoo.agent.GlobalRouteState.SERVER_PORT = port;
+    }
+
+    public static void setHttpPort(int port) {
+        httpPort = port;
+        com.baafoo.agent.GlobalRouteState.HTTP_PORT = port;
+    }
+
+    public static void setTcpPort(int port) {
+        tcpPort = port;
+        com.baafoo.agent.GlobalRouteState.TCP_PORT = port;
+    }
+
+    public static void setKafkaPort(int port) {
+        kafkaPort = port;
+        com.baafoo.agent.GlobalRouteState.KAFKA_PORT = port;
+    }
+
+    public static void setPulsarPort(int port) {
+        pulsarPort = port;
+        com.baafoo.agent.GlobalRouteState.PULSAR_PORT = port;
+    }
+
+    public static void setJmsPort(int port) {
+        jmsPort = port;
+        com.baafoo.agent.GlobalRouteState.JMS_PORT = port;
     }
 
     public static void setCurrentMode(int mode) {

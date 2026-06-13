@@ -116,25 +116,46 @@ public class BaafooAgent {
     }
 
     private static void initAgentManifest(AgentConfig cfg) {
-        if (cfg.getServerUrl() != null) {
-            try {
-                java.net.URI uri = new java.net.URI(cfg.getServerUrl());
-                String host = uri.getHost();
-                int port = uri.getPort();
-                if (host == null) {
+        AgentConfig.ServerConnection sc = cfg.getServer();
+
+        // server.host takes precedence; fall back to serverUrl parsing
+        String host = sc.getHost();
+        int apiPort = sc.getApiPort();
+
+        if (host == null || host.isEmpty()) {
+            // Legacy: parse from serverUrl
+            if (cfg.getServerUrl() != null) {
+                try {
+                    java.net.URI uri = new java.net.URI(cfg.getServerUrl());
+                    host = uri.getHost();
+                    int urlPort = uri.getPort();
+                    if (host == null) {
+                        host = "127.0.0.1";
+                    }
+                    if (urlPort > 0) {
+                        apiPort = urlPort;
+                    } else {
+                        apiPort = "https".equals(uri.getScheme()) ? 443 : 8084;
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to parse server URL: {}, using defaults", cfg.getServerUrl());
                     host = "127.0.0.1";
+                    apiPort = 8084;
                 }
-                if (port < 0) {
-                    port = "https".equals(uri.getScheme()) ? 443 : 8084;
-                }
-                AgentManifest.setServerHost(host);
-                AgentManifest.setServerPort(port);
-            } catch (Exception e) {
-                log.warn("Failed to parse server URL: {}, using defaults", cfg.getServerUrl());
-                AgentManifest.setServerHost("127.0.0.1");
-                AgentManifest.setServerPort(8084);
+            } else {
+                host = "127.0.0.1";
             }
         }
+
+        AgentManifest.setServerHost(host);
+        AgentManifest.setServerPort(apiPort);
+
+        // Set protocol-specific stub ports
+        AgentManifest.setHttpPort(sc.getHttpPort());
+        AgentManifest.setTcpPort(sc.getTcpPort());
+        AgentManifest.setKafkaPort(sc.getKafkaPort());
+        AgentManifest.setPulsarPort(sc.getPulsarPort());
+        AgentManifest.setJmsPort(sc.getJmsPort());
 
         AgentManifest.environmentId = cfg.getEnvironment() != null ? cfg.getEnvironment() : "default";
 
@@ -369,10 +390,19 @@ public class BaafooAgent {
 
             bootGRS.getField("SERVER_PORT").setInt(null, GlobalRouteState.SERVER_PORT);
 
+            bootGRS.getField("HTTP_PORT").setInt(null, GlobalRouteState.HTTP_PORT);
+            bootGRS.getField("TCP_PORT").setInt(null, GlobalRouteState.TCP_PORT);
+            bootGRS.getField("KAFKA_PORT").setInt(null, GlobalRouteState.KAFKA_PORT);
+            bootGRS.getField("PULSAR_PORT").setInt(null, GlobalRouteState.PULSAR_PORT);
+            bootGRS.getField("JMS_PORT").setInt(null, GlobalRouteState.JMS_PORT);
+
             bootstrapGRSClass = bootGRS;
 
-            log.info("Synced GlobalRouteState fields to Bootstrap CL: CURRENT_MODE={}, SERVER_HOST={}, SERVER_PORT={}",
-                    GlobalRouteState.CURRENT_MODE, GlobalRouteState.SERVER_HOST, GlobalRouteState.SERVER_PORT);
+            log.info("Synced GlobalRouteState fields to Bootstrap CL: CURRENT_MODE={}, SERVER_HOST={}, SERVER_PORT={}, " +
+                            "HTTP_PORT={}, TCP_PORT={}, KAFKA_PORT={}, PULSAR_PORT={}, JMS_PORT={}",
+                    GlobalRouteState.CURRENT_MODE, GlobalRouteState.SERVER_HOST, GlobalRouteState.SERVER_PORT,
+                    GlobalRouteState.HTTP_PORT, GlobalRouteState.TCP_PORT, GlobalRouteState.KAFKA_PORT,
+                    GlobalRouteState.PULSAR_PORT, GlobalRouteState.JMS_PORT);
         } catch (Exception e) {
             log.error("Failed to sync GlobalRouteState to Bootstrap CL: {}", e.getMessage(), e);
         }

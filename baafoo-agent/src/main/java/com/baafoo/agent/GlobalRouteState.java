@@ -27,6 +27,23 @@ public final class GlobalRouteState {
     public static volatile String SERVER_HOST = "127.0.0.1";
     public static volatile int SERVER_PORT = 8084;
 
+    // ---- Protocol stub ports (set from AgentConfig, synced to Bootstrap CL) ----
+
+    /** HTTP stub port (default 9000) */
+    public static volatile int HTTP_PORT = 9000;
+
+    /** TCP stub port (default 9001) */
+    public static volatile int TCP_PORT = 9001;
+
+    /** Kafka stub port (default 9002) */
+    public static volatile int KAFKA_PORT = 9002;
+
+    /** Pulsar stub port (default 9003) */
+    public static volatile int PULSAR_PORT = 9003;
+
+    /** JMS stub port (default 9004) */
+    public static volatile int JMS_PORT = 9004;
+
     // ---- Logging bridge ----
     // Set by the App CL side (BaafooAgent) with SLF4J-backed implementations.
     // Advice code inlined into Bootstrap CL classes calls logInfo/logWarn/logError,
@@ -149,7 +166,9 @@ public final class GlobalRouteState {
             return false;
         }
         if (port == SERVER_PORT) return true;
-        return port == 8084 || port == 9000 || port == 9001 || port == 9002 || port == 9003 || port == 9004;
+        if (port == HTTP_PORT || port == TCP_PORT || port == KAFKA_PORT
+                || port == PULSAR_PORT || port == JMS_PORT) return true;
+        return false;
     }
 
     public static void addRoute(String originalHost, int originalPort, String targetHost, int targetPort) {

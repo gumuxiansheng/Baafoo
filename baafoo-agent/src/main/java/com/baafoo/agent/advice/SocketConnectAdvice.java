@@ -38,10 +38,8 @@ public final class SocketConnectAdvice {
             int port = addr.getPort();
 
             // Skip internal connections (Baafoo server & stub ports)
-            if ("127.0.0.1".equals(host) || "localhost".equals(host)) {
-                if (port == 8084 || port == 9000 || port == 9001 || port == 9002 || port == 9003 || port == 9004) {
-                    return;
-                }
+            if (GlobalRouteState.isInternal(host, port)) {
+                return;
             }
 
             // Check passthrough mode (1=PASSTHROUGH)

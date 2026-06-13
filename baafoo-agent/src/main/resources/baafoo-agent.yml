@@ -1,14 +1,26 @@
 # Baafoo Agent Configuration
 # Loaded by com.baafoo.core.config.ConfigLoader
 
+# Server connection configuration
+server:
+  # Server host (used for both control channel and stub redirection)
+  host: "127.0.0.1"
+  # Whether to use HTTPS for the control channel (default: false)
+  useSsl: false
+  # Server API port (control channel, default 8084)
+  apiPort: 8084
+  # Protocol-specific stub ports (must match Server configuration)
+  httpPort: 9000
+  tcpPort: 9001
+  kafkaPort: 9002
+  pulsarPort: 9003
+  jmsPort: 9004
+
 # Agent unique identifier (auto-generated if empty)
 agentId: ""
 
 # Environment name this agent belongs to
 environment: "default"
-
-# Baafoo Server base URL
-serverUrl: "http://127.0.0.1:8084"
 
 # Heartbeat interval in seconds
 heartbeatIntervalSec: 30

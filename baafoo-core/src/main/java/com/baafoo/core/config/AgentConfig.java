@@ -9,13 +9,16 @@ import java.util.List;
  */
 public class AgentConfig {
 
+    /** Server connection configuration (host, ports) */
+    private ServerConnection server = new ServerConnection();
+
     /** Agent unique identifier (auto-generated if not set) */
     private String agentId;
 
     /** Environment name this agent belongs to */
     private String environment;
 
-    /** Baafoo Server base URL (e.g., http://localhost:8084) */
+    /** Baafoo Server base URL (e.g., http://localhost:8084) — legacy field, overridden by server.host if set */
     private String serverUrl;
 
     /** Heartbeat interval in seconds */
@@ -61,6 +64,9 @@ public class AgentConfig {
 
     // --- Getters / Setters ---
 
+    public ServerConnection getServer() { return server; }
+    public void setServer(ServerConnection server) { this.server = server; }
+
     public String getAgentId() { return agentId; }
     public void setAgentId(String agentId) { this.agentId = agentId; }
 
@@ -103,9 +109,91 @@ public class AgentConfig {
     @Override
     public String toString() {
         return "AgentConfig{" +
-                "agentId='" + agentId + '\'' +
+                "server=" + server +
+                ", agentId='" + agentId + '\'' +
                 ", environment='" + environment + '\'' +
                 ", serverUrl='" + serverUrl + '\'' +
                 '}';
+    }
+
+    /**
+     * Agent-to-server connection configuration.
+     * Maps to the {@code server:} section in baafoo-agent.yml.
+     *
+     * <p>Not to be confused with {@link com.baafoo.core.config.ServerConfig},
+     * which is the server-side configuration loaded from baafoo-server.yml.</p>
+     */
+    public static class ServerConnection {
+        /** Server host (e.g., "127.0.0.1") */
+        private String host = "127.0.0.1";
+
+        /** Whether to use HTTPS for the control channel */
+        private boolean useSsl = false;
+
+        /** Server API port (control channel, default 8084) */
+        private int apiPort = 8084;
+
+        /** HTTP stub port (default 9000) */
+        private int httpPort = 9000;
+
+        /** TCP stub port (default 9001) */
+        private int tcpPort = 9001;
+
+        /** Kafka stub port (default 9002) */
+        private int kafkaPort = 9002;
+
+        /** Pulsar stub port (default 9003) */
+        private int pulsarPort = 9003;
+
+        /** JMS stub port (default 9004) */
+        private int jmsPort = 9004;
+
+        public String getHost() { return host; }
+        public void setHost(String host) { this.host = host; }
+
+        public boolean isUseSsl() { return useSsl; }
+        public void setUseSsl(boolean useSsl) { this.useSsl = useSsl; }
+
+        public int getApiPort() { return apiPort; }
+        public void setApiPort(int apiPort) { this.apiPort = apiPort; }
+
+        public int getHttpPort() { return httpPort; }
+        public void setHttpPort(int httpPort) { this.httpPort = httpPort; }
+
+        public int getTcpPort() { return tcpPort; }
+        public void setTcpPort(int tcpPort) { this.tcpPort = tcpPort; }
+
+        public int getKafkaPort() { return kafkaPort; }
+        public void setKafkaPort(int kafkaPort) { this.kafkaPort = kafkaPort; }
+
+        public int getPulsarPort() { return pulsarPort; }
+        public void setPulsarPort(int pulsarPort) { this.pulsarPort = pulsarPort; }
+
+        public int getJmsPort() { return jmsPort; }
+        public void setJmsPort(int jmsPort) { this.jmsPort = jmsPort; }
+
+        /**
+         * Get the stub port for a given protocol name.
+         */
+        public int getPortForProtocol(String protocol) {
+            if (protocol == null) return tcpPort;
+            switch (protocol.toLowerCase()) {
+                case "http": return httpPort;
+                case "tcp": return tcpPort;
+                case "kafka": return kafkaPort;
+                case "pulsar": return pulsarPort;
+                case "jms": return jmsPort;
+                default: return tcpPort;
+            }
+        }
+
+        @Override
+        public String toString() {
+            return "ServerConnection{host='" + host + "', useSsl=" + useSsl +
+                    ", apiPort=" + apiPort +
+                    ", http=" + httpPort + ", tcp=" + tcpPort +
+                    ", kafka=" + kafkaPort + ", pulsar=" + pulsarPort +
+                    ", jms=" + jmsPort + '}';
+        }
     }
 }

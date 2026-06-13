@@ -17,6 +17,17 @@ public class AgentConfigTest {
         assertTrue(c.isHotReload());
         assertEquals(3, c.getConnectionRetries());
         assertEquals(1000, c.getRetryBackoffMs());
+
+        // Nested ServerConnection defaults
+        assertNotNull(c.getServer());
+        assertEquals("127.0.0.1", c.getServer().getHost());
+        assertFalse(c.getServer().isUseSsl());
+        assertEquals(8084, c.getServer().getApiPort());
+        assertEquals(9000, c.getServer().getHttpPort());
+        assertEquals(9001, c.getServer().getTcpPort());
+        assertEquals(9002, c.getServer().getKafkaPort());
+        assertEquals(9003, c.getServer().getPulsarPort());
+        assertEquals(9004, c.getServer().getJmsPort());
     }
 
     @Test

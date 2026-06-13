@@ -60,6 +60,11 @@ public class AgentManifestTest {
         assertFalse(AgentManifest.agentLoaded);
         assertEquals("127.0.0.1", AgentManifest.serverHost);
         assertEquals(8084, AgentManifest.serverPort);
+        assertEquals(9000, AgentManifest.httpPort);
+        assertEquals(9001, AgentManifest.tcpPort);
+        assertEquals(9002, AgentManifest.kafkaPort);
+        assertEquals(9003, AgentManifest.pulsarPort);
+        assertEquals(9004, AgentManifest.jmsPort);
         assertEquals("default", AgentManifest.environmentId);
         assertEquals("", AgentManifest.agentId);
     }
