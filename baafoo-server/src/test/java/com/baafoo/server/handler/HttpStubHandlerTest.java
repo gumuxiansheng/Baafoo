@@ -67,6 +67,7 @@ public class HttpStubHandlerTest {
         rule.setProtocol("http");
         rule.setEnabled(true);
         rule.setHost("example.com");
+        rule.setEnvironments(Arrays.asList("test-env"));
 
         ResponseEntry resp = new ResponseEntry();
         resp.setBody("{\"ok\":true}");
@@ -74,36 +75,33 @@ public class HttpStubHandlerTest {
         resp.setName("success");
         rule.setResponses(Arrays.asList(resp));
 
-        // Verify direct host extraction works
-        FullHttpRequest testReq = buildRequest("GET", "/api/test", "example.com");
-        String extractedHost = null;
-        for (Map.Entry<String, String> entry : testReq.headers()) {
-            if ("Host".equals(entry.getKey()) || "host".equals(entry.getKey())) {
-                extractedHost = entry.getValue();
-            }
-        }
-        assertNotNull("Host header must be extractable from request", extractedHost);
+        Environment env = new Environment();
+        env.setName("test-env");
+        env.setMode(EnvironmentMode.STUB);
+
+        StorageService.AgentRegistration agentReg = new StorageService.AgentRegistration();
+        agentReg.agentId = "test-agent";
+        agentReg.environment = "test-env";
+        agentReg.agentIp = "127.0.0.1";
+        agentReg.lastHeartbeat = System.currentTimeMillis();
 
         when(storage.listRules()).thenReturn(Arrays.asList(rule));
-        when(storage.listEnvironments()).thenReturn(new ArrayList<Environment>());
-        when(storage.listAgents()).thenReturn(new ArrayList<StorageService.AgentRegistration>());
+        when(storage.listEnvironments()).thenReturn(Arrays.asList(env));
+        when(storage.listAgents()).thenReturn(Arrays.asList(agentReg));
 
         config.setUnmatchedDefault("404");
         HttpStubHandler handler = new HttpStubHandler(storage, config);
         EmbeddedChannel channel = new EmbeddedChannel(handler);
 
-        // Verify host extraction with extended headers including a copy of Host
         FullHttpRequest request = buildRequest("GET", "/api/test", "example.com");
-        // Also add as raw string to be safe
-        request.headers().add("Host", "example.com");
 
-        channel.pipeline().fireChannelRead(request);
+        channel.writeInbound(request);
         channel.runPendingTasks();
         channel.checkException();
 
         FullHttpResponse response = channel.readOutbound();
         assertNotNull("Response should not be null", response);
-        assertEquals("Expected 200 but got 404 - matching failed inside handler", 200, response.status().code());
+        assertEquals(200, response.status().code());
         String body = response.content().toString(StandardCharsets.UTF_8);
         assertEquals("{\"ok\":true}", body);
     }

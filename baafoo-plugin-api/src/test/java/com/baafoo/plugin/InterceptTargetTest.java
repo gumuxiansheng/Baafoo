@@ -7,7 +7,7 @@ public class InterceptTargetTest {
 
     @Test
     public void testValues() {
-        assertEquals(7, InterceptTarget.values().length);
+        assertEquals(8, InterceptTarget.values().length);
         assertEquals(InterceptTarget.SOCKET, InterceptTarget.valueOf("SOCKET"));
         assertEquals(InterceptTarget.NIO_SOCKET, InterceptTarget.valueOf("NIO_SOCKET"));
         assertEquals(InterceptTarget.KAFKA, InterceptTarget.valueOf("KAFKA"));
@@ -15,5 +15,6 @@ public class InterceptTargetTest {
         assertEquals(InterceptTarget.JMS, InterceptTarget.valueOf("JMS"));
         assertEquals(InterceptTarget.CONSUL_DNS, InterceptTarget.valueOf("CONSUL_DNS"));
         assertEquals(InterceptTarget.CONSUL_API, InterceptTarget.valueOf("CONSUL_API"));
+        assertEquals(InterceptTarget.FEIGN, InterceptTarget.valueOf("FEIGN"));
     }
 }

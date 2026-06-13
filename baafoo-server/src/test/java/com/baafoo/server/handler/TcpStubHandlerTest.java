@@ -39,14 +39,26 @@ public class TcpStubHandlerTest {
         rule.setId("r1");
         rule.setProtocol("tcp");
         rule.setEnabled(true);
+        rule.setEnvironments(Arrays.asList("test-env"));
 
         ResponseEntry resp = new ResponseEntry();
         resp.setBody("stub-response");
         resp.setStatusCode(200);
         rule.setResponses(Arrays.asList(resp));
 
+        Environment env = new Environment();
+        env.setName("test-env");
+        env.setMode(EnvironmentMode.STUB);
+
+        StorageService.AgentRegistration agentReg = new StorageService.AgentRegistration();
+        agentReg.agentId = "test-agent";
+        agentReg.environment = "test-env";
+        agentReg.agentIp = "127.0.0.1";
+        agentReg.lastHeartbeat = System.currentTimeMillis();
+
         when(storage.listRules()).thenReturn(Arrays.asList(rule));
-        when(storage.listEnvironments()).thenReturn(new ArrayList<Environment>());
+        when(storage.listEnvironments()).thenReturn(Arrays.asList(env));
+        when(storage.listAgents()).thenReturn(Arrays.asList(agentReg));
 
         channel.writeInbound(Unpooled.copiedBuffer("test payload", StandardCharsets.UTF_8));
         Object out = channel.readOutbound();
