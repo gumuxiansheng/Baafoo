@@ -8,6 +8,8 @@ import com.baafoo.core.config.AgentConfig;
 import com.baafoo.core.config.ConfigLoader;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
+import net.bytebuddy.description.type.TypeDescription;
+import net.bytebuddy.utility.JavaModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,9 +68,13 @@ public class BaafooAgent {
 
             Runtime.getRuntime().addShutdownHook(new Thread(BaafooAgent::shutdown, "baafoo-shutdown"));
 
-            installTransforms(config, inst);
-
+            // IMPORTANT: setupBootstrapClassPath MUST run before installTransforms.
+            // Advice code (e.g., DnsGetByNameAdvice) references GlobalRouteState,
+            // which must be on the Bootstrap CL search path before ByteBuddy tries
+            // to inline the advice into target classes like InetAddress.
             setupBootstrapClassPath(inst);
+
+            installTransforms(config, inst);
 
             AgentManifest.agentLoaded = true;
             initialized = true;
@@ -147,7 +153,12 @@ public class BaafooAgent {
         TransformRegistry registry = new TransformRegistry();
         AgentBuilder agentBuilder = new AgentBuilder.Default()
                 .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
-                .with(AgentBuilder.Listener.StreamWriting.toSystemOut())
+                .with(new AgentBuilder.Listener.Adapter() {
+                    @Override
+                    public void onError(String typeName, ClassLoader classLoader, JavaModule module, boolean loaded, Throwable throwable) {
+                        log.warn("ByteBuddy transform error for {}: {}", typeName, throwable.getMessage());
+                    }
+                })
                 .ignore(nameStartsWith("net.bytebuddy.")
                         .or(nameStartsWith("com.baafoo.agent.shaded."))
                         .or(isSynthetic()));
@@ -161,21 +172,17 @@ public class BaafooAgent {
                     .type(named("java.net.InetAddress"))
                     .transform((builder, typeDesc, classLoader, module, pd) ->
                             builder.visit(Advice.to(ConsulDnsAdvice.class)
-                                    .on(named("getByName").and(takesArguments(1)))))
-                    .type(named("java.net.InetAddress"))
-                    .transform((builder, typeDesc, classLoader, module, pd) ->
-                            builder.visit(Advice.to(ConsulDnsAdvice.class)
+                                    .on(named("getByName").and(takesArguments(1))))
+                            .visit(Advice.to(ConsulDnsAdvice.class)
                                     .on(named("getAllByName").and(takesArguments(1)))));
             registry.register("java.net.InetAddress", "ConsulDnsAdvice", "dns+consul");
         } else {
             agentBuilder = agentBuilder
                     .type(named("java.net.InetAddress"))
                     .transform((builder, typeDesc, classLoader, module, pd) ->
-                            builder.visit(Advice.to(DnsResolutionAdvice.class)
-                                    .on(named("getByName").and(takesArguments(1)))))
-                    .type(named("java.net.InetAddress"))
-                    .transform((builder, typeDesc, classLoader, module, pd) ->
-                            builder.visit(Advice.to(DnsResolutionAdvice.class)
+                            builder.visit(Advice.to(DnsGetByNameAdvice.class)
+                                    .on(named("getByName").and(takesArguments(1))))
+                            .visit(Advice.to(DnsGetAllByNameAdvice.class)
                                     .on(named("getAllByName").and(takesArguments(1)))));
             registry.register("java.net.InetAddress", "DnsResolutionAdvice", "dns");
         }
