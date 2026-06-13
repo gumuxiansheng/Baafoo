@@ -73,7 +73,7 @@ public class BaafooCliTest {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         System.setOut(new PrintStream(out));
         try {
-            BaafooCli.main(new String[]{"init", tempDir.getAbsolutePath()});
+            BaafooCli.main(new String[]{"init", tempDir.getAbsolutePath(), "--non-interactive"});
             String output = out.toString();
             assertTrue(output.contains("baafoo-agent.yml"));
             assertTrue(output.contains("baafoo-server.yml"));
