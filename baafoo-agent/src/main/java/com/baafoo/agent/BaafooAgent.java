@@ -18,6 +18,7 @@ import java.lang.instrument.Instrumentation;
 import java.util.Map;
 import java.util.jar.JarFile;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 import static net.bytebuddy.matcher.ElementMatchers.*;
 
@@ -73,6 +74,16 @@ public class BaafooAgent {
             // which must be on the Bootstrap CL search path before ByteBuddy tries
             // to inline the advice into target classes like InetAddress.
             setupBootstrapClassPath(inst);
+
+            // Register SLF4J-backed log handlers so that Bootstrap CL advice code
+            // (inlined into java.net.Socket, InetAddress, etc.) can log through
+            // GlobalRouteState.logInfo/logWarn/logError instead of System.out.
+            Logger adviceLogger = LoggerFactory.getLogger("com.baafoo.agent.advice");
+            GlobalRouteState.LOG_INFO_HANDLER = (Consumer<String>) adviceLogger::info;
+            GlobalRouteState.LOG_WARN_HANDLER = (Consumer<String>) adviceLogger::warn;
+            GlobalRouteState.LOG_ERROR_HANDLER = (Consumer<String>) adviceLogger::error;
+            // Also sync handlers to the Bootstrap CL copy of GlobalRouteState
+            syncLogHandlersToBootstrapCL(adviceLogger);
 
             installTransforms(config, inst);
 
@@ -376,6 +387,39 @@ public class BaafooAgent {
             return Class.forName(name, false, cl);
         } catch (Exception e) {
             return Class.forName(name);
+        }
+    }
+
+    /**
+     * Sync the SLF4J-backed log handlers to the Bootstrap CL copy of GlobalRouteState.
+     * The Bootstrap CL copy is a separate class instance; its static fields are
+     * independent from the App CL version, so we must set them via reflection.
+     */
+    private static void syncLogHandlersToBootstrapCL(Logger adviceLogger) {
+        try {
+            Class<?> bootGRS = bootstrapGRSClass;
+            if (bootGRS == null) {
+                log.warn("Bootstrap CL GlobalRouteState class not found, skipping log handler sync");
+                return;
+            }
+
+            Class<?> consumerClass = java.util.function.Consumer.class;
+            java.lang.reflect.Field infoField = bootGRS.getField("LOG_INFO_HANDLER");
+            java.lang.reflect.Field warnField = bootGRS.getField("LOG_WARN_HANDLER");
+            java.lang.reflect.Field errorField = bootGRS.getField("LOG_ERROR_HANDLER");
+
+            Consumer<String> infoHandler = (Consumer<String>) adviceLogger::info;
+            Consumer<String> warnHandler = (Consumer<String>) adviceLogger::warn;
+            Consumer<String> errorHandler = (Consumer<String>) adviceLogger::error;
+
+            infoField.set(null, infoHandler);
+            warnField.set(null, warnHandler);
+            errorField.set(null, errorHandler);
+
+            log.info("Synced SLF4J log handlers to Bootstrap CL GlobalRouteState");
+        } catch (Exception e) {
+            log.warn("Failed to sync log handlers to Bootstrap CL GlobalRouteState: {}. " +
+                    "Bootstrap CL advice will fall back to System.out.", e.getMessage());
         }
     }
 }

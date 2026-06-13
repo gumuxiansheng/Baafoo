@@ -60,11 +60,11 @@ public final class SocketConnectAdvice {
             }
 
             if (routeValue != null) {
-                java.lang.System.out.println("[Baafoo] Socket redirect: " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
+                GlobalRouteState.logInfo("[Baafoo] Socket redirect: " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
                 endpoint = new InetSocketAddress(routeValue[0], Integer.parseInt(routeValue[1]));
             }
         } catch (Throwable t) {
-            java.lang.System.out.println("[Baafoo] SocketConnectAdvice error: " + t);
+            GlobalRouteState.logError("[Baafoo] SocketConnectAdvice error: " + t);
         }
     }
 }

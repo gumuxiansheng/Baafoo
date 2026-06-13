@@ -2,6 +2,8 @@ package com.baafoo.agent.advice;
 
 import com.baafoo.core.model.EnvironmentMode;
 import net.bytebuddy.asm.Advice;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 
@@ -13,11 +15,14 @@ import java.util.Collections;
  * (pulsar://localhost:9003 by default).</p>
  *
  * <p><b>CRITICAL</b>: This advice is inlined into Pulsar ClientBuilder by ByteBuddy.
- * Do NOT reference any fields from this class (including log) in the advice
+ * Do NOT reference any private fields from this class in the advice
  * method — inlined code runs in the target class's context and cannot access
- * private fields of the advice class. Use System.out for debug output.</p>
+ * private fields of the advice class. The Logger field MUST be public.</p>
  */
 public class PulsarClientAdvice {
+
+    /** Must be public — inlined code in the target class cannot access private fields. */
+    public static final Logger log = LoggerFactory.getLogger(PulsarClientAdvice.class);
 
     /**
      * Intercept ClientBuilder.serviceUrl(String) to replace the Pulsar broker URL.
@@ -50,12 +55,12 @@ public class PulsarClientAdvice {
                 String originalUrl = serviceUrl;
                 serviceUrl = newServiceUrl;
 
-                java.lang.System.out.println("[Baafoo] Pulsar serviceUrl replaced: " + originalUrl + " -> " + newServiceUrl);
+                log.info("[Baafoo] Pulsar serviceUrl replaced: {} -> {}", originalUrl, newServiceUrl);
 
                 RoutingContext.set(routeResult);
             }
         } catch (Exception e) {
-            java.lang.System.out.println("[Baafoo] PulsarClientAdvice error: " + e.getMessage());
+            log.error("[Baafoo] PulsarClientAdvice error: {}", e.getMessage());
             // Fail-closed: let original serviceUrl proceed
         }
     }

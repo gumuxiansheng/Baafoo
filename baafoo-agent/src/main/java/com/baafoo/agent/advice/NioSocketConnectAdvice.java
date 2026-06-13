@@ -59,11 +59,11 @@ public final class NioSocketConnectAdvice {
             }
 
             if (routeValue != null) {
-                java.lang.System.out.println("[Baafoo] NIO Socket redirect: " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
+                GlobalRouteState.logInfo("[Baafoo] NIO Socket redirect: " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
                 remote = new InetSocketAddress(routeValue[0], Integer.parseInt(routeValue[1]));
             }
         } catch (Throwable t) {
-            java.lang.System.out.println("[Baafoo] NioSocketConnectAdvice error: " + t);
+            GlobalRouteState.logError("[Baafoo] NioSocketConnectAdvice error: " + t);
         }
     }
 }

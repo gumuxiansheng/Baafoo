@@ -2,6 +2,8 @@ package com.baafoo.agent.advice;
 
 import com.baafoo.core.model.EnvironmentMode;
 import net.bytebuddy.asm.Advice;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.Map;
@@ -14,11 +16,14 @@ import java.util.Map;
  * address (port 9002 by default).</p>
  *
  * <p><b>CRITICAL</b>: This advice is inlined into KafkaProducer by ByteBuddy.
- * Do NOT reference any fields from this class (including log) in the advice
+ * Do NOT reference any private fields from this class in the advice
  * method — inlined code runs in the target class's context and cannot access
- * private fields of the advice class. Use System.out for debug output.</p>
+ * private fields of the advice class. The Logger field MUST be public.</p>
  */
 public class KafkaProducerAdvice {
+
+    /** Must be public — inlined code in the target class cannot access private fields. */
+    public static final Logger log = LoggerFactory.getLogger(KafkaProducerAdvice.class);
 
     /**
      * Intercept KafkaProducer constructor to replace bootstrap.servers.
@@ -58,14 +63,14 @@ public class KafkaProducerAdvice {
                     java.util.Properties props = (java.util.Properties) firstArg;
                     String originalServers = props.getProperty("bootstrap.servers", "unknown");
                     props.setProperty("bootstrap.servers", newBootstrapServers);
-                    java.lang.System.out.println("[Baafoo] Kafka bootstrap.servers replaced: " + originalServers + " -> " + newBootstrapServers);
+                    log.info("[Baafoo] Kafka bootstrap.servers replaced: {} -> {}", originalServers, newBootstrapServers);
 
                 } else if (firstArg instanceof Map) {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> configs = (Map<String, Object>) firstArg;
                     Object originalServers = configs.get("bootstrap.servers");
                     configs.put("bootstrap.servers", newBootstrapServers);
-                    java.lang.System.out.println("[Baafoo] Kafka bootstrap.servers replaced: " + originalServers + " -> " + newBootstrapServers);
+                    log.info("[Baafoo] Kafka bootstrap.servers replaced: {} -> {}", originalServers, newBootstrapServers);
 
                 }
             }
@@ -73,7 +78,7 @@ public class KafkaProducerAdvice {
             RoutingContext.set(routeResult);
 
         } catch (Exception e) {
-            java.lang.System.out.println("[Baafoo] KafkaProducerAdvice error: " + e.getMessage());
+            log.error("[Baafoo] KafkaProducerAdvice error: {}", e.getMessage());
             // Fail-closed: let original constructor proceed with real servers
         }
     }

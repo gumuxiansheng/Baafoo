@@ -1,6 +1,7 @@
 package com.baafoo.agent;
 
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 public final class GlobalRouteState {
 
@@ -26,6 +27,20 @@ public final class GlobalRouteState {
     public static volatile String SERVER_HOST = "127.0.0.1";
     public static volatile int SERVER_PORT = 8084;
 
+    // ---- Logging bridge ----
+    // Set by the App CL side (BaafooAgent) with SLF4J-backed implementations.
+    // Advice code inlined into Bootstrap CL classes calls logInfo/logWarn/logError,
+    // which delegate to these handlers. Falls back to System.out when not set.
+
+    /** @see #logInfo(String) */
+    public static volatile Consumer<String> LOG_INFO_HANDLER;
+
+    /** @see #logWarn(String) */
+    public static volatile Consumer<String> LOG_WARN_HANDLER;
+
+    /** @see #logError(String) */
+    public static volatile Consumer<String> LOG_ERROR_HANDLER;
+
     /**
      * DNS resolution cache: maps resolved IP addresses back to original domain names.
      * Populated when InetAddress.getByName is intercepted.
@@ -45,6 +60,35 @@ public final class GlobalRouteState {
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private GlobalRouteState() {}
+
+    // ---- Logging methods for Bootstrap CL advice ----
+
+    public static void logInfo(String msg) {
+        Consumer<String> h = LOG_INFO_HANDLER;
+        if (h != null) {
+            try { h.accept(msg); } catch (Throwable t) { System.out.println(msg); }
+        } else {
+            System.out.println(msg);
+        }
+    }
+
+    public static void logWarn(String msg) {
+        Consumer<String> h = LOG_WARN_HANDLER;
+        if (h != null) {
+            try { h.accept(msg); } catch (Throwable t) { System.out.println(msg); }
+        } else {
+            System.out.println(msg);
+        }
+    }
+
+    public static void logError(String msg) {
+        Consumer<String> h = LOG_ERROR_HANDLER;
+        if (h != null) {
+            try { h.accept(msg); } catch (Throwable t) { System.out.println(msg); }
+        } else {
+            System.out.println(msg);
+        }
+    }
 
     /**
      * Record a DNS resolution for later route lookup.
