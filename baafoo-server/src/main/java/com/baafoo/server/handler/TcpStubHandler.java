@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Netty handler for TCP stub server (port 9001+).
@@ -88,10 +89,6 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
     private void sendTcpResponse(ChannelHandlerContext ctx, ResponseEntry entry, String payload) {
         try {
-            if (entry.getDelayMs() > 0) {
-                Thread.sleep(entry.getDelayMs());
-            }
-
             String rawBody = entry.getBody() != null ? entry.getBody() : "";
             String body = rawBody;
             if (rawBody.contains("{{")) {
@@ -107,7 +104,17 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
             java.nio.charset.Charset charset = java.nio.charset.Charset.forName(charsetName);
             ByteBuf response = Unpooled.copiedBuffer(body, charset);
 
-            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+            // Use scheduled executor for delay instead of blocking the EventLoop thread
+            if (entry.getDelayMs() > 0) {
+                ctx.executor().schedule(new Runnable() {
+                    @Override
+                    public void run() {
+                        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+                    }
+                }, entry.getDelayMs(), TimeUnit.MILLISECONDS);
+            } else {
+                ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+            }
             log.debug("TCP stub response: {} bytes", body.length());
         } catch (Exception e) {
             log.error("Error sending TCP response: {}", e.getMessage());
