@@ -3,6 +3,7 @@ package com.baafoo.agent.advice;
 import com.baafoo.agent.AgentManifest;
 import com.baafoo.agent.BaafooAgent;
 import com.baafoo.agent.GlobalRouteState;
+import com.baafoo.agent.RouteTable;
 import com.baafoo.agent.channel.ControlChannel;
 import com.baafoo.core.model.*;
 import com.baafoo.core.util.MatchEngine;
@@ -241,14 +242,14 @@ public final class RouteManager {
         }
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private static void syncRoutesToBootstrapCL(ConcurrentHashMap<String, GlobalRouteState.HostPort> newRoutes) {
-        ConcurrentHashMap<String, GlobalRouteState.HostPort> bootRoutes = BaafooAgent.getBootstrapRoutes();
+        ConcurrentHashMap bootRoutes = BaafooAgent.getBootstrapRoutes();
         java.lang.reflect.Constructor<?> bootCtor = BaafooAgent.getBootstrapHostPortCtor();
         if (bootRoutes == null || bootCtor == null) return;
         try {
             // Build new map first, then clear+putAll to minimize the empty-window
-            ConcurrentHashMap<Object, Object> newBootRoutes = new ConcurrentHashMap<Object, Object>();
+            ConcurrentHashMap newBootRoutes = new ConcurrentHashMap();
             for (Map.Entry<String, GlobalRouteState.HostPort> entry : newRoutes.entrySet()) {
                 Object bootHostPort = bootCtor.newInstance(entry.getValue().host, entry.getValue().port);
                 newBootRoutes.put(entry.getKey(), bootHostPort);
