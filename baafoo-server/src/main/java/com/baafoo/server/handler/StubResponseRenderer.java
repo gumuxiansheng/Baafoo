@@ -97,11 +97,12 @@ public class StubResponseRenderer {
             errorMap.put("error", "No matching rule found");
             errorMap.put("path", path);
             String body = MAPPER.writeValueAsString(errorMap);
+            byte[] bodyBytes = body.getBytes(StandardCharsets.UTF_8);
             FullHttpResponse response = new DefaultFullHttpResponse(
                     HTTP_1_1, HttpResponseStatus.NOT_FOUND,
-                    Unpooled.copiedBuffer(body.getBytes(StandardCharsets.UTF_8)));
+                    Unpooled.copiedBuffer(bodyBytes));
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json; charset=UTF-8");
-            response.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.getBytes(StandardCharsets.UTF_8).length);
+            response.headers().set(HttpHeaderNames.CONTENT_LENGTH, bodyBytes.length);
             ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
         } catch (Exception e) {
             log.error("Error serializing 404 response: {}", e.getMessage());
