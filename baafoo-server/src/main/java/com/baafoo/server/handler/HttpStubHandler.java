@@ -107,10 +107,16 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         // to prevent rules from other environments from matching.
         List<Rule> rules = agentResolver.filterRulesByEnvironment(
                 storage.listRules(), agentEnvironment);
+        // First pass: match with actual host:port
         MatchEngine.MatchResult result = matchEngine.match(
                 rules, "http", host, port, null,
                 method, path, headers, queryParams, body);
 
+        // Fallback: if no match with specific port, retry ignoring port number.
+        // This allows a rule with host-only matching to work even when the request
+        // comes on a non-standard port (e.g., rule matches "example.com" but request
+        // is on port 8080). Rules that explicitly specify a port will NOT match here
+        // because MatchEngine.matchesTarget skips port check when port=0.
         if (!result.isMatched()) {
             result = matchEngine.match(
                     rules, "http", host, 0, null,
