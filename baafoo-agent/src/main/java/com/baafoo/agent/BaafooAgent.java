@@ -272,6 +272,15 @@ public class BaafooAgent {
                                 .on(named("serviceUrl").and(takesArguments(1)))));
         registry.register("org.apache.pulsar.client.api.ClientBuilder", "PulsarClientAdvice", "pulsar");
 
+        // JMS: intercept ActiveMQConnectionFactory constructor to replace brokerURL
+        agentBuilder = agentBuilder
+                .type(named("org.apache.activemq.ActiveMQConnectionFactory")
+                        .or(named("org.apache.activemq.ActiveMQXAConnectionFactory")))
+                .transform((builder, typeDesc, classLoader, module, pd) ->
+                        builder.visit(Advice.to(JmsConnectionFactoryAdvice.class)
+                                .on(isConstructor().and(takesArguments(1)))));
+        registry.register("org.apache.activemq.ActiveMQConnectionFactory", "JmsConnectionFactoryAdvice", "jms");
+
         agentBuilder.installOn(inst);
         log.info("Bytecode transforms installed: {} transforms registered", registry.getCount());
     }
