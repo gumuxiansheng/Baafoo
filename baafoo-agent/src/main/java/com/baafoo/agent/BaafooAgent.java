@@ -258,6 +258,13 @@ public class BaafooAgent {
         registry.register("org.apache.kafka.clients.producer.KafkaProducer", "KafkaProducerAdvice", "kafka");
 
         agentBuilder = agentBuilder
+                .type(named("org.apache.kafka.clients.consumer.KafkaConsumer"))
+                .transform((builder, typeDesc, classLoader, module, pd) ->
+                        builder.visit(Advice.to(KafkaConsumerAdvice.class)
+                                .on(isConstructor())));
+        registry.register("org.apache.kafka.clients.consumer.KafkaConsumer", "KafkaConsumerAdvice", "kafka");
+
+        agentBuilder = agentBuilder
                 .type(named("org.apache.pulsar.client.api.ClientBuilder"))
                 .transform((builder, typeDesc, classLoader, module, pd) ->
                         builder.visit(Advice.to(PulsarClientAdvice.class)
