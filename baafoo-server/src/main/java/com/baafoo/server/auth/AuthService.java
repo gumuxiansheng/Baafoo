@@ -307,6 +307,71 @@ public class AuthService {
         return hasPermission(Role.fromValue(role), Resource.fromValue(resource), Action.fromValue(action));
     }
 
+    /**
+     * Simplified permission check that maps HTTP method to action.
+     * GET → read, POST → create, PUT → update, DELETE → delete.
+     *
+     * @param role       the user's role string
+     * @param httpMethod the HTTP method (GET, POST, PUT, DELETE)
+     * @param path       the request path (used to determine resource type)
+     * @return true if the role has permission for the implied action on the inferred resource
+     */
+    public static boolean checkPermission(String role, String httpMethod, String path) {
+        if (role == null || httpMethod == null || path == null) return false;
+
+        // Map HTTP method to action
+        String action;
+        switch (httpMethod.toUpperCase()) {
+            case "GET":
+            case "HEAD":
+            case "OPTIONS":
+                action = "read";
+                break;
+            case "POST":
+                action = "create";
+                break;
+            case "PUT":
+            case "PATCH":
+                action = "update";
+                break;
+            case "DELETE":
+                action = "delete";
+                break;
+            default:
+                action = "read";
+                break;
+        }
+
+        // Infer resource from path
+        String resource = inferResourceFromPath(path);
+
+        return hasPermission(role, resource, action);
+    }
+
+    /**
+     * Infer the resource type from the API path.
+     * E.g., "/__baafoo__/api/rules/xxx" → "rule"
+     */
+    static String inferResourceFromPath(String path) {
+        if (path == null) return "rule";
+        String prefix = "/__baafoo__/api/";
+        if (!path.startsWith(prefix)) return "rule";
+        String sub = path.substring(prefix.length());
+
+        if (sub.startsWith("rules")) return "rule";
+        if (sub.startsWith("scenes")) return "scene";
+        if (sub.startsWith("environments")) return "environment";
+        if (sub.startsWith("recordings")) return "recording";
+        if (sub.startsWith("users")) return "user";
+        if (sub.startsWith("agents")) return "rule";
+        if (sub.startsWith("status")) return "rule";
+        if (sub.startsWith("auth")) return "rule";
+        if (sub.startsWith("agent/")) return "rule";
+        if (sub.startsWith("rulesets")) return "rule";
+        if (sub.startsWith("logs")) return "recording";
+        return "rule";
+    }
+
     public static class AuthResult {
         public final boolean success;
         public final String role;

@@ -4,6 +4,7 @@ import com.baafoo.core.config.ConfigLoader;
 import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.model.User;
 import com.baafoo.server.api.*;
+import com.baafoo.server.auth.AuthFilter;
 import com.baafoo.server.auth.AuthService;
 import com.baafoo.server.broker.JmsMockBroker;
 import com.baafoo.server.broker.KafkaMockBroker;
@@ -136,6 +137,7 @@ public class BaafooServer {
                         ChannelPipeline p = ch.pipeline();
                         p.addLast(new HttpServerCodec());
                         p.addLast(new HttpObjectAggregator(65536));
+                        p.addLast(new AuthFilter(authService));
                         p.addLast(new ManagementApiHandler(storage, authService));
                         p.addLast(new StaticFileHandler(config.getWebConsolePath()));
                     }
