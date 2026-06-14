@@ -26,6 +26,12 @@ public final class GlobalRouteState {
     public static final int MODE_RECORD_AND_STUB = 3;
 
     public static volatile String SERVER_HOST = "127.0.0.1";
+
+    /** Resolved IP address of SERVER_HOST (e.g., Docker container IP).
+     *  Set lazily when DNS resolution succeeds. Used by isInternal() to
+     *  recognize connections to the server via its container IP. */
+    public static volatile String SERVER_HOST_IP = null;
+
     public static volatile int SERVER_PORT = 8084;
 
     // ---- Protocol stub ports (set from AgentConfig, synced to Bootstrap CL) ----
@@ -117,6 +123,15 @@ public final class GlobalRouteState {
      * If null, no recording wrapping is applied.
      */
     public static volatile java.util.function.BiFunction<java.io.OutputStream, String[], java.io.OutputStream> OUTPUT_STREAM_WRAPPER;
+
+    /**
+     * Bridge function for NIO SocketChannel recording.
+     * Set from the App CL (BaafooAgent) with a real implementation.
+     * Arguments: Object[] { String[] sessionInfo, String direction, String hexData }
+     * where sessionInfo = {sessionId, host, portString}.
+     * If null, NIO recording data is silently dropped.
+     */
+    public static volatile java.util.function.Consumer<Object[]> NIO_RECORDING_HANDLER;
 
     private GlobalRouteState() {}
 
@@ -219,9 +234,14 @@ public final class GlobalRouteState {
     }
 
     public static boolean isInternal(String host, int port) {
-        if (!"127.0.0.1".equals(host) && !"localhost".equals(host)) {
-            return false;
-        }
+        // Recognize connections to the Baafoo server itself (control API + stub ports).
+        // In Docker, SERVER_HOST may be a container name like "server" that resolves
+        // to a container IP (e.g., 172.19.0.2). We check both the hostname and the
+        // resolved IP to cover all cases.
+        boolean isServerHost = "127.0.0.1".equals(host) || "localhost".equals(host)
+                || host.equals(SERVER_HOST)
+                || (SERVER_HOST_IP != null && host.equals(SERVER_HOST_IP));
+        if (!isServerHost) return false;
         if (port == SERVER_PORT) return true;
         if (port == HTTP_PORT || port == TCP_PORT || port == KAFKA_PORT
                 || port == PULSAR_PORT || port == JMS_PORT) return true;
@@ -269,5 +289,19 @@ public final class GlobalRouteState {
      */
     public static String[] getRecordingSession(int socketIdentity) {
         return RECORDING_SESSIONS.get(socketIdentity);
+    }
+
+    /**
+     * Add NIO recording data (called from SocketChannelReadAdvice/SocketChannelWriteAdvice).
+     * Delegates to the NIO_RECORDING_HANDLER bridge function set by the App CL.
+     * @param sessionInfo {sessionId, host, portString}
+     * @param direction "request" or "response"
+     * @param hexData hex string of recorded bytes
+     */
+    public static void addNioRecording(String[] sessionInfo, String direction, String hexData) {
+        java.util.function.Consumer<Object[]> handler = NIO_RECORDING_HANDLER;
+        if (handler != null) {
+            handler.accept(new Object[]{sessionInfo, direction, hexData});
+        }
     }
 }

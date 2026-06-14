@@ -142,7 +142,7 @@ public class BaafooServer {
                     protected void initChannel(SocketChannel ch) {
                         ChannelPipeline p = ch.pipeline();
                         p.addLast(new HttpServerCodec());
-                        p.addLast(new HttpObjectAggregator(65536));
+                        p.addLast(new HttpObjectAggregator(10 * 1024 * 1024));
                         p.addLast(new AuthFilter(authService));
                         p.addLast(new ManagementApiHandler(storage, authService));
                         p.addLast(new StaticFileHandler(config.getWebConsolePath()));
@@ -162,7 +162,7 @@ public class BaafooServer {
                     protected void initChannel(SocketChannel ch) {
                         ChannelPipeline p = ch.pipeline();
                         p.addLast(new HttpServerCodec());
-                        p.addLast(new HttpObjectAggregator(65536));
+                        p.addLast(new HttpObjectAggregator(10 * 1024 * 1024));
                         p.addLast(new HttpStubHandler(storage, config, workerGroup));
                     }
                 });

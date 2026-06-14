@@ -36,19 +36,47 @@ public class PulsarMockBroker {
     private static final Logger log = LoggerFactory.getLogger(PulsarMockBroker.class);
 
     private final int port;
-    private final String host;
     private final EventLoopGroup bossGroup;
     private final EventLoopGroup workerGroup;
     private final PulsarMessageStore messageStore;
     private Channel serverChannel;
 
+    /** Cached broker host resolved from the first client connection. */
+    private volatile String resolvedHost;
+
     public PulsarMockBroker(int port, EventLoopGroup bossGroup, EventLoopGroup workerGroup,
                             StorageService storage) {
         this.port = port;
-        this.host = "localhost";
         this.bossGroup = bossGroup;
         this.workerGroup = workerGroup;
         this.messageStore = new PulsarMessageStore(storage);
+    }
+
+    /**
+     * Resolve the broker host that is reachable from clients.
+     * In Docker networks, this should be the container IP or hostname,
+     * not "localhost" or "127.0.0.1".
+     */
+    private String resolveBrokerHost() {
+        if (resolvedHost != null) {
+            return resolvedHost;
+        }
+        try {
+            java.net.InetAddress addr = java.net.InetAddress.getLocalHost();
+            String hostname = addr.getHostName();
+            String ip = addr.getHostAddress();
+            // Prefer hostname (in Docker, this is the container ID which is resolvable)
+            // over IP if the IP is a loopback address
+            if ("127.0.0.1".equals(ip) || "0.0.0.0".equals(ip)) {
+                resolvedHost = hostname;
+            } else {
+                resolvedHost = ip;
+            }
+            log.info("Pulsar broker host resolved: {}", resolvedHost);
+            return resolvedHost;
+        } catch (Exception e) {
+            return "localhost";
+        }
     }
 
     /**
@@ -66,7 +94,7 @@ public class PulsarMockBroker {
                     protected void initChannel(SocketChannel ch) {
                         ChannelPipeline p = ch.pipeline();
                         p.addLast(new PulsarFrameDecoder());
-                        p.addLast(new PulsarMockBrokerHandler(messageStore, host, port));
+                        p.addLast(new PulsarMockBrokerHandler(messageStore, resolveBrokerHost(), port));
                     }
                 });
 

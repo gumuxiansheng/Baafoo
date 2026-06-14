@@ -51,6 +51,7 @@ class AgentApiHandler implements ResourceHandler {
 
         if (path.equals(API_PREFIX + "agent/poll") && "GET".equals(method)) {
             String agentId = ctx.queryParam("agentId");
+            String environmentParam = ctx.queryParam("environment");
 
             // Resolve agent's environment and mode
             String agentEnvironment = null;
@@ -62,6 +63,13 @@ class AgentApiHandler implements ResourceHandler {
                     if (env != null) mode = env.getMode().getValue();
                     break;
                 }
+            }
+
+            // Fallback: use environment parameter if agentId didn't match
+            if (agentEnvironment == null && environmentParam != null && !environmentParam.isEmpty()) {
+                agentEnvironment = environmentParam;
+                Environment env = ctx.storage.getEnvironmentByName(environmentParam);
+                if (env != null) mode = env.getMode().getValue();
             }
 
             // Only return rules that belong to this agent's environment
@@ -80,6 +88,7 @@ class AgentApiHandler implements ResourceHandler {
             List<RecordingEntry> batch = ctx.mapper.readValue(body,
                     ctx.mapper.getTypeFactory().constructCollectionType(List.class, RecordingEntry.class));
             String agentId = ctx.queryParam("agentId");
+            String environment = ctx.queryParam("environment");
             String agentIp = resolveAgentIp(ctx);
             for (RecordingEntry rec : batch) {
                 if (rec.getAgentId() == null || rec.getAgentId().isEmpty()) {
@@ -87,6 +96,9 @@ class AgentApiHandler implements ResourceHandler {
                 }
                 if (rec.getAgentIp() == null || rec.getAgentIp().isEmpty()) {
                     rec.setAgentIp(agentIp);
+                }
+                if (rec.getEnvironmentId() == null || rec.getEnvironmentId().isEmpty()) {
+                    rec.setEnvironmentId(environment);
                 }
             }
             ctx.storage.addRecordings(batch);

@@ -135,6 +135,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     RecordingEntry rec = RecordingHelper.buildFromStub(result, "http", host, port, method, path, headers, body);
                     rec.setAgentId(agentId);
                     rec.setAgentIp(agentIp);
+                    rec.setEnvironmentId(agentEnvironment);
                     storage.addRecording(rec);
                 }
                 StubResponseRenderer.sendStubResponse(ctx, result.getResponse(), result.getRule().getId(),

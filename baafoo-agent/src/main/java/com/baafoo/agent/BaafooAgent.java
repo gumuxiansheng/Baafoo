@@ -268,8 +268,16 @@ public class BaafooAgent {
                 .type(named("sun.nio.ch.SocketChannelImpl"))
                 .transform((builder, typeDesc, classLoader, module, pd) ->
                         builder.visit(Advice.to(NioSocketConnectAdvice.class)
-                                .on(named("connect").and(takesArguments(1)))));
+                                .on(named("connect").and(takesArguments(1))))
+                        .visit(Advice.to(SocketChannelReadAdvice.class)
+                                .on(named("read").and(takesArguments(1))
+                                        .and(takesArgument(0, named("java.nio.ByteBuffer")))))
+                        .visit(Advice.to(SocketChannelWriteAdvice.class)
+                                .on(named("write").and(takesArguments(1))
+                                        .and(takesArgument(0, named("java.nio.ByteBuffer"))))));
         registry.register("sun.nio.ch.SocketChannelImpl", "NioSocketConnectAdvice", "tcp");
+        registry.register("sun.nio.ch.SocketChannelImpl", "SocketChannelReadAdvice", "tcp-recording");
+        registry.register("sun.nio.ch.SocketChannelImpl", "SocketChannelWriteAdvice", "tcp-recording");
 
         if (cfg.isConsulEnabled()) {
             agentBuilder = agentBuilder
@@ -444,6 +452,8 @@ public class BaafooAgent {
 
             bootGRS.getField("SERVER_HOST").set(null, GlobalRouteState.SERVER_HOST);
 
+            bootGRS.getField("SERVER_HOST_IP").set(null, GlobalRouteState.SERVER_HOST_IP);
+
             bootGRS.getField("SERVER_PORT").setInt(null, GlobalRouteState.SERVER_PORT);
 
             bootGRS.getField("HTTP_PORT").setInt(null, GlobalRouteState.HTTP_PORT);
@@ -454,9 +464,9 @@ public class BaafooAgent {
 
             bootstrapGRSClass = bootGRS;
 
-            log.info("Synced GlobalRouteState fields to Bootstrap CL: CURRENT_MODE={}, SERVER_HOST={}, SERVER_PORT={}, " +
+            log.info("Synced GlobalRouteState fields to Bootstrap CL: CURRENT_MODE={}, SERVER_HOST={}, SERVER_HOST_IP={}, SERVER_PORT={}, " +
                             "HTTP_PORT={}, TCP_PORT={}, KAFKA_PORT={}, PULSAR_PORT={}, JMS_PORT={}",
-                    GlobalRouteState.CURRENT_MODE, GlobalRouteState.SERVER_HOST, GlobalRouteState.SERVER_PORT,
+                    GlobalRouteState.CURRENT_MODE, GlobalRouteState.SERVER_HOST, GlobalRouteState.SERVER_HOST_IP, GlobalRouteState.SERVER_PORT,
                     GlobalRouteState.HTTP_PORT, GlobalRouteState.TCP_PORT, GlobalRouteState.KAFKA_PORT,
                     GlobalRouteState.PULSAR_PORT, GlobalRouteState.JMS_PORT);
         } catch (Exception e) {
@@ -507,6 +517,24 @@ public class BaafooAgent {
             return new RecordingOutputStream(out, sessionId, host, port, recordingBuffer);
         };
 
+        // Set up the NIO_RECORDING_HANDLER bridge function.
+        // This is called from Bootstrap CL advice (SocketChannelReadAdvice/SocketChannelWriteAdvice)
+        // to record NIO SocketChannel read/write data.
+        GlobalRouteState.NIO_RECORDING_HANDLER = (Object[] args) -> {
+            String[] sessionInfo = (String[]) args[0];
+            String direction = (String) args[1];
+            String hexData = (String) args[2];
+            RecordingEntry entry = new RecordingEntry();
+            entry.setSessionId(sessionInfo[0]);
+            entry.setHost(sessionInfo[1]);
+            entry.setPort(Integer.parseInt(sessionInfo[2]));
+            entry.setProtocol("tcp");
+            entry.setDirection(direction);
+            entry.setDataHex(hexData);
+            entry.setRecordedAt(System.currentTimeMillis());
+            recordingBuffer.add(entry);
+        };
+
         // Sync wrapper functions to Bootstrap CL
         syncRecordingWrappersToBootstrapCL();
 
@@ -526,11 +554,13 @@ public class BaafooAgent {
 
             java.lang.reflect.Field iswField = bootGRS.getField("INPUT_STREAM_WRAPPER");
             java.lang.reflect.Field oswField = bootGRS.getField("OUTPUT_STREAM_WRAPPER");
+            java.lang.reflect.Field nioField = bootGRS.getField("NIO_RECORDING_HANDLER");
 
             iswField.set(null, GlobalRouteState.INPUT_STREAM_WRAPPER);
             oswField.set(null, GlobalRouteState.OUTPUT_STREAM_WRAPPER);
+            nioField.set(null, GlobalRouteState.NIO_RECORDING_HANDLER);
 
-            log.info("Synced recording stream wrappers to Bootstrap CL GlobalRouteState");
+            log.info("Synced recording stream wrappers and NIO handler to Bootstrap CL GlobalRouteState");
         } catch (Exception e) {
             log.warn("Failed to sync recording wrappers to Bootstrap CL GlobalRouteState: {}. " +
                     "Stream recording will not work.", e.getMessage());

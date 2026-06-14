@@ -53,6 +53,9 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
     private final StorageService storage;
     private final int brokerPort;
 
+    /** Cached broker host resolved from the first client connection. */
+    private volatile String cachedBrokerHost;
+
     public KafkaProtocolDecoder(KafkaMessageStore messageStore, StorageService storage, int brokerPort) {
         this.messageStore = messageStore;
         this.storage = storage;
@@ -62,6 +65,29 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
         log.debug("Kafka client connected: {}", ctx.channel().remoteAddress());
+        // Resolve broker host from the server's local address on this channel.
+        // This ensures the Metadata response advertises a reachable address
+        // instead of 127.0.0.1 (which doesn't work in Docker networks).
+        if (cachedBrokerHost == null) {
+            try {
+                java.net.InetSocketAddress localAddr = (java.net.InetSocketAddress) ctx.channel().localAddress();
+                String ip = localAddr.getAddress().getHostAddress();
+                // In Docker, the local address is typically the container's IP (e.g., 172.x.x.x)
+                // which is reachable from other containers on the same network.
+                // If it's 0.0.0.0, fall back to hostname resolution.
+                if (!"0.0.0.0".equals(ip) && !"127.0.0.1".equals(ip)) {
+                    cachedBrokerHost = ip;
+                } else {
+                    // Try hostname — in Docker this returns the container ID
+                    // which is resolvable as a Docker network hostname
+                    String hostname = java.net.InetAddress.getLocalHost().getHostName();
+                    cachedBrokerHost = hostname;
+                }
+                log.info("Kafka broker host resolved: {} (from localAddress={})", cachedBrokerHost, localAddr);
+            } catch (Exception e) {
+                log.warn("Failed to resolve broker host from channel: {}", e.getMessage());
+            }
+        }
     }
 
     @Override
@@ -869,10 +895,18 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
     }
 
     private String resolveBrokerHost() {
-        // Always return 127.0.0.1 for the mock broker host in metadata responses.
-        // Using InetAddress.getLocalHost() may return a non-loopback address
-        // (e.g., 192.168.x.x) which the client cannot reach.
-        return "127.0.0.1";
+        // Use the cached broker host resolved from the first client connection.
+        // This ensures the Metadata response advertises a reachable address
+        // (e.g., the Docker container IP like 172.x.x.x) instead of 127.0.0.1.
+        if (cachedBrokerHost != null) {
+            return cachedBrokerHost;
+        }
+        // Fallback: try hostname
+        try {
+            return java.net.InetAddress.getLocalHost().getHostName();
+        } catch (Exception e) {
+            return "127.0.0.1";
+        }
     }
 
     @Override

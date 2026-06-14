@@ -245,7 +245,8 @@ public class JdbcStorageService implements StorageService {
             existing.setEnabled(update.isEnabled());
             existing.setPriority(update.getPriority());
             if (update.getTags() != null) existing.setTags(update.getTags());
-            if (update.getEnvironments() != null) existing.setEnvironments(update.getEnvironments());
+            if (update.getEnvironments() != null && !update.getEnvironments().isEmpty())
+                existing.setEnvironments(update.getEnvironments());
             existing.setVersion(existing.getVersion() + 1);
             existing.setUpdatedAt(System.currentTimeMillis());
 
@@ -459,8 +460,10 @@ public class JdbcStorageService implements StorageService {
 
             if (update.getName() != null) existing.setName(update.getName());
             if (update.getDescription() != null) existing.setDescription(update.getDescription());
-            if (update.getItemIds() != null) existing.setItemIds(update.getItemIds());
-            if (update.getEnvironments() != null) existing.setEnvironments(update.getEnvironments());
+            if (update.getItemIds() != null && !update.getItemIds().isEmpty())
+                existing.setItemIds(update.getItemIds());
+            if (update.getEnvironments() != null && !update.getEnvironments().isEmpty())
+                existing.setEnvironments(update.getEnvironments());
             existing.setActive(update.isActive());
             existing.setUpdatedAt(System.currentTimeMillis());
 

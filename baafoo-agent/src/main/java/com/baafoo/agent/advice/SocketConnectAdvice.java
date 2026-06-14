@@ -43,8 +43,18 @@ public final class SocketConnectAdvice {
             String host = addr.getHostString();
             int port = addr.getPort();
 
-            // Skip internal connections (Baafoo server & stub ports)
+            // Skip internal connections (Baafoo server & stub ports),
+            // but in RECORD mode, register recording for non-HTTP stub ports
+            // (Kafka/Pulsar/JMS connections are redirected here by protocol
+            // interceptors and need Socket-level stream recording).
             if (GlobalRouteState.isInternal(host, port)) {
+                if ((GlobalRouteState.CURRENT_MODE == 2 || GlobalRouteState.CURRENT_MODE == 3)
+                        && port != GlobalRouteState.SERVER_PORT
+                        && port != GlobalRouteState.HTTP_PORT) {
+                    String sessionId = java.util.UUID.randomUUID().toString();
+                    GlobalRouteState.startRecording(System.identityHashCode(socket), sessionId, host, port);
+                    GlobalRouteState.logInfo("[Baafoo] Socket recording (internal): " + host + ":" + port + " (sessionId=" + sessionId + ")");
+                }
                 return;
             }
 
@@ -53,26 +63,34 @@ public final class SocketConnectAdvice {
                 return;
             }
 
-            // Record mode (2=RECORD, 3=RECORD_AND_STUB): allow real connection,
-            // register socket for stream recording
+            // Record mode (2=RECORD, 3=RECORD_AND_STUB): only record connections
+            // that have a matching route. Skip Socket-level recording for HTTP
+            // rules (HTTP has its own protocol-level recorder in HttpURLConnectionAdvice).
+            // Kafka/Pulsar/JMS/TCP rely on Socket-level stream recording.
             if (GlobalRouteState.CURRENT_MODE == 2 || GlobalRouteState.CURRENT_MODE == 3) {
-                String sessionId = java.util.UUID.randomUUID().toString();
-                GlobalRouteState.startRecording(System.identityHashCode(socket), sessionId, host, port);
-                GlobalRouteState.logInfo("[Baafoo] Socket recording: " + host + ":" + port + " (sessionId=" + sessionId + ")");
-
-                // In RECORD_AND_STUB mode, also redirect to stub (connection is recorded
-                // via the stub's passthrough proxy, not here)
-                if (GlobalRouteState.CURRENT_MODE == 3) {
-                    String[] routeValue = GlobalRouteState.lookup(host, port);
-                    if (routeValue == null && !"127.0.0.1".equals(host) && !"localhost".equals(host)) {
-                        String originalDomain = (String) GlobalRouteState.DNS_CACHE.get(host);
-                        if (originalDomain != null) {
-                            routeValue = GlobalRouteState.lookup(originalDomain, port);
-                        }
+                // Look up route first — only record if there's a matching rule
+                String[] routeValue = GlobalRouteState.lookup(host, port);
+                if (routeValue == null && !"127.0.0.1".equals(host) && !"localhost".equals(host)) {
+                    String originalDomain = (String) GlobalRouteState.DNS_CACHE.get(host);
+                    if (originalDomain != null) {
+                        routeValue = GlobalRouteState.lookup(originalDomain, port);
                     }
-                    if (routeValue != null) {
+                }
+
+                if (routeValue != null) {
+                    int targetPort = Integer.parseInt(routeValue[1]);
+                    // Skip Socket-level recording for HTTP — HTTP has its own recorder.
+                    // Kafka/Pulsar/JMS/TCP need Socket-level stream recording.
+                    if (targetPort != GlobalRouteState.HTTP_PORT) {
+                        String sessionId = java.util.UUID.randomUUID().toString();
+                        GlobalRouteState.startRecording(System.identityHashCode(socket), sessionId, host, port);
+                        GlobalRouteState.logInfo("[Baafoo] Socket recording: " + host + ":" + port + " (sessionId=" + sessionId + ")");
+                    }
+
+                    // In RECORD_AND_STUB mode, also redirect to stub
+                    if (GlobalRouteState.CURRENT_MODE == 3) {
                         GlobalRouteState.logInfo("[Baafoo] Socket redirect (record-and-stub): " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
-                        endpoint = new InetSocketAddress(routeValue[0], Integer.parseInt(routeValue[1]));
+                        endpoint = new InetSocketAddress(routeValue[0], targetPort);
                     }
                 }
                 // In pure RECORD mode, don't redirect — connection goes to real target

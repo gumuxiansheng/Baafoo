@@ -104,10 +104,21 @@ public class ControlChannel {
             return;
         }
 
-        // 1. Register with server
-        boolean registered = register();
+        // 1. Register with server (with retries)
+        boolean registered = false;
+        for (int i = 0; i < config.getConnectionRetries(); i++) {
+            registered = register();
+            if (registered) break;
+            if (i < config.getConnectionRetries() - 1) {
+                long backoff = config.getRetryBackoffMs() * (i + 1);
+                log.warn("Registration attempt {}/{} failed, retrying in {}ms...",
+                        i + 1, config.getConnectionRetries(), backoff);
+                try { Thread.sleep(backoff); } catch (InterruptedException e) { break; }
+            }
+        }
         if (!registered) {
-            log.warn("Failed to register with server at {}, will retry", getServerBaseUrl());
+            log.warn("Failed to register with server at {} after {} attempts, will retry via poll",
+                    getServerBaseUrl(), config.getConnectionRetries());
         }
 
         // 2. Start heartbeat
@@ -169,6 +180,10 @@ public class ControlChannel {
 
                     log.info("Registered with server. Agent ID: {}, mode: {}",
                             config.getAgentId(), res.mode);
+
+                    // Retry DNS resolution for SERVER_HOST_IP now that network is confirmed up
+                    com.baafoo.agent.AgentManifest.resolveServerHostIp();
+
                     return true;
                 } else {
                     log.warn("Registration response missing 'data' field: {}", body);
@@ -204,8 +219,17 @@ public class ControlChannel {
 
     private void pollRules() {
         try {
-            String url = getServerBaseUrl() + API_BASE + "/agent/poll?agentId=" +
-                    (config.getAgentId() != null ? config.getAgentId() : "");
+            String agentId = config.getAgentId();
+            String environment = config.getEnvironment();
+            StringBuilder params = new StringBuilder();
+            if (agentId != null && !agentId.trim().isEmpty()) {
+                params.append("agentId=").append(java.net.URLEncoder.encode(agentId, "UTF-8"));
+            }
+            if (environment != null && !environment.isEmpty()) {
+                if (params.length() > 0) params.append("&");
+                params.append("environment=").append(java.net.URLEncoder.encode(environment, "UTF-8"));
+            }
+            String url = getServerBaseUrl() + API_BASE + "/agent/poll?" + params.toString();
 
             HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
             conn.setRequestMethod("GET");
@@ -242,20 +266,31 @@ public class ControlChannel {
     }
 
     /**
-     * Upload recorded data to server.
+     * Upload recorded data to server (batched to avoid oversized requests).
      */
     public void uploadRecordings(List<RecordingEntry> recordings) {
-        try {
-            String json = mapper.writeValueAsString(recordings);
-            HttpURLConnection conn = post(API_BASE + "/agent/recordings?agentId=" + config.getAgentId(), json);
-            int code = conn.getResponseCode();
-            if (code == 200) {
-                log.info("Uploaded {} recordings", recordings.size());
-            } else {
-                log.warn("Recording upload failed: HTTP {}", code);
+        int batchSize = 50;
+        for (int i = 0; i < recordings.size(); i += batchSize) {
+            List<RecordingEntry> batch = recordings.subList(i, Math.min(i + batchSize, recordings.size()));
+            try {
+                String json = mapper.writeValueAsString(batch);
+                HttpURLConnection conn = post(API_BASE + "/agent/recordings?agentId="
+                        + (config.getAgentId() != null ? config.getAgentId() : "")
+                        + "&environment=" + (config.getEnvironment() != null ? config.getEnvironment() : ""),
+                        json);
+                int code = conn.getResponseCode();
+                if (code == 200) {
+                    log.info("Uploaded {} recordings (batch {}/{})", batch.size(),
+                            (i / batchSize) + 1, (recordings.size() + batchSize - 1) / batchSize);
+                } else {
+                    log.warn("Recording upload failed: HTTP {} (batch {}/{})", code,
+                            (i / batchSize) + 1, (recordings.size() + batchSize - 1) / batchSize);
+                    throw new RuntimeException("Upload failed with HTTP " + code);
+                }
+            } catch (Exception e) {
+                log.warn("Recording upload error: {}", e.getMessage());
+                throw new RuntimeException(e);
             }
-        } catch (Exception e) {
-            log.warn("Recording upload error: {}", e.getMessage());
         }
     }
 

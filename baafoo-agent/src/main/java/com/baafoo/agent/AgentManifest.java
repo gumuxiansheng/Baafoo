@@ -75,6 +75,52 @@ public final class AgentManifest {
     public static void setServerHost(String host) {
         serverHost = host;
         com.baafoo.agent.GlobalRouteState.SERVER_HOST = host;
+        // Resolve hostname to IP for isInternal() checks (e.g., Docker container name → IP)
+        resolveServerHostIp();
+    }
+
+    /**
+     * Resolve SERVER_HOST to an IP address and cache it in GlobalRouteState.SERVER_HOST_IP.
+     * This allows isInternal() to recognize connections made via the resolved IP
+     * (e.g., when Docker DNS resolves "server" → "172.19.0.2").
+     * Safe to call multiple times; resolution is only attempted once.
+     */
+    public static void resolveServerHostIp() {
+        String host = serverHost;
+        if (host == null || host.isEmpty() || "127.0.0.1".equals(host) || "localhost".equals(host)) {
+            return; // No need to resolve localhost
+        }
+        if (com.baafoo.agent.GlobalRouteState.SERVER_HOST_IP != null) {
+            return; // Already resolved
+        }
+        try {
+            java.net.InetAddress addr = java.net.InetAddress.getByName(host);
+            String ip = addr.getHostAddress();
+            if (ip != null && !ip.equals(host)) {
+                com.baafoo.agent.GlobalRouteState.SERVER_HOST_IP = ip;
+                // Sync to Bootstrap CL copy of GlobalRouteState
+                syncServerHostIpToBootstrapCL(ip);
+            }
+        } catch (Exception e) {
+            // DNS not available yet (e.g., Docker network not ready); will retry later
+        }
+    }
+
+    /**
+     * Sync SERVER_HOST_IP to the Bootstrap CL copy of GlobalRouteState.
+     * The Bootstrap CL has a separate class instance; its static fields
+     * must be set via reflection.
+     */
+    private static void syncServerHostIpToBootstrapCL(String ip) {
+        try {
+            Class<?> bootGRS = com.baafoo.agent.BaafooAgent.getBootstrapGRSClass();
+            if (bootGRS != null) {
+                java.lang.reflect.Field field = bootGRS.getField("SERVER_HOST_IP");
+                field.set(null, ip);
+            }
+        } catch (Exception e) {
+            // Bootstrap CL not ready yet; will be synced on next syncGlobalRouteStateToBootstrapCL call
+        }
     }
 
     public static void setServerPort(int port) {

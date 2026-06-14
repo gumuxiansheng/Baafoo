@@ -31,37 +31,45 @@ public class AgentResolver {
         List<StorageService.AgentRegistration> agents = storage.listAgents();
         long onlineThreshold = System.currentTimeMillis() - 90000;
 
+        // Extract channel IP for environment matching
+        String channelIp = null;
+        if (ctx != null) {
+            channelIp = resolveAgentIpFromChannel(ctx);
+        }
+
         StorageService.AgentRegistration firstOnline = null;
-        StorageService.AgentRegistration firstNonLoopback = null;
-        StorageService.AgentRegistration anyWithIp = null;
+        StorageService.AgentRegistration matchedByIp = null;
 
         for (StorageService.AgentRegistration agent : agents) {
             if (agent.lastHeartbeat > onlineThreshold) {
                 if (firstOnline == null) {
                     firstOnline = agent;
                 }
-                if (firstNonLoopback == null && agent.agentIp != null
-                        && !agent.agentIp.isEmpty() && !"127.0.0.1".equals(agent.agentIp)) {
-                    firstNonLoopback = agent;
-                }
-                if (anyWithIp == null && agent.agentIp != null && !agent.agentIp.isEmpty()) {
-                    anyWithIp = agent;
+                // Match agent by source IP — this allows the shared stub port
+                // to correctly identify which environment a request comes from
+                if (channelIp != null && channelIp.equals(agent.agentIp)) {
+                    matchedByIp = agent;
                 }
             }
         }
 
-        // Environment from first online agent
-        if (firstOnline != null) {
-            info.environment = firstOnline.environment;
+        // Prefer IP-matched agent for environment resolution
+        StorageService.AgentRegistration resolved = matchedByIp != null ? matchedByIp : firstOnline;
+
+        // Environment from resolved agent
+        if (resolved != null) {
+            info.environment = resolved.environment;
         }
 
         // Agent ID
-        if (firstOnline != null && firstOnline.agentId != null && !firstOnline.agentId.isEmpty()) {
-            info.agentId = firstOnline.agentId;
+        if (resolved != null && resolved.agentId != null && !resolved.agentId.isEmpty()) {
+            info.agentId = resolved.agentId;
         }
 
-        // Agent IP — three-tier fallback
-        if (info.environment != null) {
+        // Agent IP — prefer IP-matched, then environment-matched
+        if (matchedByIp != null) {
+            info.agentIp = matchedByIp.agentIp;
+        } else if (info.environment != null) {
             for (StorageService.AgentRegistration agent : agents) {
                 if (agent.lastHeartbeat > onlineThreshold
                         && info.environment.equals(agent.environment)
@@ -72,19 +80,10 @@ public class AgentResolver {
                 }
             }
         }
-        if (info.agentIp == null && firstNonLoopback != null) {
-            info.agentIp = firstNonLoopback.agentIp;
-        }
-        if (info.agentIp == null && anyWithIp != null) {
-            info.agentIp = anyWithIp.agentIp;
-        }
 
         // Channel IP fallback
-        if (info.agentIp == null && ctx != null) {
-            String channelIp = resolveAgentIpFromChannel(ctx);
-            if (channelIp != null) {
-                info.agentIp = channelIp;
-            }
+        if (info.agentIp == null && channelIp != null) {
+            info.agentIp = channelIp;
         }
 
         return info;
