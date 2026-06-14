@@ -1,357 +1,414 @@
 # Baafoo 竞品分析报告
 
-> **文档版本**: v1.0
-> **创建日期**: 2026-06-01
-> **分析范围**: WireMock、Hoverfly、Mountebank、Mockoon、ApiPost、Postcat
-> **目标**: 识别值得新增的功能特性
+> **文档版本**: v2.0
+> **更新日期**: 2026-06-13
+> **分析范围**: WireMock、Hoverfly、Mountebank、Mockoon、ApiPost/Postcat、**MockForge（新增）**
+> **目标**: 识别值得新增的功能特性，评估竞品威胁
 
 ---
 
 ## 一、竞品格局概览
 
-| 维度 | Baafoo | WireMock | Hoverfly | Mockoon | Mountebank | ApiPost/Postcat |
-|---|---|---|---|---|---|---|
-| **核心定位** | Java Agent 零侵入挡板 | HTTP Mock（Java） | 服务虚拟化/流量录制 | 本地API Mock GUI | 多协议服务虚拟化 | API全生命周期管理 |
-| **侵入性** | ✅ 零侵入（-javaagent） | ❌ 需改代码/端口 | ❌ 需改代码/代理 | ❌ 独立进程 | ❌ 独立进程 | ❌ 独立工具 |
-| **协议覆盖** | HTTP/TCP/Kafka/Pulsar/JMS | HTTP only | HTTP/TCP（有限） | HTTP only | HTTP/TCP/HTTPS | HTTP only |
-| **AI辅助** | ❌ 无 | ❌ 无 | ❌ 无 | ❌ 无 | ❌ 无 | ✅ AiMock（2026新趋势）|
-| **GraphQL** | ❌ N3非目标 | ✅ 扩展支持 | ❌ | ✅ 支持 | ❌ | ✅ 支持 |
-| **团队协作** | ✅ RBAC（v1.0） | 🔶 Cloud版本 | 🔶 Hoverfly Cloud | 🔶 企业版 | ❌ | ✅ Mock分享 |
-| **动态数据** | ❌ 仅模板变量 | ✅ WireMock DSL | 🔶 有限 | ✅ Faker.js | ❌ | ✅ 自动随机值 |
-| **OpenAPI导入** | ❌ 无 | ✅ 支持 | ❌ | ✅ Swagger集成 | ❌ | ✅ 支持 |
-| **流量录制** | ✅ Agent录制 | 🔶 Proxy模式 | ✅ 核心能力 | ❌ | ❌ | ❌ |
-| **CI/CD集成** | P2（v2.0规划） | ✅ 成熟 | ✅ 成熟 | 🔶 有限 | 🔶 有限 | 🔶 有限 |
+| 维度 | Baafoo | MockForge | WireMock | Hoverfly | Mockoon | Mountebank | ApiPost/Postcat |
+|---|---|---|---|---|---|---|---|
+| **核心定位** | Java Agent 零侵入挡板 | 全协议智能Mock平台 | HTTP Mock（Java） | 服务虚拟化/流量录制 | 本地API Mock GUI | 多协议服务虚拟化 | API全生命周期管理 |
+| **技术栈** | Java（Agent+Server） | Rust | Java（Jetty） | Go | Node.js/Electron | Node.js | Electron |
+| **侵入性** | ✅ 零侵入（-javaagent） | ❌ 独立进程/端口代理 | ❌ 需改代码/端口 | ❌ 需改代码/代理 | ❌ 独立进程 | ❌ 独立进程 | ❌ 独立工具 |
+| **HTTP** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **TCP** | ✅ | ✅ | ❌ | 🔶 有限 | ❌ | ✅ | ❌ |
+| **Kafka** | ✅ | ✅（wire-compatible） | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **gRPC** | ❌（v2.0规划） | ✅（含Streaming） | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **GraphQL** | ❌ | ✅（含Subscriptions） | 🔶 扩展 | ❌ | ✅ | ❌ | ✅ |
+| **WebSocket** | ❌（v2.0规划） | ✅（Replay+Interactive） | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Pulsar/JMS** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **SMTP/MQTT/FTP** | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **AI辅助** | ❌ | ✅ MockAI+System Gen+Behavioral Sim | ❌ | ❌ | ❌ | ❌ | ✅ AiMock |
+| **OpenAPI导入** | ❌ | ✅（核心能力） | ✅ | ❌ | ✅ | ❌ | ✅ |
+| **动态数据(Faker)** | ❌ | ✅（模板+faker函数） | ✅ WireMock DSL | 🔶 有限 | ✅ Faker.js | ❌ | ✅ |
+| **录制回放** | ✅（Agent录制） | ✅（Proxy录制+replay） | 🔶 Proxy模式 | ✅ 核心能力 | ❌ | ❌ | ❌ |
+| **状态机/有状态Mock** | ❌ | ✅（Scenario State Machines 2.0） | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Chaos工程** | 🔶 延迟模拟 | ✅（Chaos Lab+Reality Slider） | 🔶 有限 | ❌ | ❌ | ❌ | ❌ |
+| **Web控制台** | ✅ | ✅ Admin UI | ✅ | 🔶 | ✅ | 🔶 | ✅ |
+| **团队协作** | ✅ RBAC | ✅ Cloud Workspaces | 🔶 Cloud版本 | 🔶 Hoverfly Cloud | 🔶 企业版 | ❌ | ✅ Mock分享 |
+| **插件体系** | ✅（Plugin jar） | ✅（Plugin System） | 🔶 扩展 | ❌ | ❌ | ❌ | ❌ |
+| **多环境控制** | ✅（环境维度模式管理） | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **规则环境绑定** | ✅（environments字段） | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **CI/CD集成** | P2（v2.0规划） | ✅（MockOps Pipelines） | ✅ | ✅ | 🔶 有限 | 🔶 有限 | 🔶 有限 |
+| **开源许可** | 内部工具 | Apache 2.0 / MIT 双许可 | Apache 2.0 | MIT | MIT | MIT | 🔶 部分免费 |
 
 ---
 
-## 二、竞品详细分析
+## 二、MockForge 深度分析（🔴 核心竞品）
 
-### 2.1 WireMock（Java生态标杆）
+### 2.1 产品定位
 
-**优势**:
-- 成熟稳定，Java生态集成度高
-- 支持动态响应模板（Velocity引擎）
-- 请求验证与流量录制回放
-- Cloud版本支持团队协作
-- 支持OpenAPI/Swagger导入生成规则
-- 支持GraphQL（通过扩展）
+MockForge 定位为**全协议智能Mock平台**，基于 Rust 构建，围绕五大产品支柱（Reality、Contracts、DevX、Cloud、AI）组织功能。它是目前竞品中**功能覆盖最广、AI能力最强**的产品。
 
-**劣势**:
-- 仅支持HTTP协议
-- 需要修改代码或代理配置
-- 多协议支持需要插件扩展
+**官方文档**: https://docs.mockforge.dev/
+**GitHub**: https://github.com/SaaSy-Solutions/mockforge
+**许可**: Apache 2.0 / MIT 双许可（开源）
+**安装**: `cargo install mockforge-cli`
 
-**对标Baafoo**:
-- WireMock的OpenAPI导入、动态模板是Baafoo缺失的能力
-- Baafoo的多协议支持（Kafka/Pulsar/JMS）是WireMock无法覆盖的
+### 2.2 核心能力矩阵
 
----
+#### 协议覆盖（MockForge 全面领先）
 
-### 2.2 Hoverfly（服务虚拟化）
+| 协议 | Baafoo | MockForge | 说明 |
+|---|---|---|---|
+| HTTP/REST | ✅ | ✅ | 双方均支持 |
+| TCP | ✅ | ✅ | 双方均支持 |
+| Kafka | ✅ Mock Broker | ✅ wire-compatible broker | MockForge支持Produce/Fetch/Metadata/GroupCoordination/TopicManagement+故障注入 |
+| Pulsar | ✅ Mock Broker | ❌ | **Baafoo独有优势** |
+| JMS | ✅ Mock Broker | ❌ | **Baafoo独有优势** |
+| gRPC | ❌ | ✅ 含4种Streaming+Proto发现 | MockForge领先 |
+| GraphQL | ❌ | ✅ 含Subscriptions+Schema Stitching | MockForge领先 |
+| WebSocket | ❌ | ✅ Replay+Interactive模式 | MockForge领先 |
+| SMTP | ❌ | ✅ | MockForge独有 |
+| MQTT | ❌ | ✅ | MockForge独有 |
+| FTP | ❌ | ✅ | MockForge独有 |
 
-**优势**:
-- 轻量级服务虚拟化工具
-- 核心能力：流量捕获与回放
-- 支持HTTP/HTTPS/TCP（有限）
-- Hoverfly Cloud支持团队协作
+#### AI能力（MockForge 显著领先）
 
-**劣势**:
-- 仅支持HTTP/TCP
-- 动态响应数据能力有限
-- 2024年曝出CVE-2024-45388任意文件读取漏洞
+| AI功能 | Baafoo | MockForge | 说明 |
+|---|---|---|---|
+| MockAI | ❌ | ✅ | 从OpenAPI/示例自动生成上下文感知响应 |
+| Generative Schema Mode | ❌ | ✅ | JSON → 完整API生态系统 |
+| System Generation | ❌ | ✅ | 自然语言描述 → 20-30 REST端点+4-5角色+6-10生命周期 |
+| Behavioral Simulation | ❌ | ✅ | 用户作为叙事Agent模拟多步交互 |
+| AI Contract Diff | ❌ | ✅ | 自动检测API契约与实际请求差异 |
+| API Architecture Critique | ❌ | ✅ | LLM分析API反模式、冗余、命名问题 |
+| Drift Learning | ❌ | ✅ | Mock从录制流量模式中学习并适应 |
 
-**对标Baafoo**:
-- Hoverfly的流量捕获回放与Baafoo录制功能类似
-- Baafoo的Agent零侵入架构更安全、更易用
+#### 模拟与状态（MockForge 显著领先）
 
----
+| 功能 | Baafoo | MockForge | 说明 |
+|---|---|---|---|
+| 有状态Mock | ❌ | ✅ Scenario State Machines 2.0 | 可视化流程编辑+条件转换+子场景 |
+| VBR Engine | ❌ | ✅ | 虚拟数据库层，自动CRUD+关系映射 |
+| 时间模拟 | ❌ | ✅ Temporal Simulation | 虚拟时钟+时间旅行调试 |
+| World State Engine | ❌ | ✅ | 统一状态可视化（类游戏引擎） |
+| Reality Slider | ❌ | ✅ | 1-5级真实度滑块控制 |
 
-### 2.3 Mockoon（本地API Mock GUI）
+#### Chaos与性能（MockForge 显著领先）
 
-**优势**:
-- 开源免费，GUI界面友好
-- 支持可视化定义API端点
-- 支持动态响应（Faker.js语法）
-- 支持Swagger/OpenAPI导入
-- 支持GraphQL
-- 一键导出Postman集合
+| 功能 | Baafoo | MockForge | 说明 |
+|---|---|---|---|
+| 延迟模拟 | ✅ 固定延迟 | ✅ 正态分布+per-route | MockForge更精细 |
+| 故障注入 | ❌ | ✅ per-route fault injection | MockForge支持概率+多种故障类型 |
+| Kafka故障注入 | ❌ | ✅ produce_throttle/not_leader/offset_out_of_range | MockForge独有 |
+| Reality Profiles | ❌ | ✅ | 预置行业包（电商/金融/IoT） |
+| Performance Mode | ❌ | ✅ | 按N RPS运行场景+延迟记录 |
+| Rate Limiting | ❌ | ✅ | 流量整形 |
 
-**劣势**:
-- 仅支持HTTP协议
-- 独立进程模式，需改端口配置
-- 团队协作能力有限（企业版）
+#### 协作与云（MockForge 显著领先）
 
-**对标Baafoo**:
-- Mockoon的GUI易用性、Faker.js动态数据是Baafoo Web控制台需要借鉴的
-- Baafoo的零侵入 + 多协议是Mockoon无法匹敌的
+| 功能 | Baafoo | MockForge | 说明 |
+|---|---|---|---|
+| RBAC | ✅ | ✅ Cloud Workspaces（Owner/Editor/Viewer） | |
+| 云同步 | ❌ | ✅ 双向sync+watch | |
+| 团队邀请 | ❌ | ✅ invite/remove | |
+| MockOps Pipelines | ❌ | ✅ GitHub Actions式自动化 | |
+| Federation | ❌ | ✅ 多workspace联合 | |
+| Analytics Dashboard | ❌ | ✅ 覆盖率+风险+使用分析 | |
+| Scenario Marketplace | ❌ | ✅ | 规则/场景市场 |
 
----
+### 2.3 MockForge 的局限与弱点
 
-### 2.4 Mountebank（多协议服务虚拟化）
-
-**优势**:
-- 真正的多协议支持（HTTP/TCP/HTTPS/Sockets）
-- 被称为"Over the wire test doubles"
-- 支持跨语言使用
-
-**劣势**:
-- 仅支持HTTP/TCP/HTTPS
-- 不支持Kafka/Pulsar/JMS等消息队列
-- 无AI辅助能力
-- 团队协作能力弱
-
-**对标Baafoo**:
-- Mountebank的多协议支持与Baafoo类似，但Baafoo的Kafka/Pulsar/JMS覆盖更深入
-
----
-
-### 2.5 ApiPost/Postcat（API全生命周期）
-
-**优势**:
-- 动态响应：根据请求参数生成不同响应
-- 自动生成符合字段类型的随机值（手机号、邮箱等）
-- 延迟模拟：可设置响应延迟
-- Mock分享功能：支持前后端并行开发
-- 支持GraphQL
-- 2026年新趋势：AI自动生成符合业务逻辑的API响应（AiMock）
-
-**劣势**:
-- 仅支持HTTP协议
-- 独立工具，需改代码对接
-
-**对标Baafoo**:
-- ApiPost的**动态响应**、**随机数据生成**、**AI辅助**是Baafoo需要重点补强的方向
-- ApiPost的Mock分享功能值得Baafoo借鉴
+1. **无零侵入能力** — 必须修改端口/代理指向MockForge Server，无法像Baafoo通过-javaagent透明拦截
+2. **无Pulsar/JMS支持** — 企业级消息队列仅Baafoo覆盖
+3. **无多环境模式控制** — 没有Baafoo的环境维度模式管理（stub/passthrough/record按环境切换）
+4. **无规则环境绑定** — 没有environments字段细粒度控制
+5. **Rust生态** — 企业Java团队学习成本高，与JVM生态集成不如Baafoo自然
+6. **Cloud功能尚在演进** — 文档标注部分功能"not yet wired into current config struct"，成熟度待观察
+7. **VBR Engine等高级功能可能为Aspirational** — 文档中部分功能标记为Draft/Roadmap，实际交付程度不确定
+8. **性能模式非真实压测** — 文档明确说"don't use it for benchmarks"
 
 ---
 
-## 三、值得新增的功能建议
+## 三、其他竞品简要分析
+
+### 3.1 WireMock（Java生态标杆）
+
+**优势**: 成熟稳定、Java生态集成高、支持OpenAPI导入、动态响应模板（Velocity）、Cloud版本团队协作
+**劣势**: 仅HTTP协议、需修改代码/代理
+**对标**: OpenAPI导入、动态模板是Baafoo缺失能力
+
+### 3.2 Hoverfly（服务虚拟化）
+
+**优势**: 轻量级流量捕获回放
+**劣势**: HTTP/TCP有限、CVE-2024-45388安全漏洞
+**对标**: 录制回放与Baafoo功能类似，但架构不如Agent安全
+
+### 3.3 Mockoon（本地API Mock GUI）
+
+**优势**: GUI友好、Faker.js动态数据、Swagger导入、GraphQL
+**劣势**: 仅HTTP、独立进程
+**对标**: GUI易用性和Faker动态数据值得Baafoo借鉴
+
+### 3.4 Mountebank（多协议服务虚拟化）
+
+**优势**: HTTP/TCP/HTTPS多协议、跨语言
+**劣势**: 无Kafka/Pulsar/JMS
+**对标**: 多协议支持与Baafoo类似但覆盖更浅
+
+### 3.5 ApiPost/Postcat（API全生命周期）
+
+**优势**: 动态响应+随机数据+Mock分享+AI辅助（2026新趋势）
+**劣势**: 仅HTTP
+**对标**: 动态数据、AI辅助、团队分享值得借鉴
+
+---
+
+## 四、竞品威胁评估
+
+### 4.1 MockForge 是最大威胁
+
+MockForge 在**协议广度**（gRPC/GraphQL/WebSocket/SMTP/MQTT/FTP）、**AI能力**（MockAI/System Gen/Behavioral Sim/Drift Learning）、**Chaos工程**、**团队协作**方面全面领先。如果目标用户群体重叠，MockForge是最危险的竞争者。
+
+### 4.2 Baafoo 的护城河仍然有效
+
+1. **Java Agent零侵入** — MockForge无法复制。Baafoo不需要改代码/改配置/改端口，这是根本性差异
+2. **Pulsar/JMS支持** — 企业级消息队列是Baafoo独有领域
+3. **多环境模式控制** — 环境维度模式管理+规则环境绑定是Baafoo独特设计
+4. **JVM生态深度** — Byte Buddy字节码增强、Consul服务发现拦截、Spring Cloud集成是Java团队自然选择
+
+### 4.3 风险：MockForge覆盖了Baafoo的部分优势
+
+- MockForge也有Kafka wire-compatible broker，且故障注入更完善
+- MockForge的VBR Engine提供了Baafoo没有的有状态模拟
+- MockForge的Reality Slider可能替代"模式切换"的简化版需求
+
+---
+
+## 五、值得新增的功能建议（更新版）
+
+### 🔴 P0 紧急（应对MockForge威胁）
+
+#### 5.0.1 OpenAPI/Swagger 规范导入 → 自动生成规则
+
+**紧迫原因**: MockForge将OpenAPI导入作为**核心能力**（OpenAPI-first），这是用户的第一触点。Baafoo缺少此能力意味着规则编写门槛远高于MockForge。
+
+**建议**:
+- `POST /api/rules/import-openapi` API
+- Web控制台"导入OpenAPI规范"按钮
+- 解析OpenAPI 3.0规范，自动生成HTTP规则骨架（路径、method、参数化条件、默认响应）
+- 与Baafoo的`environments`字段自动集成（导入时可选择关联环境）
+
+**影响需求**: R-S7、R-W2
+
+---
+
+#### 5.0.2 动态响应数据（Faker-like能力）
+
+**紧迫原因**: MockForge支持 `{{faker.name.fullName}}`/`{{faker.internet.email}}`/`{{randInt}}`/`{{uuid}}`/`{{now}}` 等丰富的模板函数，Baafoo仅有 `{{path.xxx}}`/`{{query.xxx}}` 基础变量。
+
+**建议**:
+- 响应body模板支持 `{{faker.phone}}`/`{{faker.email}}`/`{{faker.name}}`/`{{faker.address}}`/`{{uuid}}`/`{{now}}`/`{{randInt min max}}`
+- 底层集成Java Faker库（com.github.javafaker:javafaker）
+- 按字段类型自动推断生成策略（email字段→邮箱格式，phone字段→手机号格式）
+
+**影响需求**: R-S2、R-C2、R-W2
+
+---
 
 ### 🔴 P1 高价值（竞品普遍支持，Baafoo缺失）
 
-#### 3.1.1 OpenAPI/Swagger 规范导入 → 自动生成规则
+#### 5.1.1 有状态Mock / 场景状态机
 
-**竞品情况**:
-- WireMock：支持OpenAPI/Swagger导入生成规则
-- Mockoon：支持Swagger/OpenAPI导入
-- ApiPost：支持OpenAPI导入
-
-**Baafoo现状**:
-- 规则需手动编写YAML
-- 无导入能力
+**紧迫原因**: MockForge Scenario State Machines 2.0支持可视化流程编辑+条件转换+子场景复用。Baafoo目前无有状态Mock能力——规则都是无状态的，无法模拟"创建订单→订单状态变为pending→支付后变为paid"这类工作流。
 
 **建议**:
-- 新增 `POST /api/rules/import-openapi` API
-- Web控制台新增"导入OpenAPI规范"功能
-- 解析Swagger/OpenAPI 3.0规范文件，自动生成HTTP规则骨架（路径、method、默认响应）
-- 用户只需补充响应body
+- 新增"场景状态机"概念——定义状态+转换条件+触发规则
+- 规则可绑定"当前状态"条件，仅在状态匹配时触发
+- Web控制台新增状态机可视化编辑器
+- 支持per-resource状态跟踪（如每个订单ID独立状态机）
 
-**优先级**: P1，显著提升规则编写效率
+**优先级**: P1
 
-**影响需求**:
-- R-S7（规则管理REST API）
-- R-W2（规则管理界面）
+**影响需求**: 新增 R-S7.7（场景状态机管理）、R-W7（状态机编辑界面）
 
 ---
 
-#### 3.1.2 动态响应数据（Faker-like能力）
+#### 5.1.2 GraphQL over HTTP支持
 
-**竞品情况**:
-- ApiPost：自动生成手机号、邮箱、地址等随机但符合格式的数据
-- Mockoon：支持Faker.js语法生成动态响应
-
-**Baafoo现状**:
-- 仅支持 `{{path.xxx}}`/`{{query.xxx}}`/`{{header.xxx}}`/`{{body.xxx}}` 模板变量
-- 无随机数据生成能力
+**紧迫原因**: MockForge已完整支持GraphQL（含Schema驱动+Subscriptions+自定义Resolver+Data Source）。Baafoo完全缺失。
 
 **建议**:
-- 响应body模板支持 `{{faker.phone}}`/`{{faker.email}}`/`{{faker.name}}`/`{{faker.address}}` 等函数
-- 底层集成Java Faker库（com.github.javafaker:javafaker）
-- 支持按字段类型自动生成符合格式的随机值
+- Agent已拦截HTTP，只需Server端新增GraphQL查询解析
+- 按Query/Mutation/Subscription匹配规则
+- Schema文件上传+Introspection支持
 
-**优先级**: P1，提升Mock数据真实性
+**优先级**: P1
 
-**影响需求**:
-- R-S2（HTTP Mock Handler）
-- R-W2（规则管理界面，新增"动态数据"按钮）
+**影响需求**: R-S2（新增GraphQL匹配逻辑）、R-C2（新增graphql协议类型）
 
 ---
 
-#### 3.1.3 GraphQL 支持
+#### 5.1.3 gRPC支持（提前至v1.5）
 
-**竞品情况**:
-- Mockoon：支持GraphQL
-- Postcat：支持GraphQL
-- WireMock：通过扩展支持GraphQL
-
-**Baafoo现状**:
-- N3明确不覆盖gRPC/HTTP2
-- GraphQL over HTTP未被提及
+**紧迫原因**: MockForge已支持gRPC全部4种Streaming模式+动态Proto发现。Baafoo原规划v2.0，但gRPC在企业微服务中的普及度提升，建议提前。
 
 **建议**:
-- GraphQL over HTTP本质上是HTTP POST，Agent已能拦截HTTP
-- 只需Server端新增GraphQL查询解析 + 按Query/Mutation匹配规则
-- 可作为v1.5轻量扩展，不必等到v2.0
+- v1.5技术预研：Byte Buddy拦截gRPC Netty层可行性
+- v2.0实现基础Unary + Server Streaming
 
-**优先级**: P1（评估后若成本低则提前）
+**优先级**: P1（预研），P2（实现）
 
-**影响需求**:
-- R-S2（HTTP Mock Handler，新增GraphQL匹配逻辑）
-- R-C2（规则Schema，新增 `graphql` 协议类型）
+---
+
+#### 5.1.4 故障注入 / Chaos工程
+
+**紧迫原因**: MockForge Chaos Lab提供per-route故障注入（概率、延迟分布、错误模式脚本）、Reality Slider、预置行业包。Baafoo仅有固定延迟模拟。
+
+**建议**:
+- 规则新增 `faultInjection` 配置块：
+  - `probability`: 故障触发概率（0.0~1.0）
+  - `delayMs`/`delayStdDevMs`: 延迟+标准差（正态分布）
+  - `httpErrors`: [500, 503] 按概率返回
+  - `kafkaErrors`: produce_not_leader / offset_out_of_range
+- Web控制台新增"Chaos配置"面板
+- 预置行业故障包（电商大促、金融高可用、IoT不稳定网络）
+
+**优先级**: P1
+
+**影响需求**: R-S2、R-S4（Kafka故障注入）、R-S5（Pulsar故障注入）、R-W2
 
 ---
 
 ### 🟡 P2 中等价值（差异化竞争点）
 
-#### 3.2.1 AI 辅助规则生成（2026年新趋势）
+#### 5.2.1 AI辅助规则生成
 
-**竞品情况**:
-- 搜索结果显示"AI自动生成符合业务逻辑的API响应"已成为2026年Mock工具新方向（AiMock类工具出现）
-- ApiPost已开始集成AI能力
-
-**Baafoo现状**:
-- 无AI能力
+**紧迫原因**: MockForge MockAI支持从OpenAPI/示例自动生成上下文感知响应、System Generation支持自然语言→完整API生态系统、Drift Learning支持从流量模式学习。这是2026年最显著的差异化方向。
 
 **建议**:
-- 集成LLM API（可选配置），实现两个场景：
+- 集成LLM API（可选配置），实现：
   - (a) 从录制的真实请求/响应中自动提炼规则
   - (b) 从自然语言描述生成规则YAML
-- 可作为插件式扩展，不强制依赖
-- 支持本地LLM（如Ollama）保护数据隐私
+  - (c) 从OpenAPI Schema生成符合业务逻辑的响应body
+- 支持本地LLM（Ollama）保护数据隐私
+- 可作为Plugin扩展
 
-**优先级**: P2，但建议v1.5开始规划，2026年AI辅助是显著卖点
-
-**影响需求**:
-- 新增 R-S7.8（AI辅助规则生成API）
-- 新增 R-W8（AI辅助规则生成界面）
+**优先级**: P2（但建议v1.5启动技术预研）
 
 ---
 
-#### 3.2.2 规则 GitOps / 版本管理增强
+#### 5.2.2 规则 GitOps / 版本管理增强
 
-**竞品情况**:
-- WireMock Cloud：支持规则与Git仓库同步
-- Postcat：支持云端同步
+**紧迫原因**: MockForge Cloud Workspaces支持Git-style版本控制。PRD已规划但未实现。
 
-**Baafoo现状**:
-- PRD v1.5已规划"规则Git版本管理"，但尚未实现
-- R-S7.4已实现基础版本管理（保留最近10个版本）
-
-**建议**:
-- 提前到v1.5实现基础版——规则变更自动commit到关联Git仓库
-- 支持分支切换对应不同环境
-- Web控制台新增"规则Git历史"页面
-
-**优先级**: P1（PRD已规划，加速落地）
-
-**影响需求**:
-- R-S7.4（规则版本管理与Undo）—— 扩展为Git集成
-- R-W2（规则管理界面）—— 新增"Git历史"按钮
+**建议**: 加速落地，规则变更自动commit到关联Git仓库
 
 ---
 
-#### 3.2.3 团队Mock环境分享 / 规则市场
+#### 5.2.3 团队Mock环境分享 / 场景市场
 
-**竞品情况**:
-- ApiPost有"Mock分享功能"，支持前后端并行开发
-- 支持分享链接、二维码
+**紧迫原因**: MockForge有Scenario Marketplace + Data Scenario Marketplace，支持标签/评分/版本/一键导入。
 
-**Baafoo现状**:
-- 有RBAC权限控制
-- 无规则分享/导出分享链接能力
-
-**建议**:
-- Web控制台新增"分享规则集"功能
-- 生成可导入的分享链接或二维码
-- 支持团队内规则集发布到"内部规则市场"
-- 支持从规则市场一键导入热门规则集
-
-**优先级**: P2
-
-**影响需求**:
-- 新增 R-S7.9（规则分享API）
-- 新增 R-W9（规则市场界面）
+**建议**: Web控制台"分享规则集"功能 + 内部规则市场
 
 ---
 
-### 🟢 P3 低优先级（长远规划）
+#### 5.2.4 MockOps Pipelines / CI自动化
 
-#### 3.3.1 gRPC / WebSocket 支持
+**紧迫原因**: MockForge MockOps Pipelines提供GitHub Actions式自动化——Schema变更→自动重新生成SDK，场景发布→自动推进到测试环境→通知团队。
 
-**竞品情况**:
-- MockServer：支持WebSocket
-- gRPC暂无主流Mock工具完美支持
-
-**Baafoo现状**:
-- N3非目标
-
-**建议**:
-- v2.0规划
-- 但可提前做技术预研（Byte Buddy拦截gRPC netty层是否可行）
+**建议**: v1.5规划CI/CD集成能力
 
 ---
 
-#### 3.3.2 性能测试模拟（非功能）
+### 🟢 P3 低优先级
 
-**竞品情况**:
-- 部分工具支持配置响应延迟，但无负载/压测模拟
-
-**Baafoo现状**:
-- R-S2 AC-07支持延迟配置
-
-**建议**:
-- 扩展为"性能挡板"——支持配置QPS限制、并发连接数限制、带宽限制
-- 用于验证下游慢速/过载场景
-
----
-
-## 四、核心结论
-
-### 4.1 Baafoo 核心护城河
-
-1. **Java Agent零侵入**（-javaagent）是竞品无法复制的优势
-2. **多协议覆盖**（Kafka/Pulsar/JMS）竞品均不支持
-3. **环境维度模式控制** + **规则环境绑定**是独特设计
-4. **Agent录制回放**比Proxy模式更安全、更完整
+| 功能 | 说明 |
+|---|---|
+| WebSocket支持 | v2.0规划 |
+| SMTP/MQTT/FTP | 非核心场景，评估需求后决定 |
+| Reality Slider | 有趣但非核心，Baafoo的环境模式切换可视为简化版 |
+| VBR Engine | 虚拟数据库层，Baafoo的有状态Mock可替代部分需求 |
+| 时间模拟 | 细分场景需求 |
+| 性能测试模式 | 扩展延迟模拟为QPS/并发/带宽限制 |
 
 ---
 
-### 4.2 关键行动建议
+## 六、核心结论
 
-| 建议新增功能 | 优先级 | 竞品对标 | 预计影响 |
+### 6.1 Baafoo vs MockForge 竞争定位
+
+```
+                    ┌──────────────────────────────────────────────────┐
+                    │              MockForge 优势区                     │
+                    │  ┌─────────────────────────────────────────┐     │
+                    │  │ • gRPC/GraphQL/WebSocket/SMTP/MQTT/FTP   │     │
+                    │  │ • AI能力（MockAI/SystemGen/DriftLearn）  │     │
+                    │  │ • Chaos工程（ChaosLab/RealitySlider）    │     │
+                    │  │ • 有状态模拟（VBR/StateMachines/WorldState）│   │
+                    │  │ • 团队协作（Cloud/MockOps/Federation）    │     │
+                    │  │ • 场景市场                                │     │
+                    │  └─────────────────────────────────────────┘     │
+                    └──────────────────────────────────────────────────┘
+
+                    ┌──────────────────────────────────────────────────┐
+                    │              Baafoo 优势区                        │
+                    │  ┌─────────────────────────────────────────┐     │
+                    │  │ • Java Agent 零侵入（核心护城河）         │     │
+                    │  │ • Pulsar / JMS 消息队列支持              │     │
+                    │  │ • 多环境模式控制 + 规则环境绑定          │     │
+                    │  │ • JVM生态深度（ByteBuddy/Consul/Spring） │     │
+                    │  │ • 服务发现拦截（Consul DNS/HTTP）        │     │
+                    │  └─────────────────────────────────────────┘     │
+                    └──────────────────────────────────────────────────┘
+
+                    ┌──────────────────────────────────────────────────┐
+                    │              重叠竞争区                           │
+                    │  ┌─────────────────────────────────────────┐     │
+                    │  │ • HTTP/TCP/Kafka Mock                    │     │
+                    │  │ • OpenAPI导入                            │     │
+                    │  │ • 动态数据/Faker                         │     │
+                    │  │ • 录制回放                               │     │
+                    │  │ • Web控制台                              │     │
+                    │  │ • 插件体系                               │     │
+                    │  └─────────────────────────────────────────┘     │
+                    └──────────────────────────────────────────────────┘
+```
+
+### 6.2 关键行动建议
+
+| 优先级 | 功能 | 竞品对标 | 战略意义 |
 |---|---|---|---|
-| OpenAPI导入自动生成规则 | **P1** | WireMock/Mockoon | ⭐⭐⭐ 大幅降低规则编写门槛 |
-| 动态响应数据(Faker集成) | **P1** | ApiPost | ⭐⭐ 提升Mock数据质量 |
-| GraphQL over HTTP支持 | **P1** | Mockoon/Postcat | ⭐⭐ 扩展协议覆盖 |
-| 规则GitOps版本管理 | **P1** | WireMock Cloud | ⭐⭐⭐ 已规划，加速落地 |
-| AI辅助规则生成 | **P2** | AiMock（新趋势） | ⭐⭐⭐ 2026年差异化卖点 |
-| 团队规则分享 | **P2** | ApiPost | ⭐ 协作增强 |
+| **P0** | OpenAPI导入自动生成规则 | MockForge核心能力 | 消除规则编写门槛差距 |
+| **P0** | 动态响应数据（Faker集成） | MockForge模板函数 | 消除Mock数据质量差距 |
+| **P1** | 有状态Mock/场景状态机 | MockForge State Machines 2.0 | 填补工作流模拟空白 |
+| **P1** | GraphQL支持 | MockForge完整GraphQL | 扩展协议覆盖 |
+| **P1** | Chaos工程/故障注入 | MockForge Chaos Lab | 填补韧性测试空白 |
+| **P1** | gRPC支持（预研） | MockForge gRPC Streaming | 微服务场景刚需 |
+| **P2** | AI辅助规则生成 | MockForge MockAI | 2026差异化卖点 |
+| **P2** | 团队协作/场景市场 | MockForge Cloud/Marketplace | 规模化团队需求 |
+
+### 6.3 战略建议
+
+**短期（v1.5）**: 补齐P0/P1基础能力差距——OpenAPI导入、Faker动态数据、有状态Mock、故障注入、GraphQL。这些是MockForge已经具备的能力，不补齐将在功能对比中处于劣势。
+
+**中期（v2.0）**: 深耕Baafoo护城河——gRPC支持、AI辅助、Pulsar/TDMQ深度集成、Consul Spring Cloud完善。在MockForge不覆盖的领域（零侵入+Pulsar/JMS+多环境控制）建立不可替代性。
+
+**长期**: 评估MockForge的AI和Cloud能力是否值得跟进——MockAI/Drift Learning/Cloud Workspaces是高投入方向，但也是2026年行业趋势。Baafoo可考虑Plugin化AI能力（不内置LLM，但提供AI Plugin接口），降低投入风险。
 
 ---
 
-### 4.3 v1.5 功能优先级调整建议
+## 七、参考资料
 
-**建议将以下功能从P2提前到P1**:
-1. OpenAPI/Swagger导入自动生成规则
-2. 动态响应数据（Faker集成）
-3. GraphQL over HTTP支持（技术预研后若成本低则实施）
-
-**理由**:
-- 竞品普遍支持，是用户期望的基础能力
-- 显著提升规则编写效率和Mock数据质量
-- 与Baafoo核心护城河（零侵入 + 多协议）不冲突，是体验层增强
-
----
-
-## 五、参考资料
-
-1. [模拟服务与虚拟化工具深度解析:WireMock/MockServer/Mountebank技术全景](https://blog.csdn.net/2501_94449023/article/details/156485076)
-2. [不用再写Mock了!AI自动生成符合业务逻辑的API响应](https://blog.csdn.net/2501_94261392/article/details/157023853)
-3. [5分钟上手!Postcat:2025最火开源API客户端](https://blog.csdn.net/gitblog_01403/article/details/150057894)
-4. [mountebank:终极服务虚拟化工具 - 10分钟快速入门指南](https://blog.csdn.net/gitblog_01120/article/details/153662168)
-5. [团队协作神器:用ApiPost的Mock分享功能让前后端并行开发](https://blog.csdn.net/k5l6m/article/details/154758513)
-6. Baafoo PRD v2.2 (`C:\Dev\Projects\Baafoo\.workmemo\2_prd\baafoo-prd.md`)
+1. MockForge 官方文档: https://docs.mockforge.dev/index.html
+2. MockForge HTTP Mocking: https://docs.mockforge.dev/user-guide/http-mocking.html
+3. MockForge Advanced Features: https://docs.mockforge.dev/user-guide/advanced-features.html
+4. MockForge gRPC Mocking: https://docs.mockforge.dev/user-guide/grpc-mocking.html
+5. MockForge Kafka Mocking: https://docs.mockforge.dev/user-guide/kafka-mocking.html
+6. MockForge GraphQL Mocking: https://docs.mockforge.dev/user-guide/graphql-mocking.html
+7. MockForge Cloud Workspaces: https://docs.mockforge.dev/user-guide/cloud-workspaces.html
+8. [模拟服务与虚拟化工具深度解析](https://blog.csdn.net/2501_94449023/article/details/156485076)
+9. [不用再写Mock了!AI自动生成符合业务逻辑的API响应](https://blog.csdn.net/2501_94261392/article/details/157023853)
+10. [5分钟上手!Postcat:2025最火开源API客户端](https://blog.csdn.net/gitblog_01403/article/details/150057894)
+11. [团队协作神器:用ApiPost的Mock分享功能让前后端并行开发](https://blog.csdn.net/k5l6m/article/details/154758513)
+12. Baafoo PRD v2.2 (`C:\Dev\Projects\Baafoo\.workmemo\2_prd\baafoo-prd.md`)
 
 ---
 
-*本文档为Baafoo竞品分析v1.0，将根据市场动态和产品迭代持续更新。*
+*本文档为Baafoo竞品分析v2.0，新增MockForge深度分析，更新功能建议优先级。*

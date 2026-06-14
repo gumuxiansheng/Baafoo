@@ -1,0 +1,68 @@
+# =============================================================================
+# Baafoo Docker Compose - 生产/开发环境
+# 注意：已添加自定义网络，容器间通过服务名通信
+# =============================================================================
+version: "3.8"
+
+networks:
+  baafoo-net:
+    driver: bridge
+
+services:
+  # Baafoo Server（Web控制台 + API + 协议Mock）
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: baafoo-server
+    networks:
+      - baafoo-net
+    ports:
+      - "8084:8084"
+      - "9000:9000"  # HTTP mock
+      - "9001:9001"  # TCP mock
+      - "9002:9002"  # Kafka mock
+      - "9003:9003"  # Pulsar mock
+      - "9004:9004"  # JMS mock
+    environment:
+      - BAAFOO_HTTP_PORT=${BAAFOO_HTTP_PORT:-8084}
+      - BAAFOO_DB_TYPE=${BAAFOO_DB_TYPE:-h2}
+      # ✅ PostgreSQL 模式使用服务名 postgres
+      - BAAFOO_DB_URL=${BAAFOO_DB_URL:-jdbc:postgresql://postgres:5432/baafoo}
+      - BAAFOO_DB_USERNAME=${BAAFOO_DB_USERNAME:-baafoo}
+      - BAAFOO_DB_PASSWORD=${BAAFOO_DB_PASSWORD:-baafoo}
+      - JAVA_OPTS=${JAVA_OPTS:--Xms256m -Xmx512m}
+    volumes:
+      - baafoo-data:/home/baafoo/.baafoo
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    restart: unless-stopped
+
+  # PostgreSQL（可选，默认用H2）
+  postgres:
+    image: postgres:15-alpine
+    container_name: baafoo-postgres
+    networks:
+      - baafoo-net
+    environment:
+      - POSTGRES_DB=baafoo
+      - POSTGRES_USER=baafoo
+      - POSTGRES_PASSWORD=baafoo
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U baafoo -d baafoo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    profiles:
+      - postgres
+
+volumes:
+  baafoo-data:
+  postgres-data:

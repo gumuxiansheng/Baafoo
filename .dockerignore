@@ -1,0 +1,16 @@
+node_modules/
+dist/
+target/
+*.jar
+*.class
+.git/
+.github/
+.vscode/
+.deploy/
+.review/
+.workbuddy/
+.workmemo/
+data/
+logs/
+tmp-*.json
+*.log

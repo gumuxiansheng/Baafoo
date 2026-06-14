@@ -189,6 +189,7 @@ public class FileStorage {
     }
 
     public Environment getEnvironmentByName(String name) {
+        if (name == null) return null;
         for (Environment env : environments.values()) {
             if (env.getName().equalsIgnoreCase(name)) return env;
         }
