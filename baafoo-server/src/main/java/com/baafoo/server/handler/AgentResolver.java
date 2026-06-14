@@ -123,7 +123,7 @@ public class AgentResolver {
 
     /**
      * Filter rules by agent environment.
-     * Rules with no environment association are excluded (not yet assigned to any environment).
+     * Rules with no environment association are treated as global rules (included for all environments).
      * Rules with environments are only included if the agent's environment matches.
      */
     public List<Rule> filterRulesByEnvironment(List<Rule> rules, String agentEnvironment) {
@@ -132,6 +132,8 @@ public class AgentResolver {
             if (!rule.isEnabled()) continue;
             List<String> envs = rule.getEnvironments();
             if (envs == null || envs.isEmpty()) {
+                // Global rule — applies to all environments
+                filtered.add(rule);
                 continue;
             }
             if (agentEnvironment != null && envs.contains(agentEnvironment)) {

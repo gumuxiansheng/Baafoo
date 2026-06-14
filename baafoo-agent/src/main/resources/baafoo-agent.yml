@@ -20,7 +20,7 @@ server:
 agentId: ""
 
 # Environment name this agent belongs to
-environment: "default"
+environment: "test-env"
 
 # Heartbeat interval in seconds
 heartbeatIntervalSec: 30

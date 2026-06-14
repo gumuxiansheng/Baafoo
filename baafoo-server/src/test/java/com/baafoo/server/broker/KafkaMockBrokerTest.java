@@ -102,11 +102,19 @@ public class KafkaMockBrokerTest {
         int brokerCount = response.readInt();
         assertEquals("Should have 1 broker", 1, brokerCount);
 
-        // Read broker: host, port, broker_id
+        // Read broker: broker_id, host, port, rack (matching server output order)
+        int brokerId = response.readInt();
         String host = readNullableString(response);
         int port = response.readInt();
-        int brokerId = response.readInt();
         assertEquals("Broker port should match", TEST_PORT, port);
+        // rack (v1+)
+        readNullableString(response);
+
+        // cluster_id (v2+)
+        readNullableString(response);
+
+        // controller_id (v1+)
+        response.readInt();
 
         // Topic metadata array
         int topicCount = response.readInt();
@@ -128,10 +136,7 @@ public class KafkaMockBrokerTest {
         int correlationId = produceResponse.readInt();
         assertEquals(1, correlationId);
 
-        // throttle_time_ms (v1+, comes before topics in Kafka protocol)
-        produceResponse.readInt();
-
-        // Topics array
+        // Topics array (server writes topics BEFORE throttle_time_ms)
         int topicCount = produceResponse.readInt();
         assertEquals(1, topicCount);
 
@@ -141,14 +146,21 @@ public class KafkaMockBrokerTest {
         int partitionCount = produceResponse.readInt();
         assertEquals(1, partitionCount);
 
-        short errorCode = produceResponse.readShort();
-        assertEquals("Produce error code should be 0", 0, errorCode);
-
+        // Server writes partition_index BEFORE error_code
         int partition = produceResponse.readInt();
         assertEquals(0, partition);
 
+        short errorCode = produceResponse.readShort();
+        assertEquals("Produce error code should be 0", 0, errorCode);
+
         long offset = produceResponse.readLong();
         assertTrue("Offset should be >= 0", offset >= 0);
+
+        // log_append_time_ms (v2+)
+        produceResponse.readLong();
+
+        // throttle_time_ms (v1+, comes AFTER topics in server output)
+        produceResponse.readInt();
 
         // Now fetch the message
         ByteBuf fetchResponse = sendRequest(buildFetchRequest("test-topic", 0, 0));

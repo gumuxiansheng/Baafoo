@@ -1,5 +1,6 @@
 package com.baafoo.agent;
 
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
@@ -69,6 +70,13 @@ public final class GlobalRouteState {
      * cache for route-lookup fallback, so occasional full clears are acceptable.
      */
     public static final ConcurrentHashMap<String, String> DNS_CACHE = new ConcurrentHashMap<String, String>();
+
+    /**
+     * ThreadLocal for passing DNS redirect target from OnMethodEnter to OnMethodExit.
+     * Set when a hostname matches a route, so that if DNS resolution fails,
+     * we can provide a fake resolution pointing to the stub server.
+     */
+    public static final ThreadLocal<String> DNS_REDIRECT_TARGET = new ThreadLocal<String>();
 
     /** Maximum number of entries in {@link #DNS_CACHE} */
     private static final int MAX_DNS_CACHE_SIZE = 10000;
@@ -178,6 +186,21 @@ public final class GlobalRouteState {
         HostPort hostOnly = ROUTES.get(host);
         if (hostOnly != null) {
             return new String[]{hostOnly.host, String.valueOf(hostOnly.port)};
+        }
+        return null;
+    }
+
+    public static HostPort lookupByHost(String host) {
+        if (host == null) return null;
+        // Check host-only entries first
+        HostPort hostOnly = ROUTES.get(host);
+        if (hostOnly != null) return hostOnly;
+        // Check host:port entries
+        String prefix = host + ":";
+        for (Map.Entry<String, HostPort> entry : ROUTES.entrySet()) {
+            if (entry.getKey().startsWith(prefix)) {
+                return entry.getValue();
+            }
         }
         return null;
     }

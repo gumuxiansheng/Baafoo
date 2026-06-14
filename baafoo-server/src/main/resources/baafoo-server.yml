@@ -54,6 +54,7 @@ unmatchedDefault: passthrough
 # type: "h2" (embedded, default) or "postgresql" (external)
 database:
   type: h2
+  url: "jdbc:h2:mem:baafoo;DB_CLOSE_DELAY=-1"
   # For PostgreSQL, set url, username, password
   # url: jdbc:postgresql://localhost:5432/baafoo
   # username: postgres

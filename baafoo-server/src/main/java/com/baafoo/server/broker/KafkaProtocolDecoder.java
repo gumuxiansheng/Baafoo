@@ -41,6 +41,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
     private static final short DESCRIBE_GROUPS = 15;
     private static final short LIST_GROUPS = 16;
     private static final short API_VERSIONS = 18;
+    private static final short INIT_PRODUCER_ID = 22;
     private static final short DESCRIBE_CONFIGS = 32;
 
     // Kafka error codes
@@ -72,7 +73,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         int correlationId = msg.readInt();
         String clientId = readNullableString(msg);
 
-        log.debug("Kafka request: apiKey={}, apiVersion={}, correlationId={}, clientId={}",
+        log.info("Kafka request: apiKey={}, apiVersion={}, correlationId={}, clientId={}",
                 apiKey, apiVersion, correlationId, clientId);
 
         ByteBuf response;
@@ -89,6 +90,9 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                     break;
                 case API_VERSIONS:
                     response = handleApiVersions(apiVersion, correlationId);
+                    break;
+                case INIT_PRODUCER_ID:
+                    response = handleInitProducerId(msg, apiVersion, correlationId);
                     break;
                 case OFFSET_COMMIT:
                     response = handleOffsetCommit(apiVersion, correlationId);
@@ -138,9 +142,21 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
     private ByteBuf handleMetadata(ByteBuf msg, short apiVersion, int correlationId) {
         // Request: [topics array] + allow_auto_topic_creation (v4+)
         int topicCount = msg.readInt();
+        log.info("Metadata request: apiVersion={}, topicCount={}", apiVersion, topicCount);
         List<String> topics = new ArrayList<String>();
-        for (int i = 0; i < topicCount; i++) {
-            topics.add(readNullableString(msg));
+        if (topicCount < 0) {
+            // null array = request all topics; return empty for mock
+            log.info("Metadata request: null topic array (all topics requested)");
+        } else {
+            for (int i = 0; i < topicCount; i++) {
+                String t = readNullableString(msg);
+                topics.add(t);
+                log.info("Metadata request: topic[{}]={}", i, t);
+            }
+        }
+        // v4+: allow_auto_topic_creation (boolean)
+        if (apiVersion >= 4) {
+            if (msg.isReadable()) msg.readByte();
         }
 
         // Build response
@@ -156,21 +172,33 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
         // Brokers array (1 broker = ourselves)
         buf.writeInt(1); // array count
+        buf.writeInt(0); // broker_id = 0
         writeNullableString(buf, resolveBrokerHost());
         buf.writeInt(brokerPort);
-        buf.writeInt(0); // broker_id = 0
+        // rack (v1+)
+        if (apiVersion >= 1) {
+            writeNullableString(buf, null); // no rack
+        }
 
-        // Cluster authorized operations (v8+)
-        if (apiVersion >= 8) {
-            buf.writeInt(0);
+        // cluster_id (v2+)
+        if (apiVersion >= 2) {
+            writeNullableString(buf, "baafoo-mock-cluster");
+        }
+
+        // controller_id (v1+)
+        if (apiVersion >= 1) {
+            buf.writeInt(0); // controller is broker 0
         }
 
         // Topic metadata array
         buf.writeInt(topics.size());
+        log.info("Metadata response: returning {} topics, brokerHost={}, brokerPort={}", topics.size(), resolveBrokerHost(), brokerPort);
         for (String topic : topics) {
             buf.writeShort(NONE); // error_code
             writeNullableString(buf, topic);
-            buf.writeBoolean(false); // is_internal (v1+)
+            if (apiVersion >= 1) {
+                buf.writeBoolean(false); // is_internal
+            }
 
             // Partition array — 1 partition per topic
             buf.writeInt(1); // partition count
@@ -194,6 +222,11 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             }
         }
 
+        // Cluster authorized operations (v8+) — must come AFTER topic_metadata array
+        if (apiVersion >= 8) {
+            buf.writeInt(0);
+        }
+
         return frameResponse(buf);
     }
 
@@ -204,8 +237,9 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         if (apiVersion >= 3) {
             readNullableString(msg); // transactional_id
         }
-        msg.readShort(); // acks
-        msg.readInt(); // timeout_ms
+        short acks = msg.readShort(); // acks
+        int timeoutMs = msg.readInt(); // timeout_ms
+        log.info("Produce request: apiVersion={}, acks={}, timeoutMs={}", apiVersion, acks, timeoutMs);
 
         int topicCount = msg.readInt();
         // Collect results for response
@@ -242,25 +276,25 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             results.add(new ProduceTopicResult(topic, partitionResults));
         }
 
+        // Check for remaining bytes in request (indicates parsing issue)
+        if (msg.isReadable()) {
+            log.warn("Produce request has {} remaining bytes after parsing! This indicates a request parsing issue.", msg.readableBytes());
+        }
+
         // Build response
         ByteBuf buf = Unpooled.buffer();
         buf.writeInt(correlationId);
 
-        // throttle_time_ms (v1+, comes before topics in Kafka protocol)
-        if (apiVersion >= 1) {
-            buf.writeInt(0);
-        }
-
-        // Topics array
+        // Topics array (comes BEFORE throttle_time_ms in Produce response)
         buf.writeInt(results.size());
         for (ProduceTopicResult topicResult : results) {
             writeNullableString(buf, topicResult.topic);
             buf.writeInt(topicResult.partitions.size());
             for (ProducePartitionResult partResult : topicResult.partitions) {
+                buf.writeInt(partResult.partition); // index (partition_index) — comes BEFORE error_code
                 buf.writeShort(NONE); // error_code
-                buf.writeInt(partResult.partition);
-                buf.writeLong(partResult.offset);
-                // timestamp (v2+)
+                buf.writeLong(partResult.offset); // base_offset
+                // log_append_time_ms (v2+)
                 if (apiVersion >= 2) {
                     buf.writeLong(System.currentTimeMillis());
                 }
@@ -271,7 +305,15 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             }
         }
 
-        return frameResponse(buf);
+        // throttle_time_ms (v1+) — comes AFTER topics array in Produce response
+        if (apiVersion >= 1) {
+            buf.writeInt(0);
+        }
+
+        log.info("Produce response: {} topics, apiVersion={}", results.size(), apiVersion);
+        ByteBuf framed = frameResponse(buf);
+        log.info("Produce response hex: {}", io.netty.buffer.ByteBufUtil.hexDump(framed));
+        return framed;
     }
 
     // --- Fetch (API key 1) ---
@@ -482,11 +524,12 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         buf.writeInt(correlationId);
         buf.writeShort(NONE); // error_code
 
-        // Supported API versions
+        // Supported API versions — max versions limited to non-compact format
+        // (v9+ uses compact format with varint lengths which we don't implement)
         int[][] supportedApis = {
-                {PRODUCE, 0, 9},
-                {FETCH, 0, 12},
-                {METADATA, 0, 12},
+                {PRODUCE, 0, 3},
+                {FETCH, 0, 11},
+                {METADATA, 0, 8},
                 {OFFSET_COMMIT, 0, 8},
                 {OFFSET_FETCH, 0, 8},
                 {FIND_COORDINATOR, 0, 4},
@@ -497,6 +540,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 {DESCRIBE_GROUPS, 0, 5},
                 {LIST_GROUPS, 0, 4},
                 {API_VERSIONS, 0, 3},
+                {INIT_PRODUCER_ID, 0, 1},
                 {DESCRIBE_CONFIGS, 0, 4}
         };
 
@@ -511,6 +555,31 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         if (apiVersion >= 1) {
             buf.writeInt(0);
         }
+
+        return frameResponse(buf);
+    }
+
+    // --- InitProducerId (API key 22) ---
+
+    private ByteBuf handleInitProducerId(ByteBuf msg, short apiVersion, int correlationId) {
+        // Request: transactional_id (nullable string) + transaction_timeout_ms (int32)
+        // v3+: producer_id (int64) + producer_epoch (int16)
+        readNullableString(msg); // transactional_id
+        msg.readInt(); // transaction_timeout_ms
+        if (apiVersion >= 3) {
+            msg.readLong(); // producer_id
+            msg.readShort(); // producer_epoch
+        }
+
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeInt(correlationId);
+
+        // throttle_time_ms — present in ALL versions
+        buf.writeInt(0);
+
+        buf.writeShort(NONE); // error_code
+        buf.writeLong(1); // producer_id (arbitrary non-zero value)
+        buf.writeShort(0); // producer_epoch
 
         return frameResponse(buf);
     }
@@ -800,11 +869,10 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
     }
 
     private String resolveBrokerHost() {
-        try {
-            return java.net.InetAddress.getLocalHost().getHostAddress();
-        } catch (Exception e) {
-            return "127.0.0.1";
-        }
+        // Always return 127.0.0.1 for the mock broker host in metadata responses.
+        // Using InetAddress.getLocalHost() may return a non-loopback address
+        // (e.g., 192.168.x.x) which the client cannot reach.
+        return "127.0.0.1";
     }
 
     @Override

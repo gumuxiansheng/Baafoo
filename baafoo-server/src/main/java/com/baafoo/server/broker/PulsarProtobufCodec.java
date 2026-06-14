@@ -22,113 +22,152 @@ import java.util.List;
  *   <li>Wire type 2 = length-delimited (string, bytes, embedded message)</li>
  * </ul>
  *
- * <h3>PulsarBaseCommand field numbers (from PulsarApi.proto)</h3>
+ * <h3>PulsarBaseCommand field numbers (Pulsar 2.10.x lightproto)</h3>
  * <pre>
- *   Type type                          = 1;
- *   Message message                    = 2;
- *   Ping ping                          = 3;
- *   Pong pong                          = 4;
- *   Connect connect                    = 5;
- *   Connected connected                = 6;
- *   Subscribe subscribe                = 7;
- *   Unsubscribe unsubscribe            = 8;
- *   Seek seek                          = 9;
- *   Producer producer                  = 10;
- *   Ack ack                            = 11;
- *   Close close                        = 12;
- *   Flow flow                          = 13;
- *   Send send                          = 14;
- *   SendError sendError                = 15;
- *   SendReceipt sendReceipt            = 16;
- *   LookupTopic lookupTopic            = 17;
- *   PartitionMetadataRequest partitionMetadataRequest = 18;
- *   PartitionMetadataResponse partitionMetadataResponse = 19;
- *   LookupTopicResponse lookupTopicResponse = 20;
- *   ConsumerStats consumerStats        = 21;
- *   GetTopicsOfNamespace getTopicsOfNamespace = 22;
- *   GetSchema getSchema                = 23;
- *   GetSchemaResponse getSchemaResponse = 24;
- *   AuthChallenge authChallenge        = 25;
+ *   Type type                              = 1;
+ *   Connect connect                        = 2;
+ *   Connected connected                    = 3;
+ *   Subscribe subscribe                    = 4;
+ *   Producer producer                      = 5;
+ *   Send send                              = 6;
+ *   SendReceipt sendReceipt                = 7;
+ *   SendError sendError                    = 8;
+ *   Message message                        = 9;
+ *   Ack ack                                = 10;
+ *   Flow flow                              = 11;
+ *   Unsubscribe unsubscribe                = 12;
+ *   Success success                        = 13;
+ *   Error error                            = 14;
+ *   CloseProducer closeProducer            = 15;
+ *   CloseConsumer closeConsumer            = 16;
+ *   ProducerSuccess producerSuccess        = 17;
+ *   Ping ping                              = 18;
+ *   Pong pong                              = 19;
+ *   RedeliverUnacknowledgedMessages        = 20;
+ *   PartitionMetadata partitionMetadata    = 21;
+ *   PartitionMetadataResponse              = 22;
+ *   LookupTopic lookupTopic                = 23;
+ *   LookupTopicResponse lookupTopicResponse= 24;
+ *   ConsumerStats consumerStats            = 25;
+ *   ConsumerStatsResponse                  = 26;
+ *   ReachedEndOfTopic                      = 27;
+ *   Seek seek                              = 28;
+ *   GetLastMessageId                       = 29;
+ *   GetLastMessageIdResponse               = 30;
+ *   ActiveConsumerChange                   = 31;
+ *   GetTopicsOfNamespace                   = 32;
+ *   GetTopicsOfNamespaceResponse           = 33;
+ *   GetSchema                              = 34;
+ *   GetSchemaResponse                      = 35;
+ *   AuthChallenge                          = 36;
+ *   AuthResponse                           = 37;
+ *   AckResponse                            = 38;
  * </pre>
  *
- * <h3>Pulsar command Type enum values</h3>
+ * <h3>Pulsar command Type enum values (Pulsar 2.10.x lightproto)</h3>
  * <pre>
- *   MESSAGE = 0;  PING = 1;  PONG = 2;
- *   CONNECT = 3;  CONNECTED = 4;
- *   SUBSCRIBE = 5;  UNSUBSCRIBE = 6;  SEEK = 7;
- *   PRODUCER = 8;  ACK = 9;  CLOSE = 10;  FLOW = 11;
- *   SEND = 12;  SEND_ERROR = 13;  SEND_RECEIPT = 14;
- *   LOOKUP = 15;  PARTITIONED_METADATA = 16;
- *   PARTITIONED_METADATA_RESPONSE = 17;
- *   LOOKUP_RESPONSE = 18;
- *   CONSUMER_STATS = 19;
- *   GET_TOPICS_OF_NAMESPACE = 20;
- *   GET_SCHEMA = 21;  GET_SCHEMA_RESPONSE = 22;
- *   AUTH_CHALLENGE = 23;
+ *   CONNECT = 2;  CONNECTED = 3;
+ *   SUBSCRIBE = 4;  PRODUCER = 5;
+ *   SEND = 6;  SEND_RECEIPT = 7;  SEND_ERROR = 8;
+ *   MESSAGE = 9;  ACK = 10;  FLOW = 11;
+ *   UNSUBSCRIBE = 12;  SUCCESS = 13;  ERROR = 14;
+ *   CLOSE_PRODUCER = 15;  CLOSE_CONSUMER = 16;
+ *   PRODUCER_SUCCESS = 17;
+ *   PING = 18;  PONG = 19;
+ *   REDELIVER_UNACKNOWLEDGED_MESSAGES = 20;
+ *   PARTITIONED_METADATA = 21;
+ *   PARTITIONED_METADATA_RESPONSE = 22;
+ *   LOOKUP = 23;  LOOKUP_RESPONSE = 24;
+ *   CONSUMER_STATS = 25;  CONSUMER_STATS_RESPONSE = 26;
+ *   REACHED_END_OF_TOPIC = 27;
+ *   SEEK = 28;
+ *   GET_TOPICS_OF_NAMESPACE = 32;
+ *   GET_TOPICS_OF_NAMESPACE_RESPONSE = 33;
+ *   AUTH_CHALLENGE = 36;  AUTH_RESPONSE = 37;
  * </pre>
  */
 final class PulsarProtobufCodec {
 
-    // ---- PulsarBaseCommand Type enum ----
-    static final int TYPE_MESSAGE = 0;
-    static final int TYPE_PING = 1;
-    static final int TYPE_PONG = 2;
-    static final int TYPE_CONNECT = 3;
-    static final int TYPE_CONNECTED = 4;
-    static final int TYPE_SUBSCRIBE = 5;
-    static final int TYPE_UNSUBSCRIBE = 6;
-    static final int TYPE_SEEK = 7;
-    static final int TYPE_PRODUCER = 8;
-    static final int TYPE_ACK = 9;
-    static final int TYPE_CLOSE = 10;
+    // ---- PulsarBaseCommand Type enum (Pulsar 2.10.x lightproto) ----
+    static final int TYPE_CONNECT = 2;
+    static final int TYPE_CONNECTED = 3;
+    static final int TYPE_SUBSCRIBE = 4;
+    static final int TYPE_PRODUCER = 5;
+    static final int TYPE_SEND = 6;
+    static final int TYPE_SEND_RECEIPT = 7;
+    static final int TYPE_SEND_ERROR = 8;
+    static final int TYPE_MESSAGE = 9;
+    static final int TYPE_ACK = 10;
     static final int TYPE_FLOW = 11;
-    static final int TYPE_SEND = 12;
-    static final int TYPE_SEND_ERROR = 13;
-    static final int TYPE_SEND_RECEIPT = 14;
-    static final int TYPE_LOOKUP = 15;
-    static final int TYPE_PARTITIONED_METADATA = 16;
-    static final int TYPE_PARTITIONED_METADATA_RESPONSE = 17;
-    static final int TYPE_LOOKUP_RESPONSE = 18;
-    static final int TYPE_CONSUMER_STATS = 19;
-    static final int TYPE_GET_TOPICS_OF_NAMESPACE = 20;
-    static final int TYPE_GET_SCHEMA = 21;
-    static final int TYPE_GET_SCHEMA_RESPONSE = 22;
-    static final int TYPE_AUTH_CHALLENGE = 23;
-    static final int TYPE_PRODUCER_SUCCESS = 24;
-    static final int TYPE_SUCCESS = 25;
+    static final int TYPE_UNSUBSCRIBE = 12;
+    static final int TYPE_SUCCESS = 13;
+    static final int TYPE_ERROR = 14;
+    static final int TYPE_CLOSE_PRODUCER = 15;
+    static final int TYPE_CLOSE_CONSUMER = 16;
+    static final int TYPE_PRODUCER_SUCCESS = 17;
+    static final int TYPE_PING = 18;
+    static final int TYPE_PONG = 19;
+    static final int TYPE_REDELIVER_UNACKNOWLEDGED_MESSAGES = 20;
+    static final int TYPE_PARTITIONED_METADATA = 21;
+    static final int TYPE_PARTITIONED_METADATA_RESPONSE = 22;
+    static final int TYPE_LOOKUP = 23;
+    static final int TYPE_LOOKUP_RESPONSE = 24;
+    static final int TYPE_CONSUMER_STATS = 25;
+    static final int TYPE_GET_TOPICS_OF_NAMESPACE = 32;
+    static final int TYPE_GET_TOPICS_OF_NAMESPACE_RESPONSE = 33;
+    static final int TYPE_AUTH_CHALLENGE = 36;
+    static final int TYPE_AUTH_RESPONSE = 37;
+    // Legacy aliases for handler compatibility
+    static final int TYPE_CLOSE = TYPE_CLOSE_PRODUCER;
 
-    // ---- PulsarBaseCommand field numbers ----
+    // ---- PulsarBaseCommand field numbers (Pulsar 2.10.x lightproto) ----
     static final int FIELD_TYPE = 1;
-    static final int FIELD_CONNECT = 5;
-    static final int FIELD_CONNECTED = 6;
-    static final int FIELD_SUBSCRIBE = 7;
-    static final int FIELD_PRODUCER = 10;
-    static final int FIELD_FLOW = 13;
-    static final int FIELD_SEND = 14;
-    static final int FIELD_SEND_RECEIPT = 16;
-    static final int FIELD_LOOKUP_TOPIC = 17;
-    static final int FIELD_PARTITION_METADATA_REQUEST = 18;
-    static final int FIELD_LOOKUP_TOPIC_RESPONSE = 20;
-    static final int FIELD_GET_TOPICS_OF_NAMESPACE = 22;
+    static final int FIELD_CONNECT = 2;
+    static final int FIELD_CONNECTED = 3;
+    static final int FIELD_SUBSCRIBE = 4;
+    static final int FIELD_PRODUCER = 5;
+    static final int FIELD_SEND = 6;
+    static final int FIELD_SEND_RECEIPT = 7;
+    static final int FIELD_SEND_ERROR = 8;
+    static final int FIELD_MESSAGE = 9;
+    static final int FIELD_ACK = 10;
+    static final int FIELD_FLOW = 11;
+    static final int FIELD_UNSUBSCRIBE = 12;
+    static final int FIELD_SUCCESS = 13;
+    static final int FIELD_ERROR = 14;
+    static final int FIELD_CLOSE_PRODUCER = 15;
+    static final int FIELD_CLOSE_CONSUMER = 16;
+    static final int FIELD_PRODUCER_SUCCESS = 17;
+    static final int FIELD_PING = 18;
+    static final int FIELD_PONG = 19;
+    static final int FIELD_PARTITION_METADATA = 21;
+    static final int FIELD_PARTITION_METADATA_RESPONSE = 22;
+    static final int FIELD_LOOKUP_TOPIC = 23;
+    static final int FIELD_LOOKUP_TOPIC_RESPONSE = 24;
+    static final int FIELD_GET_TOPICS_OF_NAMESPACE = 32;
+    static final int FIELD_GET_TOPICS_OF_NAMESPACE_RESPONSE = 33;
+    static final int FIELD_AUTH_CHALLENGE = 36;
 
-    // ---- Sub-message field numbers ----
-    // Connect: auth_method_name=1, auth_data=2, protocol_version=3, client_version=4
-    // Connected: server_version=1, protocol_version=2
-    // LookupTopic: topic=1, authoritative=2, requestId=3
-    // LookupTopicResponse: brokerServiceUrl=1, response=2, requestId=3
+    // ---- Sub-message field numbers (Pulsar 2.10.x lightproto, verified from bytecode) ----
+    // Connect: client_version=1, auth_method=2, auth_data=3, protocol_version=4, auth_method_name=5
+    // Connected: server_version=1, protocol_version=2, max_message_size=3
+    // LookupTopic: topic=1, requestId=2, authoritative=3
+    // LookupTopicResponse: brokerServiceUrl=1, brokerServiceUrlTls=2, response=3, requestId=4, authoritative=5
     //   LookupType enum: Redirect=0, Connect=1, Failed=2
     // PartitionMetadataRequest: topic=1, requestId=2
-    // PartitionMetadataResponse: partitions=1, requestId=2
-    // Producer: topic=1, producer_name=2, requestId=3
-    // Send: producer_name=1, sequence_id=2, num_messages=3
-    // SendReceipt: producer_name=1, sequence_id=2, message_id=3, highest_sequence_id=4
+    // PartitionMetadataResponse: partitions=1, requestId=2, response=3, error=4, message=5
+    // Producer: topic=1, producerId=2, requestId=3, producerName=4
+    // ProducerSuccess: requestId=1, producerName=2, lastSequenceId=3, schemaVersion=4, topicEpoch=5, producerReady=6
+    // Send: producerId=1, sequenceId=2, numMessages=3
+    // SendReceipt: producerId=1, sequenceId=2, messageId=3, highestSequenceId=4
     //   MessageIdData: ledgerId=1, entryId=2, partition=3, batch_index=4
-    // Subscribe: topic=1, subscription=2, subType=3, consumer_name=4, requestId=5
+    // Subscribe: topic=1, subscription=2, subType=3, consumerId=4, requestId=5, consumerName=6
     //   SubType enum: Exclusive=0, Shared=1, Failover=2
     // Success: requestId=1, schema=2
-    // GetTopicsOfNamespace: namespace=1, requestId=2
-    // GetTopicsOfNamespaceResponse: topics=1 (repeated), requestId=2
-    // Message: ... (complex, handled separately)
+    // GetTopicsOfNamespace: requestId=1, namespace=2, mode=3
+    // GetTopicsOfNamespaceResponse: requestId=1, topics=2
+    // Ping: (empty message, field 18 in BaseCommand)
+    // Pong: (empty message, field 19 in BaseCommand)
 
     // ---- LookupType enum ----
     static final int LOOKUP_TYPE_REDIRECT = 0;
@@ -170,11 +209,18 @@ final class PulsarProtobufCodec {
                     cmd.sendData = readLengthDelimited(data, pos);
                     parseSend(cmd);
                     break;
+                case FIELD_ACK:
+                    cmd.ackData = readLengthDelimited(data, pos);
+                    break;
+                case FIELD_FLOW:
+                    cmd.flowData = readLengthDelimited(data, pos);
+                    parseFlow(cmd);
+                    break;
                 case FIELD_LOOKUP_TOPIC:
                     cmd.lookupTopicData = readLengthDelimited(data, pos);
                     parseLookupTopic(cmd);
                     break;
-                case FIELD_PARTITION_METADATA_REQUEST:
+                case FIELD_PARTITION_METADATA:
                     cmd.partitionMetadataRequestData = readLengthDelimited(data, pos);
                     parsePartitionMetadataRequest(cmd);
                     break;
@@ -182,9 +228,13 @@ final class PulsarProtobufCodec {
                     cmd.getTopicsOfNamespaceData = readLengthDelimited(data, pos);
                     parseGetTopicsOfNamespace(cmd);
                     break;
-                case FIELD_FLOW:
-                    cmd.flowData = readLengthDelimited(data, pos);
-                    parseFlow(cmd);
+                case FIELD_CLOSE_PRODUCER:
+                case FIELD_CLOSE_CONSUMER:
+                    readLengthDelimited(data, pos); // consume the sub-message
+                    break;
+                case FIELD_PING:
+                case FIELD_PONG:
+                    // Ping/Pong have no sub-message data
                     break;
                 default:
                     skipField(data, pos, wireType);
@@ -203,17 +253,20 @@ final class PulsarProtobufCodec {
             int fieldNumber = tag >>> 3;
             int wireType = tag & 0x7;
             switch (fieldNumber) {
-                case 1: // auth_method_name
-                    cmd.authMethodName = readString(data, pos);
+                case 1: // client_version (Pulsar 2.10.x lightproto)
+                    cmd.clientVersion = readString(data, pos);
                     break;
-                case 2: // auth_data
+                case 2: // auth_method (enum)
+                    readVarint(data, pos);
+                    break;
+                case 3: // auth_data (bytes)
                     cmd.authData = readBytes(data, pos);
                     break;
-                case 3: // protocol_version
+                case 4: // protocol_version
                     cmd.protocolVersion = readVarint(data, pos);
                     break;
-                case 4: // client_version
-                    cmd.clientVersion = readString(data, pos);
+                case 5: // auth_method_name
+                    cmd.authMethodName = readString(data, pos);
                     break;
                 default:
                     skipField(data, pos, wireType);
@@ -240,11 +293,14 @@ final class PulsarProtobufCodec {
                 case 3: // subType
                     cmd.subType = readVarint(data, pos);
                     break;
-                case 4: // consumer_name
-                    cmd.consumerName = readString(data, pos);
+                case 4: // consumerId (int64) — skip
+                    readVarint64(data, pos);
                     break;
-                case 5: // requestId
-                    cmd.requestId = readVarint(data, pos);
+                case 5: // requestId (int64)
+                    cmd.requestId = readVarint64(data, pos);
+                    break;
+                case 6: // consumerName
+                    cmd.consumerName = readString(data, pos);
                     break;
                 default:
                     skipField(data, pos, wireType);
@@ -265,11 +321,14 @@ final class PulsarProtobufCodec {
                 case 1: // topic
                     cmd.topic = readString(data, pos);
                     break;
-                case 2: // producer_name
-                    cmd.producerName = readString(data, pos);
+                case 2: // producerId (int64)
+                    cmd.producerId = readVarint64(data, pos);
                     break;
-                case 3: // requestId
-                    cmd.requestId = readVarint(data, pos);
+                case 3: // requestId (int64)
+                    cmd.requestId = readVarint64(data, pos);
+                    break;
+                case 4: // producerName
+                    cmd.producerName = readString(data, pos);
                     break;
                 default:
                     skipField(data, pos, wireType);
@@ -287,13 +346,13 @@ final class PulsarProtobufCodec {
             int fieldNumber = tag >>> 3;
             int wireType = tag & 0x7;
             switch (fieldNumber) {
-                case 1: // producer_name
-                    cmd.producerName = readString(data, pos);
+                case 1: // producerId (int64)
+                    cmd.producerId = readVarint64(data, pos);
                     break;
-                case 2: // sequence_id
+                case 2: // sequenceId
                     cmd.sequenceId = readVarint64(data, pos);
                     break;
-                case 3: // num_messages (batch)
+                case 3: // numMessages (batch)
                     cmd.numMessages = readVarint(data, pos);
                     break;
                 default:
@@ -315,11 +374,11 @@ final class PulsarProtobufCodec {
                 case 1: // topic
                     cmd.topic = readString(data, pos);
                     break;
-                case 2: // authoritative
-                    cmd.authoritative = readVarint(data, pos) != 0;
+                case 2: // requestId (int64)
+                    cmd.requestId = readVarint64(data, pos);
                     break;
-                case 3: // requestId
-                    cmd.requestId = readVarint(data, pos);
+                case 3: // authoritative
+                    cmd.authoritative = readVarint(data, pos) != 0;
                     break;
                 default:
                     skipField(data, pos, wireType);
@@ -340,8 +399,8 @@ final class PulsarProtobufCodec {
                 case 1: // topic
                     cmd.topic = readString(data, pos);
                     break;
-                case 2: // requestId
-                    cmd.requestId = readVarint(data, pos);
+                case 2: // requestId (int64)
+                    cmd.requestId = readVarint64(data, pos);
                     break;
                 default:
                     skipField(data, pos, wireType);
@@ -359,11 +418,11 @@ final class PulsarProtobufCodec {
             int fieldNumber = tag >>> 3;
             int wireType = tag & 0x7;
             switch (fieldNumber) {
-                case 1: // namespace
-                    cmd.namespaceName = readString(data, pos);
+                case 1: // requestId (int64)
+                    cmd.requestId = readVarint64(data, pos);
                     break;
-                case 2: // requestId
-                    cmd.requestId = readVarint(data, pos);
+                case 2: // namespace
+                    cmd.namespaceName = readString(data, pos);
                     break;
                 default:
                     skipField(data, pos, wireType);
@@ -404,7 +463,7 @@ final class PulsarProtobufCodec {
     /**
      * Encode a LOOKUP_TOPIC_RESPONSE (redirect to self).
      */
-    static ByteBuf encodeLookupTopicResponse(String brokerServiceUrl, int requestId) {
+    static ByteBuf encodeLookupTopicResponse(String brokerServiceUrl, long requestId) {
         byte[] responseMsg = encodeLookupTopicResponseMessage(brokerServiceUrl, requestId);
         return encodeBaseCommand(TYPE_LOOKUP_RESPONSE, FIELD_LOOKUP_TOPIC_RESPONSE, responseMsg);
     }
@@ -412,53 +471,53 @@ final class PulsarProtobufCodec {
     /**
      * Encode a PARTITIONED_METADATA_RESPONSE (non-partitioned: partitions=0).
      */
-    static ByteBuf encodePartitionMetadataResponse(int partitions, int requestId) {
+    static ByteBuf encodePartitionMetadataResponse(int partitions, long requestId) {
         byte[] responseMsg = encodePartitionMetadataResponseMessage(partitions, requestId);
-        return encodeBaseCommand(TYPE_PARTITIONED_METADATA_RESPONSE, 19, responseMsg);
+        return encodeBaseCommand(TYPE_PARTITIONED_METADATA_RESPONSE, FIELD_PARTITION_METADATA_RESPONSE, responseMsg);
     }
 
     /**
      * Encode a PRODUCER_SUCCESS response.
-     * Type.PRODUCER_SUCCESS = 24, ProducerSuccess sub-message at field 29.
+     * Type.PRODUCER_SUCCESS = 17, ProducerSuccess sub-message at field 17.
      */
-    static ByteBuf encodeProducerSuccess(String producerName, int requestId) {
+    static ByteBuf encodeProducerSuccess(String producerName, long requestId) {
         byte[] successMsg = encodeProducerSuccessMessage(producerName, requestId);
-        return encodeBaseCommand(TYPE_PRODUCER_SUCCESS, 29, successMsg);
+        return encodeBaseCommand(TYPE_PRODUCER_SUCCESS, FIELD_PRODUCER_SUCCESS, successMsg);
     }
 
     /**
      * Encode a SEND_RECEIPT response.
      */
-    static ByteBuf encodeSendReceipt(String producerName, long sequenceId, long ledgerId, long entryId) {
-        byte[] receiptMsg = encodeSendReceiptMessage(producerName, sequenceId, ledgerId, entryId);
+    static ByteBuf encodeSendReceipt(long producerId, long sequenceId, long ledgerId, long entryId) {
+        byte[] receiptMsg = encodeSendReceiptMessage(producerId, sequenceId, ledgerId, entryId);
         return encodeBaseCommand(TYPE_SEND_RECEIPT, FIELD_SEND_RECEIPT, receiptMsg);
     }
 
     /**
      * Encode a SUCCESS response (for subscribe ack).
-     * Type.SUCCESS = 25, Success sub-message at field 28 in PulsarBaseCommand.
+     * Type.SUCCESS = 13, Success sub-message at field 13.
      */
-    static ByteBuf encodeSuccess(int requestId) {
+    static ByteBuf encodeSuccess(long requestId) {
         byte[] successMsg = encodeSuccessMessage(requestId);
-        return encodeBaseCommand(TYPE_SUCCESS, 28, successMsg);
+        return encodeBaseCommand(TYPE_SUCCESS, FIELD_SUCCESS, successMsg);
     }
 
     /**
      * Encode a SUBSCRIBE success response.
-     * In Pulsar protocol (2.8+), the broker responds to SUBSCRIBE with a
-     * SUCCESS command (type=25) containing the Success sub-message (field=28).
+     * In Pulsar protocol, the broker responds to SUBSCRIBE with a
+     * SUCCESS command (type=13) containing the Success sub-message (field=13).
      */
-    static ByteBuf encodeSubscribeSuccess(int requestId) {
+    static ByteBuf encodeSubscribeSuccess(long requestId) {
         byte[] successMsg = encodeSuccessMessage(requestId);
-        return encodeBaseCommand(TYPE_SUCCESS, 28, successMsg);
+        return encodeBaseCommand(TYPE_SUCCESS, FIELD_SUCCESS, successMsg);
     }
 
     /**
      * Encode a GET_TOPICS_OF_NAMESPACE_RESPONSE.
      */
-    static ByteBuf encodeGetTopicsOfNamespaceResponse(List<String> topics, int requestId) {
+    static ByteBuf encodeGetTopicsOfNamespaceResponse(List<String> topics, long requestId) {
         byte[] responseMsg = encodeGetTopicsOfNamespaceResponseMessage(topics, requestId);
-        return encodeBaseCommand(TYPE_GET_TOPICS_OF_NAMESPACE, 27, responseMsg);
+        return encodeBaseCommand(TYPE_GET_TOPICS_OF_NAMESPACE_RESPONSE, FIELD_GET_TOPICS_OF_NAMESPACE_RESPONSE, responseMsg);
     }
 
     /**
@@ -469,14 +528,16 @@ final class PulsarProtobufCodec {
                                   String topic, int consumerId,
                                   byte[] payload) {
         byte[] messageCmd = encodeMessageCommand(ledgerId, entryId, partition, topic, consumerId);
-        return encodeBaseCommandWithPayload(TYPE_MESSAGE, 2, messageCmd, payload);
+        return encodeBaseCommandWithPayload(TYPE_MESSAGE, FIELD_MESSAGE, messageCmd, payload);
     }
 
     /**
      * Encode a PONG response.
+     * PONG must include an empty CommandPong sub-message at field 19,
+     * matching the Pulsar protocol (PING includes empty CommandPing at field 18).
      */
     static ByteBuf encodePong() {
-        return encodeBaseCommandSimple(TYPE_PONG);
+        return encodeBaseCommand(TYPE_PONG, FIELD_PONG, new byte[0]);
     }
 
     // ======================== Low-level encoding helpers ========================
@@ -490,46 +551,51 @@ final class PulsarProtobufCodec {
         return out.toByteArray();
     }
 
-    private static byte[] encodeLookupTopicResponseMessage(String brokerServiceUrl, int requestId) {
+    private static byte[] encodeLookupTopicResponseMessage(String brokerServiceUrl, long requestId) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         // brokerServiceUrl (field 1, string)
         writeStringField(out, 1, brokerServiceUrl);
-        // response (field 2, enum) = Connect (1)
-        writeVarintField(out, 2, LOOKUP_TYPE_CONNECT);
-        // requestId (field 3, varint)
-        writeVarintField(out, 3, requestId);
+        // response (field 3, enum) = Connect (1)
+        writeVarintField(out, 3, LOOKUP_TYPE_CONNECT);
+        // requestId (field 4, varint)
+        writeVarintField64(out, 4, requestId);
         return out.toByteArray();
     }
 
-    private static byte[] encodePartitionMetadataResponseMessage(int partitions, int requestId) {
+    private static byte[] encodePartitionMetadataResponseMessage(int partitions, long requestId) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         // partitions (field 1, varint) — 0 means non-partitioned
         writeVarintField(out, 1, partitions);
         // requestId (field 2, varint)
-        writeVarintField(out, 2, requestId);
+        writeVarintField64(out, 2, requestId);
+        // response (field 3, enum) = Success (0)
+        writeVarintField(out, 3, 0);
         return out.toByteArray();
     }
 
-    private static byte[] encodeProducerSuccessMessage(String producerName, int requestId) {
+    private static byte[] encodeProducerSuccessMessage(String producerName, long requestId) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        // requestId (field 1, varint)
-        writeVarintField(out, 1, requestId);
+        // requestId (field 1, varint int64)
+        writeVarintField64(out, 1, requestId);
         // producer_name (field 2, string)
         writeStringField(out, 2, producerName);
+        // schema_version (field 4, bytes) — must be present (even if empty) to avoid
+        // IllegalStateException in Pulsar 2.10.x lightproto ClientCnx.handleProducerSuccess
+        writeBytesField(out, 4, new byte[0]);
         return out.toByteArray();
     }
 
-    private static byte[] encodeSendReceiptMessage(String producerName, long sequenceId,
+    private static byte[] encodeSendReceiptMessage(long producerId, long sequenceId,
                                                     long ledgerId, long entryId) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        // producer_name (field 1, string)
-        writeStringField(out, 1, producerName);
-        // sequence_id (field 2, varint)
+        // producerId (field 1, varint int64)
+        writeVarintField64(out, 1, producerId);
+        // sequenceId (field 2, varint)
         writeVarintField64(out, 2, sequenceId);
-        // message_id (field 3, embedded MessageIdData)
+        // messageId (field 3, embedded MessageIdData)
         byte[] messageIdData = encodeMessageIdData(ledgerId, entryId);
         writeBytesField(out, 3, messageIdData);
-        // highest_sequence_id (field 4, varint)
+        // highestSequenceId (field 4, varint)
         writeVarintField64(out, 4, sequenceId);
         return out.toByteArray();
     }
@@ -543,21 +609,21 @@ final class PulsarProtobufCodec {
         return out.toByteArray();
     }
 
-    private static byte[] encodeSuccessMessage(int requestId) {
+    private static byte[] encodeSuccessMessage(long requestId) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         // requestId (field 1, varint)
-        writeVarintField(out, 1, requestId);
+        writeVarintField64(out, 1, requestId);
         return out.toByteArray();
     }
 
-    private static byte[] encodeGetTopicsOfNamespaceResponseMessage(List<String> topics, int requestId) {
+    private static byte[] encodeGetTopicsOfNamespaceResponseMessage(List<String> topics, long requestId) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        // topics (field 1, repeated string)
+        // requestId (field 1, varint)
+        writeVarintField64(out, 1, requestId);
+        // topics (field 2, repeated string)
         for (String topic : topics) {
-            writeStringField(out, 1, topic);
+            writeStringField(out, 2, topic);
         }
-        // requestId (field 2, varint)
-        writeVarintField(out, 2, requestId);
         return out.toByteArray();
     }
 

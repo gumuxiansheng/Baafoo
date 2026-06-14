@@ -52,3 +52,4 @@ dist/
 .test/
 .workbuddy/
 .deploy/
+temp_extract/

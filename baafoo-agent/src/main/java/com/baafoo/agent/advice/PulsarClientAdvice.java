@@ -6,8 +6,6 @@ import net.bytebuddy.asm.Advice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collections;
-
 /**
  * Byte Buddy Advice for {@code ClientBuilder.serviceUrl(String)}.
  *
@@ -40,15 +38,11 @@ public class PulsarClientAdvice {
                 return;
             }
 
-            // Check if Pulsar is in the routing table
-            RouteManager.RouteResult routeResult = RouteManager.route(
-                    "pulsar", "pulsar-broker", 0, null,
-                    null, null,
-                    Collections.<String, String>emptyMap(),
-                    Collections.<String, String>emptyMap(),
-                    null);
+            // Check if there are ANY Pulsar routes in the routing table
+            // We intercept all Pulsar connections when Pulsar routes exist
+            boolean hasPulsarRoutes = RouteManager.hasProtocolRoutes("pulsar");
 
-            if (routeResult.matched) {
+            if (hasPulsarRoutes) {
                 String stubHost = GlobalRouteState.SERVER_HOST;
                 int stubPort = GlobalRouteState.PULSAR_PORT;
 
@@ -57,8 +51,6 @@ public class PulsarClientAdvice {
                 serviceUrl = newServiceUrl;
 
                 log.info("[Baafoo] Pulsar serviceUrl replaced: {} -> {}", originalUrl, newServiceUrl);
-
-                RoutingContext.set(routeResult);
             }
         } catch (Exception e) {
             log.error("[Baafoo] PulsarClientAdvice error: {}", e.getMessage());

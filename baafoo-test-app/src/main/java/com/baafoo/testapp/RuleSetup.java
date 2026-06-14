@@ -215,6 +215,7 @@ public class RuleSetup {
         rule.put("enabled", true);
         rule.put("priority", 100);
         rule.put("tags", Arrays.asList("test-app"));
+        rule.put("environments", Arrays.asList("test-env"));
         return rule;
     }
 

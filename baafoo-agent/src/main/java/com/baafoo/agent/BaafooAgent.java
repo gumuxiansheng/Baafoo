@@ -10,6 +10,7 @@ import com.baafoo.core.model.RecordingEntry;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
+import net.bytebuddy.dynamic.DynamicType;
 import net.bytebuddy.utility.JavaModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -201,6 +202,19 @@ public class BaafooAgent {
                 .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
                 .with(new AgentBuilder.Listener.Adapter() {
                     @Override
+                    public void onDiscovery(String typeName, ClassLoader classLoader, JavaModule module, boolean loaded) {
+                        if ((typeName.startsWith("org.apache.pulsar.client.impl") && typeName.contains("Builder"))
+                                || typeName.contains("ActiveMQConnectionFactory")
+                                || typeName.equals("java.net.InetAddress")
+                                || typeName.equals("java.net.Socket")) {
+                            log.info("ByteBuddy discovered: typeName={}, loaded={}, classLoader={}", typeName, loaded, classLoader);
+                        }
+                    }
+                    @Override
+                    public void onTransformation(TypeDescription typeDescription, ClassLoader classLoader, JavaModule module, boolean loaded, DynamicType dynamicType) {
+                        log.info("ByteBuddy transformed: typeName={}, loaded={}, classLoader={}", typeDescription.getName(), loaded, classLoader);
+                    }
+                    @Override
                     public void onError(String typeName, ClassLoader classLoader, JavaModule module, boolean loaded, Throwable throwable) {
                         log.warn("ByteBuddy transform error for {}: {}", typeName, throwable.getMessage());
                     }
@@ -240,9 +254,9 @@ public class BaafooAgent {
                                 .on(named("connect")
                                         .and(takesArguments(1)
                                                 .or(takesArguments(2)))))
-                        .visit(Advice.to(SocketGetStreamAdvice.class)
+                        .visit(Advice.to(SocketInputStreamAdvice.class)
                                 .on(named("getInputStream").and(takesArguments(0))))
-                        .visit(Advice.to(SocketGetStreamAdvice.class)
+                        .visit(Advice.to(SocketOutputStreamAdvice.class)
                                 .on(named("getOutputStream").and(takesArguments(0))))
                         .visit(Advice.to(SocketCloseAdvice.class)
                                 .on(named("close").and(takesArguments(0)))));
@@ -281,20 +295,19 @@ public class BaafooAgent {
         registry.register("org.apache.kafka.clients.consumer.KafkaConsumer", "KafkaConsumerAdvice", "kafka");
 
         agentBuilder = agentBuilder
-                .type(named("org.apache.pulsar.client.api.ClientBuilder")
-                        .or(named("org.apache.pulsar.client.impl.PulsarClientBuilder")))
+                .type(nameContains("ClientBuilder").and(nameStartsWith("org.apache.pulsar")))
                 .transform((builder, typeDesc, classLoader, module, pd) ->
                         builder.visit(Advice.to(PulsarClientAdvice.class)
                                 .on(named("serviceUrl").and(takesArguments(1)))));
         registry.register("org.apache.pulsar.client.api.ClientBuilder", "PulsarClientAdvice", "pulsar");
 
-        // JMS: intercept ActiveMQConnectionFactory constructor to replace brokerURL
+        // JMS: intercept ActiveMQConnectionFactory constructor (OnMethodExit) to replace brokerURL
         agentBuilder = agentBuilder
                 .type(named("org.apache.activemq.ActiveMQConnectionFactory")
                         .or(named("org.apache.activemq.ActiveMQXAConnectionFactory")))
                 .transform((builder, typeDesc, classLoader, module, pd) ->
                         builder.visit(Advice.to(JmsConnectionFactoryAdvice.class)
-                                .on(isConstructor().and(takesArguments(1)))));
+                                .on(isConstructor())));
         registry.register("org.apache.activemq.ActiveMQConnectionFactory", "JmsConnectionFactoryAdvice", "jms");
 
         agentBuilder.installOn(inst);

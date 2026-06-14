@@ -6,7 +6,6 @@ import net.bytebuddy.asm.Advice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collections;
 import java.util.Map;
 
 /**
@@ -40,15 +39,8 @@ public class KafkaConsumerAdvice {
                 return;
             }
 
-            // Check if Kafka is in the routing table
-            RouteManager.RouteResult routeResult = RouteManager.route(
-                    "kafka", "kafka-broker", 0, null,
-                    null, null,
-                    Collections.<String, String>emptyMap(),
-                    Collections.<String, String>emptyMap(),
-                    null);
-
-            if (!routeResult.matched) {
+            // Check if there are any Kafka routes in the routing table
+            if (!RouteManager.hasProtocolRoutes("kafka")) {
                 return;
             }
 
@@ -75,8 +67,6 @@ public class KafkaConsumerAdvice {
 
                 }
             }
-
-            RoutingContext.set(routeResult);
 
         } catch (Exception e) {
             log.error("[Baafoo] KafkaConsumerAdvice error: {}", e.getMessage());

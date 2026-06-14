@@ -27,9 +27,21 @@ class PulsarFrameDecoder extends ByteToMessageDecoder {
     private static final int MAX_FRAME_SIZE = 16 * 1024 * 1024;
 
     @Override
+    public void handlerAdded(ChannelHandlerContext ctx) {
+        log.info("PulsarFrameDecoder added to pipeline: {}", ctx.channel());
+    }
+
+    @Override
+    public void channelActive(ChannelHandlerContext ctx) {
+        log.info("PulsarFrameDecoder channelActive: {}", ctx.channel().remoteAddress());
+        ctx.fireChannelActive();
+    }
+
+    @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
         // Need at least 8 bytes for the header
         if (in.readableBytes() < 8) {
+            log.debug("Pulsar frame: waiting for header, readableBytes={}", in.readableBytes());
             return;
         }
 
@@ -37,6 +49,8 @@ class PulsarFrameDecoder extends ByteToMessageDecoder {
 
         int totalSize = in.readInt();
         int commandSize = in.readInt();
+
+        log.info("Pulsar frame: totalSize={}, commandSize={}, readableBytes={}", totalSize, commandSize, in.readableBytes());
 
         // Validate frame sizes
         if (totalSize < 4 || commandSize < 0 || commandSize > totalSize - 4) {
@@ -71,6 +85,14 @@ class PulsarFrameDecoder extends ByteToMessageDecoder {
 
         // Parse the command
         PulsarCommand cmd = PulsarProtobufCodec.decodeCommand(commandBytes);
+
+        // Debug: hex dump of command bytes for first few frames
+        StringBuilder hexDump = new StringBuilder();
+        for (int i = 0; i < Math.min(commandBytes.length, 64); i++) {
+            hexDump.append(String.format("%02x ", commandBytes[i] & 0xFF));
+        }
+        log.info("Pulsar command bytes (first {}): type={}, hex={}",
+                Math.min(commandBytes.length, 64), cmd.type, hexDump);
 
         PulsarFrame frame = new PulsarFrame();
         frame.command = cmd;

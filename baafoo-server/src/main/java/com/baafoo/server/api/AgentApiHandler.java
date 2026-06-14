@@ -22,6 +22,7 @@ class AgentApiHandler implements ResourceHandler {
             Map<String, Object> reqBody = ctx.mapper.readValue(body, Map.class);
             String agentId = (String) reqBody.getOrDefault("agentId", "");
             String env = (String) reqBody.getOrDefault("environment", "default");
+            if (env == null) env = "default";
             String hostname = (String) reqBody.getOrDefault("hostname", "unknown");
             String version = (String) reqBody.getOrDefault("version", "1.0.0");
             String agentIp = (String) reqBody.getOrDefault("agentIp", ctx.remoteAddr);

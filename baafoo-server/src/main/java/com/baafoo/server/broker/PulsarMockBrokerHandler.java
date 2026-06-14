@@ -41,8 +41,11 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
     /** Per-connection state: consumer ID counter. */
     private final AtomicInteger consumerIdSeq = new AtomicInteger(0);
 
-    /** Maps producer name → topic (for routing SEND commands). */
-    private final ConcurrentHashMap<String, String> producerTopics = new ConcurrentHashMap<String, String>();
+    /** Maps producer ID → topic (for routing SEND commands). */
+    private final ConcurrentHashMap<Long, String> producerTopics = new ConcurrentHashMap<Long, String>();
+
+    /** Maps producer name → producer ID (for PRODUCER_SUCCESS response). */
+    private final ConcurrentHashMap<Long, String> producerNames = new ConcurrentHashMap<Long, String>();
 
     /** Maps consumer (topic:subscription) → consumer ID (for MESSAGE delivery). */
     private final ConcurrentHashMap<String, Integer> consumerIds = new ConcurrentHashMap<String, Integer>();
@@ -99,8 +102,9 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
                     // ACK from consumer — just log
                     log.debug("Received ACK for sequenceId={}", cmd.sequenceId);
                     break;
-                case PulsarProtobufCodec.TYPE_CLOSE:
-                    log.debug("Client closing connection");
+                case PulsarProtobufCodec.TYPE_CLOSE_PRODUCER:
+                case PulsarProtobufCodec.TYPE_CLOSE_CONSUMER:
+                    log.debug("Client closing producer/consumer");
                     ctx.close();
                     break;
                 default:
@@ -117,6 +121,7 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
         log.info("Pulsar CONNECT: clientVersion={}, protocolVersion={}", cmd.clientVersion, cmd.protocolVersion);
 
         ByteBuf response = PulsarProtobufCodec.encodeConnected("Baafoo-Pulsar-Mock/1.0", cmd.protocolVersion > 0 ? cmd.protocolVersion : 12);
+        logResponse("CONNECTED", response);
         ctx.writeAndFlush(response);
 
         handshakeComplete = true;
@@ -129,6 +134,7 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
         log.info("Pulsar LOOKUP: topic={}, returning brokerUrl={}", topic, brokerUrl);
 
         ByteBuf response = PulsarProtobufCodec.encodeLookupTopicResponse(brokerUrl, cmd.requestId);
+        logResponse("LOOKUP_RESPONSE", response);
         ctx.writeAndFlush(response);
     }
 
@@ -138,40 +144,49 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
 
         // partitions=0 means non-partitioned topic
         ByteBuf response = PulsarProtobufCodec.encodePartitionMetadataResponse(0, cmd.requestId);
+        logResponse("PARTITIONED_METADATA_RESPONSE", response);
         ctx.writeAndFlush(response);
     }
 
     private void handleProducer(ChannelHandlerContext ctx, PulsarCommand cmd) {
         String topic = cmd.topic;
+        long producerId = cmd.producerId;
         String producerName = cmd.producerName;
         if (producerName == null || producerName.isEmpty()) {
             producerName = "baafoo-producer-" + producerIdSeq.getAndIncrement();
         }
 
-        producerTopics.put(producerName, topic);
-        log.info("Pulsar PRODUCER: topic={}, producerName={}", topic, producerName);
+        producerTopics.put(producerId, topic);
+        producerNames.put(producerId, producerName);
+        log.info("Pulsar PRODUCER: topic={}, producerId={}, producerName={}", topic, producerId, producerName);
 
         ByteBuf response = PulsarProtobufCodec.encodeProducerSuccess(producerName, cmd.requestId);
+        logResponse("PRODUCER_SUCCESS", response);
         ctx.writeAndFlush(response);
     }
 
     private void handleSend(ChannelHandlerContext ctx, PulsarCommand cmd, byte[] payload) {
-        String producerName = cmd.producerName;
-        String topic = producerTopics.get(producerName);
+        long producerId = cmd.producerId;
+        String producerName = producerNames.get(producerId);
+        String topic = producerTopics.get(producerId);
 
         if (topic == null) {
-            log.warn("SEND from unknown producer: {}", producerName);
+            log.warn("SEND from unknown producerId: {}", producerId);
             topic = "unknown-topic";
+        }
+        if (producerName == null) {
+            producerName = "unknown-producer";
         }
 
         // Store the message
         StoredMessage stored = messageStore.storeMessage(topic, producerName, cmd.sequenceId, payload);
-        log.info("Pulsar SEND: producer={}, topic={}, sequenceId={}, payloadSize={}",
-                producerName, topic, cmd.sequenceId, payload.length);
+        log.info("Pulsar SEND: producerId={}, producerName={}, topic={}, sequenceId={}, payloadSize={}",
+                producerId, producerName, topic, cmd.sequenceId, payload.length);
 
-        // Send receipt
+        // Send receipt — use producerId (field 1) and sequenceId (field 2)
         ByteBuf response = PulsarProtobufCodec.encodeSendReceipt(
-                producerName, cmd.sequenceId, stored.ledgerId, stored.entryId);
+                producerId, cmd.sequenceId, stored.ledgerId, stored.entryId);
+        logResponse("SEND_RECEIPT", response);
         ctx.writeAndFlush(response);
 
         // Deliver to any active consumers for this topic
@@ -231,6 +246,7 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
     private void handlePing(ChannelHandlerContext ctx) {
         log.debug("Pulsar PING → PONG");
         ByteBuf response = PulsarProtobufCodec.encodePong();
+        logResponse("PONG", response);
         ctx.writeAndFlush(response);
     }
 
@@ -261,5 +277,17 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("PulsarMockBrokerHandler error: {}", cause.getMessage());
         ctx.close();
+    }
+
+    private void logResponse(String label, ByteBuf buf) {
+        if (!log.isDebugEnabled()) return;
+        int readerIndex = buf.readerIndex();
+        byte[] bytes = new byte[Math.min(buf.readableBytes(), 64)];
+        buf.getBytes(readerIndex, bytes);
+        StringBuilder hex = new StringBuilder();
+        for (byte b : bytes) {
+            hex.append(String.format("%02x ", b & 0xFF));
+        }
+        log.debug("Pulsar response {}: {} bytes, hex={}", label, buf.readableBytes(), hex);
     }
 }

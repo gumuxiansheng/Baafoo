@@ -88,6 +88,21 @@ public final class RouteManager {
         return currentMode;
     }
 
+    /**
+     * Check if there are any enabled rules for the given protocol.
+     * Used by protocol-specific advice (Kafka, Pulsar, JMS) to decide
+     * whether to intercept, regardless of the specific host in the rule.
+     */
+    public static boolean hasProtocolRoutes(String protocol) {
+        if (protocol == null) return false;
+        for (Rule rule : RULES.get()) {
+            if (rule.isEnabled() && protocol.equalsIgnoreCase(rule.getProtocol())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static boolean isRecording() {
         return recording;
     }
@@ -97,6 +112,7 @@ public final class RouteManager {
 
         for (Rule rule : rules) {
             if (!rule.isEnabled()) {
+                log.debug("Skipping disabled rule: {}", rule.getName());
                 continue;
             }
 
@@ -109,17 +125,19 @@ public final class RouteManager {
                 if (rule.getPort() != null && rule.getPort() > 0) {
                     String key = rule.getHost() + ":" + rule.getPort();
                     newRoutes.put(key, routeValue);
+                    log.debug("Route entry: {} -> {}:{} (protocol={})", key, stubHost, stubPort, protocol);
                 } else {
-                    // Only create host-only entry when no specific port is configured.
-                    // A host-only entry matches ANY port on that host, which is too
-                    // broad when a specific port is intended.
                     newRoutes.put(rule.getHost(), routeValue);
+                    log.debug("Route entry: {} -> {}:{} (protocol={})", rule.getHost(), stubHost, stubPort, protocol);
                 }
+            } else {
+                log.debug("Rule '{}' has no host, protocol={}", rule.getName(), protocol);
             }
 
             if (rule.getServiceName() != null && !rule.getServiceName().isEmpty()) {
                 String key = "svc:" + rule.getServiceName();
                 newRoutes.put(key, routeValue);
+                log.debug("Route entry: {} -> {}:{} (protocol={})", key, stubHost, stubPort, protocol);
             }
         }
 

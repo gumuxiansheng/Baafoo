@@ -223,26 +223,27 @@ public class PulsarMockBrokerTest {
 
     @Test
     public void testProtobufCommandDecoding() {
-        // Build a CONNECT command
+        // Build a CONNECT command using lightproto field numbers
         ByteArrayOutputStream cmdOut = new ByteArrayOutputStream();
         // type field (field 1, varint)
         PulsarProtobufCodec.writeVarint(cmdOut, (1 << 3) | 0); // tag
-        PulsarProtobufCodec.writeVarint(cmdOut, PulsarProtobufCodec.TYPE_CONNECT); // value = 3
+        PulsarProtobufCodec.writeVarint(cmdOut, PulsarProtobufCodec.TYPE_CONNECT); // value = 2
 
-        // connect sub-message (field 5, length-delimited)
+        // connect sub-message (field 2 in BaseCommand, per lightproto)
         ByteArrayOutputStream connectOut = new ByteArrayOutputStream();
-        // auth_method_name (field 1, string)
-        writeProtobufString(connectOut, 1, "");
-        // auth_data (field 2, bytes)
-        writeProtobufBytes(connectOut, 2, new byte[0]);
-        // protocol_version (field 3, varint)
-        PulsarProtobufCodec.writeVarint(connectOut, (3 << 3) | 0);
+        // client_version (field 1, string) — lightproto field number
+        writeProtobufString(connectOut, 1, "test-client-1.0");
+        // auth_method (field 2, enum/varint) — 0 = None
+        PulsarProtobufCodec.writeVarint(connectOut, (2 << 3) | 0);
+        PulsarProtobufCodec.writeVarint(connectOut, 0);
+        // auth_data (field 3, bytes)
+        writeProtobufBytes(connectOut, 3, new byte[0]);
+        // protocol_version (field 4, varint)
+        PulsarProtobufCodec.writeVarint(connectOut, (4 << 3) | 0);
         PulsarProtobufCodec.writeVarint(connectOut, 12);
-        // client_version (field 4, string)
-        writeProtobufString(connectOut, 4, "test-client-1.0");
 
         byte[] connectBytes = connectOut.toByteArray();
-        PulsarProtobufCodec.writeVarint(cmdOut, (5 << 3) | 2); // tag for field 5, wire type 2
+        PulsarProtobufCodec.writeVarint(cmdOut, (2 << 3) | 2); // tag for field 2, wire type 2
         PulsarProtobufCodec.writeVarint(cmdOut, connectBytes.length);
         try {
             cmdOut.write(connectBytes);
@@ -262,20 +263,25 @@ public class PulsarMockBrokerTest {
 
     private ByteBuf buildConnectFrame(String clientVersion, int protocolVersion) {
         ByteArrayOutputStream cmdOut = new ByteArrayOutputStream();
-        // type = CONNECT (3)
+        // type = CONNECT (2)
         PulsarProtobufCodec.writeVarint(cmdOut, (1 << 3) | 0);
         PulsarProtobufCodec.writeVarint(cmdOut, PulsarProtobufCodec.TYPE_CONNECT);
 
-        // connect sub-message (field 5)
+        // connect sub-message (field 2 in BaseCommand, per lightproto)
         ByteArrayOutputStream connectOut = new ByteArrayOutputStream();
-        writeProtobufString(connectOut, 1, ""); // auth_method_name
-        writeProtobufBytes(connectOut, 2, new byte[0]); // auth_data
-        PulsarProtobufCodec.writeVarint(connectOut, (3 << 3) | 0); // protocol_version
+        // client_version (field 1, string) — lightproto field number
+        writeProtobufString(connectOut, 1, clientVersion);
+        // auth_method (field 2, enum/varint) — 0 = None
+        PulsarProtobufCodec.writeVarint(connectOut, (2 << 3) | 0);
+        PulsarProtobufCodec.writeVarint(connectOut, 0);
+        // auth_data (field 3, bytes)
+        writeProtobufBytes(connectOut, 3, new byte[0]);
+        // protocol_version (field 4, varint)
+        PulsarProtobufCodec.writeVarint(connectOut, (4 << 3) | 0);
         PulsarProtobufCodec.writeVarint(connectOut, protocolVersion);
-        writeProtobufString(connectOut, 4, clientVersion); // client_version
 
         byte[] connectBytes = connectOut.toByteArray();
-        PulsarProtobufCodec.writeVarint(cmdOut, (5 << 3) | 2);
+        PulsarProtobufCodec.writeVarint(cmdOut, (2 << 3) | 2); // field 2, wire type 2
         PulsarProtobufCodec.writeVarint(cmdOut, connectBytes.length);
         try { cmdOut.write(connectBytes); } catch (java.io.IOException e) { throw new RuntimeException(e); }
 
@@ -284,20 +290,20 @@ public class PulsarMockBrokerTest {
 
     private ByteBuf buildLookupFrame(String topic, int requestId) {
         ByteArrayOutputStream cmdOut = new ByteArrayOutputStream();
-        // type = LOOKUP (15)
+        // type = LOOKUP (23)
         PulsarProtobufCodec.writeVarint(cmdOut, (1 << 3) | 0);
         PulsarProtobufCodec.writeVarint(cmdOut, PulsarProtobufCodec.TYPE_LOOKUP);
 
-        // lookupTopic sub-message (field 17)
+        // lookupTopic sub-message (field 23 in BaseCommand, per lightproto)
         ByteArrayOutputStream lookupOut = new ByteArrayOutputStream();
         writeProtobufString(lookupOut, 1, topic); // topic
-        PulsarProtobufCodec.writeVarint(lookupOut, (2 << 3) | 0); // authoritative
-        PulsarProtobufCodec.writeVarint(lookupOut, 0);
-        PulsarProtobufCodec.writeVarint(lookupOut, (3 << 3) | 0); // requestId
+        PulsarProtobufCodec.writeVarint(lookupOut, (2 << 3) | 0); // requestId (int64)
         PulsarProtobufCodec.writeVarint(lookupOut, requestId);
+        PulsarProtobufCodec.writeVarint(lookupOut, (3 << 3) | 0); // authoritative
+        PulsarProtobufCodec.writeVarint(lookupOut, 0);
 
         byte[] lookupBytes = lookupOut.toByteArray();
-        PulsarProtobufCodec.writeVarint(cmdOut, (17 << 3) | 2);
+        PulsarProtobufCodec.writeVarint(cmdOut, (23 << 3) | 2); // field 23, wire type 2
         PulsarProtobufCodec.writeVarint(cmdOut, lookupBytes.length);
         try { cmdOut.write(lookupBytes); } catch (java.io.IOException e) { throw new RuntimeException(e); }
 
@@ -306,18 +312,18 @@ public class PulsarMockBrokerTest {
 
     private ByteBuf buildPartitionMetadataFrame(String topic, int requestId) {
         ByteArrayOutputStream cmdOut = new ByteArrayOutputStream();
-        // type = PARTITIONED_METADATA (16)
+        // type = PARTITIONED_METADATA (21)
         PulsarProtobufCodec.writeVarint(cmdOut, (1 << 3) | 0);
         PulsarProtobufCodec.writeVarint(cmdOut, PulsarProtobufCodec.TYPE_PARTITIONED_METADATA);
 
-        // partitionMetadataRequest sub-message (field 18)
+        // partitionMetadataRequest sub-message (field 21 in BaseCommand, per lightproto)
         ByteArrayOutputStream metaOut = new ByteArrayOutputStream();
         writeProtobufString(metaOut, 1, topic); // topic
-        PulsarProtobufCodec.writeVarint(metaOut, (2 << 3) | 0); // requestId
+        PulsarProtobufCodec.writeVarint(metaOut, (2 << 3) | 0); // requestId (int64)
         PulsarProtobufCodec.writeVarint(metaOut, requestId);
 
         byte[] metaBytes = metaOut.toByteArray();
-        PulsarProtobufCodec.writeVarint(cmdOut, (18 << 3) | 2);
+        PulsarProtobufCodec.writeVarint(cmdOut, (21 << 3) | 2); // field 21, wire type 2
         PulsarProtobufCodec.writeVarint(cmdOut, metaBytes.length);
         try { cmdOut.write(metaBytes); } catch (java.io.IOException e) { throw new RuntimeException(e); }
 
@@ -326,7 +332,7 @@ public class PulsarMockBrokerTest {
 
     private ByteBuf buildPingFrame() {
         ByteArrayOutputStream cmdOut = new ByteArrayOutputStream();
-        // type = PING (1)
+        // type = PING (18)
         PulsarProtobufCodec.writeVarint(cmdOut, (1 << 3) | 0);
         PulsarProtobufCodec.writeVarint(cmdOut, PulsarProtobufCodec.TYPE_PING);
 
@@ -423,25 +429,6 @@ public class PulsarMockBrokerTest {
      * Re-encode a PulsarFrame back into a raw ByteBuf for parsing.
      */
     private ByteBuf encodePulsarFrame(PulsarFrame pulsarFrame) {
-        // We need to re-encode the command. Since the PulsarCommand doesn't
-        // keep the raw bytes, we'll just return a buffer with the command type.
-        // For test purposes, we just need to read the type from the response.
-        // Let's create a minimal frame from the command.
-        //
-        // Actually, a simpler approach: just return a buffer that contains
-        // the raw frame data. But PulsarFrameDecoder already parsed it.
-        // For testing, we can just check the command type directly.
-        //
-        // Let me change the approach: instead of re-encoding, just return
-        // a buffer with the type info we need.
-
-        // Actually, the simplest approach is to just encode a fake frame
-        // with the command type. But that loses information.
-        //
-        // Better approach: modify the test to work with PulsarFrame directly.
-        // But that requires changing the sendFrame method.
-        //
-        // For now, let me just encode the command type into a buffer.
         ByteArrayOutputStream cmdOut = new ByteArrayOutputStream();
         PulsarProtobufCodec.writeVarint(cmdOut, (1 << 3) | 0);
         PulsarProtobufCodec.writeVarint(cmdOut, pulsarFrame.command.type);

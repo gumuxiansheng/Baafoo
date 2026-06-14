@@ -21,6 +21,7 @@ class PulsarCommand {
     byte[] partitionMetadataRequestData;
     byte[] getTopicsOfNamespaceData;
     byte[] flowData;
+    byte[] ackData;
 
     // ---- Connect fields ----
     String authMethodName;
@@ -33,9 +34,10 @@ class PulsarCommand {
     String subscription;
     int subType;
     String consumerName;
-    int requestId;
+    long requestId;
 
     // ---- Producer fields ----
+    long producerId;
     String producerName;
     // topic is shared with Subscribe
 
