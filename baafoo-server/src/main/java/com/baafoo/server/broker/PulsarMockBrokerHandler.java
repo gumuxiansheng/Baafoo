@@ -1,12 +1,21 @@
 package com.baafoo.server.broker;
 
+import com.baafoo.core.model.EnvironmentMode;
+import com.baafoo.core.model.MatchCondition;
+import com.baafoo.core.model.ResponseEntry;
+import com.baafoo.core.model.Rule;
+import com.baafoo.core.util.MatchEngine;
 import com.baafoo.server.broker.PulsarMessageStore.StoredMessage;
+import com.baafoo.server.handler.AgentResolver;
+import com.baafoo.server.storage.StorageService;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -34,6 +43,8 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
     private final PulsarMessageStore messageStore;
     private final String brokerHost;
     private final int brokerPort;
+    private final MqMatchHelper matchHelper;
+    private final StorageService storage;
 
     /** Per-connection state: producer ID counter. */
     private final AtomicInteger producerIdSeq = new AtomicInteger(0);
@@ -53,10 +64,13 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
     /** Tracks whether the CONNECT handshake has completed. */
     private volatile boolean handshakeComplete;
 
-    PulsarMockBrokerHandler(PulsarMessageStore messageStore, String brokerHost, int brokerPort) {
+    PulsarMockBrokerHandler(PulsarMessageStore messageStore, StorageService storage,
+                            String brokerHost, int brokerPort) {
         this.messageStore = messageStore;
+        this.storage = storage;
         this.brokerHost = brokerHost;
         this.brokerPort = brokerPort;
+        this.matchHelper = new MqMatchHelper(storage);
     }
 
     @Override
@@ -178,10 +192,43 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
             producerName = "unknown-producer";
         }
 
-        // Store the message
-        StoredMessage stored = messageStore.storeMessage(topic, producerName, cmd.sequenceId, payload);
-        log.info("Pulsar SEND: producerId={}, producerName={}, topic={}, sequenceId={}, payloadSize={}",
-                producerId, producerName, topic, cmd.sequenceId, payload.length);
+        // Strip the Pulsar MessageMetadata prefix to get the real business payload.
+        // Wire format: magic(1, 0x0E) + varint(metadataSize) + MessageMetadata(protobuf) + body
+        MetadataInfo meta = parseMessageMetadata(payload);
+        String bodyStr = meta != null && meta.body != null
+                ? new String(meta.body, StandardCharsets.UTF_8) : null;
+
+        // Rule match + record + stub injection.
+        AgentResolver.AgentInfo agentInfo = matchHelper.resolveAgent(ctx);
+        EnvironmentMode mode = matchHelper.resolveMode(ctx);
+        List<Rule> rules = matchHelper.filterRulesByEnvironment(storage.listRules(), agentInfo.environment);
+        boolean shouldRecord = (mode == EnvironmentMode.RECORD || mode == EnvironmentMode.RECORD_AND_STUB);
+
+        MatchEngine.MatchResult m = matchHelper.match(rules, "pulsar", topic, bodyStr);
+
+        byte[] storedPayload = payload; // default: original payload as produced
+        if (m.isMatched()) {
+            if (shouldRecord) {
+                matchHelper.record(m.getRule().getId(), "pulsar", topic, bodyStr, agentInfo);
+            }
+            // STUB / RECORD_AND_STUB: rebuild the payload with the rule's response body so
+            // consumers decode a stub message instead of the producer's original body.
+            if (mode == EnvironmentMode.STUB || mode == EnvironmentMode.RECORD_AND_STUB) {
+                ResponseEntry resp = m.getResponse();
+                if (resp != null && resp.getBody() != null) {
+                    storedPayload = rebuildPayloadWithBody(meta, resp.getBody().getBytes(StandardCharsets.UTF_8));
+                }
+            }
+        } else {
+            if (shouldRecord) {
+                matchHelper.record(null, "pulsar", topic, bodyStr, agentInfo);
+            }
+        }
+
+        // Store the (possibly stubbed) message.
+        StoredMessage stored = messageStore.storeMessage(topic, producerName, cmd.sequenceId, storedPayload);
+        log.info("Pulsar SEND: producerId={}, producerName={}, topic={}, sequenceId={}, payloadSize={}, matched={}",
+                producerId, producerName, topic, cmd.sequenceId, payload.length, m.isMatched());
 
         // Send receipt — use producerId (field 1) and sequenceId (field 2)
         ByteBuf response = PulsarProtobufCodec.encodeSendReceipt(
@@ -192,6 +239,73 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
         // Deliver to any active consumers for this topic
         deliverMessagesToConsumers(ctx, topic);
     }
+
+    /** Captured MessageMetadata framing so a stub body can reuse the original prefix. */
+    private static final class MetadataInfo {
+        final byte[] metadataPrefix; // magic + varint-size + metadata bytes
+        final byte[] body;           // business payload (after metadata)
+        MetadataInfo(byte[] metadataPrefix, byte[] body) {
+            this.metadataPrefix = metadataPrefix;
+            this.body = body;
+        }
+    }
+
+    /**
+     * Parse the Pulsar payload framing: {@code magic(1) + varint(metadataSize) +
+     * MessageMetadata + body}. Returns the metadata prefix bytes and the real body,
+     * or null if the payload is not in the expected framing.
+     */
+    private MetadataInfo parseMessageMetadata(byte[] payload) {
+        if (payload == null || payload.length < 2) return null;
+        // magic byte (0x0E) — some clients omit it; tolerate both.
+        int idx = 0;
+        if (payload[0] == PULSAR_MAGIC) {
+            idx = 1;
+        }
+        try {
+            // read varint = metadataSize
+            int metaSize = 0;
+            int shift = 0;
+            int b;
+            do {
+                if (idx >= payload.length) return null;
+                b = payload[idx++] & 0xFF;
+                metaSize |= (b & 0x7F) << shift;
+                shift += 7;
+            } while ((b & 0x80) != 0);
+            if (metaSize < 0 || idx + metaSize > payload.length) return null;
+            byte[] prefix = new byte[idx + metaSize];
+            System.arraycopy(payload, 0, prefix, 0, prefix.length);
+            int bodyLen = payload.length - prefix.length;
+            byte[] body = new byte[bodyLen];
+            System.arraycopy(payload, prefix.length, body, 0, bodyLen);
+            return new MetadataInfo(prefix, body);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Rebuild a Pulsar payload by keeping the original metadata prefix and replacing
+     * the body with the stub body. Falls back to a minimal magic+empty-metadata+body
+     * framing when the original metadata could not be parsed.
+     */
+    private byte[] rebuildPayloadWithBody(MetadataInfo meta, byte[] stubBody) {
+        if (meta != null && meta.metadataPrefix != null && meta.metadataPrefix.length > 0) {
+            byte[] result = new byte[meta.metadataPrefix.length + stubBody.length];
+            System.arraycopy(meta.metadataPrefix, 0, result, 0, meta.metadataPrefix.length);
+            System.arraycopy(stubBody, 0, result, meta.metadataPrefix.length, stubBody.length);
+            return result;
+        }
+        // Fallback: magic(1) + metadataSize(1, varint 0) + body
+        byte[] result = new byte[2 + stubBody.length];
+        result[0] = PULSAR_MAGIC;
+        result[1] = 0; // empty metadata (varint length = 0)
+        System.arraycopy(stubBody, 0, result, 2, stubBody.length);
+        return result;
+    }
+
+    private static final byte PULSAR_MAGIC = (byte) 0x0E;
 
     private void handleSubscribe(ChannelHandlerContext ctx, PulsarCommand cmd) {
         String topic = cmd.topic;

@@ -177,6 +177,11 @@ public class MatchEngine {
                 case "path":
                     return applyOperator(path, operator, cond.getValue(), cond.isCaseSensitive());
 
+                case "topic":
+                    // topic 是 path 的别名 —— MQ (Kafka/Pulsar/JMS) 规则用 topic 条件
+                    // 匹配 topic/destination 名。broker 端把 topic 传入 path 形参槽位。
+                    return applyOperator(path, operator, cond.getValue(), cond.isCaseSensitive());
+
                 case "header":
                     if (headers == null) return false;
                     String headerVal = headers.get(cond.getKey());

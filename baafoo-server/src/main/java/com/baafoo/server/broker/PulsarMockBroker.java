@@ -39,6 +39,7 @@ public class PulsarMockBroker {
     private final EventLoopGroup bossGroup;
     private final EventLoopGroup workerGroup;
     private final PulsarMessageStore messageStore;
+    private final StorageService storage;
     private Channel serverChannel;
 
     /** Cached broker host resolved from the first client connection. */
@@ -49,6 +50,7 @@ public class PulsarMockBroker {
         this.port = port;
         this.bossGroup = bossGroup;
         this.workerGroup = workerGroup;
+        this.storage = storage;
         this.messageStore = new PulsarMessageStore(storage);
     }
 
@@ -94,7 +96,7 @@ public class PulsarMockBroker {
                     protected void initChannel(SocketChannel ch) {
                         ChannelPipeline p = ch.pipeline();
                         p.addLast(new PulsarFrameDecoder());
-                        p.addLast(new PulsarMockBrokerHandler(messageStore, resolveBrokerHost(), port));
+                        p.addLast(new PulsarMockBrokerHandler(messageStore, storage, resolveBrokerHost(), port));
                     }
                 });
 

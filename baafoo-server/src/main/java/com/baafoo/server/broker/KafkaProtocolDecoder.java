@@ -1,5 +1,10 @@
 package com.baafoo.server.broker;
 
+import com.baafoo.core.model.EnvironmentMode;
+import com.baafoo.core.model.ResponseEntry;
+import com.baafoo.core.model.Rule;
+import com.baafoo.core.util.MatchEngine;
+import com.baafoo.server.handler.AgentResolver;
 import com.baafoo.server.storage.StorageService;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -52,6 +57,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
     private final KafkaMessageStore messageStore;
     private final StorageService storage;
     private final int brokerPort;
+    private final MqMatchHelper matchHelper;
 
     /** Cached broker host resolved from the first client connection. */
     private volatile String cachedBrokerHost;
@@ -60,6 +66,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         this.messageStore = messageStore;
         this.storage = storage;
         this.brokerPort = brokerPort;
+        this.matchHelper = new MqMatchHelper(storage);
     }
 
     @Override
@@ -93,11 +100,27 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) {
         // The LengthFieldBasedFrameDecoder already stripped the 4-byte size prefix
-        // Read the request header
+        // Read the request header (v0/v1: int16-prefixed nullable string for clientId).
         short apiKey = msg.readShort();
         short apiVersion = msg.readShort();
         int correlationId = msg.readInt();
-        String clientId = readNullableString(msg);
+        // Resilient clientId parsing: modern Kafka clients (3.x) negotiate ApiVersions v3
+        // which enables flexible versions (KIP-511), switching subsequent requests to
+        // Request Header v2 with compact strings (varint length prefix). We advertise
+        // API_VERSIONS max v2 in handleApiVersions to prevent this, but some clients may
+        // still send compact headers — so try int16 first, fall back to compact on failure.
+        String clientId;
+        int headerMark = msg.readerIndex();
+        try {
+            clientId = readNullableString(msg);
+        } catch (Exception e) {
+            msg.readerIndex(headerMark);
+            try {
+                clientId = readCompactString(msg);
+            } catch (Exception e2) {
+                clientId = null;
+            }
+        }
 
         log.info("Kafka request: apiKey={}, apiVersion={}, correlationId={}, clientId={}",
                 apiKey, apiVersion, correlationId, clientId);
@@ -106,7 +129,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         try {
             switch (apiKey) {
                 case PRODUCE:
-                    response = handleProduce(msg, apiVersion, correlationId);
+                    response = handleProduce(ctx, msg, apiVersion, correlationId);
                     break;
                 case FETCH:
                     response = handleFetch(msg, apiVersion, correlationId);
@@ -258,7 +281,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
     // --- Produce (API key 0) ---
 
-    private ByteBuf handleProduce(ByteBuf msg, short apiVersion, int correlationId) {
+    private ByteBuf handleProduce(ChannelHandlerContext ctx, ByteBuf msg, short apiVersion, int correlationId) {
         // Request: transactional_id (nullable string, v3+) + acks + timeout_ms + topics array
         if (apiVersion >= 3) {
             readNullableString(msg); // transactional_id
@@ -266,6 +289,12 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         short acks = msg.readShort(); // acks
         int timeoutMs = msg.readInt(); // timeout_ms
         log.info("Produce request: apiVersion={}, acks={}, timeoutMs={}", apiVersion, acks, timeoutMs);
+
+        // Resolve agent + environment + rules ONCE per produce request.
+        AgentResolver.AgentInfo agentInfo = matchHelper.resolveAgent(ctx);
+        EnvironmentMode mode = matchHelper.resolveMode(ctx);
+        List<Rule> rules = matchHelper.filterRulesByEnvironment(storage.listRules(), agentInfo.environment);
+        boolean shouldRecord = (mode == EnvironmentMode.RECORD || mode == EnvironmentMode.RECORD_AND_STUB);
 
         int topicCount = msg.readInt();
         // Collect results for response
@@ -278,25 +307,70 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
             for (int p = 0; p < partitionCount; p++) {
                 int partition = msg.readInt();
-                // Record batch: 8 bytes baseOffset + ...
-                // For simplicity, read the record batch length then the batch
+                // Record batch: 8 bytes baseOffset + 4 bytes batchLength + batchData
                 int batchLength = msg.readInt();
                 byte[] batchData = new byte[batchLength];
                 msg.readBytes(batchData);
 
-                // Parse base offset from the batch (first 8 bytes of the record batch)
-                long baseOffset = 0;
-                int numRecords = 0;
-                if (batchLength >= 22) {
-                    // RecordBatch: baseOffset(8) + batchLength(4) + partitionLeaderEpoch(4) + magic(1) + crc(4) + attributes(2) + lastOffsetDelta(4) + ...
-                    baseOffset = readLongFromBytes(batchData, 0);
-                    // lastOffsetDelta at offset 20 (8+4+4+1+4+2-1=22... let me just use next offset)
-                    // We'll use the messageStore's next offset
-                }
+                // Try to parse records out of the batch to match/record real payloads.
+                List<ParsedRecord> records = parseRecordBatch(batchData);
 
-                // Store each record in the batch
-                // For simplicity, store the entire batch as a single message
-                long offset = messageStore.append(topic, partition, null, batchData);
+                long offset;
+                if (records != null && !records.isEmpty()) {
+                    // RecordBatch v2 parsed — process each record against rules.
+                    long lastOffset = 0;
+                    for (ParsedRecord rec : records) {
+                        String bodyStr = rec.value != null
+                                ? new String(rec.value, StandardCharsets.UTF_8) : null;
+
+                        MatchEngine.MatchResult m = matchHelper.match(rules, "kafka", topic, bodyStr);
+                        if (m.isMatched()) {
+                            // Record the original payload (so replays show what the app sent).
+                            if (shouldRecord) {
+                                matchHelper.record(m.getRule().getId(), "kafka", topic, bodyStr, agentInfo);
+                            }
+                            // In STUB / RECORD_AND_STUB, replace the value with the stub body so
+                            // consumers fetch the stub instead of the producer's original payload.
+                            if (mode == EnvironmentMode.STUB || mode == EnvironmentMode.RECORD_AND_STUB) {
+                                ResponseEntry resp = m.getResponse();
+                                byte[] stubValue = resp != null && resp.getBody() != null
+                                        ? resp.getBody().getBytes(StandardCharsets.UTF_8) : rec.value;
+                                lastOffset = messageStore.append(topic, partition, rec.key, stubValue);
+                            } else {
+                                // PASSTHROUGH / RECORD — store the original record.
+                                lastOffset = messageStore.append(topic, partition, rec.key, rec.value);
+                            }
+                        } else {
+                            // Unmatched — store the original record (passthrough behaviour).
+                            if (shouldRecord) {
+                                matchHelper.record(null, "kafka", topic, bodyStr, agentInfo);
+                            }
+                            lastOffset = messageStore.append(topic, partition, rec.key, rec.value);
+                        }
+                    }
+                    offset = lastOffset;
+                } else {
+                    // Non-v2 batch or parse failed — fall back to storing the raw batch,
+                    // but still attempt a topic-only match so topic rules can stub it.
+                    MatchEngine.MatchResult m = matchHelper.match(rules, "kafka", topic, null);
+                    if (m.isMatched() && (mode == EnvironmentMode.STUB || mode == EnvironmentMode.RECORD_AND_STUB)) {
+                        ResponseEntry resp = m.getResponse();
+                        if (resp != null && resp.getBody() != null) {
+                            byte[] stubValue = resp.getBody().getBytes(StandardCharsets.UTF_8);
+                            offset = messageStore.append(topic, partition, null, stubValue);
+                            if (shouldRecord) {
+                                matchHelper.record(m.getRule().getId(), "kafka", topic, null, agentInfo);
+                            }
+                        } else {
+                            offset = messageStore.append(topic, partition, null, batchData);
+                        }
+                    } else {
+                        if (shouldRecord && m.isMatched()) {
+                            matchHelper.record(m.getRule().getId(), "kafka", topic, null, agentInfo);
+                        }
+                        offset = messageStore.append(topic, partition, null, batchData);
+                    }
+                }
                 partitionResults.add(new ProducePartitionResult(partition, offset));
             }
             results.add(new ProduceTopicResult(topic, partitionResults));
@@ -522,8 +596,10 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         batchBuf.writeLong(offset); // baseOffset
         // batchLength: everything after this field
         // partitionLeaderEpoch(4) + magic(1) + crc(4) + attributes(2) + lastOffsetDelta(4) +
-        // baseTimestamp(8) + maxTimestamp(8) + producerId(8) + producerEpoch(2) + baseSequence(4) + recordsCount(4) + recordData
-        int batchLength = 4 + 1 + 4 + 2 + 4 + 8 + 8 + 8 + 2 + 4 + 4 + recordLen;
+        // baseTimestamp(8) + maxTimestamp(8) + producerId(8) + producerEpoch(2) + baseSequence(4) + recordsCount(4)
+        // + record-length-varint + recordData
+        int recordLenVarintSize = varintEncodedSize(recordLen);
+        int batchLength = 4 + 1 + 4 + 2 + 4 + 8 + 8 + 8 + 2 + 4 + 4 + recordLenVarintSize + recordLen;
         batchBuf.writeInt(batchLength);
         batchBuf.writeInt(0); // partitionLeaderEpoch
         batchBuf.writeByte(2); // magic = 2
@@ -536,11 +612,24 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         batchBuf.writeShort(0); // producerEpoch
         batchBuf.writeInt(0); // baseSequence
         batchBuf.writeInt(1); // recordsCount
+        // Per-record length varint prefix (matches real Kafka RecordBatch v2)
+        writeVarint(batchBuf, recordLen);
         batchBuf.writeBytes(recordBuf);
         recordBuf.release();
 
         buf.writeBytes(batchBuf);
         batchBuf.release();
+    }
+
+    /** Number of bytes the unsigned-zigzag varint encoding of {@code value} occupies. */
+    private int varintEncodedSize(int value) {
+        int zigzag = (value << 1) ^ (value >> 31);
+        int bytes = 1;
+        while ((zigzag & ~0x7F) != 0) {
+            bytes++;
+            zigzag >>>= 7;
+        }
+        return bytes;
     }
 
     // --- ApiVersions (API key 18) ---
@@ -550,11 +639,16 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         buf.writeInt(correlationId);
         buf.writeShort(NONE); // error_code
 
-        // Supported API versions — max versions limited to non-compact format
-        // (v9+ uses compact format with varint lengths which we don't implement)
+        // Supported API versions — capped below flexible-version thresholds to avoid
+        // clients switching to Request Header v2 (compact strings), which this decoder's
+        // int16 readNullableString cannot parse. See channelRead0 for the fallback path.
+        //   PRODUCE  flexible at v9  -> cap v3 (well within range, matches v0-v8 body shape)
+        //   FETCH    flexible at v12 -> cap v10 (v11+ uses compact message format + tagged fields)
+        //   METADATA flexible at v9  -> cap v8
+        //   API_VERSIONS flexible at v3 -> cap v2 (the gate that triggers KIP-511 header switch)
         int[][] supportedApis = {
                 {PRODUCE, 0, 3},
-                {FETCH, 0, 11},
+                {FETCH, 0, 10},
                 {METADATA, 0, 8},
                 {OFFSET_COMMIT, 0, 8},
                 {OFFSET_FETCH, 0, 8},
@@ -565,7 +659,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 {SYNC_GROUP, 0, 5},
                 {DESCRIBE_GROUPS, 0, 5},
                 {LIST_GROUPS, 0, 4},
-                {API_VERSIONS, 0, 3},
+                {API_VERSIONS, 0, 2},
                 {INIT_PRODUCER_ID, 0, 1},
                 {DESCRIBE_CONFIGS, 0, 4}
         };
@@ -843,6 +937,36 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
+    /**
+     * Read a Kafka "compact string" (Request/Response Header v2+, flexible versions).
+     * Compact nullable string: uvarint length where 0 = null, N = N-1 bytes follow.
+     * Used as a fallback in {@link #channelRead0} when a client sends a v2 header.
+     */
+    private String readCompactString(ByteBuf buf) {
+        int length = readUnsignedVarint(buf);
+        if (length == 0) return null; // 0 in compact encoding means null
+        int actualLen = length - 1;   // compact encodes real length as N+1
+        if (actualLen < 0) return null;
+        byte[] bytes = new byte[actualLen];
+        buf.readBytes(bytes);
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Read a Kafka uvarint (big-endian base-128 varint, NOT zig-zag encoded).
+     */
+    private int readUnsignedVarint(ByteBuf buf) {
+        int result = 0;
+        int shift = 0;
+        int b;
+        do {
+            b = buf.readByte() & 0xFF;
+            result |= (b & 0x7F) << shift;
+            shift += 7;
+        } while ((b & 0x80) != 0);
+        return result;
+    }
+
     private void writeNullableString(ByteBuf buf, String value) {
         if (value == null) {
             buf.writeShort(-1);
@@ -870,6 +994,113 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             zigzag >>>= 7;
         }
         buf.writeByte((byte) zigzag);
+    }
+
+    /**
+     * Read a zig-zag varint as used inside Kafka RecordBatch records
+     * (timestampDelta, offsetDelta, key/value lengths). Mirrors {@link #writeVarint}.
+     */
+    private int readVarint(ByteBuf buf) {
+        int raw = readUnsignedVarint(buf);
+        // un-zigzag
+        return (raw >>> 1) ^ -(raw & 1);
+    }
+
+    /**
+     * Container for a parsed record's key/value from a Kafka RecordBatch v2.
+     */
+    private static final class ParsedRecord {
+        final byte[] key;
+        final byte[] value;
+        ParsedRecord(byte[] key, byte[] value) {
+            this.key = key;
+            this.value = value;
+        }
+    }
+
+    /**
+     * Parse all records out of a Kafka RecordBatch v2 byte array.
+     *
+     * <p>{@code batchData} is the full framed batch as read from the wire after the
+     * outer partition length prefix:
+     * <pre>
+     *   baseOffset(8) + batchLength(4) + partitionLeaderEpoch(4) + magic(1) +
+     *   crc(4) + attributes(2) + lastOffsetDelta(4) + baseTimestamp(8) +
+     *   maxTimestamp(8) + producerId(8) + producerEpoch(2) + baseSequence(4) +
+     *   recordsCount(4) + [records...]
+     * </pre>
+     * i.e. 61 bytes of header before the first record. The magic byte sits at
+     * offset 16 (8 baseOffset + 4 batchLength + 4 partitionLeaderEpoch).
+     *
+     * <p>Each record: length(varint) + attributes(1) + timestampDelta(varint) +
+     * offsetDelta(varint) + keyLen(varint,-1=null) + [key] + valueLen(varint,-1=null) + [value] +
+     * headerCount(varint) + [headers...]
+     *
+     * @return parsed records, or null if the batch is malformed / not magic 2
+     *         (caller should then fall back to raw storage)
+     */
+    private List<ParsedRecord> parseRecordBatch(byte[] batchData) {
+        // Need at least the full 61-byte header (21 fixed fields before recordsCount
+        // is read at offset 57, plus the 4-byte recordsCount itself).
+        if (batchData == null || batchData.length < 61) return null;
+        // magic at offset 16 (8 baseOffset + 4 batchLength + 4 partitionLeaderEpoch)
+        if (batchData[16] != 2) return null; // only magic 2 supported
+
+        try {
+            ByteBuf buf = Unpooled.wrappedBuffer(batchData);
+            buf.skipBytes(8);  // baseOffset
+            buf.skipBytes(4);  // batchLength
+            buf.skipBytes(4);  // partitionLeaderEpoch
+            buf.readByte();    // magic (==2, already validated)
+            buf.skipBytes(4);  // crc
+            buf.skipBytes(2);  // attributes
+            buf.skipBytes(4);  // lastOffsetDelta
+            buf.skipBytes(8);  // baseTimestamp
+            buf.skipBytes(8);  // maxTimestamp
+            buf.skipBytes(8);  // producerId
+            buf.skipBytes(2);  // producerEpoch
+            buf.skipBytes(4);  // baseSequence
+            int recordsCount = buf.readInt();
+
+            List<ParsedRecord> records = new ArrayList<ParsedRecord>(recordsCount);
+            for (int i = 0; i < recordsCount && buf.isReadable(); i++) {
+                int recordLen = readVarint(buf);
+                int recordStart = buf.readerIndex();
+                // record body: attributes(1) + timestampDelta(varint) + offsetDelta(varint) +
+                //              keyLen(varint) + [key] + valueLen(varint) + [value] + headerCount(varint) + headers
+                buf.readByte(); // attributes
+                readVarint(buf); // timestampDelta
+                readVarint(buf); // offsetDelta
+
+                int keyLen = readVarint(buf);
+                byte[] key = null;
+                if (keyLen >= 0) {
+                    key = new byte[keyLen];
+                    buf.readBytes(key);
+                }
+
+                int valueLen = readVarint(buf);
+                byte[] value = null;
+                if (valueLen >= 0) {
+                    value = new byte[valueLen];
+                    buf.readBytes(value);
+                }
+                records.add(new ParsedRecord(key, value));
+
+                // Skip any remaining bytes in this record (headers etc.) so the next
+                // record starts at the right position even if we didn't parse everything.
+                int consumed = buf.readerIndex() - recordStart;
+                int remaining = recordLen - consumed;
+                if (remaining > 0) {
+                    buf.skipBytes(remaining);
+                }
+            }
+            buf.release();
+            return records;
+        } catch (Exception e) {
+            log.debug("Failed to parse RecordBatch v2: {}", e.getMessage());
+            return null;
+        }
     }
 
     private long readLongFromBytes(byte[] data, int offset) {

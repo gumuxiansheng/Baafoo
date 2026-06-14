@@ -244,6 +244,56 @@ public class MatchEngineTest {
     }
 
     @Test
+    public void testMatchTopicConditionEquals() {
+        // topic is an alias of path, used by MQ (Kafka/Pulsar) rules to match topic name.
+        // The broker passes the topic through the "path" parameter slot.
+        Rule r = createSimpleRule("r1");
+        r.setProtocol("kafka");
+        r.setConditions(Arrays.asList(MatchCondition.topic("equals", "order-events")));
+
+        MatchEngine.MatchResult result = engine.match(
+                Collections.singletonList(r), "kafka", null, 0, null, null, "order-events",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertTrue(result.isMatched());
+
+        result = engine.match(
+                Collections.singletonList(r), "kafka", null, 0, null, null, "other-topic",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertFalse(result.isMatched());
+    }
+
+    @Test
+    public void testMatchTopicConditionStartsWith() {
+        Rule r = createSimpleRule("r1");
+        r.setProtocol("pulsar");
+        r.setConditions(Arrays.asList(MatchCondition.topic("startsWith", "persistent://tenant/ns/")));
+
+        MatchEngine.MatchResult result = engine.match(
+                Collections.singletonList(r), "pulsar", null, 0, null, null,
+                "persistent://tenant/ns/order",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertTrue(result.isMatched());
+    }
+
+    @Test
+    public void testMatchTopicConditionViaStringType() {
+        // Same as testMatchTopicConditionEquals but building condition via setType("topic")
+        // to mirror how rules are deserialized from storage JSON.
+        Rule r = createSimpleRule("r1");
+        r.setProtocol("kafka");
+        MatchCondition cond = new MatchCondition();
+        cond.setType("topic");
+        cond.setOperator("equals");
+        cond.setValue("order-events");
+        r.setConditions(Arrays.asList(cond));
+
+        MatchEngine.MatchResult result = engine.match(
+                Collections.singletonList(r), "kafka", null, 0, null, null, "order-events",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertTrue(result.isMatched());
+    }
+
+    @Test
     public void testExistsOperator() {
         Rule r = createSimpleRule("r1");
         MatchCondition cond = new MatchCondition();

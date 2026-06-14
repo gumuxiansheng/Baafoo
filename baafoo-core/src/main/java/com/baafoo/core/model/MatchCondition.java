@@ -6,7 +6,13 @@ package com.baafoo.core.model;
  */
 public class MatchCondition {
 
-    /** Condition type: method, path, header, query, body, bodyJsonPath, bodyContains */
+    /**
+     * Condition type: method, path, topic, header, query, body, bodyContains, bodyJsonPath.
+     * <p>
+     * {@code topic} is an alias of {@code path} used by MQ (Kafka/Pulsar/JMS) rules
+     * to match a topic/destination name. The broker passes the topic through the
+     * {@code path} parameter slot of {@code MatchEngine.match}.
+     */
     private String type;
 
     /** Operator: equals, contains, startsWith, endsWith, regex, exists */
@@ -38,6 +44,19 @@ public class MatchCondition {
     public static MatchCondition path(String operator, String value) {
         MatchCondition c = new MatchCondition();
         c.type = "path";
+        c.operator = operator;
+        c.value = value;
+        return c;
+    }
+
+    /**
+     * Factory for an MQ topic/destination match condition.
+     * Semantically identical to {@link #path(String, String)}; {@code topic} is
+     * provided for rule readability in Kafka/Pulsar/JMS contexts.
+     */
+    public static MatchCondition topic(String operator, String value) {
+        MatchCondition c = new MatchCondition();
+        c.type = "topic";
         c.operator = operator;
         c.value = value;
         return c;

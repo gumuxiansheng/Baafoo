@@ -1,5 +1,9 @@
 package com.baafoo.server.broker;
 
+import com.baafoo.core.model.EnvironmentMode;
+import com.baafoo.core.model.MatchCondition;
+import com.baafoo.core.model.ResponseEntry;
+import com.baafoo.core.model.Rule;
 import com.baafoo.server.storage.StorageService;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
@@ -17,6 +21,8 @@ import org.junit.Test;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -192,6 +198,155 @@ public class KafkaMockBrokerTest {
         assertTrue("High watermark should be > 0", highWatermark > 0);
     }
 
+    // ----------------------------------------------------------------------
+    // Rule matching / recording / stub-injection tests
+    // ----------------------------------------------------------------------
+
+    /**
+     * A kafka rule with a {@code topic} condition must stub incoming produces:
+     * the produced record's value is replaced by the rule's response body in
+     * the store (default mode is STUB).
+     */
+    @Test
+    public void testProduceMatchesTopicRuleAndInjectsStub() throws Exception {
+        Rule rule = new Rule();
+        rule.setId("rule-stub-1");
+        rule.setProtocol("kafka");
+        rule.setEnabled(true);
+        MatchCondition cond = MatchCondition.topic("equals", "order-events");
+        rule.setConditions(Collections.singletonList(cond));
+        ResponseEntry resp = new ResponseEntry();
+        resp.setBody("STUB-RESPONSE");
+        rule.setResponses(Collections.singletonList(resp));
+
+        when(storage.listRules()).thenReturn(Collections.singletonList(rule));
+        when(storage.listEnvironments()).thenReturn(new ArrayList<>());
+
+        // Produce a real payload to order-events
+        ByteBuf produceResponse = sendRequest(buildProduceRequest("order-events", 0, "k1", "real-payload"));
+        consumeProduceResponse(produceResponse);
+
+        // The store should hold the STUB body, not the real payload.
+        List<KafkaMessageStore.StoredMessage> stored =
+                messageStore.fetch("order-events", 0, 0, 1024 * 1024);
+        assertEquals("Should store 1 message", 1, stored.size());
+        String storedValue = stored.get(0).value != null
+                ? new String(stored.get(0).value, StandardCharsets.UTF_8) : null;
+        assertEquals("Stored value should be the stub body", "STUB-RESPONSE", storedValue);
+    }
+
+    /**
+     * A {@code bodyContains} condition matches on the decoded record payload.
+     */
+    @Test
+    public void testProduceMatchesBodyContainsCondition() throws Exception {
+        Rule rule = new Rule();
+        rule.setId("rule-body-1");
+        rule.setProtocol("kafka");
+        rule.setEnabled(true);
+        MatchCondition cond = new MatchCondition();
+        cond.setType("bodyContains");
+        cond.setValue("VIP");
+        rule.setConditions(Collections.singletonList(cond));
+        ResponseEntry resp = new ResponseEntry();
+        resp.setBody("VIP-STUB");
+        rule.setResponses(Collections.singletonList(resp));
+
+        when(storage.listRules()).thenReturn(Collections.singletonList(rule));
+
+        // Producing a body containing "VIP" should stub it.
+        ByteBuf r1 = sendRequest(buildProduceRequest("any-topic", 0, null, "{\"user\":\"VIP-carl\"}"));
+        consumeProduceResponse(r1);
+        List<KafkaMessageStore.StoredMessage> s1 =
+                messageStore.fetch("any-topic", 0, 0, 1024 * 1024);
+        assertEquals(1, s1.size());
+        assertEquals("VIP-STUB", new String(s1.get(0).value, StandardCharsets.UTF_8));
+
+        // Producing a body WITHOUT "VIP" should NOT stub — original payload stored.
+        messageStore.clear();
+        ByteBuf r2 = sendRequest(buildProduceRequest("any-topic", 0, null, "plain-message"));
+        consumeProduceResponse(r2);
+        List<KafkaMessageStore.StoredMessage> s2 =
+                messageStore.fetch("any-topic", 0, 0, 1024 * 1024);
+        assertEquals(1, s2.size());
+        assertEquals("plain-message", new String(s2.get(0).value, StandardCharsets.UTF_8));
+    }
+
+    /**
+     * RECORD mode must persist a RecordingEntry with the decoded payload
+     * (not the raw batch bytes) and the matched rule id.
+     */
+    @Test
+    public void testProduceRecordsWithRuleIdAndDecodedPayload() throws Exception {
+        Rule rule = new Rule();
+        rule.setId("rule-rec-1");
+        rule.setProtocol("kafka");
+        rule.setEnabled(true);
+        rule.setConditions(Collections.singletonList(MatchCondition.topic("equals", "rec-topic")));
+        rule.setResponses(Collections.singletonList(resp("RECORDED")));
+
+        when(storage.listRules()).thenReturn(Collections.singletonList(rule));
+        // RECORD mode → storage.addRecording must be invoked.
+        com.baafoo.core.model.Environment recEnv =
+                new com.baafoo.core.model.Environment();
+        recEnv.setName("default");
+        recEnv.setMode(EnvironmentMode.RECORD);
+        when(storage.listEnvironments()).thenReturn(Collections.singletonList(recEnv));
+
+        ByteBuf r = sendRequest(buildProduceRequest("rec-topic", 0, "k", "hello-payload"));
+        consumeProduceResponse(r);
+
+        // Verify a recording was added with the decoded payload + rule id.
+        verify(storage, atLeastOnce()).addRecording(
+                org.mockito.ArgumentMatchers.argThat(entry ->
+                        "rule-rec-1".equals(entry.getRuleId())
+                                && "kafka".equals(entry.getProtocol())
+                                && "rec-topic".equals(entry.getPath())
+                                && "hello-payload".equals(entry.getRequestBody())));
+    }
+
+    /**
+     * A compact-string (Request Header v2) clientId must not crash the decoder,
+     * even though we advertise API_VERSIONS v2. Validates the resilient fallback.
+     */
+    @Test
+    public void testCompactStringClientIdDoesNotCrash() throws Exception {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeShort(3);  // API key: Metadata
+        buf.writeShort(4);  // API version
+        buf.writeInt(99);   // correlation ID
+        // compact-string clientId "c": length 2 (= 1 + 1), then byte 'c'
+        buf.writeByte(2);
+        buf.writeByte('c');
+        // Metadata body: array of topics (compact in v2, but metadata v4 still uses
+        // int32-prefixed array + non-compact topic strings)
+        buf.writeInt(1);
+        writeNullableString(buf, "compact-topic");
+
+        ByteBuf resp = sendRequest(frameRequest(buf));
+        assertNotNull("Should not crash on compact clientId", resp);
+        int correlationId = resp.readInt();
+        assertEquals("Correlation id echoed despite compact header", 99, correlationId);
+    }
+
+    // helper: consume & assert a successful produce response (single topic/partition)
+    private void consumeProduceResponse(ByteBuf produceResponse) {
+        assertNotNull(produceResponse);
+        produceResponse.readInt();      // correlation id
+        produceResponse.readInt();      // topic count
+        readNullableString(produceResponse); // topic
+        produceResponse.readInt();      // partition count
+        produceResponse.readInt();      // partition index
+        // error code, base_offset, log_append_time(v2+), throttle(v1+)
+    }
+
+    private static ResponseEntry resp(String body) {
+        ResponseEntry r = new ResponseEntry();
+        r.setBody(body);
+        return r;
+    }
+
+
     @Test
     public void testFindCoordinatorReturnsBroker() throws Exception {
         ByteBuf response = sendRequest(buildFindCoordinatorRequest("test-group"));
@@ -349,26 +504,26 @@ public class KafkaMockBrokerTest {
         byte[] keyBytes = key != null ? key.getBytes(StandardCharsets.UTF_8) : null;
         byte[] valueBytes = value != null ? value.getBytes(StandardCharsets.UTF_8) : null;
 
-        // Build record
-        ByteBuf recordBuf = Unpooled.buffer();
-        recordBuf.writeByte(0); // attributes
-        writeVarint(recordBuf, 0); // timestampDelta
-        writeVarint(recordBuf, 0); // offsetDelta
+        // Build record body (without the leading length varint, added below)
+        ByteBuf body = Unpooled.buffer();
+        body.writeByte(0); // attributes
+        writeVarint(body, 0); // timestampDelta
+        writeVarint(body, 0); // offsetDelta
         if (keyBytes != null) {
-            writeVarint(recordBuf, keyBytes.length);
-            recordBuf.writeBytes(keyBytes);
+            writeVarint(body, keyBytes.length);
+            body.writeBytes(keyBytes);
         } else {
-            writeVarint(recordBuf, -1);
+            writeVarint(body, -1);
         }
         if (valueBytes != null) {
-            writeVarint(recordBuf, valueBytes.length);
-            recordBuf.writeBytes(valueBytes);
+            writeVarint(body, valueBytes.length);
+            body.writeBytes(valueBytes);
         } else {
-            writeVarint(recordBuf, -1);
+            writeVarint(body, -1);
         }
-        writeVarint(recordBuf, 0); // headers count
+        writeVarint(body, 0); // headers count
 
-        int recordLen = recordBuf.readableBytes();
+        int recordLen = body.readableBytes();
 
         // Build batch
         ByteBuf batchBuf = Unpooled.buffer();
@@ -387,8 +542,10 @@ public class KafkaMockBrokerTest {
         batchBuf.writeShort(0); // producerEpoch
         batchBuf.writeInt(0); // baseSequence
         batchBuf.writeInt(1); // recordsCount
-        batchBuf.writeBytes(recordBuf);
-        recordBuf.release();
+        // Per-record length varint prefix (matches real Kafka RecordBatch v2)
+        writeVarint(batchBuf, recordLen);
+        batchBuf.writeBytes(body);
+        body.release();
 
         // Fix batchLength
         int batchLength = batchBuf.readableBytes() - 12; // exclude baseOffset(8) + batchLength(4)
