@@ -1,39 +1,43 @@
 # =============================================================================
-# Baafoo Server Dockerfile
+# Baafoo Test Spring Dockerfile — 带Agent的Spring Boot测试应用
 # 前提：先在本地执行 mvnw clean package -DskipTests 构建好 JAR
-# 前端构建已由 Maven exec plugin 自动完成（npm install && npm run build）
 # =============================================================================
 
 FROM eclipse-temurin:8-jre-alpine
 
 LABEL maintainer="Baafoo"
 
-# 时区设置
 RUN apk add --no-cache tzdata && \
     cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     echo "Asia/Shanghai" > /etc/timezone && \
     apk del tzdata
 
-# 创建非 root 用户
 RUN addgroup -S baafoo && adduser -S baafoo -G baafoo
 
 WORKDIR /app
 
 # 复制本地构建好的 JAR 文件
-COPY baafoo-server/target/baafoo-server-*.jar ./baafoo-server.jar
+COPY baafoo-test-spring/target/baafoo-test-spring-*.jar ./baafoo-test-spring.jar
 COPY baafoo-agent/target/baafoo-agent-*.jar ./baafoo-agent.jar
 
-# 创建数据目录
+# 复制Agent配置（由docker-compose volume覆盖）
+COPY baafoo-agent/src/main/resources/baafoo-agent.yml ./baafoo-agent.yml
+
 RUN mkdir -p /home/baafoo/.baafoo/data && \
     chown -R baafoo:baafoo /app /home/baafoo/.baafoo
 
 USER baafoo
 
-# Server HTTP 端口
-EXPOSE 8084
+EXPOSE 9090
 
 ENV JAVA_OPTS="" \
-    BAAFOO_HTTP_PORT="8084" \
-    BAAFOO_DB_TYPE="h2"
+    BAAFOO_SERVER_HOST="server" \
+    BAAFOO_ENV="staging-a" \
+    SERVER_PORT=9090
 
-ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /app/baafoo-server.jar"]
+# 以Agent模式启动Spring Boot应用
+ENTRYPOINT ["sh", "-c", \
+    "java ${JAVA_OPTS} \
+     -javaagent:/app/baafoo-agent.jar=config=/app/baafoo-agent.yml \
+     -jar /app/baafoo-test-spring.jar \
+     --server.port=${SERVER_PORT}"]

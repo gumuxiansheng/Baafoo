@@ -1,0 +1,249 @@
+# =============================================================================
+# Baafoo Staging — 完整模拟生产环境
+#
+# 架构：
+#   ┌──────────────────────────────────────────────────────────────┐
+#   │  baafoo-staging-net                                          │
+#   │                                                              │
+#   │  ┌──────────────┐  ┌──────────────┐                         │
+#   │  │ baafoo-server │  │  postgres:15  │                         │
+#   │  │  :8084 (API)  │  │  :5432       │                         │
+#   │  │  :9000 (HTTP) │  └──────────────┘                         │
+#   │  │  :9001 (TCP)  │                                           │
+#   │  │  :9002 (Kafka)│  ┌──────────────┐  ┌──────────────┐      │
+#   │  │  :9003 (Pulsar)│ │ app-env-a     │  │ app-env-b     │      │
+#   │  │  :9004 (JMS)  │  │ (test-spring) │  │ (test-spring) │      │
+#   │  └──────────────┘  │ :9090         │  │ :9091         │      │
+#   │                     └──────────────┘  └──────────────┘      │
+#   │                                                              │
+#   │  ┌──────────────┐  ┌──────────────┐                         │
+#   │  │ cli-env-a     │  │ staging-init  │                         │
+#   │  │ (test-app)    │  │ (规则初始化)   │                         │
+#   │  └──────────────┘  └──────────────┘                         │
+#   └──────────────────────────────────────────────────────────────┘
+#
+# 用法:
+#   启动全部:     docker compose -f docker-compose.yml -f docker-compose.staging.yml up --build
+#   仅启动核心:   docker compose -f docker-compose.yml -f docker-compose.staging.yml up --build server postgres app-env-a app-env-b
+#   停止:        docker compose -f docker-compose.yml -f docker-compose.staging.yml down -v
+#
+# 注意: 必须与 docker-compose.yml 叠加使用
+# =============================================================================
+
+networks:
+  baafoo-staging-net:
+    driver: bridge
+
+services:
+
+  # =========================================================================
+  # Baafoo Server — 覆盖基础配置，使用 PostgreSQL + RBAC
+  # =========================================================================
+  server:
+    networks:
+      - baafoo-staging-net
+    ports:
+      - "8084:8084"
+      - "9000:9000"
+      - "9001:9001"
+      - "9002:9002"
+      - "9003:9003"
+      - "9004:9004"
+    environment:
+      - BAAFOO_HTTP_PORT=8084
+      - BAAFOO_DB_TYPE=postgresql
+      - BAAFOO_DB_URL=jdbc:postgresql://postgres:5432/baafoo
+      - BAAFOO_DB_USERNAME=baafoo
+      - BAAFOO_DB_PASSWORD=baafoo
+      - JAVA_OPTS=-Xms256m -Xmx512m
+    volumes:
+      - ./deploy/staging/baafoo-server.yml:/app/baafoo-server.yml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8084/__baafoo__/api/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+
+  # =========================================================================
+  # PostgreSQL — staging 必选（覆盖基础compose的profiles限制）
+  # =========================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: baafoo-staging-postgres
+    networks:
+      - baafoo-staging-net
+    environment:
+      - POSTGRES_DB=baafoo
+      - POSTGRES_USER=baafoo
+      - POSTGRES_PASSWORD=baafoo
+    ports: !override
+      - "15432:5432"
+    volumes:
+      - postgres-staging-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U baafoo -d baafoo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    profiles: !override []
+
+  # =========================================================================
+  # 环境A — Spring Boot 测试应用 (staging-a)
+  # =========================================================================
+  app-env-a:
+    build:
+      context: .
+      dockerfile: baafoo-test-spring/Dockerfile
+    container_name: baafoo-app-env-a
+    networks:
+      - baafoo-staging-net
+    ports:
+      - "9090:9090"
+    environment:
+      - BAAFOO_SERVER_HOST=server
+      - BAAFOO_ENV=staging-a
+      - SERVER_PORT=9090
+      - JAVA_OPTS=-Xms128m -Xmx256m
+    volumes:
+      - ./deploy/staging/baafoo-agent-env-a.yml:/app/baafoo-agent.yml:ro
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9090/api/stub-demo/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # =========================================================================
+  # 环境B — Spring Boot 测试应用 (staging-b)
+  # =========================================================================
+  app-env-b:
+    build:
+      context: .
+      dockerfile: baafoo-test-spring/Dockerfile
+    container_name: baafoo-app-env-b
+    networks:
+      - baafoo-staging-net
+    ports:
+      - "9091:9091"
+    environment:
+      - BAAFOO_SERVER_HOST=server
+      - BAAFOO_ENV=staging-b
+      - SERVER_PORT=9091
+      - JAVA_OPTS=-Xms128m -Xmx256m
+    volumes:
+      - ./deploy/staging/baafoo-agent-env-b.yml:/app/baafoo-agent.yml:ro
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9091/api/stub-demo/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # =========================================================================
+  # CLI测试工具 — 环境A的交互式测试应用 (staging-a)
+  # =========================================================================
+  cli-env-a:
+    build:
+      context: .
+      dockerfile: baafoo-test-app/Dockerfile
+    container_name: baafoo-cli-env-a
+    networks:
+      - baafoo-staging-net
+    environment:
+      - BAAFOO_SERVER_HOST=server
+      - BAAFOO_ENV=staging-a
+      - JAVA_OPTS=-Xms64m -Xmx128m
+    volumes:
+      - ./deploy/staging/baafoo-agent-env-a.yml:/app/baafoo-agent.yml:ro
+    depends_on:
+      server:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+    profiles:
+      - cli
+
+  # =========================================================================
+  # Staging 初始化 — 自动创建环境和规则
+  # =========================================================================
+  staging-init:
+    image: curlimages/curl:latest
+    container_name: baafoo-staging-init
+    networks:
+      - baafoo-staging-net
+    depends_on:
+      server:
+        condition: service_healthy
+      app-env-a:
+        condition: service_healthy
+      app-env-b:
+        condition: service_healthy
+    entrypoint: >
+      sh -c '
+        echo "============================================" &&
+        echo "  Baafoo Staging 环境初始化" &&
+        echo "============================================" &&
+        echo "" &&
+        echo "[1/6] 创建 staging-a 环境..." &&
+        curl -sf -X POST http://server:8084/__baafoo__/api/environments \
+          -H "Content-Type: application/json" \
+          -H "X-Api-Key: staging-admin-key" \
+          -d "{\"name\":\"staging-a\",\"mode\":\"stub\",\"description\":\"Staging环境A - Spring Boot测试\"}" && echo "  OK" || echo "  已存在" &&
+        echo "" &&
+        echo "[2/6] 创建 staging-b 环境..." &&
+        curl -sf -X POST http://server:8084/__baafoo__/api/environments \
+          -H "Content-Type: application/json" \
+          -H "X-Api-Key: staging-admin-key" \
+          -d "{\"name\":\"staging-b\",\"mode\":\"stub\",\"description\":\"Staging环境B - Spring Boot测试\"}" && echo "  OK" || echo "  已存在" &&
+        echo "" &&
+        echo "[3/6] 创建 staging-a HTTP挡板规则..." &&
+        curl -sf -X POST http://server:8084/__baafoo__/api/rules \
+          -H "Content-Type: application/json" \
+          -H "X-Api-Key: staging-admin-key" \
+          -d "{\"id\":\"staging-a-http\",\"name\":\"Staging-A HTTP挡板\",\"protocol\":\"http\",\"host\":\"httpbin.org\",\"port\":80,\"conditions\":[{\"type\":\"path\",\"operator\":\"startsWith\",\"value\":\"/\"}],\"responses\":[{\"name\":\"挡板响应\",\"statusCode\":200,\"body\":\"{\\\"mocked\\\":true,\\\"env\\\":\\\"staging-a\\\",\\\"protocol\\\":\\\"http\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"staging\",\"env-a\"],\"environments\":[\"staging-a\"]}" && echo "  OK" || echo "  已存在" &&
+        echo "" &&
+        echo "[4/6] 创建 staging-b HTTP挡板规则..." &&
+        curl -sf -X POST http://server:8084/__baafoo__/api/rules \
+          -H "Content-Type: application/json" \
+          -H "X-Api-Key: staging-admin-key" \
+          -d "{\"id\":\"staging-b-http\",\"name\":\"Staging-B HTTP挡板\",\"protocol\":\"http\",\"host\":\"httpbin.org\",\"port\":80,\"conditions\":[{\"type\":\"path\",\"operator\":\"startsWith\",\"value\":\"/\"}],\"responses\":[{\"name\":\"挡板响应\",\"statusCode\":200,\"body\":\"{\\\"mocked\\\":true,\\\"env\\\":\\\"staging-b\\\",\\\"protocol\\\":\\\"http\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"staging\",\"env-b\"],\"environments\":[\"staging-b\"]}" && echo "  OK" || echo "  已存在" &&
+        echo "" &&
+        echo "[5/6] 验证 staging-a 应用连通性..." &&
+        curl -sf http://app-env-a:9090/api/stub-demo/health && echo "  app-env-a OK" || echo "  app-env-a 不可达" &&
+        echo "" &&
+        echo "[6/6] 验证 staging-b 应用连通性..." &&
+        curl -sf http://app-env-b:9091/api/stub-demo/health && echo "  app-env-b OK" || echo "  app-env-b 不可达" &&
+        echo "" &&
+        echo "============================================" &&
+        echo "  Staging 环境初始化完成" &&
+        echo "============================================" &&
+        echo "" &&
+        echo "  Web控制台:  http://localhost:8084" &&
+        echo "  API文档:    http://localhost:8084/__baafoo__/api/rules" &&
+        echo "  环境A应用:  http://localhost:9090" &&
+        echo "  环境B应用:  http://localhost:9091" &&
+        echo "  PostgreSQL: localhost:5434 (baafoo/baafoo)" &&
+        echo "" &&
+        echo "  API Keys:" &&
+        echo "    admin:     staging-admin-key" &&
+        echo "    developer: staging-dev-key" &&
+        echo "    tester:    staging-test-key" &&
+        echo "============================================"
+      '
+
+volumes:
+  postgres-staging-data:
