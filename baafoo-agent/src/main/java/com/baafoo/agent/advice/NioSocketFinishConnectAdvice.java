@@ -76,6 +76,8 @@ public final class NioSocketFinishConnectAdvice {
             }
         } catch (Throwable t) {
             // finishConnect might throw if not yet connected — that's fine
+            // Use GlobalRouteState bridge to avoid Bootstrap CL SLF4J issues
+            GlobalRouteState.logDebug("[Baafoo] NioSocketFinishConnectAdvice: " + t.getMessage());
         }
     }
 }

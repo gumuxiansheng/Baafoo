@@ -47,6 +47,25 @@ public class InterceptResultTest {
     }
 
     @Test
+    public void testRedirectFactory() {
+        InterceptResult r = InterceptResult.redirect("localhost", 9005);
+        // redirect is neither stubbed (no canned response body) nor a passthrough:
+        // it asks the agent to rewrite the connection target.
+        assertTrue(r.isRedirect());
+        assertFalse(r.isStubbed());
+        assertEquals("localhost", r.getRedirectHost());
+        assertEquals(9005, r.getRedirectPort());
+    }
+
+    @Test
+    public void testRedirectIsNotStubAndViceVersa() {
+        // redirect and stub are mutually exclusive result shapes.
+        assertFalse(InterceptResult.redirect("h", 1).isStubbed());
+        assertFalse(InterceptResult.stub(new byte[0], new HashMap<String, String>(), 200).isRedirect());
+        assertFalse(InterceptResult.passthrough().isRedirect());
+    }
+
+    @Test
     public void testGettersAndSetters() {
         InterceptResult r = new InterceptResult();
         r.setStubbed(true);

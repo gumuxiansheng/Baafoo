@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.lang.instrument.Instrumentation;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.jar.JarFile;
 import java.util.concurrent.ConcurrentHashMap;
@@ -506,6 +507,10 @@ public class BaafooAgent {
         // to wrap the socket's InputStream with a RecordingInputStream.
         // The sessionInfo array contains {sessionId, host, portString}.
         GlobalRouteState.INPUT_STREAM_WRAPPER = (java.io.InputStream in, String[] sessionInfo) -> {
+            if (sessionInfo == null || sessionInfo.length < 3) {
+                log.warn("Invalid sessionInfo for INPUT_STREAM_WRAPPER: {}", Arrays.toString(sessionInfo));
+                return in;
+            }
             String sessionId = sessionInfo[0];
             String host = sessionInfo[1];
             int port = Integer.parseInt(sessionInfo[2]);
@@ -514,6 +519,10 @@ public class BaafooAgent {
 
         // Set up the OUTPUT_STREAM_WRAPPER bridge function
         GlobalRouteState.OUTPUT_STREAM_WRAPPER = (java.io.OutputStream out, String[] sessionInfo) -> {
+            if (sessionInfo == null || sessionInfo.length < 3) {
+                log.warn("Invalid sessionInfo for OUTPUT_STREAM_WRAPPER: {}", Arrays.toString(sessionInfo));
+                return out;
+            }
             String sessionId = sessionInfo[0];
             String host = sessionInfo[1];
             int port = Integer.parseInt(sessionInfo[2]);
@@ -524,7 +533,15 @@ public class BaafooAgent {
         // This is called from Bootstrap CL advice (SocketChannelReadAdvice/SocketChannelWriteAdvice)
         // to record NIO SocketChannel read/write data.
         GlobalRouteState.NIO_RECORDING_HANDLER = (Object[] args) -> {
+            if (args == null || args.length < 1 || !(args[0] instanceof String[])) {
+                log.warn("Invalid args for NIO_RECORDING_HANDLER");
+                return;
+            }
             String[] sessionInfo = (String[]) args[0];
+            if (sessionInfo == null || sessionInfo.length < 3) {
+                log.warn("Invalid sessionInfo for NIO_RECORDING_HANDLER: {}", Arrays.toString(sessionInfo));
+                return;
+            }
             String direction = (String) args[1];
             String hexData = (String) args[2];
             String host = sessionInfo[1];
@@ -533,7 +550,7 @@ public class BaafooAgent {
             entry.setSessionId(sessionInfo[0]);
             entry.setHost(host);
             entry.setPort(port);
-            entry.setProtocol(inferProtocol(host, port));
+            entry.setProtocol(GlobalRouteState.inferProtocol(host, port));
             entry.setDirection(direction);
             entry.setDataHex(hexData);
             entry.setRecordedAt(System.currentTimeMillis());
@@ -603,55 +620,5 @@ public class BaafooAgent {
             log.warn("Failed to sync log handlers to Bootstrap CL GlobalRouteState: {}. " +
                     "Bootstrap CL advice will fall back to System.out.", e.getMessage());
         }
-    }
-
-    /**
-     * Infer the high-level protocol from the target host:port.
-     * Socket-level recording only sees raw TCP bytes, but we can infer
-     * the protocol from the stub port the connection was redirected to:
-     * <ul>
-     *   <li>9000 → http</li>
-     *   <li>9001 → tcp</li>
-     *   <li>9002 → kafka</li>
-     *   <li>9003 → pulsar</li>
-     *   <li>9004 → jms</li>
-     * </ul>
-     * For non-internal connections, look up the route to find the target port.
-     */
-    private static String inferProtocol(String host, int port) {
-        // Check if this is an internal connection to a stub port
-        if (GlobalRouteState.isInternal(host, port)) {
-            if (port == GlobalRouteState.HTTP_PORT) return "http";
-            if (port == GlobalRouteState.TCP_PORT) return "tcp";
-            if (port == GlobalRouteState.KAFKA_PORT) return "kafka";
-            if (port == GlobalRouteState.PULSAR_PORT) return "pulsar";
-            if (port == GlobalRouteState.JMS_PORT) return "jms";
-        }
-        // For external connections, look up the route to find target port
-        String[] route = GlobalRouteState.lookup(host, port);
-        if (route != null) {
-            int targetPort = Integer.parseInt(route[1]);
-            if (targetPort == GlobalRouteState.HTTP_PORT) return "http";
-            if (targetPort == GlobalRouteState.TCP_PORT) return "tcp";
-            if (targetPort == GlobalRouteState.KAFKA_PORT) return "kafka";
-            if (targetPort == GlobalRouteState.PULSAR_PORT) return "pulsar";
-            if (targetPort == GlobalRouteState.JMS_PORT) return "jms";
-        }
-        // Also try DNS cache fallback
-        if (route == null && !"127.0.0.1".equals(host) && !"localhost".equals(host)) {
-            String originalDomain = GlobalRouteState.DNS_CACHE.get(host);
-            if (originalDomain != null) {
-                route = GlobalRouteState.lookup(originalDomain, port);
-                if (route != null) {
-                    int targetPort = Integer.parseInt(route[1]);
-                    if (targetPort == GlobalRouteState.HTTP_PORT) return "http";
-                    if (targetPort == GlobalRouteState.TCP_PORT) return "tcp";
-                    if (targetPort == GlobalRouteState.KAFKA_PORT) return "kafka";
-                    if (targetPort == GlobalRouteState.PULSAR_PORT) return "pulsar";
-                    if (targetPort == GlobalRouteState.JMS_PORT) return "jms";
-                }
-            }
-        }
-        return "tcp";
     }
 }

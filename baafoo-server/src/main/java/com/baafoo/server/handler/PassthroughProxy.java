@@ -175,7 +175,13 @@ public class PassthroughProxy {
                     if (cf.isSuccess()) {
                         cf.channel().writeAndFlush(request);
                     } else {
-                        promise.setFailure(cf.cause());
+                        Throwable cause = cf.cause();
+                        if (cause == null) {
+                            // Connection failed without explicit cause - likely network issue
+                            cause = new Exception("Connection to " + host + ":" + targetPort + " failed (no additional details)");
+                        }
+                        log.error("Passthrough connection failed: {}:{} - {}", host, targetPort, cause.getMessage());
+                        promise.setFailure(cause);
                     }
                 }
             });

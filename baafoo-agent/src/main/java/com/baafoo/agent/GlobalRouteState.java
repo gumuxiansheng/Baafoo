@@ -53,7 +53,7 @@ public final class GlobalRouteState {
 
     // ---- Logging bridge ----
     // Set by the App CL side (BaafooAgent) with SLF4J-backed implementations.
-    // Advice code inlined into Bootstrap CL classes calls logInfo/logWarn/logError,
+    // Advice code inlined into Bootstrap CL classes calls logInfo/logWarn/logError/logDebug,
     // which delegate to these handlers. Falls back to System.out when not set.
 
     /** @see #logInfo(String) */
@@ -64,6 +64,9 @@ public final class GlobalRouteState {
 
     /** @see #logError(String) */
     public static volatile Consumer<String> LOG_ERROR_HANDLER;
+
+    /** @see #logDebug(String) */
+    public static volatile Consumer<String> LOG_DEBUG_HANDLER;
 
     /**
      * DNS resolution cache: maps resolved IP addresses back to original domain names.
@@ -164,6 +167,15 @@ public final class GlobalRouteState {
         }
     }
 
+    public static void logDebug(String msg) {
+        Consumer<String> h = LOG_DEBUG_HANDLER;
+        if (h != null) {
+            try { h.accept(msg); } catch (Throwable t) { System.out.println(msg); }
+        } else {
+            System.out.println(msg);
+        }
+    }
+
     /**
      * Record a DNS resolution for later route lookup.
      *
@@ -246,6 +258,60 @@ public final class GlobalRouteState {
         if (port == HTTP_PORT || port == TCP_PORT || port == KAFKA_PORT
                 || port == PULSAR_PORT || port == JMS_PORT) return true;
         return false;
+    }
+
+    /**
+     * Infer the high-level protocol name from a connection's target host:port.
+     *
+     * <p>Socket-level recording only sees raw TCP bytes, but a connection can be
+     * mapped back to a protocol via the stub port it was redirected to:
+     * <ul>
+     *   <li>9000 → http</li>
+     *   <li>9001 → tcp</li>
+     *   <li>9002 → kafka</li>
+     *   <li>9003 → pulsar</li>
+     *   <li>9004 → jms</li>
+     * </ul>
+     * For connections to an internal stub port the port itself identifies the
+     * protocol; for external connections the route table is consulted to find
+     * the redirect target port (with a DNS-cache fallback for Docker/IP cases).
+     * Returns {@code "tcp"} when no mapping is found.</p>
+     */
+    public static String inferProtocol(String host, int port) {
+        // Internal connection to a stub port — the port identifies the protocol.
+        if (isInternal(host, port)) {
+            if (port == HTTP_PORT) return "http";
+            if (port == TCP_PORT) return "tcp";
+            if (port == KAFKA_PORT) return "kafka";
+            if (port == PULSAR_PORT) return "pulsar";
+            if (port == JMS_PORT) return "jms";
+        }
+        // External connection — look up the route to find the target stub port.
+        String[] route = lookup(host, port);
+        String protocol = protocolForRoute(route);
+        if (protocol != null) return protocol;
+        // DNS cache fallback: the host may be a resolved IP whose original domain
+        // is the route key (common in Docker where the app connects to a container IP).
+        if (route == null && !"127.0.0.1".equals(host) && !"localhost".equals(host)) {
+            String originalDomain = DNS_CACHE.get(host);
+            if (originalDomain != null) {
+                protocol = protocolForRoute(lookup(originalDomain, port));
+                if (protocol != null) return protocol;
+            }
+        }
+        return "tcp";
+    }
+
+    /** Map a {@code lookup(...)} result's target port to a protocol name, or null. */
+    private static String protocolForRoute(String[] route) {
+        if (route == null) return null;
+        int targetPort = Integer.parseInt(route[1]);
+        if (targetPort == HTTP_PORT) return "http";
+        if (targetPort == TCP_PORT) return "tcp";
+        if (targetPort == KAFKA_PORT) return "kafka";
+        if (targetPort == PULSAR_PORT) return "pulsar";
+        if (targetPort == JMS_PORT) return "jms";
+        return null;
     }
 
     public static void addRoute(String originalHost, int originalPort, String targetHost, int targetPort) {

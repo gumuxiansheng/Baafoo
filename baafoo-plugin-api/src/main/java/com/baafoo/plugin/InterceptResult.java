@@ -31,6 +31,17 @@ public class InterceptResult {
     /** Metadata for recording */
     private Map<String, Object> metadata;
 
+    /**
+     * Redirect target host. Only meaningful when {@link #isRedirect()} is true —
+     * the plugin asks the agent to rewrite the connection target to this host
+     * (for binary protocols like Pulsar/Kafka/JMS where returning a response
+     * body is not meaningful).
+     */
+    private String redirectHost;
+
+    /** Redirect target port (used together with {@link #redirectHost}). */
+    private int redirectPort;
+
     public InterceptResult() {
         this.stubbed = false;
         this.responseData = new byte[0];
@@ -55,6 +66,23 @@ public class InterceptResult {
      */
     public static InterceptResult passthrough() {
         return new InterceptResult();
+    }
+
+    /**
+     * Create a redirect result: ask the agent to rewrite the connection target
+     * to the given host:port instead of injecting a response body.
+     *
+     * <p>This is the correct result type for binary protocols (Pulsar/Kafka/JMS):
+     * the plugin only decides where to redirect; the actual protocol interaction
+     * is handled by the mock broker at the redirect target. Using {@link #stub}
+     * for these protocols is wrong because there is no "response body" to return
+     * at the connection-establishment stage.</p>
+     */
+    public static InterceptResult redirect(String host, int port) {
+        InterceptResult result = new InterceptResult();
+        result.redirectHost = host;
+        result.redirectPort = port;
+        return result;
     }
 
     /**
@@ -88,10 +116,20 @@ public class InterceptResult {
     public Map<String, Object> getMetadata() { return metadata; }
     public void setMetadata(Map<String, Object> metadata) { this.metadata = metadata; }
 
+    /** True when the plugin asked to rewrite the connection target. */
+    public boolean isRedirect() { return redirectHost != null; }
+
+    public String getRedirectHost() { return redirectHost; }
+    public void setRedirectHost(String redirectHost) { this.redirectHost = redirectHost; }
+
+    public int getRedirectPort() { return redirectPort; }
+    public void setRedirectPort(int redirectPort) { this.redirectPort = redirectPort; }
+
     @Override
     public String toString() {
         return "InterceptResult{" +
                 "stubbed=" + stubbed +
+                ", redirect=" + (isRedirect() ? redirectHost + ":" + redirectPort : "false") +
                 ", statusCode=" + statusCode +
                 ", responseDataSize=" + (responseData != null ? responseData.length : 0) +
                 '}';
