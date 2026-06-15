@@ -1,11 +1,11 @@
 # Baafoo 挡板系统 - 产品需求文档(PRD)
 
-> **文档状态**:PRD v2.3
+> **文档状态**:PRD v2.4
 > **对齐状态**:✅ 最新
 > **目标读者**:产品团队、工程团队、QA 团队
 > **关联文档**:[概念设计说明书 v0.8](../1_concepts/baafoo-concept-design.md)
-> **最后更新**:2026-06-03
-> **变更摘要**:v2.3 - **新增需求**:R-S2 AC-11 Faker 动态数据函数(`{{faker.phone}}`/`{{faker.email}}`/`{{faker.name}}`等);R-S2 AC-12 响应多编码格式支持(GBK/GB2312/Big5等),每个响应分支可独立设置 charset,Passthrough 录制自动解析下游编码;v2.2 - **新增需求**:用户角色权限控制(RBAC),定义管理员/开发/测试/游客四类角色,按角色控制规则/场景/环境的增删改查权限,新增 R-S7.7(权限控制 API)、R-W7(用户管理界面)、权限配置项及风险项;v2.1 - **需求变更**:1) 场景集关联环境时,其包含的规则自动继承环境关联且不可删除;2) 新增 `GET /api/rules/{id}/inherited-environments` API 查询规则继承的场景集环境;v2.0 - 1) 未匹配规则的请求默认改为**透传**(原 404),`baafoo.stub.unmatched-default` 默认值改为 `passthrough`;2) 规则及场景集新增 `environments` 细粒度控制,可配置在哪些环境生效(新规则默认不生效、新环境默认旧规则不生效);Q8 决议更新为规则与环境双向绑定;N6 非目标删除
+> **最后更新**:2026-06-15
+> **变更摘要**:v2.4 - **实现状态更新**:Kafka/Pulsar/JMS Mock Broker 从 Beta 升级为正式支持，已验证 topic 条件匹配、消息录制功能；新增 Docker Compose 多环境部署方案（staging 环境）；TCP Socket 支持 BIO/NIO 双模式拦截；录制功能已在 HTTP/Kafka/Pulsar/JMS 协议验证通过；v2.3 - **新增需求**:R-S2 AC-11 Faker 动态数据函数(`{{faker.phone}}`/`{{faker.email}}`/`{{faker.name}}`等);R-S2 AC-12 响应多编码格式支持(GBK/GB2312/Big5等),每个响应分支可独立设置 charset,Passthrough 录制自动解析下游编码;v2.2 - **新增需求**:用户角色权限控制(RBAC),定义管理员/开发/测试/游客四类角色,按角色控制规则/场景/环境的增删改查权限,新增 R-S7.7(权限控制 API)、R-W7(用户管理界面)、权限配置项及风险项;v2.1 - **需求变更**:1) 场景集关联环境时,其包含的规则自动继承环境关联且不可删除;2) 新增 `GET /api/rules/{id}/inherited-environments` API 查询规则继承的场景集环境;v2.0 - 1) 未匹配规则的请求默认改为**透传**(原 404),`baafoo.stub.unmatched-default` 默认值改为 `passthrough`;2) 规则及场景集新增 `environments` 细粒度控制,可配置在哪些环境生效(新规则默认不生效、新环境默认旧规则不生效);Q8 决议更新为规则与环境双向绑定;N6 非目标删除
 ---
 
 ## 1. 问题陈述
@@ -195,20 +195,23 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 拦截 `Socket.connect(SocketAddress)` 方法,在连接建立前根据路由规则判断是否需要重写目标地址。拦截范围覆盖 OkHttp、Apache HttpClient、JDBC Driver、原生 Socket 等所有基于 `java.net.Socket` 的网络框架。 |
+| **描述** | 拦截 `Socket.connect(SocketAddress)` 方法,在连接建立前根据路由规则判断是否需要重写目标地址。拦截范围覆盖 OkHttp、Apache HttpClient、JDBC Driver、原生 Socket 等所有基于 `java.net.Socket` 的网络框架。**已实现 BIO 模式拦截**。 |
 | **AC-01** | 配置某 `host:port` 为 `stub` 模式后,应用对该地址的 `Socket.connect()` 实际连接到 Baafoo Server 对应协议端口 |
 | **AC-02** | 配置为 `passthrough` 的 `host:port`,连接行为与未装 Agent 完全一致 |
 | **AC-03** | 拦截逻辑导致的额外延迟在 P99 场景下不超过 1ms |
 | **AC-04** | 连接建立失败时(如 Baafoo Server 未启动),Agent 输出 ERROR 日志,连接失败不静默降级;用户可通过 `baafoo.agent.fail-open=true` 配置显式允许降级为 passthrough |
+| **实现状态** | ✅ 已实现并通过集成测试验证 |
 
 #### R-A3:NIO SocketChannel 拦截 - P0
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 拦截 `sun.nio.ch.SocketChannelImpl#connect()` 方法,覆盖 Netty 及基于 NIO 的框架。 |
+| **描述** | 拦截 `sun.nio.ch.SocketChannelImpl#connect()` 和 `finishConnect()` 方法,覆盖 Netty 及基于 NIO 的框架。**已实现 NIO 模式拦截**。 |
 | **AC-01** | 使用 Netty 发起的 TCP 连接同样被拦截和地址重写 |
 | **AC-02** | 在 JDK 8u352 / 11.0.18 / 17.0.6 三个版本上,Netty 4.1.x 客户端发起的 TCP 连接均被正确拦截和地址重写 |
+| **AC-03** | **已实现**:`finishConnect()` 方法拦截,确保 Pulsar 等 NIO 客户端正确建立连接 |
 | **技术约束** | 统一使用 Byte Buddy Advice 内联机制,通过 `--add-opens java.base/sun.nio.ch=ALL-UNNAMED` 开放访问;针对不同 JDK 版本通过运行时版本检测加载对应的 Advice 实现类 |
+| **实现状态** | ✅ 已实现并通过集成测试验证 |
 
 #### R-A4:Kafka Client 拦截 - P1
 
@@ -276,12 +279,16 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 在 `record` 或 `record-and-stub` 模式下,Agent 透明代理真实连接,同时将请求和响应的原始字节暂存于内存缓冲区。缓冲区满或录制 session 结束时,Agent 通过控制通道将录制数据上传至 Server 统一存储。Server 端存储格式:JSON 元数据文件 + 原始字节 blob 文件,以 session ID 组织。 |
+| **描述** | 在 `record` 或 `record-and-stub` 模式下,Agent 透明代理真实连接,同时将请求和响应的原始字节暂存于内存缓冲区。缓冲区满或录制 session 结束时,Agent 通过控制通道将录制数据上传至 Server 统一存储。Server 端存储格式:JSON 元数据文件 + 原始字节 blob 文件,以 session ID 组织。**已实现 HTTP/Kafka/Pulsar/JMS 协议的录制功能**。 |
 | **AC-01** | 录制模式下,应用与真实下游的交互不受影响 |
 | **AC-02** | 切换到挡板模式后,能选择录制 session 进行回放 |
 | **AC-03** | HTTP 请求录制包含:method、URL、headers、body、响应 status、响应 headers、响应 body、耗时 |
 | **AC-04** | TCP 请求录制包含:请求 bytes(hex)、响应 bytes(hex)、时间戳 |
 | **AC-05** | Agent 上传录制数据失败时(如 Server 不可用),本地暂存并在 Server 恢复后重试上传 |
+| **AC-06** | **已实现**:Kafka 消息录制包含:topic、partition、key、value、offset、timestamp |
+| **AC-07** | **已实现**:Pulsar 消息录制包含:topic、messageId、key、value、properties、timestamp |
+| **AC-08** | **已实现**:JMS 消息录制包含:destination(Queue/Topic)、messageId、content、properties、timestamp |
+| **实现状态** | ✅ 已实现 HTTP/Kafka/Pulsar/JMS 录制并通过集成测试验证 |
 
 ---
 
@@ -331,21 +338,24 @@
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | (**Beta**)模拟 Kafka Broker 的协议子集,在独立端口(默认 9002)监听。v1 明确覆盖以下 API:**Metadata**(集群元数据查询)、**Produce**(生产者发送消息)、**Fetch**(消费者拉取消息)。这三个 API 覆盖了 Kafka Producer/Consumer 的核心运行路径,确保应用在 Mock 环境下的 Producer `send()` 和 Consumer `poll()` 均可正常工作。**v1.0 标记为 Beta,支持 Kafka Client 2.8+;不支持 `acks=all`、事务、Consumer Group Rebalance**。 |
+| **描述** | 模拟 Kafka Broker 的协议子集,在独立端口(默认 9002)监听。v1 明确覆盖以下 API:**Metadata**(集群元数据查询)、**Produce**(生产者发送消息)、**Fetch**(消费者拉取消息)。这三个 API 覆盖了 Kafka Producer/Consumer 的核心运行路径,确保应用在 Mock 环境下的 Producer `send()` 和 Consumer `poll()` 均可正常工作。**已支持 topic 条件匹配规则、消息录制功能**。**v1.0 支持 Kafka Client 2.8+;不支持 `acks=all`、事务、Consumer Group Rebalance**。 |
 | **AC-01** | **Metadata API**:客户端查询 Topic 元数据时,Mock Broker 返回该 Topic 的 partition 信息(默认 1 partition,leader 为 Mock Broker 自身),Producer/Consumer 无需连接真实集群即可获取元数据 |
 | **AC-02** | **Produce API**:Producer `send()` 正常返回 RecordMetadata(含 topic、partition、offset),消息被 Mock Broker 内存存储 |
 | **AC-03** | **Fetch API**:Consumer 按 topic + partition + offset 拉取时,Mock Broker 返回规则预设的消息序列;若预设消息已消费完毕,返回空消息集 |
 | **AC-04** | 支持配置消息投递延迟(`delay`)和 ack 模式(`acks=1` / `acks=all`) |
 | **AC-05** | 支持 topic 通配符订阅 |
 | **AC-06** | 未覆盖的 Kafka API(OffsetCommit、FindCoordinator、JoinGroup、SyncGroup、Heartbeat、ListGroups、DescribeConfigs 等)在客户端调用时返回空/默认响应,不抛异常,确保客户端不崩溃 |
-| **AC-07** | Mock Broker 启动时日志明确列出已支持的 API 列表、版本范围(Kafka Client 2.8+)和 Beta 标识 |
+| **AC-07** | Mock Broker 启动时日志明确列出已支持的 API 列表、版本范围(Kafka Client 2.8+) |
 | **AC-08** | 不支持的 Kafka 特性(`acks=all`、事务、Consumer Group Rebalance)在文档和 Web 控制台中明确标注"不支持",调用时返回明确错误响应而非静默异常 |
+| **AC-09** | **已实现**:支持 `topic` 条件匹配规则,规则通过 `conditions` 字段配置 topic 匹配条件 |
+| **AC-10** | **已实现**:RECORD 模式下消息自动录制到 Server 端,可通过 `/api/recordings` API 查询 |
+| **实现状态** | ✅ 已实现并通过集成测试验证 |
 
 #### R-S5:Pulsar Mock Broker - P1
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 模拟 Pulsar Broker 的最小协议子集(基于 Pulsar binary protocol,独立端口默认 9003)。**必须模拟 Topic Lookup 阶段**(`lookupTopic` / `getTopicsOfNamespace`),因为 Pulsar 客户端在 Producer/Consumer 创建前会先通过 Lookup 请求获取 Topic 所在 Broker 地址。Mock Broker 需在 Lookup 阶段返回自身地址,引导客户端直接与 Mock Broker 交互。 |
+| **描述** | 模拟 Pulsar Broker 的最小协议子集(基于 Pulsar binary protocol,独立端口默认 9003)。**必须模拟 Topic Lookup 阶段**(`lookupTopic` / `getTopicsOfNamespace`),因为 Pulsar 客户端在 Producer/Consumer 创建前会先通过 Lookup 请求获取 Topic 所在 Broker 地址。Mock Broker 需在 Lookup 阶段返回自身地址,引导客户端直接与 Mock Broker 交互。**已支持 topic 条件匹配规则、消息录制功能**。 |
 | **AC-01** | **Lookup 阶段**:客户端发起 `lookupTopic` 请求时,Mock Broker 返回自身地址(`localhost:9003`),引导客户端后续 Producer/Consumer 连接指向 Mock Broker |
 | **AC-02** | Producer `send()` 正常返回 MessageId |
 | **AC-03** | Consumer `receive()` 按 subscription 收到预设消息序列 |
@@ -354,15 +364,22 @@
 | **AC-06** | 支持基础 Primitive Schema(STRING / JSON) |
 | **AC-07** | `getTopicsOfNamespace` 请求返回规则中配置的 Topic 列表,确保客户端发现逻辑正常 |
 | **AC-08** | v1.0 仅覆盖最简路径:非分区 Topic + 单 Producer + 单 Consumer + Shared 订阅;分区 Topic、Key_Shared 订阅、Protobuf Schema 在 v1.5 迭代 |
+| **AC-09** | **已实现**:支持 `topic` 条件匹配规则,规则通过 `conditions` 字段配置 topic 匹配条件 |
+| **AC-10** | **已实现**:RECORD 模式下消息自动录制到 Server 端,可通过 `/api/recordings` API 查询 |
+| **实现状态** | ✅ 已实现并通过集成测试验证 |
+
 #### R-S6:JMS Mock Broker - P1
 
 | 属性 | 内容 |
 |---|---|
-| **描述** | 基于 ActiveMQ Artemis 内嵌模式,在独立端口(默认 9004)提供 JMS Broker 模拟。 |
+| **描述** | 基于 ActiveMQ Artemis 内嵌模式,在独立端口(默认 9004)提供 JMS Broker 模拟。**已支持 Queue/Topic 模式、消息录制功能**。 |
 | **AC-01** | Queue 模式消息 FIFO 投递 |
 | **AC-02** | Topic 模式消息广播 |
 | **AC-03** | 支持消息延迟投递和顺序控制 |
 | **AC-04** | 支持死信队列模拟(消息重试 N 次后进入 DLQ) |
+| **AC-05** | **已实现**:支持 `topic` 条件匹配规则(用于 Queue/Topic 名称匹配) |
+| **AC-06** | **已实现**:RECORD 模式下消息自动录制到 Server 端,可通过 `/api/recordings` API 查询 |
+| **实现状态** | ✅ 已实现并通过集成测试验证 |
 
 #### R-S7:规则管理 REST API - P0
 
@@ -943,3 +960,50 @@ Agent 注册时上传环境标识,Server 根据环境配置下发模式。模式
 ---
 
 *本文档为 Baafoo v1.5 产品需求文档。需求优先级和排期将在技术方案设计阶段与工程团队对齐后确定。*
+
+---
+
+## 附录 F:集成测试验证结果 (2026-06-15)
+
+### 测试环境
+
+- **Docker Compose 多环境部署**：1个 Server + 2个 Agent 应用（staging-a / staging-b）
+- **数据库**：PostgreSQL 15
+- **网络**：Docker Bridge 网络（baafoo-staging-net）
+
+### 测试结果汇总
+
+| 协议 | 环境 A (STUB) | 环境 B (RECORD) | 说明 |
+|:-----|:-------------:|:---------------:|:-----|
+| HTTP | ✅ 通过 | ✅ 通过 | STUB 返回 mock 响应；RECORD 透传真实响应并录制 |
+| TCP BIO | ✅ 通过 | ⚠️ 部分通过 | STUB 拦截成功；RECORD 模式下容器内 127.0.0.1 不可达 |
+| TCP NIO | ✅ 通过 | ⚠️ 部分通过 | 同上 |
+| Kafka | ✅ 通过 | ✅ 通过 | 消息发送成功，RECORD 模式下录制数据已存储 |
+| Pulsar | ✅ 通过 | ✅ 通过 | Lookup + Producer 成功，RECORD 模式下录制数据已存储 |
+| JMS | ✅ 通过 | ✅ 通过 | Queue 消息发送成功，RECORD 模式下录制数据已存储 |
+
+### 关键验证点
+
+1. **多环境隔离**：
+   - staging-a (STUB 模式) 和 staging-b (RECORD 模式) 独立运行
+   - Agent 通过 `environment` 配置关联环境
+   - Server 根据环境配置下发模式
+
+2. **规则匹配**：
+   - HTTP 规则按 `host + path` 条件匹配
+   - Kafka/Pulsar/JMS 规则按 `topic` 条件匹配
+   - 规则通过 `environments` 字段控制生效范围
+
+3. **录制功能**：
+   - Server 端 `/api/recordings` 存在多条 Kafka/JMS 录制记录
+   - 录制数据关联正确的 agentId 和 environmentName
+
+4. **Agent 注册**：
+   - 2个 Agent 成功注册到 Server
+   - 心跳正常，状态在线
+
+### 已知限制
+
+1. **RECORD 模式下 TCP Socket**：容器内 `127.0.0.1` 指向容器自身，无法连接到 Server 的 TCP 端口。建议使用服务名（如 `server`）替代 `127.0.0.1`。
+
+2. **RECORD 模式下 HTTP**：未匹配 stub 规则（`stubbed:false`），说明 RECORD 模式下 HTTP 协议优先透传真实服务，这是符合设计预期的行为。

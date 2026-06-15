@@ -419,6 +419,39 @@ public class MatchEngineTest {
         assertEquals("default", result.getResponse().getBody());
     }
 
+    @Test
+    public void testMqRuleWithHostAndNullHostParam() {
+        // MQ brokers (Kafka/Pulsar/JMS) call match() with host=null, but the
+        // rule may still be configured with a host. Host filter must not
+        // short-circuit when host is unknown.
+        Rule r = createSimpleRule("r1");
+        r.setProtocol("pulsar");
+        r.setHost("pulsar-broker");
+        r.setPort(6650);
+        r.setConditions(Arrays.asList(MatchCondition.topic("equals", "order-events")));
+
+        // host=null, port=0 — MQ broker passes null/0 because it doesn't know the
+        // real target host/port.
+        MatchEngine.MatchResult result = engine.match(
+                Collections.singletonList(r), "pulsar", null, 0, null, null,
+                "order-events",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertTrue(result.isMatched());
+    }
+
+    @Test
+    public void testMqRuleWithServiceNameCondition() {
+        // MQ brokers also pass topic through the serviceName slot as an alias.
+        Rule r = createSimpleRule("r1");
+        r.setProtocol("kafka");
+        r.setServiceName("order-events");
+
+        MatchEngine.MatchResult result = engine.match(
+                Collections.singletonList(r), "kafka", null, 0, "order-events", null, "order-events",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertTrue(result.isMatched());
+    }
+
     private static Rule createSimpleRule(String id) {
         Rule r = new Rule();
         r.setId(id);

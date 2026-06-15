@@ -36,6 +36,7 @@ public final class NioSocketConnectAdvice {
                                  @Advice.This Object channel) {
         try {
             if (!(remote instanceof InetSocketAddress)) {
+                GlobalRouteState.logInfo("[Baafoo] NIO Socket connect: non-InetSocketAddress remote=" + remote);
                 return;
             }
 

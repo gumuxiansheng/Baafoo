@@ -20,6 +20,7 @@
         <module>baafoo-cli</module>
         <module>baafoo-test-app</module>
         <module>baafoo-test-spring</module>
+        <module>baafoo-plugin-tdmq</module>
     </modules>
 
     <properties>

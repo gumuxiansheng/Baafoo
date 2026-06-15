@@ -94,13 +94,13 @@ public class MatchEngine {
             return false;
         }
 
-        // Host match
+        // Host match — null host means caller doesn't know target host (e.g. MQ broker),
+        // in which case we skip host filtering instead of failing the match.
         if (rule.getHost() != null && !rule.getHost().isEmpty()) {
-            if (host == null) return false;
-            if (!rule.getHost().equalsIgnoreCase(host)) return false;
+            if (host != null && !rule.getHost().equalsIgnoreCase(host)) return false;
         }
 
-        // Port match (port <= 0 means "any port")
+        // Port match (port <= 0 means "any port", so we skip port filtering)
         if (rule.getPort() != null && rule.getPort() > 0 && port > 0) {
             if (port != rule.getPort()) return false;
         }

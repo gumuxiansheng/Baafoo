@@ -57,13 +57,33 @@ public class RecordingOutputStream extends FilterOutputStream {
     private void recordBytes(byte[] data, int offset, int length) {
         RecordingEntry entry = new RecordingEntry();
         entry.setSessionId(sessionId);
-        entry.setProtocol("tcp");
+        entry.setProtocol(inferProtocol(host, port));
         entry.setDirection("request");
         entry.setHost(host);
         entry.setPort(port);
         entry.setDataHex(bytesToHex(data, offset, length));
         entry.setRecordedAt(System.currentTimeMillis());
         recordingBuffer.add(entry);
+    }
+
+    private static String inferProtocol(String host, int port) {
+        if (com.baafoo.agent.GlobalRouteState.isInternal(host, port)) {
+            if (port == com.baafoo.agent.GlobalRouteState.HTTP_PORT) return "http";
+            if (port == com.baafoo.agent.GlobalRouteState.TCP_PORT) return "tcp";
+            if (port == com.baafoo.agent.GlobalRouteState.KAFKA_PORT) return "kafka";
+            if (port == com.baafoo.agent.GlobalRouteState.PULSAR_PORT) return "pulsar";
+            if (port == com.baafoo.agent.GlobalRouteState.JMS_PORT) return "jms";
+        }
+        String[] route = com.baafoo.agent.GlobalRouteState.lookup(host, port);
+        if (route != null) {
+            int targetPort = Integer.parseInt(route[1]);
+            if (targetPort == com.baafoo.agent.GlobalRouteState.HTTP_PORT) return "http";
+            if (targetPort == com.baafoo.agent.GlobalRouteState.TCP_PORT) return "tcp";
+            if (targetPort == com.baafoo.agent.GlobalRouteState.KAFKA_PORT) return "kafka";
+            if (targetPort == com.baafoo.agent.GlobalRouteState.PULSAR_PORT) return "pulsar";
+            if (targetPort == com.baafoo.agent.GlobalRouteState.JMS_PORT) return "jms";
+        }
+        return "tcp";
     }
 
     private static String bytesToHex(byte[] bytes, int offset, int length) {
