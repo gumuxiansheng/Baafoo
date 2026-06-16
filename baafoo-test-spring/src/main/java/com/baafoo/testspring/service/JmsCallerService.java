@@ -4,13 +4,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import javax.jms.Connection;
-import javax.jms.ConnectionFactory;
-import javax.jms.Destination;
-import javax.jms.MessageProducer;
-import javax.jms.Session;
-import javax.jms.TextMessage;
+import javax.jms.*;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -49,6 +46,58 @@ public class JmsCallerService {
             result.put("success", false);
             result.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
             log.warn("JMS send failed: {}", e.getMessage());
+        } finally {
+            if (connection != null) {
+                try { connection.close(); } catch (Exception ignored) {}
+            }
+        }
+        return result;
+    }
+
+    public Map<String, Object> receiveMessage(String brokerUrl, String queueName) {
+        Map<String, Object> result = new LinkedHashMap<String, Object>();
+        result.put("brokerUrl", brokerUrl);
+        result.put("queueName", queueName);
+
+        Connection connection = null;
+        try {
+            ConnectionFactory factory = new org.apache.activemq.ActiveMQConnectionFactory(brokerUrl);
+            String actualUrl = ((org.apache.activemq.ActiveMQConnectionFactory) factory).getBrokerURL();
+            result.put("actualBrokerUrl", actualUrl);
+            result.put("intercepted", !actualUrl.equals(brokerUrl));
+
+            connection = factory.createConnection();
+            connection.start();
+
+            Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+            Destination destination = session.createQueue(queueName);
+            MessageConsumer consumer = session.createConsumer(destination);
+
+            Message msg = consumer.receive(5000);
+            if (msg == null) {
+                result.put("success", true);
+                result.put("count", 0);
+                result.put("messages", java.util.Collections.emptyList());
+            } else {
+                List<Map<String, Object>> messages = new ArrayList<Map<String, Object>>();
+                Map<String, Object> msgMap = new LinkedHashMap<String, Object>();
+                msgMap.put("jmsMessageId", msg.getJMSMessageID());
+                msgMap.put("jmsType", msg.getJMSType());
+                if (msg instanceof TextMessage) {
+                    msgMap.put("text", ((TextMessage) msg).getText());
+                }
+                messages.add(msgMap);
+                result.put("success", true);
+                result.put("count", 1);
+                result.put("messages", messages);
+            }
+
+            session.close();
+            log.info("JMS received: queue={}", queueName);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
+            log.warn("JMS receive failed: {}", e.getMessage());
         } finally {
             if (connection != null) {
                 try { connection.close(); } catch (Exception ignored) {}

@@ -27,6 +27,13 @@ public class KafkaCallerController {
         return kafkaCallerService.sendMessage(bootstrapServers, topic, message);
     }
 
+    @GetMapping("/consume")
+    public Map<String, Object> consume(
+            @RequestParam(defaultValue = "kafka-broker:9092") String bootstrapServers,
+            @RequestParam(defaultValue = "baafoo-test-topic") String topic) {
+        return kafkaCallerService.consumeMessage(bootstrapServers, topic);
+    }
+
     @GetMapping("/all")
     public Map<String, Object> sendAll() {
         Map<String, Object> results = new LinkedHashMap<String, Object>();
@@ -34,6 +41,8 @@ public class KafkaCallerController {
                 "kafka-broker:9092", "baafoo-test-topic", "hello-baafoo-kafka"));
         results.put("withKey", kafkaCallerService.sendMessage(
                 "kafka-broker:9092", "baafoo-test-topic-keyed", "hello-baafoo-kafka-keyed"));
+        results.put("consume", kafkaCallerService.consumeMessage(
+                "kafka-broker:9092", "baafoo-test-topic"));
         return results;
     }
 }

@@ -31,6 +31,13 @@ public class PulsarCallerController {
         return pulsarCallerService.sendMessage(serviceUrl, topic, message);
     }
 
+    @GetMapping("/consume")
+    public Map<String, Object> consume(
+            @RequestParam(defaultValue = "pulsar://pulsar-broker:6650") String serviceUrl,
+            @RequestParam(defaultValue = "persistent://public/default/baafoo-test-topic") String topic) {
+        return pulsarCallerService.consumeMessage(serviceUrl, topic);
+    }
+
     @GetMapping("/tdmq")
     public Map<String, Object> sendTdmq(
             @RequestParam(defaultValue = "pulsar://pulsar-tdmq.dev:6650") String serviceUrl,
@@ -51,6 +58,9 @@ public class PulsarCallerController {
                 "pulsar://pulsar-broker:6650",
                 "persistent://public/default/baafoo-test-topic",
                 "hello-baafoo-pulsar"));
+        results.put("consume", pulsarCallerService.consumeMessage(
+                "pulsar://pulsar-broker:6650",
+                "persistent://public/default/baafoo-test-topic"));
         results.put("tdmqInfo", tdmqCallerService.checkConfig());
         return results;
     }

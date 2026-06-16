@@ -27,11 +27,20 @@ public class JmsCallerController {
         return jmsCallerService.sendMessage(brokerUrl, queueName, message);
     }
 
+    @GetMapping("/receive")
+    public Map<String, Object> receive(
+            @RequestParam(defaultValue = "tcp://jms-broker:61616") String brokerUrl,
+            @RequestParam(defaultValue = "BAAFOO.TEST.QUEUE") String queueName) {
+        return jmsCallerService.receiveMessage(brokerUrl, queueName);
+    }
+
     @GetMapping("/all")
     public Map<String, Object> sendAll() {
         Map<String, Object> results = new LinkedHashMap<String, Object>();
         results.put("simple", jmsCallerService.sendMessage(
                 "tcp://jms-broker:61616", "BAAFOO.TEST.QUEUE", "hello-baafoo-jms"));
+        results.put("receive", jmsCallerService.receiveMessage(
+                "tcp://jms-broker:61616", "BAAFOO.TEST.QUEUE"));
         return results;
     }
 }

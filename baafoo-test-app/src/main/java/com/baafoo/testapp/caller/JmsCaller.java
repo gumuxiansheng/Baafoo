@@ -5,6 +5,7 @@ import com.baafoo.testapp.BaafooTestApp;
 import javax.jms.Connection;
 import javax.jms.ConnectionFactory;
 import javax.jms.Destination;
+import javax.jms.MessageConsumer;
 import javax.jms.MessageProducer;
 import javax.jms.Session;
 import javax.jms.TextMessage;
@@ -23,6 +24,7 @@ public class JmsCaller implements BaafooTestApp.Caller {
     public void run() throws Exception {
         testSendTextMessage();
         testSendWithProperties();
+        testReceive();
     }
 
     private void testSendTextMessage() throws Exception {
@@ -80,6 +82,48 @@ public class JmsCaller implements BaafooTestApp.Caller {
             session.close();
         } catch (Exception e) {
             System.out.println("    发送失败: " + e.getMessage());
+            System.out.println("    (无 Agent 时连接失败属正常行为)");
+        } finally {
+            if (connection != null) {
+                try { connection.close(); } catch (Exception ignored) {}
+            }
+        }
+        System.out.println();
+    }
+
+    private void testReceive() throws Exception {
+        System.out.println("  [接收消息] queue=" + QUEUE_NAME);
+        Connection connection = null;
+        try {
+            ConnectionFactory factory = new org.apache.activemq.ActiveMQConnectionFactory(BROKER_URL);
+            connection = factory.createConnection();
+            connection.start();
+            System.out.println("    JMS Connection 创建成功");
+
+            boolean redirected = BROKER_URL.contains("9004") || BROKER_URL.contains("127.0.0.1:9004");
+            System.out.println("    挡板拦截: " + (redirected ? "✓ 是 (连接被重定向)" : "✗ 否"));
+
+            Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+            Destination destination = session.createQueue(QUEUE_NAME);
+            MessageConsumer consumer = session.createConsumer(destination);
+            System.out.println("    已创建 Consumer: queue=" + QUEUE_NAME);
+
+            javax.jms.Message msg = consumer.receive(5000);
+            if (msg == null) {
+                System.out.println("    未收到消息 (5秒超时)");
+            } else if (msg instanceof TextMessage) {
+                TextMessage textMessage = (TextMessage) msg;
+                System.out.println("    收到消息: text=" + textMessage.getText()
+                        + " jmsMessageId=" + textMessage.getJMSMessageID()
+                        + " jmsType=" + textMessage.getJMSType());
+            } else {
+                System.out.println("    收到消息: type=" + msg.getClass().getSimpleName()
+                        + " jmsMessageId=" + msg.getJMSMessageID());
+            }
+
+            session.close();
+        } catch (Exception e) {
+            System.out.println("    接收失败: " + e.getMessage());
             System.out.println("    (无 Agent 时连接失败属正常行为)");
         } finally {
             if (connection != null) {
