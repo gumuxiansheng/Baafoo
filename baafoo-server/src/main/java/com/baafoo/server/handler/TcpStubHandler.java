@@ -107,7 +107,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
                     // Close after last round if no loop
                     boolean isLastRound = (rule.getTcpRounds().size() == 1) && !rule.isTcpLoop();
-                    sendTcpResponse(ctx, response, payload, isLastRound);
+                    sendTcpResponse(ctx, response, payload, isLastRound, agentEnvironment);
                     return;
                 }
                 continue;
@@ -117,7 +117,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
             if (matchTcpRule(rule, data, hexPayload, payload)) {
                 ResponseEntry response = getFirstResponse(rule);
                 recordIfNeeded(rule, response, agentEnvironment, agentId, agentIp, payload);
-                sendTcpResponse(ctx, response, payload, true);
+                sendTcpResponse(ctx, response, payload, true, agentEnvironment);
                 return;
             }
         }
@@ -143,7 +143,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                 storage.addRecording(rec);
             }
 
-            sendTcpResponse(ctx, entry, payload, true);
+            sendTcpResponse(ctx, entry, payload, true, agentEnvironment);
         } else {
             log.debug("No TCP rule matched, closing connection");
             ctx.close();
@@ -201,7 +201,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
             // Don't close after response in multi-round (unless it's the last round and no loop)
             boolean isLastRound = (nextRoundIdx == rounds.size() - 1) && !rule.isTcpLoop();
-            sendTcpResponse(ctx, response, payload, isLastRound);
+            sendTcpResponse(ctx, response, payload, isLastRound, agentEnvironment);
         } else {
             log.debug("TCP multi-round: round {} of rule {} did not match, closing connection",
                     nextRoundIdx, ruleId);
@@ -375,7 +375,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
      * @param closeAfterSend whether to close the connection after sending
      */
     private void sendTcpResponse(ChannelHandlerContext ctx, ResponseEntry entry, String payload,
-                                  boolean closeAfterSend) {
+                                  boolean closeAfterSend, String environment) {
         try {
             String rawBody = entry.getBody() != null ? entry.getBody() : "";
             String body = rawBody;
@@ -384,7 +384,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                         null, null, null,
                         Collections.<String, String>emptyMap(),
                         Collections.<String, String>emptyMap(),
-                        payload);
+                        payload, environment);
                 body = TemplateEngine.render(rawBody, templateCtx);
             }
 

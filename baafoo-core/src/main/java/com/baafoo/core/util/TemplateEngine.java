@@ -19,6 +19,7 @@ import java.util.regex.Pattern;
  *   <li>{@code {{request.query.xxx}}} — query parameter value</li>
  *   <li>{@code {{request.path}}} — request path</li>
  *   <li>{@code {{request.method}}} — HTTP method</li>
+ *   <li>{@code {{environment}}} — current agent environment name</li>
  *   <li>{@code {{faker.phone}}} / {@code {{faker.email}}} / etc. — dynamic fake data</li>
  * </ul>
  * </p>
@@ -81,6 +82,11 @@ public class TemplateEngine {
         // request.* — request context variables
         if (expression.startsWith("request.")) {
             return resolveRequestExpression(expression, context);
+        }
+
+        // environment — current agent environment name
+        if ("environment".equals(expression)) {
+            return nullToEmpty(context != null ? context.getEnvironment() : null);
         }
 
         // Unknown prefix — return as-is
@@ -210,6 +216,7 @@ public class TemplateEngine {
         private Map<String, String> headers;
         private Map<String, String> queryParams;
         private String body;
+        private String environment;
 
         public RequestContext() {
         }
@@ -223,6 +230,18 @@ public class TemplateEngine {
             this.headers = headers;
             this.queryParams = queryParams;
             this.body = body;
+        }
+
+        public RequestContext(String method, String path, String host,
+                              Map<String, String> headers, Map<String, String> queryParams,
+                              String body, String environment) {
+            this.method = method;
+            this.path = path;
+            this.host = host;
+            this.headers = headers;
+            this.queryParams = queryParams;
+            this.body = body;
+            this.environment = environment;
         }
 
         public String getMethod() { return method; }
@@ -242,5 +261,8 @@ public class TemplateEngine {
 
         public String getBody() { return body; }
         public void setBody(String body) { this.body = body; }
+
+        public String getEnvironment() { return environment; }
+        public void setEnvironment(String environment) { this.environment = environment; }
     }
 }

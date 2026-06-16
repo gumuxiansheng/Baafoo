@@ -276,6 +276,47 @@ public class TemplateEngineTest {
     }
 
     @Test
+    public void testRenderEnvironment() {
+        String template = "{\"env\": \"{{environment}}\"}";
+        TemplateEngine.RequestContext ctx = new TemplateEngine.RequestContext();
+        ctx.setEnvironment("staging-a");
+        String result = TemplateEngine.render(template, ctx);
+        assertEquals("{\"env\": \"staging-a\"}", result);
+    }
+
+    @Test
+    public void testRenderEnvironmentNull() {
+        String template = "{\"env\": \"{{environment}}\"}";
+        TemplateEngine.RequestContext ctx = new TemplateEngine.RequestContext();
+        String result = TemplateEngine.render(template, ctx);
+        assertEquals("{\"env\": \"\"}", result);
+    }
+
+    @Test
+    public void testRenderEnvironmentWithOtherVars() {
+        String template = "{\"env\": \"{{environment}}\", \"path\": \"{{request.path}}\", \"phone\": \"{{faker.phone}}\"}";
+        TemplateEngine.RequestContext ctx = new TemplateEngine.RequestContext();
+        ctx.setEnvironment("staging-c");
+        ctx.setPath("/api/test");
+        String result = TemplateEngine.render(template, ctx);
+        assertTrue(result.contains("\"env\": \"staging-c\""));
+        assertTrue(result.contains("\"path\": \"/api/test\""));
+        assertTrue(result.contains("\"phone\": \"1"));
+        assertFalse(result.contains("{{"));
+    }
+
+    @Test
+    public void testRenderEnvironmentViaConstructor() {
+        String template = "{\"env\": \"{{environment}}\"}";
+        TemplateEngine.RequestContext ctx = new TemplateEngine.RequestContext(
+                "GET", "/api", "localhost",
+                new HashMap<String, String>(), new HashMap<String, String>(),
+                "", "staging-b");
+        String result = TemplateEngine.render(template, ctx);
+        assertEquals("{\"env\": \"staging-b\"}", result);
+    }
+
+    @Test
     public void testRenderUnknownVariable() {
         String template = "Value: {{unknown.var}}";
         TemplateEngine.RequestContext ctx = new TemplateEngine.RequestContext();

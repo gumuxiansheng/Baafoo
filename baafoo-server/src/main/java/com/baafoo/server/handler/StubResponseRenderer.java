@@ -33,7 +33,7 @@ public class StubResponseRenderer {
     public static void sendStubResponse(ChannelHandlerContext ctx, ResponseEntry entry, String ruleId,
                                          String method, String path, String host,
                                          Map<String, String> headers, Map<String, String> queryParams,
-                                         String requestBody) {
+                                         String requestBody, String environment) {
         try {
             int statusCode = entry.getStatusCode();
             String rawBody = entry.getBody() != null ? entry.getBody() : "";
@@ -42,7 +42,7 @@ public class StubResponseRenderer {
             String responseBody = rawBody;
             if (rawBody.contains("{{")) {
                 TemplateEngine.RequestContext templateCtx = new TemplateEngine.RequestContext(
-                        method, path, host, headers, queryParams, requestBody);
+                        method, path, host, headers, queryParams, requestBody, environment);
                 responseBody = TemplateEngine.render(rawBody, templateCtx);
             }
             HttpResponseStatus status = HttpResponseStatus.valueOf(statusCode);
