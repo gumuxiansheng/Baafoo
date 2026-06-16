@@ -208,14 +208,14 @@ public class BaafooServer {
         // Kafka uses the dedicated KafkaMockBroker with binary protocol parsing
         Integer kafkaPort = config.getPortForProtocol("kafka");
         if (kafkaPort > 0) {
-            kafkaBroker = new KafkaMockBroker(kafkaPort, storage, bossGroup, workerGroup);
+            kafkaBroker = new KafkaMockBroker(kafkaPort, storage, bossGroup, workerGroup, config.getPulsarAdvertisedHost());
             kafkaBroker.start();
         }
 
         // Pulsar uses the dedicated PulsarMockBroker with binary protocol parsing
         Integer pulsarPort = config.getPortForProtocol("pulsar");
         if (pulsarPort > 0) {
-            pulsarBroker = new PulsarMockBroker(pulsarPort, bossGroup, workerGroup, storage);
+            pulsarBroker = new PulsarMockBroker(pulsarPort, bossGroup, workerGroup, storage, config.getPulsarAdvertisedHost());
             pulsarBroker.start();
         }
 

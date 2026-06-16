@@ -58,6 +58,10 @@ public class ServerConfig {
     /** Disable SSL certificate verification for passthrough proxy (test environments only) */
     private boolean passthroughSslVerifyDisabled;
 
+    /** Advertised host for Pulsar LOOKUP response. If set, overrides auto-detected broker host.
+     *  Useful when clients connect from outside Docker via port mapping (e.g. set to "localhost"). */
+    private String pulsarAdvertisedHost;
+
     /** Database configuration */
     private DatabaseConfig database;
 
@@ -140,6 +144,9 @@ public class ServerConfig {
 
     public boolean isPassthroughSslVerifyDisabled() { return passthroughSslVerifyDisabled; }
     public void setPassthroughSslVerifyDisabled(boolean passthroughSslVerifyDisabled) { this.passthroughSslVerifyDisabled = passthroughSslVerifyDisabled; }
+
+    public String getPulsarAdvertisedHost() { return pulsarAdvertisedHost; }
+    public void setPulsarAdvertisedHost(String pulsarAdvertisedHost) { this.pulsarAdvertisedHost = pulsarAdvertisedHost; }
 
     public DatabaseConfig getDatabase() { return database; }
     public void setDatabase(DatabaseConfig database) { this.database = database; }

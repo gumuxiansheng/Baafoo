@@ -64,7 +64,7 @@ public class KafkaMockBrokerTest {
                     protected void initChannel(SocketChannel ch) {
                         ch.pipeline().addLast(new LengthFieldBasedFrameDecoder(
                                 100 * 1024 * 1024, 0, 4, 0, 4));
-                        ch.pipeline().addLast(new KafkaProtocolDecoder(messageStore, storage, TEST_PORT));
+                        ch.pipeline().addLast(new KafkaProtocolDecoder(messageStore, storage, TEST_PORT, null));
                     }
                 });
 

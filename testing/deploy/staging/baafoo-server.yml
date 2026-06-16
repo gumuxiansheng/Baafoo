@@ -51,6 +51,12 @@ unmatchedDefault: passthrough
 # Disable SSL verification for passthrough proxy (test environments only)
 passthroughSslVerifyDisabled: true
 
+# Advertised host for Pulsar LOOKUP response.
+# When clients connect from the host machine via Docker port mapping,
+# set this to "localhost" so the LOOKUP response returns a reachable address.
+# Leave empty to auto-detect (uses container IP, which works for in-Docker clients).
+pulsarAdvertisedHost: localhost
+
 # Database configuration — PostgreSQL for staging
 database:
   type: postgresql

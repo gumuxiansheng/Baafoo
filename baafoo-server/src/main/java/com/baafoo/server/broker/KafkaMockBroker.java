@@ -35,14 +35,17 @@ public class KafkaMockBroker {
     private final StorageService storage;
     private final EventLoopGroup bossGroup;
     private final EventLoopGroup workerGroup;
+    private final String advertisedHost;
     private Channel serverChannel;
 
-    public KafkaMockBroker(int port, StorageService storage, EventLoopGroup bossGroup, EventLoopGroup workerGroup) {
+    public KafkaMockBroker(int port, StorageService storage, EventLoopGroup bossGroup,
+                           EventLoopGroup workerGroup, String advertisedHost) {
         this.port = port;
         this.storage = storage;
         this.messageStore = new KafkaMessageStore();
         this.bossGroup = bossGroup;
         this.workerGroup = workerGroup;
+        this.advertisedHost = advertisedHost;
     }
 
     /**
@@ -66,7 +69,7 @@ public class KafkaMockBroker {
                                 0,                  // lengthAdjustment
                                 4                   // initialBytesToStrip: strip the length field
                         ));
-                        p.addLast(new KafkaProtocolDecoder(messageStore, storage, port));
+                        p.addLast(new KafkaProtocolDecoder(messageStore, storage, port, advertisedHost));
                     }
                 });
 

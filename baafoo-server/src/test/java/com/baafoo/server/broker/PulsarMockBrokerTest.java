@@ -61,7 +61,7 @@ public class PulsarMockBrokerTest {
                     @Override
                     protected void initChannel(SocketChannel ch) {
                         ch.pipeline().addLast(new PulsarFrameDecoder());
-                        ch.pipeline().addLast(new PulsarMockBrokerHandler(messageStore, storage, "localhost", TEST_PORT));
+                        ch.pipeline().addLast(new PulsarMockBrokerHandler(messageStore, storage, "localhost", TEST_PORT, null));
                     }
                 });
 

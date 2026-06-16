@@ -40,24 +40,26 @@ public class PulsarMockBroker {
     private final EventLoopGroup workerGroup;
     private final PulsarMessageStore messageStore;
     private final StorageService storage;
+    private final String advertisedHost;
     private Channel serverChannel;
 
     /** Cached broker host resolved from the first client connection. */
     private volatile String resolvedHost;
 
     public PulsarMockBroker(int port, EventLoopGroup bossGroup, EventLoopGroup workerGroup,
-                            StorageService storage) {
+                            StorageService storage, String advertisedHost) {
         this.port = port;
         this.bossGroup = bossGroup;
         this.workerGroup = workerGroup;
         this.storage = storage;
+        this.advertisedHost = advertisedHost;
         this.messageStore = new PulsarMessageStore(storage);
     }
 
     /**
-     * Resolve the broker host that is reachable from clients.
-     * In Docker networks, this should be the container IP or hostname,
-     * not "localhost" or "127.0.0.1".
+     * Resolve the broker host that is reachable from in-Docker clients.
+     * Always auto-detects from the local hostname/IP.
+     * The {@code advertisedHost} is only used for external clients (handled in the handler).
      */
     private String resolveBrokerHost() {
         if (resolvedHost != null) {
@@ -96,7 +98,7 @@ public class PulsarMockBroker {
                     protected void initChannel(SocketChannel ch) {
                         ChannelPipeline p = ch.pipeline();
                         p.addLast(new PulsarFrameDecoder());
-                        p.addLast(new PulsarMockBrokerHandler(messageStore, storage, resolveBrokerHost(), port));
+                        p.addLast(new PulsarMockBrokerHandler(messageStore, storage, resolveBrokerHost(), port, advertisedHost));
                     }
                 });
 

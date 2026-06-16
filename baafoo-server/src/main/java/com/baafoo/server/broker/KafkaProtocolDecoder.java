@@ -58,14 +58,17 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
     private final StorageService storage;
     private final int brokerPort;
     private final MqMatchHelper matchHelper;
+    private final String advertisedHost;
 
-    /** Cached broker host resolved from the first client connection. */
+    /** Cached broker host resolved from the first client connection (for Docker-internal clients). */
     private volatile String cachedBrokerHost;
 
-    public KafkaProtocolDecoder(KafkaMessageStore messageStore, StorageService storage, int brokerPort) {
+    public KafkaProtocolDecoder(KafkaMessageStore messageStore, StorageService storage,
+                                int brokerPort, String advertisedHost) {
         this.messageStore = messageStore;
         this.storage = storage;
         this.brokerPort = brokerPort;
+        this.advertisedHost = advertisedHost;
         this.matchHelper = new MqMatchHelper(storage);
     }
 
@@ -135,7 +138,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                     response = handleFetch(msg, apiVersion, correlationId);
                     break;
                 case METADATA:
-                    response = handleMetadata(msg, apiVersion, correlationId);
+                    response = handleMetadata(ctx, msg, apiVersion, correlationId);
                     break;
                 case API_VERSIONS:
                     response = handleApiVersions(apiVersion, correlationId);
@@ -150,7 +153,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                     response = handleOffsetFetch(msg, apiVersion, correlationId);
                     break;
                 case FIND_COORDINATOR:
-                    response = handleFindCoordinator(apiVersion, correlationId);
+                    response = handleFindCoordinator(ctx, apiVersion, correlationId);
                     break;
                 case JOIN_GROUP:
                     response = handleJoinGroup(apiVersion, correlationId);
@@ -188,7 +191,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
     // --- Metadata (API key 3) ---
 
-    private ByteBuf handleMetadata(ByteBuf msg, short apiVersion, int correlationId) {
+    private ByteBuf handleMetadata(ChannelHandlerContext ctx, ByteBuf msg, short apiVersion, int correlationId) {
         // Request: [topics array] + allow_auto_topic_creation (v4+)
         int topicCount = msg.readInt();
         log.info("Metadata request: apiVersion={}, topicCount={}", apiVersion, topicCount);
@@ -222,7 +225,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         // Brokers array (1 broker = ourselves)
         buf.writeInt(1); // array count
         buf.writeInt(0); // broker_id = 0
-        writeNullableString(buf, resolveBrokerHost());
+        writeNullableString(buf, resolveBrokerHost(ctx));
         buf.writeInt(brokerPort);
         // rack (v1+)
         if (apiVersion >= 1) {
@@ -241,7 +244,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
         // Topic metadata array
         buf.writeInt(topics.size());
-        log.info("Metadata response: returning {} topics, brokerHost={}, brokerPort={}", topics.size(), resolveBrokerHost(), brokerPort);
+        log.info("Metadata response: returning {} topics, brokerHost={}, brokerPort={}", topics.size(), resolveBrokerHost(ctx), brokerPort);
         for (String topic : topics) {
             buf.writeShort(NONE); // error_code
             writeNullableString(buf, topic);
@@ -757,7 +760,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
     // --- FindCoordinator (API key 10) ---
 
-    private ByteBuf handleFindCoordinator(short apiVersion, int correlationId) {
+    private ByteBuf handleFindCoordinator(ChannelHandlerContext ctx, short apiVersion, int correlationId) {
         ByteBuf buf = Unpooled.buffer();
         buf.writeInt(correlationId);
 
@@ -767,7 +770,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         }
 
         buf.writeShort(NONE); // error_code
-        writeNullableString(buf, resolveBrokerHost()); // host
+        writeNullableString(buf, resolveBrokerHost(ctx)); // host
         buf.writeInt(brokerPort); // port
         buf.writeInt(0); // node_id
 
@@ -1125,19 +1128,44 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         data[offset + 7] = (byte) value;
     }
 
-    private String resolveBrokerHost() {
-        // Use the cached broker host resolved from the first client connection.
-        // This ensures the Metadata response advertises a reachable address
-        // (e.g., the Docker container IP like 172.x.x.x) instead of 127.0.0.1.
-        if (cachedBrokerHost != null) {
-            return cachedBrokerHost;
-        }
-        // Fallback: try hostname
+    /**
+     * Resolve the broker host for Metadata/DescribeCluster responses.
+     * Uses the same Docker gateway detection logic as Pulsar:
+     * - Docker-internal clients (same subnet, not gateway) → cachedBrokerHost
+     * - Docker gateway clients (host machine via port mapping) → advertisedHost
+     * - External clients → advertisedHost or local IP
+     */
+    private String resolveBrokerHost(ChannelHandlerContext ctx) {
         try {
-            return java.net.InetAddress.getLocalHost().getHostName();
+            java.net.InetSocketAddress remote = (java.net.InetSocketAddress) ctx.channel().remoteAddress();
+            java.net.InetSocketAddress local = (java.net.InetSocketAddress) ctx.channel().localAddress();
+            if (remote != null && local != null) {
+                byte[] remoteBytes = remote.getAddress().getAddress();
+                byte[] localBytes = local.getAddress().getAddress();
+                if (remoteBytes.length == 4 && localBytes.length == 4) {
+                    boolean sameSubnet = remoteBytes[0] == localBytes[0] && remoteBytes[1] == localBytes[1];
+                    boolean isPrivate = localBytes[0] == 10
+                            || (localBytes[0] == (byte) 172 && (localBytes[1] & 0xFF) >= 16 && (localBytes[1] & 0xFF) <= 31)
+                            || (localBytes[0] == (byte) 192 && localBytes[1] == (byte) 168);
+                    if (sameSubnet && isPrivate) {
+                        boolean isGateway = (remoteBytes[3] & 0xFF) == 1;
+                        if (isGateway) {
+                            if (advertisedHost != null && !advertisedHost.isEmpty()) {
+                                return advertisedHost;
+                            }
+                            return local.getAddress().getHostAddress();
+                        }
+                        return cachedBrokerHost != null ? cachedBrokerHost : local.getAddress().getHostAddress();
+                    }
+                }
+            }
         } catch (Exception e) {
-            return "127.0.0.1";
+            // fall through
         }
+        if (advertisedHost != null && !advertisedHost.isEmpty()) {
+            return advertisedHost;
+        }
+        return cachedBrokerHost != null ? cachedBrokerHost : "127.0.0.1";
     }
 
     @Override
