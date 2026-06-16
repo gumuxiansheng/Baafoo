@@ -135,7 +135,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                     response = handleProduce(ctx, msg, apiVersion, correlationId);
                     break;
                 case FETCH:
-                    response = handleFetch(msg, apiVersion, correlationId);
+                    response = handleFetch(ctx, msg, apiVersion, correlationId);
                     break;
                 case METADATA:
                     response = handleMetadata(ctx, msg, apiVersion, correlationId);
@@ -421,7 +421,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
     // --- Fetch (API key 1) ---
 
-    private ByteBuf handleFetch(ByteBuf msg, short apiVersion, int correlationId) {
+    private ByteBuf handleFetch(ChannelHandlerContext ctx, ByteBuf msg, short apiVersion, int correlationId) {
         // Request varies by version
         // v0: replica_id + max_wait_ms + min_bytes + topics
         // v3+: isolation_level added
@@ -450,6 +450,11 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             }
         }
 
+        // Resolve agent + environment + rules for consume-side stub
+        AgentResolver.AgentInfo agentInfo = matchHelper.resolveAgent(ctx);
+        EnvironmentMode mode = matchHelper.resolveMode(ctx);
+        List<Rule> rules = matchHelper.filterRulesByEnvironment(storage.listRules(), agentInfo.environment);
+
         int topicCount = msg.readInt();
         List<FetchTopicResult> results = new ArrayList<FetchTopicResult>();
 
@@ -467,6 +472,21 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 // Fetch messages from store
                 List<KafkaMessageStore.StoredMessage> messages =
                         messageStore.fetch(topic, partition, fetchOffset, partitionMaxBytes);
+
+                // If no stored messages and STUB mode, try to match rules and return stub response
+                if (messages.isEmpty() && (mode == EnvironmentMode.STUB || mode == EnvironmentMode.RECORD_AND_STUB)) {
+                    MatchEngine.MatchResult m = matchHelper.match(rules, "kafka", topic, null);
+                    if (m.isMatched()) {
+                        ResponseEntry resp = m.getResponse();
+                        if (resp != null && resp.getBody() != null) {
+                            byte[] stubValue = resp.getBody().getBytes(StandardCharsets.UTF_8);
+                            long offset = messageStore.append(topic, partition, null, stubValue);
+                            messages = messageStore.fetch(topic, partition, offset, partitionMaxBytes);
+                            log.info("Kafka Fetch stub: topic={}, partition={}, matched rule={}, stubBodySize={}",
+                                    topic, partition, m.getRule().getId(), stubValue.length);
+                        }
+                    }
+                }
 
                 partitionResults.add(new FetchPartitionResult(partition, messages));
             }

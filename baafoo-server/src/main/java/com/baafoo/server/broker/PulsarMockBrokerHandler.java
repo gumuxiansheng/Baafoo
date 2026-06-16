@@ -384,6 +384,8 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
 
     /**
      * Deliver pending messages to consumers for a given topic.
+     * If no stored messages exist and STUB mode is active, matches rules
+     * and delivers the rule's response body as a mock message.
      */
     private void deliverMessagesToConsumers(ChannelHandlerContext ctx, String topic) {
         for (String consumerKey : consumerIds.keySet()) {
@@ -394,6 +396,7 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
             Integer consumerId = consumerIds.get(consumerKey);
 
             StoredMessage msg;
+            boolean delivered = false;
             while ((msg = messageStore.pollMessage(topic, subscription)) != null) {
                 log.debug("Delivering message to consumer: topic={}, subscription={}, ledgerId={}, entryId={}",
                         topic, subscription, msg.ledgerId, msg.entryId);
@@ -401,6 +404,31 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
                 ByteBuf messageFrame = PulsarProtobufCodec.encodeMessage(
                         msg.ledgerId, msg.entryId, -1, topic, consumerId, msg.payload);
                 ctx.writeAndFlush(messageFrame);
+                delivered = true;
+            }
+
+            // If no stored messages, try rule-based stub delivery
+            if (!delivered) {
+                AgentResolver.AgentInfo agentInfo = matchHelper.resolveAgent(ctx);
+                EnvironmentMode mode = matchHelper.resolveMode(ctx);
+                if (mode == EnvironmentMode.STUB || mode == EnvironmentMode.RECORD_AND_STUB) {
+                    List<Rule> rules = matchHelper.filterRulesByEnvironment(storage.listRules(), agentInfo.environment);
+                    MatchEngine.MatchResult m = matchHelper.match(rules, "pulsar", topic, null);
+                    if (m.isMatched()) {
+                        ResponseEntry resp = m.getResponse();
+                        if (resp != null && resp.getBody() != null) {
+                            byte[] stubBody = resp.getBody().getBytes(StandardCharsets.UTF_8);
+                            byte[] stubPayload = rebuildPayloadWithBody(null, stubBody);
+                            StoredMessage stubMsg = messageStore.storeMessage(
+                                    topic, "baafoo-stub-producer", 0, stubPayload);
+                            log.info("Pulsar Subscribe stub: topic={}, matched rule={}, stubBodySize={}",
+                                    topic, m.getRule().getId(), stubBody.length);
+                            ByteBuf messageFrame = PulsarProtobufCodec.encodeMessage(
+                                    stubMsg.ledgerId, stubMsg.entryId, -1, topic, consumerId, stubMsg.payload);
+                            ctx.writeAndFlush(messageFrame);
+                        }
+                    }
+                }
             }
         }
     }
