@@ -74,11 +74,14 @@ testing/
     rules/              # Individual rule JSON files
     register-rules.ps1  # PowerShell script to register all rules via API
     register-all.sh     # Bash equivalent
+  tmp/                  # Scratch dir for test runs (gitignored, never commit)
   TEST-MANUAL.md        # Full test manual (architecture, matrix, steps, acceptance criteria)
   TEST-REPORT.md        # Latest test report (17/17 passed, 100%)
   test-integration.ps1  # End-to-end integration test script
   fix-env.sql           # SQL fix for environment data
 ```
+
+**Rule**: All intermediate/temp files generated during test execution (logs, dumps, temp configs, etc.) must be written to `testing/tmp/`. This directory is gitignored. Never write test artifacts to the project root or module directories.
 
 Docker staging environment:
 
