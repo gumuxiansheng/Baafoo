@@ -25,7 +25,13 @@ class AgentApiHandler implements ResourceHandler {
             if (env == null) env = "default";
             String hostname = (String) reqBody.getOrDefault("hostname", "unknown");
             String version = (String) reqBody.getOrDefault("version", "1.0.0");
-            String agentIp = (String) reqBody.getOrDefault("agentIp", ctx.remoteAddr);
+            // Use the server-observed source IP (ctx.remoteAddr) as the agent IP.
+            // The agent's self-reported IP (from resolveLocalIp) may differ from
+            // what the server actually sees (e.g., Docker NAT translates host-machine
+            // IPs to gateway IPs), causing environment resolution to fail.
+            // Always prefer the server-observed IP so that subsequent stub requests
+            // from the same source can be matched correctly.
+            String agentIp = ctx.remoteAddr;
             @SuppressWarnings("unchecked")
             List<String> protocols = (List<String>) reqBody.getOrDefault("protocols", new ArrayList<String>());
 
@@ -44,7 +50,8 @@ class AgentApiHandler implements ResourceHandler {
         if (path.equals(API_PREFIX + "agent/heartbeat") && "POST".equals(method)) {
             Map<String, Object> reqBody = ctx.mapper.readValue(body, Map.class);
             String agentId = (String) reqBody.get("agentId");
-            String agentIp = (String) reqBody.get("agentIp");
+            // Use server-observed source IP for the same reason as registration
+            String agentIp = ctx.remoteAddr;
             ctx.storage.agentHeartbeat(agentId, agentIp);
             return ApiResponse.ok("OK", null);
         }

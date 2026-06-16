@@ -5,6 +5,8 @@ import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.Rule;
 import com.baafoo.server.storage.StorageService;
 import io.netty.channel.ChannelHandlerContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +19,8 @@ import java.util.List;
  */
 public class AgentResolver {
 
+    private static final Logger log = LoggerFactory.getLogger(AgentResolver.class);
+
     private final StorageService storage;
 
     public AgentResolver(StorageService storage) {
@@ -25,6 +29,17 @@ public class AgentResolver {
 
     /**
      * Resolve all agent info in a single pass over the agent list.
+     *
+     * <p>Environment isolation rules:
+     * <ul>
+     *   <li>Match by source IP — the primary mechanism for determining environment</li>
+     *   <li>If multiple agents share the same IP but have different environments,
+     *       the match is ambiguous and environment is set to null (safe default)</li>
+     *   <li>If no IP match is found, environment is null — only global rules
+     *       (rules with no environment association) will match</li>
+     *   <li>There is NO fallback to "first online agent" — this prevents
+     *       environment A from accidentally getting environment B's rules</li>
+     * </ul></p>
      */
     public AgentInfo resolveAll(ChannelHandlerContext ctx) {
         AgentInfo info = new AgentInfo();
@@ -37,24 +52,33 @@ public class AgentResolver {
             channelIp = resolveAgentIpFromChannel(ctx);
         }
 
-        StorageService.AgentRegistration firstOnline = null;
-        StorageService.AgentRegistration matchedByIp = null;
+        // Collect all agents that match by IP
+        StorageService.AgentRegistration ipMatched = null;
+        boolean ipMatchAmbiguous = false;
 
         for (StorageService.AgentRegistration agent : agents) {
             if (agent.lastHeartbeat > onlineThreshold) {
-                if (firstOnline == null) {
-                    firstOnline = agent;
-                }
-                // Match agent by source IP — this allows the shared stub port
-                // to correctly identify which environment a request comes from
                 if (channelIp != null && channelIp.equals(agent.agentIp)) {
-                    matchedByIp = agent;
+                    if (ipMatched == null) {
+                        ipMatched = agent;
+                    } else {
+                        // Multiple agents with same IP — check if environments differ
+                        if (!java.util.Objects.equals(ipMatched.environment, agent.environment)) {
+                            ipMatchAmbiguous = true;
+                        }
+                    }
                 }
             }
         }
 
-        // Prefer IP-matched agent for environment resolution
-        StorageService.AgentRegistration resolved = matchedByIp != null ? matchedByIp : firstOnline;
+        // Resolve environment: only use IP-matched agent, never fall back to "first online"
+        StorageService.AgentRegistration resolved = null;
+        if (ipMatched != null && !ipMatchAmbiguous) {
+            resolved = ipMatched;
+        } else if (ipMatchAmbiguous) {
+            log.warn("Multiple online agents share IP {} with different environments — " +
+                    "cannot determine environment, only global rules will match", channelIp);
+        }
 
         // Environment from resolved agent
         if (resolved != null) {
@@ -66,23 +90,11 @@ public class AgentResolver {
             info.agentId = resolved.agentId;
         }
 
-        // Agent IP — prefer IP-matched, then environment-matched
-        if (matchedByIp != null) {
-            info.agentIp = matchedByIp.agentIp;
-        } else if (info.environment != null) {
-            for (StorageService.AgentRegistration agent : agents) {
-                if (agent.lastHeartbeat > onlineThreshold
-                        && info.environment.equals(agent.environment)
-                        && agent.agentIp != null && !agent.agentIp.isEmpty()
-                        && !"127.0.0.1".equals(agent.agentIp)) {
-                    info.agentIp = agent.agentIp;
-                    break;
-                }
-            }
-        }
-
-        // Channel IP fallback
-        if (info.agentIp == null && channelIp != null) {
+        // Agent IP
+        if (resolved != null) {
+            info.agentIp = resolved.agentIp;
+        } else if (channelIp != null) {
+            // Channel IP fallback for recording purposes only
             info.agentIp = channelIp;
         }
 
@@ -122,11 +134,21 @@ public class AgentResolver {
 
     /**
      * Filter rules by agent environment.
-     * Rules with no environment association are treated as global rules (included for all environments).
-     * Rules with environments are only included if the agent's environment matches.
+     *
+     * <p>Environment isolation rules:
+     * <ul>
+     *   <li>If agentEnvironment is null (cannot determine environment), NO rules match</li>
+     *   <li>Rules with environments are only included if the agent's environment is in the list</li>
+     *   <li>Rules with no environment association are treated as global rules (match all environments),
+     *       but still require a non-null agentEnvironment to match</li>
+     * </ul></p>
      */
     public List<Rule> filterRulesByEnvironment(List<Rule> rules, String agentEnvironment) {
         List<Rule> filtered = new ArrayList<Rule>();
+        // Cannot determine environment — match nothing to prevent cross-environment leakage
+        if (agentEnvironment == null) {
+            return filtered;
+        }
         for (Rule rule : rules) {
             if (!rule.isEnabled()) continue;
             List<String> envs = rule.getEnvironments();
@@ -150,10 +172,9 @@ public class AgentResolver {
                 }
             }
         }
-        for (Environment env : storage.listEnvironments()) {
-            return env.getMode();
-        }
-        return EnvironmentMode.STUB;
+        // When environment is null or not found, default to PASSTHROUGH
+        // (safe default — don't stub if we can't determine the environment)
+        return EnvironmentMode.PASSTHROUGH;
     }
 
     /**
