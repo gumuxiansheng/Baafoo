@@ -42,4 +42,11 @@ public class SocketCallerController {
         results.put("nio", socketCallerService.testNioSocket(host, port));
         return results;
     }
+
+    @GetMapping("/multiround")
+    public Map<String, Object> testMultiroundSocket(
+            @RequestParam(defaultValue = "127.0.0.1") String host,
+            @RequestParam(defaultValue = "9999") int port) {
+        return socketCallerService.testMultiroundSocket(host, port);
+    }
 }

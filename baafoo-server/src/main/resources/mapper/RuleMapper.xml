@@ -28,6 +28,15 @@
         <result property="environments" column="environments_json"
                 typeHandler="com.baafoo.server.storage.mybatis.JsonTypeHandler"
                 javaType="java.util.List"/>
+        <result property="tcpRounds" column="tcp_rounds_json"
+                typeHandler="com.baafoo.server.storage.mybatis.TcpRoundListHandler"
+                javaType="java.util.List"/>
+        <result property="tcpLoop" column="tcp_loop"/>
+        <result property="tcpPattern" column="tcp_pattern"/>
+        <result property="tcpPrefixHex" column="tcp_prefix_hex"/>
+        <result property="tcpOffsetStart" column="tcp_offset_start"/>
+        <result property="tcpOffsetEnd" column="tcp_offset_end"/>
+        <result property="tcpOffsetHex" column="tcp_offset_hex"/>
     </resultMap>
 
     <!-- Result map for RuleSet -->
@@ -84,13 +93,18 @@
     <insert id="createRule">
         INSERT INTO rules (id, name, protocol, service_name, host, port,
             conditions_json, responses_json, enabled, priority, tags_json,
-            environments_json, version, created_at, updated_at)
+            environments_json, tcp_rounds_json, tcp_loop, tcp_pattern,
+            tcp_prefix_hex, tcp_offset_start, tcp_offset_end, tcp_offset_hex,
+            version, created_at, updated_at)
         VALUES (#{id}, #{name}, #{protocol}, #{serviceName}, #{host}, #{port},
             #{conditions, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
             #{responses, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
             #{enabled}, #{priority},
             #{tags, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
             #{environments, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            #{tcpRounds, typeHandler=com.baafoo.server.storage.mybatis.TcpRoundListHandler},
+            #{tcpLoop}, #{tcpPattern},
+            #{tcpPrefixHex}, #{tcpOffsetStart}, #{tcpOffsetEnd}, #{tcpOffsetHex},
             #{version}, #{createdAt}, #{updatedAt})
     </insert>
 
@@ -108,6 +122,13 @@
             priority = #{priority},
             tags_json = #{tags, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
             environments_json = #{environments, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
+            tcp_rounds_json = #{tcpRounds, typeHandler=com.baafoo.server.storage.mybatis.TcpRoundListHandler},
+            tcp_loop = #{tcpLoop},
+            tcp_pattern = #{tcpPattern},
+            tcp_prefix_hex = #{tcpPrefixHex},
+            tcp_offset_start = #{tcpOffsetStart},
+            tcp_offset_end = #{tcpOffsetEnd},
+            tcp_offset_hex = #{tcpOffsetHex},
             version = #{version},
             created_at = #{createdAt},
             updated_at = #{updatedAt}

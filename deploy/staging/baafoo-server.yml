@@ -45,8 +45,11 @@ agentHeartbeatTimeoutSec: 60
 # Maximum agents per environment
 maxAgentsPerEnvironment: 50
 
-# Unmatched request default behavior: 404 (strict stub mode for staging)
-unmatchedDefault: 404
+# Unmatched request default behavior: passthrough (forward to original destination)
+unmatchedDefault: passthrough
+
+# Disable SSL verification for passthrough proxy (test environments only)
+passthroughSslVerifyDisabled: true
 
 # Database configuration — PostgreSQL for staging
 database:

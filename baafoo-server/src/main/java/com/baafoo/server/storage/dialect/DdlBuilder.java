@@ -67,6 +67,13 @@ public class DdlBuilder {
             ")"
         );
         addColumnIfMissing(stmt, "rules", "environments_json", "TEXT");
+        addColumnIfMissing(stmt, "rules", "tcp_rounds_json", "TEXT");
+        addColumnIfMissing(stmt, "rules", "tcp_loop", "BOOLEAN DEFAULT FALSE");
+        addColumnIfMissing(stmt, "rules", "tcp_pattern", "VARCHAR(1024)");
+        addColumnIfMissing(stmt, "rules", "tcp_prefix_hex", "VARCHAR(1024)");
+        addColumnIfMissing(stmt, "rules", "tcp_offset_start", "INT DEFAULT -1");
+        addColumnIfMissing(stmt, "rules", "tcp_offset_end", "INT DEFAULT -1");
+        addColumnIfMissing(stmt, "rules", "tcp_offset_hex", "VARCHAR(1024)");
     }
 
     private void createRuleHistoryTable(Statement stmt) throws SQLException {

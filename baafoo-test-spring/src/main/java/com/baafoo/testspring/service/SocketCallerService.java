@@ -86,4 +86,53 @@ public class SocketCallerService {
         }
         return result;
     }
+
+    public Map<String, Object> testMultiroundSocket(String host, int port) {
+        Map<String, Object> result = new LinkedHashMap<String, Object>();
+        Socket socket = new Socket();
+        try {
+            socket.setSoTimeout(5000);
+            socket.connect(new InetSocketAddress(host, port), 5000);
+            result.put("connected", true);
+            boolean redirected = socket.getPort() != port
+                    || !socket.getInetAddress().getHostAddress().equals(host);
+            result.put("intercepted", redirected);
+            OutputStream os = socket.getOutputStream();
+            InputStream is = socket.getInputStream();
+            byte[] buf = new byte[4096];
+
+            // Round 1: LOGIN
+            os.write("LOGIN:admin:password\r\n".getBytes(StandardCharsets.UTF_8));
+            os.flush();
+            int len = is.read(buf);
+            String round1Response = len > 0 ? new String(buf, 0, len, StandardCharsets.UTF_8).trim() : "";
+            result.put("round1_sent", "LOGIN:admin:password");
+            result.put("round1_received", round1Response);
+
+            // Round 2: QUERY
+            os.write("QUERY:users\r\n".getBytes(StandardCharsets.UTF_8));
+            os.flush();
+            len = is.read(buf);
+            String round2Response = len > 0 ? new String(buf, 0, len, StandardCharsets.UTF_8).trim() : "";
+            result.put("round2_sent", "QUERY:users");
+            result.put("round2_received", round2Response);
+
+            // Round 3: LOGOUT
+            os.write("LOGOUT\r\n".getBytes(StandardCharsets.UTF_8));
+            os.flush();
+            len = is.read(buf);
+            String round3Response = len > 0 ? new String(buf, 0, len, StandardCharsets.UTF_8).trim() : "";
+            result.put("round3_sent", "LOGOUT");
+            result.put("round3_received", round3Response);
+
+            log.info("Multiround Socket call complete: intercepted={}", redirected);
+        } catch (Exception e) {
+            result.put("connected", false);
+            result.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
+            log.warn("Multiround Socket call failed: {}", e.getMessage());
+        } finally {
+            try { socket.close(); } catch (Exception ignored) {}
+        }
+        return result;
+    }
 }

@@ -1,0 +1,1 @@
+{"id":"staging-tcp-regex","name":"TCP Regex","protocol":"tcp","host":"127.0.0.1","port":9999,"tcpPattern":".*424141464f4f.*","conditions":[],"responses":[{"name":"TCP Regex","statusCode":200,"body":"TCP-REGEX-STUB-OK","delayMs":0}],"enabled":true,"priority":50,"tags":["tcp","regex","staging"],"environments":["staging-a","staging-b"]}

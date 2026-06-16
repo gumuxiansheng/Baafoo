@@ -1,0 +1,1 @@
+{"id":"staging-tcp-hex","name":"TCP Hex","protocol":"tcp","host":"127.0.0.1","port":9999,"tcpPrefixHex":"48454c4c4f","conditions":[],"responses":[{"name":"TCP Hex","statusCode":200,"body":"TCP-HEX-STUB-OK","delayMs":0}],"enabled":true,"priority":100,"tags":["tcp","hex","staging"],"environments":["staging-a","staging-b"]}
