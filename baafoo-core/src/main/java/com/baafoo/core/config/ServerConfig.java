@@ -58,9 +58,16 @@ public class ServerConfig {
     /** Disable SSL certificate verification for passthrough proxy (test environments only) */
     private boolean passthroughSslVerifyDisabled;
 
-    /** Advertised host for Pulsar LOOKUP response. If set, overrides auto-detected broker host.
-     *  Useful when clients connect from outside Docker via port mapping (e.g. set to "localhost"). */
-    private String pulsarAdvertisedHost;
+    /** Advertised host for Kafka Metadata and Pulsar LOOKUP responses.
+     *  When clients connect from outside Docker via port mapping, set this
+     *  to a host reachable by those clients (e.g. "localhost").
+     *  Auto-detection (Docker gateway heuristic) is used when this is not set. */
+    private String messagingAdvertisedHost;
+
+    /** Default mode when agent environment cannot be determined (no IP match).
+     *  Values: "passthrough" (safe, requests go to real services) or "stub"
+     *  (aggressive, unmatched requests get 404). Default: "passthrough". */
+    private String unknownEnvironmentDefault;
 
     /** Database configuration */
     private DatabaseConfig database;
@@ -145,8 +152,11 @@ public class ServerConfig {
     public boolean isPassthroughSslVerifyDisabled() { return passthroughSslVerifyDisabled; }
     public void setPassthroughSslVerifyDisabled(boolean passthroughSslVerifyDisabled) { this.passthroughSslVerifyDisabled = passthroughSslVerifyDisabled; }
 
-    public String getPulsarAdvertisedHost() { return pulsarAdvertisedHost; }
-    public void setPulsarAdvertisedHost(String pulsarAdvertisedHost) { this.pulsarAdvertisedHost = pulsarAdvertisedHost; }
+    public String getMessagingAdvertisedHost() { return messagingAdvertisedHost; }
+    public void setMessagingAdvertisedHost(String messagingAdvertisedHost) { this.messagingAdvertisedHost = messagingAdvertisedHost; }
+
+    public String getUnknownEnvironmentDefault() { return unknownEnvironmentDefault; }
+    public void setUnknownEnvironmentDefault(String unknownEnvironmentDefault) { this.unknownEnvironmentDefault = unknownEnvironmentDefault; }
 
     public DatabaseConfig getDatabase() { return database; }
     public void setDatabase(DatabaseConfig database) { this.database = database; }

@@ -1,5 +1,6 @@
 package com.baafoo.server.handler;
 
+import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.model.Environment;
 import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.Rule;
@@ -22,9 +23,16 @@ public class AgentResolver {
     private static final Logger log = LoggerFactory.getLogger(AgentResolver.class);
 
     private final StorageService storage;
+    private final ServerConfig config;
 
     public AgentResolver(StorageService storage) {
         this.storage = storage;
+        this.config = null;
+    }
+
+    public AgentResolver(StorageService storage, ServerConfig config) {
+        this.storage = storage;
+        this.config = config;
     }
 
     /**
@@ -172,8 +180,12 @@ public class AgentResolver {
                 }
             }
         }
-        // When environment is null or not found, default to PASSTHROUGH
-        // (safe default — don't stub if we can't determine the environment)
+        // When environment is null or not found, use configured default
+        String defaultMode = (config != null) ? config.getUnknownEnvironmentDefault() : null;
+        if ("stub".equalsIgnoreCase(defaultMode)) {
+            return EnvironmentMode.STUB;
+        }
+        // Default: PASSTHROUGH (safe — don't stub if we can't determine the environment)
         return EnvironmentMode.PASSTHROUGH;
     }
 

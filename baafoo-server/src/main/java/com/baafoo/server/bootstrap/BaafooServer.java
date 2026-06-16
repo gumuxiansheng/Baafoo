@@ -178,7 +178,7 @@ public class BaafooServer {
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     protected void initChannel(SocketChannel ch) {
-                        ch.pipeline().addLast(new TcpStubHandler(storage));
+                        ch.pipeline().addLast(new TcpStubHandler(storage, config));
                     }
                 });
 
@@ -196,7 +196,7 @@ public class BaafooServer {
                         // Beta: Kafka/Pulsar/JMS currently share TcpStubHandler for basic connectivity.
                         // Protocol-specific handlers (e.g., KafkaStubHandler) will be needed for
                         // proper application-layer protocol frame parsing in a future release.
-                        ch.pipeline().addLast(new TcpStubHandler(storage));
+                        ch.pipeline().addLast(new TcpStubHandler(storage, config));
                     }
                 });
         Channel ch = b.bind(port).sync().channel();
@@ -208,14 +208,14 @@ public class BaafooServer {
         // Kafka uses the dedicated KafkaMockBroker with binary protocol parsing
         Integer kafkaPort = config.getPortForProtocol("kafka");
         if (kafkaPort > 0) {
-            kafkaBroker = new KafkaMockBroker(kafkaPort, storage, bossGroup, workerGroup, config.getPulsarAdvertisedHost());
+            kafkaBroker = new KafkaMockBroker(kafkaPort, storage, bossGroup, workerGroup, config.getMessagingAdvertisedHost());
             kafkaBroker.start();
         }
 
         // Pulsar uses the dedicated PulsarMockBroker with binary protocol parsing
         Integer pulsarPort = config.getPortForProtocol("pulsar");
         if (pulsarPort > 0) {
-            pulsarBroker = new PulsarMockBroker(pulsarPort, bossGroup, workerGroup, storage, config.getPulsarAdvertisedHost());
+            pulsarBroker = new PulsarMockBroker(pulsarPort, bossGroup, workerGroup, storage, config.getMessagingAdvertisedHost());
             pulsarBroker.start();
         }
 

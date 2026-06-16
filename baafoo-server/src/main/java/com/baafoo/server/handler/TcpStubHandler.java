@@ -1,5 +1,6 @@
 package com.baafoo.server.handler;
 
+import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.model.*;
 import com.baafoo.core.util.MatchEngine;
 import com.baafoo.core.util.TemplateEngine;
@@ -50,10 +51,10 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
     /** Pre-compiled regex patterns (cached by pattern string) */
     private final ConcurrentHashMap<String, Pattern> patternCache = new ConcurrentHashMap<String, Pattern>();
 
-    public TcpStubHandler(StorageService storage) {
+    public TcpStubHandler(StorageService storage, ServerConfig config) {
         this.storage = storage;
         this.matchEngine = new MatchEngine();
-        this.agentResolver = new AgentResolver(storage);
+        this.agentResolver = new AgentResolver(storage, config);
     }
 
     @Override

@@ -51,11 +51,11 @@ unmatchedDefault: passthrough
 # Disable SSL verification for passthrough proxy (test environments only)
 passthroughSslVerifyDisabled: true
 
-# Advertised host for Pulsar LOOKUP response.
+# Advertised host for Kafka Metadata and Pulsar LOOKUP responses.
 # When clients connect from the host machine via Docker port mapping,
-# set this to "localhost" so the LOOKUP response returns a reachable address.
+# set this to "localhost" so responses return a reachable address.
 # Leave empty to auto-detect (uses container IP, which works for in-Docker clients).
-pulsarAdvertisedHost: localhost
+messagingAdvertisedHost: localhost
 
 # Database configuration — PostgreSQL for staging
 database:

@@ -161,56 +161,13 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
 
     /**
      * Resolve a host that the current client can reach for the LOOKUP response.
-     *
-     * <p>Strategy:
-     * <ol>
-     *   <li>If the client is inside Docker (same subnet, NOT the Docker gateway),
-     *       return brokerHost (container hostname/IP, reachable inside Docker).</li>
-     *   <li>If the client appears to be from the Docker gateway (last octet is 1 in a
-     *       private /16 subnet), it's likely a host machine connecting via port mapping.
-     *       In this case, use advertisedHost if configured.</li>
-     *   <li>For any other external client, use advertisedHost if configured,
-     *       otherwise fall back to local address IP.</li>
-     * </ol></p>
+     * Delegates to NetworkUtils for Docker gateway detection.
      */
     private String resolveClientReachableHost(ChannelHandlerContext ctx) {
-        try {
-            java.net.InetSocketAddress remote = (java.net.InetSocketAddress) ctx.channel().remoteAddress();
-            java.net.InetSocketAddress local = (java.net.InetSocketAddress) ctx.channel().localAddress();
-            if (remote == null || local == null) {
-                return brokerHost;
-            }
-            byte[] remoteBytes = remote.getAddress().getAddress();
-            byte[] localBytes = local.getAddress().getAddress();
-            if (remoteBytes.length == 4 && localBytes.length == 4) {
-                boolean sameSubnet = remoteBytes[0] == localBytes[0] && remoteBytes[1] == localBytes[1];
-                boolean isPrivate = localBytes[0] == 10
-                        || (localBytes[0] == (byte) 172 && (localBytes[1] & 0xFF) >= 16 && (localBytes[1] & 0xFF) <= 31)
-                        || (localBytes[0] == (byte) 192 && localBytes[1] == (byte) 168);
-                if (sameSubnet && isPrivate) {
-                    // Check if the remote address is the Docker gateway (typically x.x.x.1).
-                    // Docker NATs host-machine connections through the gateway, so a gateway
-                    // source address means the client is actually on the host machine.
-                    boolean isGateway = (remoteBytes[3] & 0xFF) == 1;
-                    if (isGateway) {
-                        // Client is from host machine via Docker port mapping
-                        if (advertisedHost != null && !advertisedHost.isEmpty()) {
-                            return advertisedHost;
-                        }
-                        return local.getAddress().getHostAddress();
-                    }
-                    // Client is a regular Docker container — return brokerHost
-                    return brokerHost;
-                }
-            }
-            // Client is from a different network — use advertisedHost or local IP
-            if (advertisedHost != null && !advertisedHost.isEmpty()) {
-                return advertisedHost;
-            }
-            return local.getAddress().getHostAddress();
-        } catch (Exception e) {
-            return brokerHost;
-        }
+        java.net.InetSocketAddress remote = (java.net.InetSocketAddress) ctx.channel().remoteAddress();
+        java.net.InetSocketAddress local = (java.net.InetSocketAddress) ctx.channel().localAddress();
+        return com.baafoo.core.util.NetworkUtils.resolveClientReachableHost(
+                remote, local, brokerHost, advertisedHost);
     }
 
     private void handlePartitionedMetadata(ChannelHandlerContext ctx, PulsarCommand cmd) {

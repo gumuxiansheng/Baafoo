@@ -1130,42 +1130,14 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
     /**
      * Resolve the broker host for Metadata/DescribeCluster responses.
-     * Uses the same Docker gateway detection logic as Pulsar:
-     * - Docker-internal clients (same subnet, not gateway) → cachedBrokerHost
-     * - Docker gateway clients (host machine via port mapping) → advertisedHost
-     * - External clients → advertisedHost or local IP
+     * Delegates to NetworkUtils for Docker gateway detection.
      */
     private String resolveBrokerHost(ChannelHandlerContext ctx) {
-        try {
-            java.net.InetSocketAddress remote = (java.net.InetSocketAddress) ctx.channel().remoteAddress();
-            java.net.InetSocketAddress local = (java.net.InetSocketAddress) ctx.channel().localAddress();
-            if (remote != null && local != null) {
-                byte[] remoteBytes = remote.getAddress().getAddress();
-                byte[] localBytes = local.getAddress().getAddress();
-                if (remoteBytes.length == 4 && localBytes.length == 4) {
-                    boolean sameSubnet = remoteBytes[0] == localBytes[0] && remoteBytes[1] == localBytes[1];
-                    boolean isPrivate = localBytes[0] == 10
-                            || (localBytes[0] == (byte) 172 && (localBytes[1] & 0xFF) >= 16 && (localBytes[1] & 0xFF) <= 31)
-                            || (localBytes[0] == (byte) 192 && localBytes[1] == (byte) 168);
-                    if (sameSubnet && isPrivate) {
-                        boolean isGateway = (remoteBytes[3] & 0xFF) == 1;
-                        if (isGateway) {
-                            if (advertisedHost != null && !advertisedHost.isEmpty()) {
-                                return advertisedHost;
-                            }
-                            return local.getAddress().getHostAddress();
-                        }
-                        return cachedBrokerHost != null ? cachedBrokerHost : local.getAddress().getHostAddress();
-                    }
-                }
-            }
-        } catch (Exception e) {
-            // fall through
-        }
-        if (advertisedHost != null && !advertisedHost.isEmpty()) {
-            return advertisedHost;
-        }
-        return cachedBrokerHost != null ? cachedBrokerHost : "127.0.0.1";
+        java.net.InetSocketAddress remote = (java.net.InetSocketAddress) ctx.channel().remoteAddress();
+        java.net.InetSocketAddress local = (java.net.InetSocketAddress) ctx.channel().localAddress();
+        String defaultHost = cachedBrokerHost != null ? cachedBrokerHost : "127.0.0.1";
+        return com.baafoo.core.util.NetworkUtils.resolveClientReachableHost(
+                remote, local, defaultHost, advertisedHost);
     }
 
     @Override

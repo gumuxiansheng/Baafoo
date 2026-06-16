@@ -24,7 +24,7 @@ public class TcpStubHandlerTest {
     }
 
     private EmbeddedChannel createChannel() {
-        TcpStubHandler handler = new TcpStubHandler(storage);
+        TcpStubHandler handler = new TcpStubHandler(storage, null);
         return new EmbeddedChannel(handler);
     }
 
