@@ -63,6 +63,33 @@ java -javaagent:baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar=config=baafo
 - All API paths: `/__baafoo__/api/*`
 - Server defaults: H2 embedded DB, `unmatchedDefault: passthrough`
 
+## Testing (integration)
+
+Integration test assets live in `testing/`:
+
+```
+testing/
+  deploy/staging/       # Agent & Server config for Docker staging env
+  test-rules/           # 16 JSON rule files covering all protocols (HTTP/Kafka/Pulsar/JMS/TCP)
+    rules/              # Individual rule JSON files
+    register-rules.ps1  # PowerShell script to register all rules via API
+    register-all.sh     # Bash equivalent
+  TEST-MANUAL.md        # Full test manual (architecture, matrix, steps, acceptance criteria)
+  TEST-REPORT.md        # Latest test report (17/17 passed, 100%)
+  test-integration.ps1  # End-to-end integration test script
+  fix-env.sql           # SQL fix for environment data
+```
+
+Docker staging environment:
+
+```bash
+# Start staging cluster
+docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
+
+# Rebuild after code changes
+docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build server app-env-a
+```
+
 ## Known Issues
 
 See `.review/deep-code-review-report.md` for 20+ verified findings including:
