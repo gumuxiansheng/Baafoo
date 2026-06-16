@@ -457,18 +457,19 @@ public class JdbcStorageService implements StorageService {
                     ? new ArrayList<>(existing.getEnvironments()) : new ArrayList<>();
             List<String> oldItemIds = existing.getItemIds() != null
                     ? new ArrayList<>(existing.getItemIds()) : new ArrayList<>();
+            boolean wasActive = existing.isActive();
 
             if (update.getName() != null) existing.setName(update.getName());
             if (update.getDescription() != null) existing.setDescription(update.getDescription());
-            if (update.getItemIds() != null && !update.getItemIds().isEmpty())
+            if (update.getItemIds() != null)
                 existing.setItemIds(update.getItemIds());
-            if (update.getEnvironments() != null && !update.getEnvironments().isEmpty())
+            if (update.getEnvironments() != null)
                 existing.setEnvironments(update.getEnvironments());
             existing.setActive(update.isActive());
             existing.setUpdatedAt(System.currentTimeMillis());
 
             sm.updateScene(existing);
-            syncSceneEnvironmentsToRules(rm, sm, existing, oldEnvironments, oldItemIds);
+            syncSceneEnvironmentsToRules(rm, sm, existing, oldEnvironments, oldItemIds, wasActive);
 
             return existing;
         } catch (Exception e) {
@@ -478,13 +479,23 @@ public class JdbcStorageService implements StorageService {
     }
 
     private void syncSceneEnvironmentsToRules(RuleMapper rm, SceneMapper sm,
-                                               SceneSet scene, List<String> oldEnvironments, List<String> oldItemIds) {
+                                               SceneSet scene, List<String> oldEnvironments,
+                                               List<String> oldItemIds, boolean wasActive) {
         List<String> newEnvironments = scene.getEnvironments() != null ? scene.getEnvironments() : Collections.<String>emptyList();
         List<String> currentItemIds = scene.getItemIds() != null ? scene.getItemIds() : Collections.<String>emptyList();
+        boolean isActive = scene.isActive();
 
         Set<String> allRuleIds = new HashSet<>();
         allRuleIds.addAll(oldItemIds);
         allRuleIds.addAll(currentItemIds);
+
+        // Rules removed from this scene's itemIds
+        Set<String> removedRuleIds = new HashSet<>(oldItemIds);
+        removedRuleIds.removeAll(currentItemIds);
+
+        // Rules newly added to this scene's itemIds
+        Set<String> addedRuleIds = new HashSet<>(currentItemIds);
+        addedRuleIds.removeAll(oldItemIds);
 
         for (String ruleId : allRuleIds) {
             Rule rule = rm.getRule(ruleId);
@@ -492,18 +503,44 @@ public class JdbcStorageService implements StorageService {
 
             List<String> ruleEnvs = new ArrayList<>(rule.getEnvironments() != null ? rule.getEnvironments() : Collections.<String>emptyList());
 
-            for (String oldEnv : oldEnvironments) {
-                if (!newEnvironments.contains(oldEnv)) {
-                    boolean stillInherited = isEnvironmentInheritedFromOtherScene(sm, ruleId, oldEnv, scene.getId());
+            // When scene is deactivated, remove all its environments from associated rules
+            // (unless the environment is still inherited from another active scene)
+            if (wasActive && !isActive) {
+                for (String env : oldEnvironments) {
+                    boolean stillInherited = isEnvironmentInheritedFromOtherScene(sm, ruleId, env, scene.getId());
                     if (!stillInherited) {
-                        ruleEnvs.remove(oldEnv);
+                        ruleEnvs.remove(env);
                     }
                 }
-            }
+            } else if (removedRuleIds.contains(ruleId)) {
+                // Rule removed from this scene: remove this scene's environments
+                // (unless the environment is still inherited from another active scene)
+                if (wasActive) {
+                    for (String env : oldEnvironments) {
+                        boolean stillInherited = isEnvironmentInheritedFromOtherScene(sm, ruleId, env, scene.getId());
+                        if (!stillInherited) {
+                            ruleEnvs.remove(env);
+                        }
+                    }
+                }
+            } else {
+                // Normal environment list change sync for rules still in this scene
+                for (String oldEnv : oldEnvironments) {
+                    if (!newEnvironments.contains(oldEnv)) {
+                        boolean stillInherited = isEnvironmentInheritedFromOtherScene(sm, ruleId, oldEnv, scene.getId());
+                        if (!stillInherited) {
+                            ruleEnvs.remove(oldEnv);
+                        }
+                    }
+                }
 
-            for (String newEnv : newEnvironments) {
-                if (!ruleEnvs.contains(newEnv)) {
-                    ruleEnvs.add(newEnv);
+                // When scene is active, add new environments to associated rules
+                if (isActive) {
+                    for (String newEnv : newEnvironments) {
+                        if (!ruleEnvs.contains(newEnv)) {
+                            ruleEnvs.add(newEnv);
+                        }
+                    }
                 }
             }
 
@@ -529,7 +566,33 @@ public class JdbcStorageService implements StorageService {
     @Override
     public boolean deleteScene(String id) {
         try (SqlSession session = openSession()) {
-            return session.getMapper(SceneMapper.class).deleteScene(id) > 0;
+            SceneMapper sm = session.getMapper(SceneMapper.class);
+            RuleMapper rm = session.getMapper(RuleMapper.class);
+            SceneSet scene = sm.getScene(id);
+            if (scene == null) return false;
+
+            // Remove this scene's environments from associated rules before deleting
+            if (scene.isActive()) {
+                List<String> envs = scene.getEnvironments() != null ? scene.getEnvironments() : Collections.<String>emptyList();
+                List<String> itemIds = scene.getItemIds() != null ? scene.getItemIds() : Collections.<String>emptyList();
+                for (String ruleId : itemIds) {
+                    Rule rule = rm.getRule(ruleId);
+                    if (rule == null) continue;
+                    List<String> ruleEnvs = new ArrayList<>(rule.getEnvironments() != null ? rule.getEnvironments() : Collections.<String>emptyList());
+                    for (String env : envs) {
+                        boolean stillInherited = isEnvironmentInheritedFromOtherScene(sm, ruleId, env, id);
+                        if (!stillInherited) {
+                            ruleEnvs.remove(env);
+                        }
+                    }
+                    rule.setEnvironments(ruleEnvs);
+                    rm.updateRule(rule);
+                }
+                invalidateRulesCache();
+                invalidateEnvironmentsCache();
+            }
+
+            return sm.deleteScene(id) > 0;
         } catch (Exception e) {
             log.error("Failed to delete scene {}: {}", id, e.getMessage());
             return false;
