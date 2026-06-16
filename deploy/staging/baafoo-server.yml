@@ -1,0 +1,76 @@
+# Baafoo Staging Server Configuration
+# 模拟生产环境配置：PostgreSQL + RBAC + 严格Stub模式
+
+# HTTP port for management API + Web console
+httpPort: 8084
+
+# Protocol-specific listen ports
+protocolPorts:
+  http: 9000
+  tcp: 9001
+  kafka: 9002
+  pulsar: 9003
+  jms: 9004
+
+# Data storage directory
+dataDir: "~/.baafoo/data"
+
+# Rule storage directory
+rulesDir: "~/.baafoo/data/rules"
+
+# Recording storage directory
+recordingsDir: "~/.baafoo/data/recordings"
+
+# Maximum recording retention days
+recordingRetentionDays: 30
+
+# Maximum rules per page (pagination)
+maxRulesPerPage: 100
+
+# Whether to enable CORS for Web console
+corsEnabled: true
+
+# CORS allowed origins
+corsOrigins: []
+
+# Web console static file path
+webConsolePath: ""
+
+# Whether to enable request logging
+requestLogging: true
+
+# Agent heartbeat timeout in seconds
+agentHeartbeatTimeoutSec: 60
+
+# Maximum agents per environment
+maxAgentsPerEnvironment: 50
+
+# Unmatched request default behavior: passthrough (forward to original destination)
+unmatchedDefault: passthrough
+
+# Disable SSL verification for passthrough proxy (test environments only)
+passthroughSslVerifyDisabled: true
+
+# Advertised host for Pulsar LOOKUP response.
+# When clients connect from the host machine via Docker port mapping,
+# set this to "localhost" so the LOOKUP response returns a reachable address.
+# Leave empty to auto-detect (uses container IP, which works for in-Docker clients).
+pulsarAdvertisedHost: localhost
+
+# Database configuration — PostgreSQL for staging
+database:
+  type: postgresql
+  url: "jdbc:postgresql://postgres:5432/baafoo"
+  username: "baafoo"
+  password: "baafoo"
+
+# Authentication configuration — 测试环境关闭认证（Agent不支持API Key）
+auth:
+  enabled: false
+  localBypass: false
+  jwtSecret: "baafoo-staging-jwt-secret-change-in-production-2024"
+  tokenExpiryHours: 8
+  apiKeys:
+    staging-admin-key: admin
+    staging-dev-key: developer
+    staging-test-key: tester
