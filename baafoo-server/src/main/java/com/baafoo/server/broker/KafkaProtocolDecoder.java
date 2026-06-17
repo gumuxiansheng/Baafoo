@@ -330,7 +330,12 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                         if (m.isMatched()) {
                             // Record the original payload (so replays show what the app sent).
                             if (shouldRecord) {
-                                matchHelper.record(m.getRule().getId(), "kafka", topic, bodyStr, agentInfo);
+                                String respBody = null;
+                                if ((mode == EnvironmentMode.STUB || mode == EnvironmentMode.RECORD_AND_STUB)
+                                        && m.getResponse() != null && m.getResponse().getBody() != null) {
+                                    respBody = m.getResponse().getBody();
+                                }
+                                matchHelper.record(m.getRule().getId(), "kafka", topic, bodyStr, respBody, agentInfo);
                             }
                             // In STUB / RECORD_AND_STUB, replace the value with the stub body so
                             // consumers fetch the stub instead of the producer's original payload.
@@ -346,7 +351,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                         } else {
                             // Unmatched — store the original record (passthrough behaviour).
                             if (shouldRecord) {
-                                matchHelper.record(null, "kafka", topic, bodyStr, agentInfo);
+                                matchHelper.record(null, "kafka", topic, bodyStr, null, agentInfo);
                             }
                             lastOffset = messageStore.append(topic, partition, rec.key, rec.value);
                         }
@@ -362,14 +367,14 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                             byte[] stubValue = resp.getBody().getBytes(StandardCharsets.UTF_8);
                             offset = messageStore.append(topic, partition, null, stubValue);
                             if (shouldRecord) {
-                                matchHelper.record(m.getRule().getId(), "kafka", topic, null, agentInfo);
+                                matchHelper.record(m.getRule().getId(), "kafka", topic, null, resp.getBody(), agentInfo);
                             }
                         } else {
                             offset = messageStore.append(topic, partition, null, batchData);
                         }
                     } else {
                         if (shouldRecord && m.isMatched()) {
-                            matchHelper.record(m.getRule().getId(), "kafka", topic, null, agentInfo);
+                            matchHelper.record(m.getRule().getId(), "kafka", topic, null, null, agentInfo);
                         }
                         offset = messageStore.append(topic, partition, null, batchData);
                     }
@@ -483,7 +488,8 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                             long offset = messageStore.append(topic, partition, null, stubValue);
                             messages = messageStore.fetch(topic, partition, offset, partitionMaxBytes);
                             if (mode == EnvironmentMode.RECORD_AND_STUB) {
-                                matchHelper.record(m.getRule().getId(), "kafka", topic, resp.getBody(), agentInfo);
+                                // Consumer Fetch stub: requestBody = null, responseBody = stub body
+                                matchHelper.record(m.getRule().getId(), "kafka", topic, null, resp.getBody(), agentInfo);
                             }
                             log.info("Kafka Fetch stub: topic={}, partition={}, matched rule={}, stubBodySize={}",
                                     topic, partition, m.getRule().getId(), stubValue.length);

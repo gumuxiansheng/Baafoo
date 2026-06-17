@@ -96,22 +96,24 @@ class MqMatchHelper {
     }
 
     /**
-     * Record an MQ message (request direction). Safe to call in RECORD and
-     * RECORD_AND_STUB modes. No-op otherwise.
+     * Record an MQ message. Safe to call in RECORD and RECORD_AND_STUB modes.
+     * No-op otherwise.
      *
-     * @param ruleId     matched rule id (null if unmatched)
-     * @param protocol   "kafka" or "pulsar"
-     * @param topic      the topic/destination
-     * @param body       the decoded message payload
-     * @param info       pre-resolved agent info (avoid re-resolving per message)
+     * @param ruleId       matched rule id (null if unmatched)
+     * @param protocol     "kafka" or "pulsar"
+     * @param topic        the topic/destination
+     * @param requestBody  the decoded request payload (e.g. producer's message body)
+     * @param responseBody the decoded response payload (e.g. stub response body), may be null
+     * @param info         pre-resolved agent info (avoid re-resolving per message)
      */
-    void record(String ruleId, String protocol, String topic, String body, AgentResolver.AgentInfo info) {
+    void record(String ruleId, String protocol, String topic, String requestBody, String responseBody, AgentResolver.AgentInfo info) {
         try {
             RecordingEntry rec = new RecordingEntry();
             rec.setRuleId(ruleId);
             rec.setProtocol(protocol);
             rec.setPath(topic);
-            rec.setRequestBody(body);
+            rec.setRequestBody(requestBody);
+            rec.setResponseBody(responseBody);
             rec.setResponseStatusCode(0);
             rec.setRequestHeaders(Collections.<String, String>emptyMap());
             rec.setResponseHeaders(Collections.<String, String>emptyMap());

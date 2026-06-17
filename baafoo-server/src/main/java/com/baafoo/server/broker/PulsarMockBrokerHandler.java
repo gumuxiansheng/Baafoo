@@ -214,8 +214,12 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
         // Strip the Pulsar MessageMetadata prefix to get the real business payload.
         // Wire format: magic(1, 0x0E) + varint(metadataSize) + MessageMetadata(protobuf) + body
         MetadataInfo meta = parseMessageMetadata(payload);
-        String bodyStr = meta != null && meta.body != null
-                ? new String(meta.body, StandardCharsets.UTF_8) : null;
+        String bodyStr = null;
+        if (meta != null && meta.body != null) {
+            // Strip null bytes — PostgreSQL rejects 0x00 in UTF8 text columns
+            byte[] cleaned = stripNullBytes(meta.body);
+            bodyStr = new String(cleaned, StandardCharsets.UTF_8);
+        }
 
         // Rule match + record + stub injection.
         AgentResolver.AgentInfo agentInfo = matchHelper.resolveAgent(ctx);
@@ -228,7 +232,13 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
         byte[] storedPayload = payload; // default: original payload as produced
         if (m.isMatched()) {
             if (shouldRecord) {
-                matchHelper.record(m.getRule().getId(), "pulsar", topic, bodyStr, agentInfo);
+                // Producer SEND: requestBody = original message, responseBody = stub body (if stub mode)
+                String respBody = null;
+                if ((mode == EnvironmentMode.STUB || mode == EnvironmentMode.RECORD_AND_STUB)
+                        && m.getResponse() != null && m.getResponse().getBody() != null) {
+                    respBody = m.getResponse().getBody();
+                }
+                matchHelper.record(m.getRule().getId(), "pulsar", topic, bodyStr, respBody, agentInfo);
             }
             // STUB / RECORD_AND_STUB: rebuild the payload with the rule's response body so
             // consumers decode a stub message instead of the producer's original body.
@@ -240,7 +250,7 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
             }
         } else {
             if (shouldRecord) {
-                matchHelper.record(null, "pulsar", topic, bodyStr, agentInfo);
+                matchHelper.record(null, "pulsar", topic, bodyStr, null, agentInfo);
             }
         }
 
@@ -276,40 +286,132 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
      */
     private MetadataInfo parseMessageMetadata(byte[] payload) {
         if (payload == null || payload.length < 2) return null;
-        // Pulsar wire format: [2 bytes magic 0x0E01] [4 bytes CRC32] [varint metadataSize] [metadata] [body]
-        // Some clients may omit the second magic byte; tolerate both 0x0E01 and 0x0E prefixes.
-        int idx = 0;
-        if (payload[0] == PULSAR_MAGIC) {
-            idx = 1;
-            if (idx < payload.length && payload[1] == 0x01) {
-                idx = 2; // full 0x0E01 magic
-            }
-        }
         try {
-            // Skip 4-byte CRC32 checksum (present when magic is 0x0E01)
-            if (idx == 2 && payload.length >= idx + 4) {
+            if (payload.length >= 2 && payload[0] == PULSAR_MAGIC && payload[1] == 0x01) {
+                // Full 0x0E01 magic — CRC32C is present.
+                // Format: [0x0E01][4-byte CRC32C][4-byte big-endian metadataSize][MessageMetadata][body]
+                int idx = 2 + 4; // skip magic + CRC32C
+                if (idx + 4 > payload.length) return null;
+                // Read 4-byte big-endian metadataSize
+                int metaSize = ((payload[idx] & 0xFF) << 24)
+                             | ((payload[idx + 1] & 0xFF) << 16)
+                             | ((payload[idx + 2] & 0xFF) << 8)
+                             | (payload[idx + 3] & 0xFF);
                 idx += 4;
+                if (metaSize < 0 || idx + metaSize > payload.length) return null;
+                log.debug("parseMessageMetadata (0x0E01): payloadLen={}, metaSize={}, bodyStart={}",
+                        payload.length, metaSize, idx + metaSize);
+                byte[] prefix = new byte[idx + metaSize];
+                System.arraycopy(payload, 0, prefix, 0, prefix.length);
+                int bodyLen = payload.length - prefix.length;
+                byte[] body = new byte[bodyLen];
+                System.arraycopy(payload, prefix.length, body, 0, bodyLen);
+                return new MetadataInfo(prefix, body);
+            } else if (payload.length >= 1 && payload[0] == PULSAR_MAGIC) {
+                // 0x0E only (no CRC32C) — old format
+                // Format: [0x0E][varint metadataSize][MessageMetadata][body]
+                int idx = 1;
+                int metaSize = readVarint(payload, idx);
+                if (metaSize < 0) return null;
+                int varintBytes = varintSize(metaSize);
+                idx += varintBytes;
+                if (idx + metaSize > payload.length) return null;
+                log.debug("parseMessageMetadata (0x0E): payloadLen={}, metaSize={}, bodyStart={}",
+                        payload.length, metaSize, idx + metaSize);
+                byte[] prefix = new byte[idx + metaSize];
+                System.arraycopy(payload, 0, prefix, 0, prefix.length);
+                int bodyLen = payload.length - prefix.length;
+                byte[] body = new byte[bodyLen];
+                System.arraycopy(payload, prefix.length, body, 0, bodyLen);
+                return new MetadataInfo(prefix, body);
+            } else {
+                // No magic byte — try to parse as raw [varint metadataSize][metadata][body]
+                int metaSize = readVarint(payload, 0);
+                if (metaSize <= 0) return null;
+                int varintBytes = varintSize(metaSize);
+                if (varintBytes + metaSize >= payload.length) return null;
+                log.debug("parseMessageMetadata (no magic): payloadLen={}, metaSize={}, bodyStart={}",
+                        payload.length, metaSize, varintBytes + metaSize);
+                byte[] prefix = new byte[varintBytes + metaSize];
+                System.arraycopy(payload, 0, prefix, 0, prefix.length);
+                int bodyLen = payload.length - prefix.length;
+                byte[] body = new byte[bodyLen];
+                System.arraycopy(payload, prefix.length, body, 0, bodyLen);
+                return new MetadataInfo(prefix, body);
             }
-            // read varint = metadataSize
-            int metaSize = 0;
-            int shift = 0;
-            int b;
-            do {
-                if (idx >= payload.length) return null;
-                b = payload[idx++] & 0xFF;
-                metaSize |= (b & 0x7F) << shift;
-                shift += 7;
-            } while ((b & 0x80) != 0);
-            if (metaSize < 0 || idx + metaSize > payload.length) return null;
-            byte[] prefix = new byte[idx + metaSize];
-            System.arraycopy(payload, 0, prefix, 0, prefix.length);
-            int bodyLen = payload.length - prefix.length;
-            byte[] body = new byte[bodyLen];
-            System.arraycopy(payload, prefix.length, body, 0, bodyLen);
-            return new MetadataInfo(prefix, body);
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * Find the end of a protobuf message in a byte array starting at the given offset.
+     * Protobuf fields are: (varint tag + value) pairs. Varint tags encode (field_number << 3 | wire_type).
+     * Wire types: 0=varint, 1=64-bit, 2=length-delimited, 5=32-bit.
+     * We scan until we encounter a byte that doesn't look like a valid protobuf tag
+     * or we've consumed all plausible fields.
+     */
+    private static int findProtobufEnd(byte[] data, int offset) {
+        int idx = offset;
+        while (idx < data.length) {
+            int tagStart = idx;
+            int tag = readVarint(data, idx);
+            if (tag < 0) break;
+            idx += varintSize(tag);
+            int wireType = tag & 0x07;
+            int fieldNumber = tag >>> 3;
+            if (fieldNumber == 0 || fieldNumber > 100) break; // invalid field number
+
+            switch (wireType) {
+                case 0: // varint
+                    int v = readVarint(data, idx);
+                    if (v < 0) return tagStart;
+                    idx += varintSize(v);
+                    break;
+                case 1: // 64-bit fixed
+                    if (idx + 8 > data.length) return tagStart;
+                    idx += 8;
+                    break;
+                case 2: // length-delimited
+                    int len = readVarint(data, idx);
+                    if (len < 0) return tagStart;
+                    idx += varintSize(len);
+                    if (idx + len > data.length) return tagStart;
+                    idx += len;
+                    break;
+                case 5: // 32-bit fixed
+                    if (idx + 4 > data.length) return tagStart;
+                    idx += 4;
+                    break;
+                default:
+                    return tagStart; // unknown wire type — end of metadata
+            }
+        }
+        return idx;
+    }
+
+    private static int readVarint(byte[] data, int offset) {
+        int value = 0;
+        int shift = 0;
+        int idx = offset;
+        int b;
+        do {
+            if (idx >= data.length) return -1;
+            b = data[idx++] & 0xFF;
+            value |= (b & 0x7F) << shift;
+            shift += 7;
+        } while ((b & 0x80) != 0);
+        return value;
+    }
+
+    private static int varintSize(int value) {
+        int size = 0;
+        int v = value;
+        do {
+            size++;
+            v >>>= 7;
+        } while (v != 0);
+        return size;
     }
 
     /**
@@ -419,6 +521,21 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
         return crc ^ 0xFFFFFFFF;
     }
 
+    /** Strip null bytes (0x00) from a byte array — PostgreSQL rejects them in UTF8 text. */
+    private static byte[] stripNullBytes(byte[] data) {
+        int count = 0;
+        for (byte b : data) {
+            if (b != 0) count++;
+        }
+        if (count == data.length) return data;
+        byte[] result = new byte[count];
+        int idx = 0;
+        for (byte b : data) {
+            if (b != 0) result[idx++] = b;
+        }
+        return result;
+    }
+
     private void handleSubscribe(ChannelHandlerContext ctx, PulsarCommand cmd) {
         String topic = cmd.topic;
         String subscription = cmd.subscription;
@@ -516,7 +633,8 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
                             StoredMessage stubMsg = messageStore.storeMessage(
                                     topic, "baafoo-stub-producer", 0, stubPayload);
                             if (mode == EnvironmentMode.RECORD_AND_STUB) {
-                                matchHelper.record(m.getRule().getId(), "pulsar", topic, resp.getBody(), agentInfo);
+                                // Consumer receives stub: requestBody = null, responseBody = stub body
+                                matchHelper.record(m.getRule().getId(), "pulsar", topic, null, resp.getBody(), agentInfo);
                             }
                             log.info("Pulsar Subscribe stub: topic={}, matched rule={}, stubBodySize={}",
                                     topic, m.getRule().getId(), stubBody.length);
