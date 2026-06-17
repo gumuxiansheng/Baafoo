@@ -421,6 +421,9 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
                             byte[] stubPayload = rebuildPayloadWithBody(null, stubBody);
                             StoredMessage stubMsg = messageStore.storeMessage(
                                     topic, "baafoo-stub-producer", 0, stubPayload);
+                            if (mode == EnvironmentMode.RECORD_AND_STUB) {
+                                matchHelper.record(m.getRule().getId(), "pulsar", topic, resp.getBody(), agentInfo);
+                            }
                             log.info("Pulsar Subscribe stub: topic={}, matched rule={}, stubBodySize={}",
                                     topic, m.getRule().getId(), stubBody.length);
                             ByteBuf messageFrame = PulsarProtobufCodec.encodeMessage(

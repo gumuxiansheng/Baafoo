@@ -1,8 +1,10 @@
 package com.baafoo.server.broker;
 
 import com.baafoo.core.model.MatchCondition;
+import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.model.Rule;
+import com.baafoo.server.storage.StorageService;
 import org.apache.activemq.artemis.api.core.RoutingType;
 import org.apache.activemq.artemis.api.core.SimpleString;
 import org.apache.activemq.artemis.api.core.TransportConfiguration;
@@ -22,6 +24,7 @@ import javax.jms.Destination;
 import javax.jms.MessageProducer;
 import javax.jms.Session;
 import javax.jms.TextMessage;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -52,15 +55,21 @@ public class JmsMockBroker {
     private ActiveMQConnectionFactory internalCf;
     private final int port;
     private final int maxDeliveryAttempts;
+    private final StorageService storage;
     private volatile boolean started;
 
     public JmsMockBroker(int port) {
-        this(port, 3);
+        this(port, 3, null);
     }
 
     public JmsMockBroker(int port, int maxDeliveryAttempts) {
+        this(port, maxDeliveryAttempts, null);
+    }
+
+    public JmsMockBroker(int port, int maxDeliveryAttempts, StorageService storage) {
         this.port = port;
         this.maxDeliveryAttempts = maxDeliveryAttempts;
+        this.storage = storage;
     }
 
     /**
@@ -230,6 +239,25 @@ public class JmsMockBroker {
                 if (body != null && !body.isEmpty()) {
                     sendPresetMessage(destName, body, response.getDelayMs());
                     loaded++;
+                    // Record the preset message when storage is available
+                    if (storage != null) {
+                        try {
+                            RecordingEntry rec = new RecordingEntry();
+                            rec.setRuleId(rule.getId());
+                            rec.setProtocol("jms");
+                            rec.setPath(destName);
+                            rec.setRequestBody(body);
+                            rec.setResponseStatusCode(0);
+                            rec.setRequestHeaders(Collections.emptyMap());
+                            rec.setResponseHeaders(Collections.emptyMap());
+                            rec.setEnvironmentId(null);
+                            rec.setAgentId(null);
+                            rec.setAgentIp(null);
+                            storage.addRecording(rec);
+                        } catch (Exception e) {
+                            log.warn("Failed to record JMS preset message for rule {}: {}", rule.getId(), e.getMessage());
+                        }
+                    }
                 }
             }
         }

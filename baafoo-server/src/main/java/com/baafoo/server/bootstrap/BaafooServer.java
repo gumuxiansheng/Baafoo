@@ -222,7 +222,7 @@ public class BaafooServer {
         // JMS uses the embedded Artemis broker with OpenWire protocol support
         Integer jmsPort = config.getPortForProtocol("jms");
         if (jmsPort != null && jmsPort > 0) {
-            jmsBroker = new JmsMockBroker(jmsPort);
+            jmsBroker = new JmsMockBroker(jmsPort, 3, storage);
             jmsBroker.start();
             jmsBroker.loadRules(storage.listRules());
         }

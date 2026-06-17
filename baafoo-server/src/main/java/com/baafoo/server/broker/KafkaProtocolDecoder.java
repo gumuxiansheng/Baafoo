@@ -482,6 +482,9 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                             byte[] stubValue = resp.getBody().getBytes(StandardCharsets.UTF_8);
                             long offset = messageStore.append(topic, partition, null, stubValue);
                             messages = messageStore.fetch(topic, partition, offset, partitionMaxBytes);
+                            if (mode == EnvironmentMode.RECORD_AND_STUB) {
+                                matchHelper.record(m.getRule().getId(), "kafka", topic, resp.getBody(), agentInfo);
+                            }
                             log.info("Kafka Fetch stub: topic={}, partition={}, matched rule={}, stubBodySize={}",
                                     topic, partition, m.getRule().getId(), stubValue.length);
                         }

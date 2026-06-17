@@ -60,7 +60,10 @@ public class AgentResolver {
             channelIp = resolveAgentIpFromChannel(ctx);
         }
 
-        // Collect all agents that match by IP
+        // Collect all agents that match by IP.
+        // When multiple agents share the same IP:
+        //  - same environment → pick the one with the most recent heartbeat (container restart)
+        //  - different environments → mark ambiguous (safety: don't guess)
         StorageService.AgentRegistration ipMatched = null;
         boolean ipMatchAmbiguous = false;
 
@@ -69,11 +72,14 @@ public class AgentResolver {
                 if (channelIp != null && channelIp.equals(agent.agentIp)) {
                     if (ipMatched == null) {
                         ipMatched = agent;
-                    } else {
-                        // Multiple agents with same IP — check if environments differ
-                        if (!java.util.Objects.equals(ipMatched.environment, agent.environment)) {
-                            ipMatchAmbiguous = true;
+                    } else if (java.util.Objects.equals(ipMatched.environment, agent.environment)) {
+                        // Same environment: prefer the more recent heartbeat (container restart scenario)
+                        if (agent.lastHeartbeat > ipMatched.lastHeartbeat) {
+                            ipMatched = agent;
                         }
+                    } else {
+                        // Different environments on the same IP — ambiguous, cannot safely resolve
+                        ipMatchAmbiguous = true;
                     }
                 }
             }
