@@ -44,14 +44,16 @@ public final class NioSocketConnectAdvice {
             String host = addr.getHostString();
             int port = addr.getPort();
 
-            // Skip internal connections (Baafoo server & stub ports),
-            // but in RECORD mode, register recording for non-HTTP stub ports
-            // (Kafka/Pulsar/JMS connections are redirected here by protocol
-            // interceptors and need Socket-level stream recording).
+            // Skip internal connections (Baafoo server & stub ports).
+            // MQ ports (Kafka/Pulsar/JMS) are recorded at the application layer
+            // by the Server, so skip Socket-level recording to avoid duplicates.
             if (GlobalRouteState.isInternal(host, port)) {
                 if ((GlobalRouteState.CURRENT_MODE == 2 || GlobalRouteState.CURRENT_MODE == 3)
                         && port != GlobalRouteState.SERVER_PORT
-                        && port != GlobalRouteState.HTTP_PORT) {
+                        && port != GlobalRouteState.HTTP_PORT
+                        && port != GlobalRouteState.KAFKA_PORT
+                        && port != GlobalRouteState.PULSAR_PORT
+                        && port != GlobalRouteState.JMS_PORT) {
                     String sessionId = java.util.UUID.randomUUID().toString();
                     GlobalRouteState.startRecording(System.identityHashCode(channel), sessionId, host, port);
                     GlobalRouteState.logInfo("[Baafoo] NIO Socket recording (internal): " + host + ":" + port + " (sessionId=" + sessionId + ")");
@@ -80,9 +82,13 @@ public final class NioSocketConnectAdvice {
 
                 if (routeValue != null) {
                     int targetPort = Integer.parseInt(routeValue[1]);
-                    // Skip Socket-level recording for HTTP — HTTP has its own recorder.
-                    // Kafka/Pulsar/JMS/TCP need Socket-level stream recording.
-                    if (targetPort != GlobalRouteState.HTTP_PORT) {
+                    // Skip Socket-level recording for HTTP and MQ — they have
+                    // their own protocol-level recorders (HTTP: HttpURLConnectionAdvice,
+                    // MQ: Server-side application-layer recording).
+                    if (targetPort != GlobalRouteState.HTTP_PORT
+                            && targetPort != GlobalRouteState.KAFKA_PORT
+                            && targetPort != GlobalRouteState.PULSAR_PORT
+                            && targetPort != GlobalRouteState.JMS_PORT) {
                         String sessionId = java.util.UUID.randomUUID().toString();
                         GlobalRouteState.startRecording(System.identityHashCode(channel), sessionId, host, port);
                         GlobalRouteState.logInfo("[Baafoo] NIO Socket recording: " + host + ":" + port + " (sessionId=" + sessionId + ")");
