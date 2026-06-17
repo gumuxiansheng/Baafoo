@@ -803,7 +803,7 @@ final class PulsarProtobufCodec {
         writeVarint(out, value);
     }
 
-    private static void writeVarintField64(ByteArrayOutputStream out, int fieldNumber, long value) {
+    static void writeVarintField64(ByteArrayOutputStream out, int fieldNumber, long value) {
         writeVarint(out, (fieldNumber << 3) | 0); // wire type 0 = varint
         writeVarint64(out, value);
     }
@@ -815,7 +815,7 @@ final class PulsarProtobufCodec {
         out.write(bytes, 0, bytes.length);
     }
 
-    private static void writeBytesField(ByteArrayOutputStream out, int fieldNumber, byte[] value) {
+    static void writeBytesField(ByteArrayOutputStream out, int fieldNumber, byte[] value) {
         writeVarint(out, (fieldNumber << 3) | 2); // wire type 2 = length-delimited
         writeVarint(out, value.length);
         out.write(value, 0, value.length);

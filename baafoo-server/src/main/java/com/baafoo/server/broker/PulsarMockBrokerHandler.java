@@ -14,6 +14,7 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -275,12 +276,20 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
      */
     private MetadataInfo parseMessageMetadata(byte[] payload) {
         if (payload == null || payload.length < 2) return null;
-        // magic byte (0x0E) — some clients omit it; tolerate both.
+        // Pulsar wire format: [2 bytes magic 0x0E01] [4 bytes CRC32] [varint metadataSize] [metadata] [body]
+        // Some clients may omit the second magic byte; tolerate both 0x0E01 and 0x0E prefixes.
         int idx = 0;
         if (payload[0] == PULSAR_MAGIC) {
             idx = 1;
+            if (idx < payload.length && payload[1] == 0x01) {
+                idx = 2; // full 0x0E01 magic
+            }
         }
         try {
+            // Skip 4-byte CRC32 checksum (present when magic is 0x0E01)
+            if (idx == 2 && payload.length >= idx + 4) {
+                idx += 4;
+            }
             // read varint = metadataSize
             int metaSize = 0;
             int shift = 0;
@@ -310,20 +319,105 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
      */
     private byte[] rebuildPayloadWithBody(MetadataInfo meta, byte[] stubBody) {
         if (meta != null && meta.metadataPrefix != null && meta.metadataPrefix.length > 0) {
+            // Rebuild with correct CRC32C: magic(0x0E01) + CRC32C(4) + [metadataSize + metadata] + body
+            // The metadataPrefix contains: magic(0x0E01) + CRC32C(4) + metadataSize(varint) + metadata(bytes)
+            // We need to recalculate CRC32C over [metadataSize + metadata + body]
+            int prefixHeaderLen = 2 + 4; // magic + CRC32C
+            if (meta.metadataPrefix.length > prefixHeaderLen) {
+                byte[] metaAndBody = new byte[meta.metadataPrefix.length - prefixHeaderLen + stubBody.length];
+                System.arraycopy(meta.metadataPrefix, prefixHeaderLen, metaAndBody, 0, meta.metadataPrefix.length - prefixHeaderLen);
+                System.arraycopy(stubBody, 0, metaAndBody, meta.metadataPrefix.length - prefixHeaderLen, stubBody.length);
+
+                int checksum = computeCrc32c(metaAndBody, 0, metaAndBody.length);
+
+                byte[] result = new byte[prefixHeaderLen + metaAndBody.length];
+                result[0] = PULSAR_MAGIC;  // 0x0E
+                result[1] = 0x01;          // 0x01 (full magic, indicates CRC32C present)
+                result[2] = (byte) (checksum >>> 24);
+                result[3] = (byte) (checksum >>> 16);
+                result[4] = (byte) (checksum >>> 8);
+                result[5] = (byte) checksum;
+                System.arraycopy(metaAndBody, 0, result, prefixHeaderLen, metaAndBody.length);
+                return result;
+            }
+            // Fallback if prefix is too short
             byte[] result = new byte[meta.metadataPrefix.length + stubBody.length];
             System.arraycopy(meta.metadataPrefix, 0, result, 0, meta.metadataPrefix.length);
             System.arraycopy(stubBody, 0, result, meta.metadataPrefix.length, stubBody.length);
             return result;
         }
-        // Fallback: magic(1) + metadataSize(1, varint 0) + body
-        byte[] result = new byte[2 + stubBody.length];
-        result[0] = PULSAR_MAGIC;
-        result[1] = 0; // empty metadata (varint length = 0)
-        System.arraycopy(stubBody, 0, result, 2, stubBody.length);
+        // Fallback: build minimal MessageMetadata + body with correct CRC32C
+        // MessageMetadata (Pulsar 2.10.x lightproto):
+        //   optional string producer_name = 7;
+        //   optional uint64 sequence_id  = 8;
+        //   optional uint64 publish_time = 13;
+        byte[] producerName = "baafoo-stub".getBytes(StandardCharsets.UTF_8);
+        ByteArrayOutputStream metaOut = new ByteArrayOutputStream();
+        // producer_name (field 7, length-delimited string)
+        PulsarProtobufCodec.writeBytesField(metaOut, 7, producerName);
+        // sequence_id (field 8, varint uint64) = 0
+        PulsarProtobufCodec.writeVarintField64(metaOut, 8, 0);
+        // publish_time (field 13, varint uint64)
+        PulsarProtobufCodec.writeVarintField64(metaOut, 13, System.currentTimeMillis());
+
+        byte[] metadataBytes = metaOut.toByteArray();
+        // Wire format: [varint metadataSize] [metadata bytes] [body]
+        byte[] metaAndBody = new byte[1 + metadataBytes.length + stubBody.length];
+        int idx = 0;
+        // write varint metadataSize
+        int metaSize = metadataBytes.length;
+        while (metaSize > 0x7F) {
+            metaAndBody[idx++] = (byte) ((metaSize & 0x7F) | 0x80);
+            metaSize >>>= 7;
+        }
+        metaAndBody[idx++] = (byte) metaSize;
+        System.arraycopy(metadataBytes, 0, metaAndBody, idx, metadataBytes.length);
+        System.arraycopy(stubBody, 0, metaAndBody, idx + metadataBytes.length, stubBody.length);
+        // Trim if varint took more/less than 1 byte
+        if (idx != 1) {
+            byte[] trimmed = new byte[metaAndBody.length - (1 - idx)];
+            System.arraycopy(metaAndBody, 0, trimmed, 0, trimmed.length);
+            metaAndBody = trimmed;
+        }
+
+        int checksum = computeCrc32c(metaAndBody, 0, metaAndBody.length);
+
+        byte[] result = new byte[2 + 4 + metaAndBody.length];
+        result[0] = PULSAR_MAGIC;  // 0x0E
+        result[1] = 0x01;          // 0x01 (full magic, indicates CRC32C present)
+        result[2] = (byte) (checksum >>> 24);
+        result[3] = (byte) (checksum >>> 16);
+        result[4] = (byte) (checksum >>> 8);
+        result[5] = (byte) checksum;
+        System.arraycopy(metaAndBody, 0, result, 6, metaAndBody.length);
         return result;
     }
 
     private static final byte PULSAR_MAGIC = (byte) 0x0E;
+
+    /** CRC32C lookup table (Castagnoli polynomial 0x1EDC6F41) */
+    private static final int[] CRC32C_TABLE = new int[256];
+    static {
+        for (int i = 0; i < 256; i++) {
+            int crc = i;
+            for (int j = 0; j < 8; j++) {
+                if ((crc & 1) != 0) {
+                    crc = (crc >>> 1) ^ 0x82F63B78; // reflected polynomial
+                } else {
+                    crc >>>= 1;
+                }
+            }
+            CRC32C_TABLE[i] = crc;
+        }
+    }
+
+    private static int computeCrc32c(byte[] data, int offset, int length) {
+        int crc = 0xFFFFFFFF;
+        for (int i = offset; i < offset + length; i++) {
+            crc = CRC32C_TABLE[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+        }
+        return crc ^ 0xFFFFFFFF;
+    }
 
     private void handleSubscribe(ChannelHandlerContext ctx, PulsarCommand cmd) {
         String topic = cmd.topic;
