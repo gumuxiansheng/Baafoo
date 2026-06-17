@@ -630,42 +630,18 @@ final class PulsarProtobufCodec {
     private static byte[] encodeMessageCommand(long ledgerId, long entryId, int partition,
                                                 String topic, int consumerId) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        // Message command fields:
-        // consumer_id (field 6, varint)
-        writeVarintField(out, 6, consumerId);
-        // message_id (field 20, embedded MessageIdData) — actually this might be field 7
-        // Let me check the Message proto definition...
-        //
-        // Message proto:
-        //   optional MessageIdData message_id = 1;
-        //   optional int32 redelivery_count = 2;
-        //   repeated int64 ack_set = 3;
-        //   optional MessageIdData encryption_keys = 4;
-        //   optional CompressionType compression = 5;
-        //   optional int32 uncompressed_size = 6;
-        //   optional int32 consumer_id = 7;
-        //   ...
-        // Wait, I think the field numbers are different. Let me use the correct ones.
-        //
-        // Actually, looking at PulsarApi.proto more carefully:
-        // message Message {
-        //   optional MessageIdData message_id = 1;
-        //   optional int32 redelivery_count = 2;
-        //   repeated int64 ack_set = 3;
-        //   optional string encryption_keys = 4;
-        //   optional CompressionType compression = 5;
-        //   optional int32 uncompressed_size = 6;
-        //   optional int32 consumer_id = 7;
-        //   ...
-        // }
+        // CommandMessage fields (Pulsar 2.10.x lightproto):
+        //   required uint64 consumer_id     = 1;
+        //   required MessageIdData message_id = 2;
+        //   optional int32 redelivery_count = 3;
+        //   repeated int64 ack_set          = 4;
+        //   optional uint64 consumer_epoch  = 5;
 
-        // message_id (field 1, embedded MessageIdData)
+        // consumer_id (field 1, varint int64)
+        writeVarintField64(out, 1, consumerId);
+        // message_id (field 2, embedded MessageIdData)
         byte[] messageIdData = encodeMessageIdData(ledgerId, entryId);
-        writeBytesField(out, 1, messageIdData);
-        // compression (field 5, enum) = NONE (0)
-        writeVarintField(out, 5, 0);
-        // consumer_id (field 7, varint)
-        writeVarintField(out, 7, consumerId);
+        writeBytesField(out, 2, messageIdData);
         return out.toByteArray();
     }
 
