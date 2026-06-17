@@ -69,6 +69,12 @@
         <if test="keyword != null and keyword != ''">
             AND (LOWER(name) LIKE '%' || LOWER(#{keyword}) || '%' OR LOWER(id) LIKE '%' || LOWER(#{keyword}) || '%')
         </if>
+        <if test="environment != null and environment != ''">
+            AND environments_json LIKE '%"' || #{environment} || '"%'
+        </if>
+        <if test="host != null and host != ''">
+            AND (LOWER(host) LIKE '%' || LOWER(#{host}) || '%' OR LOWER(service_name) LIKE '%' || LOWER(#{host}) || '%')
+        </if>
     </select>
 
     <!-- List rules paged with optional filters -->
@@ -79,6 +85,12 @@
         </if>
         <if test="keyword != null and keyword != ''">
             AND (LOWER(name) LIKE '%' || LOWER(#{keyword}) || '%' OR LOWER(id) LIKE '%' || LOWER(#{keyword}) || '%')
+        </if>
+        <if test="environment != null and environment != ''">
+            AND environments_json LIKE '%"' || #{environment} || '"%'
+        </if>
+        <if test="host != null and host != ''">
+            AND (LOWER(host) LIKE '%' || LOWER(#{host}) || '%' OR LOWER(service_name) LIKE '%' || LOWER(#{host}) || '%')
         </if>
         ORDER BY priority ASC
         LIMIT #{limit} OFFSET #{offset}

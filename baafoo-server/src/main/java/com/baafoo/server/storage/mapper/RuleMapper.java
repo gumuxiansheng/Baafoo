@@ -10,10 +10,13 @@ public interface RuleMapper {
 
     List<Rule> listRules();
 
-    long countRules(@Param("protocol") String protocol, @Param("keyword") String keyword);
+    long countRules(@Param("protocol") String protocol, @Param("keyword") String keyword,
+                     @Param("environment") String environment, @Param("host") String host);
 
     List<Rule> listRulesPaged(@Param("protocol") String protocol,
                               @Param("keyword") String keyword,
+                              @Param("environment") String environment,
+                              @Param("host") String host,
                               @Param("limit") int limit,
                               @Param("offset") int offset);
 

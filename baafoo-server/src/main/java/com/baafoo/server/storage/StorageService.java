@@ -20,7 +20,7 @@ public interface StorageService {
 
     List<Rule> listRules();
 
-    PaginatedResult<Rule> listRulesPaged(String protocol, String keyword, int page, int size);
+    PaginatedResult<Rule> listRulesPaged(String protocol, String keyword, String environment, String host, int page, int size);
 
     Rule getRule(String id);
 

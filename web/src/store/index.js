@@ -27,7 +27,7 @@ export const useRulesStore = defineStore('rules', {
     loading: false,
     // Pagination state
     pagination: { page: 1, size: 20, total: 0 },
-    filter: { protocol: '', keyword: '' }
+    filter: { protocol: '', keyword: '', environment: '', host: '' }
   }),
   actions: {
     async fetchRules() {
@@ -42,7 +42,7 @@ export const useRulesStore = defineStore('rules', {
     async fetchRulesPaged() {
       this.loading = true
       try {
-        const res = await api.getRulesPaged(this.filter.protocol, this.filter.keyword, this.pagination.page, this.pagination.size)
+        const res = await api.getRulesPaged(this.filter.protocol, this.filter.keyword, this.filter.environment, this.filter.host, this.pagination.page, this.pagination.size)
         if (res.success && res.data) {
           this.rules = res.data.items || []
           this.pagination.total = res.data.total || 0
@@ -58,9 +58,11 @@ export const useRulesStore = defineStore('rules', {
       this.pagination.size = size
       this.pagination.page = 1
     },
-    setFilter({ protocol, keyword }) {
+    setFilter({ protocol, keyword, environment, host }) {
       if (protocol !== undefined) this.filter.protocol = protocol
       if (keyword !== undefined) this.filter.keyword = keyword
+      if (environment !== undefined) this.filter.environment = environment
+      if (host !== undefined) this.filter.host = host
       this.pagination.page = 1
     },
     async fetchRule(id) {

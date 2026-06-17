@@ -27,7 +27,9 @@ class RuleApiHandler implements ResourceHandler {
                     if (size > 100) size = 100;
                     String protocol = ctx.queryParam("protocol");
                     String keyword = ctx.queryParam("keyword");
-                    PaginatedResult<Rule> result = ctx.storage.listRulesPaged(protocol, keyword, page, size);
+                    String environment = ctx.queryParam("environment");
+                    String host = ctx.queryParam("host");
+                    PaginatedResult<Rule> result = ctx.storage.listRulesPaged(protocol, keyword, environment, host, page, size);
                     return ApiResponse.ok(result);
                 } else {
                     // Legacy mode: return all rules (backward compatible)

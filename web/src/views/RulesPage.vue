@@ -19,6 +19,14 @@
             <el-option label="JMS" value="jms" />
           </el-select>
         </el-form-item>
+        <el-form-item label="生效环境">
+          <el-select v-model="filter.environment" placeholder="全部" clearable style="width: 140px" @change="doSearch">
+            <el-option v-for="env in environments" :key="env.id" :label="env.name" :value="env.name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="目标Host">
+          <el-input v-model="filter.host" placeholder="Host/服务名..." clearable style="width: 160px" @clear="doSearch" @keyup.enter="doSearch" />
+        </el-form-item>
         <el-form-item label="搜索">
           <el-input v-model="filter.keyword" placeholder="规则名称/ID..." clearable style="width: 200px" @clear="doSearch" @keyup.enter="doSearch" />
         </el-form-item>
@@ -93,9 +101,10 @@
 </template>
 
 <script>
-import { reactive, onMounted } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
 import { useRulesStore, useAuthStore } from '@/store'
 import { useRouter } from 'vue-router'
+import api from '@/api'
 
 export default {
   name: 'RulesPage',
@@ -103,17 +112,31 @@ export default {
     const router = useRouter()
     const rulesStore = useRulesStore()
     const authStore = useAuthStore()
-    const filter = reactive({ protocol: '', keyword: '' })
+    const filter = reactive({ protocol: '', keyword: '', environment: '', host: '' })
+    const environments = ref([])
+
+    async function loadEnvironments() {
+      try {
+        const res = await api.getEnvironments()
+        if (res.success && res.data) {
+          environments.value = res.data
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
 
     function doSearch() {
-      rulesStore.setFilter({ protocol: filter.protocol, keyword: filter.keyword })
+      rulesStore.setFilter({ protocol: filter.protocol, keyword: filter.keyword, environment: filter.environment, host: filter.host })
       rulesStore.fetchRulesPaged()
     }
 
     function resetFilter() {
       filter.protocol = ''
       filter.keyword = ''
-      rulesStore.setFilter({ protocol: '', keyword: '' })
+      filter.environment = ''
+      filter.host = ''
+      rulesStore.setFilter({ protocol: '', keyword: '', environment: '', host: '' })
       rulesStore.fetchRulesPaged()
     }
 
@@ -147,10 +170,13 @@ export default {
       await rulesStore.undoRule(rule.id)
     }
 
-    onMounted(() => { rulesStore.fetchRulesPaged() })
+    onMounted(() => {
+      loadEnvironments()
+      rulesStore.fetchRulesPaged()
+    })
 
     return {
-      filter, rulesStore, authStore,
+      filter, environments, rulesStore, authStore,
       doSearch, resetFilter, onPageChange, onSizeChange,
       createRule, editRule, toggleRule, deleteRuleItem, undoRuleItem
     }
