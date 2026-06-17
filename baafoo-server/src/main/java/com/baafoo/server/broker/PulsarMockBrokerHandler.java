@@ -497,16 +497,14 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
             }
         }
 
-        // Rebuild MessageMetadata with num_messages_in_batch = 1.
-        // Pulsar 2.10.x isBatch() returns true when this field is UNSET
-        // (default value 0 ≠ 1), which makes the client try batch-entry parsing
-        // and fail with "Invalid unknown tag type". Setting it to 1 forces the
-        // non-batch (single message) path.
+        // Rebuild clean MessageMetadata (no batch fields).
+        // Do NOT set num_messages_in_batch (field 11) — when unset,
+        // hasNumMessagesInBatch() returns false, so the client takes the
+        // non-batch single-message path and reads the body as-is.
         ByteArrayOutputStream metaOut = new ByteArrayOutputStream();
         PulsarProtobufCodec.writeBytesField(metaOut, 1, producerName.getBytes(StandardCharsets.UTF_8));
         PulsarProtobufCodec.writeVarintField64(metaOut, 2, sequenceId);
         PulsarProtobufCodec.writeVarintField64(metaOut, 3, publishTime);
-        PulsarProtobufCodec.writeVarintField64(metaOut, 11, 1L); // num_messages_in_batch = 1
 
         byte[] metadataBytes = metaOut.toByteArray();
         // Wire format: [4-byte big-endian metadataSize][metadata bytes][body]
