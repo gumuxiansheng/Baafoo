@@ -225,6 +225,8 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
         AgentResolver.AgentInfo agentInfo = matchHelper.resolveAgent(ctx);
         EnvironmentMode mode = matchHelper.resolveMode(ctx);
         List<Rule> rules = matchHelper.filterRulesByEnvironment(storage.listRules(), agentInfo.environment);
+        log.debug("Pulsar handleSend: agentInfo.env={}, mode={}, rulesCount={}",
+                agentInfo.environment, mode, rules.size());
         boolean shouldRecord = (mode == EnvironmentMode.RECORD || mode == EnvironmentMode.RECORD_AND_STUB);
 
         MatchEngine.MatchResult m = matchHelper.match(rules, "pulsar", topic, bodyStr);
@@ -256,8 +258,8 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
 
         // Store the (possibly stubbed) message.
         StoredMessage stored = messageStore.storeMessage(topic, producerName, cmd.sequenceId, storedPayload);
-        log.info("Pulsar SEND: producerId={}, producerName={}, topic={}, sequenceId={}, payloadSize={}, matched={}",
-                producerId, producerName, topic, cmd.sequenceId, payload.length, m.isMatched());
+        log.info("Pulsar SEND: producerId={}, topic={}, sequenceId={}, payloadSize={}, matched={}",
+                producerId, topic, cmd.sequenceId, payload.length, m.isMatched());
 
         // Send receipt — use producerId (field 1) and sequenceId (field 2)
         ByteBuf response = PulsarProtobufCodec.encodeSendReceipt(
@@ -415,72 +417,102 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
     }
 
     /**
-     * Rebuild a Pulsar payload by keeping the original metadata prefix and replacing
-     * the body with the stub body. Falls back to a minimal magic+empty-metadata+body
+     * Rebuild a Pulsar payload by keeping the original metadata and replacing
+     * the body with the stub body. Falls back to a minimal metadata+body
      * framing when the original metadata could not be parsed.
+     *
+     * Wire format (0x0E01): [0x0E01][4-byte CRC32C][4-byte big-endian metadataSize][MessageMetadata][body]
+     */
+    /**
+     * Rebuild a Pulsar payload with a new body, stripping batch metadata
+     * so the consumer treats it as a single (non-batch) message.
+     *
+     * <p>Pulsar producers default to enableBatching=true. When batching is on,
+     * MessageMetadata contains num_messages_in_batch (field 11) and the body
+     * is encoded as [SingleMessageMetadata+payload] per message. When we
+     * replace the body with a stub, we must either (a) strip the batch flag
+     * so the consumer reads the body as-is, or (b) re-encode the stub body
+     * in batch format. Option (a) is simpler and sufficient for mocking.</p>
+     *
+     * Wire format (0x0E01): [0x0E01][4-byte CRC32C][4-byte big-endian metadataSize][MessageMetadata][body]
      */
     private byte[] rebuildPayloadWithBody(MetadataInfo meta, byte[] stubBody) {
+        // Always rebuild MessageMetadata from scratch — strip num_messages_in_batch (field 11)
+        // and any batch-related fields so the consumer processes a plain (non-batch) message.
+        //
+        // MessageMetadata (Pulsar 2.10.x PulsarApi.proto):
+        //   required string producer_name   = 1;
+        //   required uint64 sequence_id     = 2;
+        //   required uint64 publish_time    = 3;
+        //   repeated KeyValue properties     = 4;
+        //   optional CompressionType compression = 8;
+        // We intentionally omit field 11 (num_messages_in_batch) and field 27/28/29 (chunk fields)
+        // so the consumer treats the body as a single, uncompressed message.
+
+        String producerName = "baafoo-stub";
+        long sequenceId = 0;
+        long publishTime = System.currentTimeMillis();
+
+        // Try to extract original metadata fields for a more realistic stub
         if (meta != null && meta.metadataPrefix != null && meta.metadataPrefix.length > 0) {
-            // Rebuild with correct CRC32C: magic(0x0E01) + CRC32C(4) + [metadataSize + metadata] + body
-            // The metadataPrefix contains: magic(0x0E01) + CRC32C(4) + metadataSize(varint) + metadata(bytes)
-            // We need to recalculate CRC32C over [metadataSize + metadata + body]
-            int prefixHeaderLen = 2 + 4; // magic + CRC32C
-            if (meta.metadataPrefix.length > prefixHeaderLen) {
-                byte[] metaAndBody = new byte[meta.metadataPrefix.length - prefixHeaderLen + stubBody.length];
-                System.arraycopy(meta.metadataPrefix, prefixHeaderLen, metaAndBody, 0, meta.metadataPrefix.length - prefixHeaderLen);
-                System.arraycopy(stubBody, 0, metaAndBody, meta.metadataPrefix.length - prefixHeaderLen, stubBody.length);
-
-                int checksum = computeCrc32c(metaAndBody, 0, metaAndBody.length);
-
-                byte[] result = new byte[prefixHeaderLen + metaAndBody.length];
-                result[0] = PULSAR_MAGIC;  // 0x0E
-                result[1] = 0x01;          // 0x01 (full magic, indicates CRC32C present)
-                result[2] = (byte) (checksum >>> 24);
-                result[3] = (byte) (checksum >>> 16);
-                result[4] = (byte) (checksum >>> 8);
-                result[5] = (byte) checksum;
-                System.arraycopy(metaAndBody, 0, result, prefixHeaderLen, metaAndBody.length);
-                return result;
+            int prefixHeaderLen = 2 + 4; // magic(2) + CRC32C(4)
+            if (meta.metadataPrefix.length > prefixHeaderLen + 4) { // +4 for metadataSize
+                int metaSize = ((meta.metadataPrefix[prefixHeaderLen] & 0xFF) << 24)
+                             | ((meta.metadataPrefix[prefixHeaderLen + 1] & 0xFF) << 16)
+                             | ((meta.metadataPrefix[prefixHeaderLen + 2] & 0xFF) << 8)
+                             | (meta.metadataPrefix[prefixHeaderLen + 3] & 0xFF);
+                int metaStart = prefixHeaderLen + 4;
+                if (metaStart + metaSize <= meta.metadataPrefix.length) {
+                    // Parse key fields from original MessageMetadata
+                    int[] pos = {metaStart};
+                    byte[] data = meta.metadataPrefix;
+                    int end = metaStart + metaSize;
+                    while (pos[0] < end) {
+                        int tag = readVarintAt(data, pos);
+                        if (tag < 0) break;
+                        int fieldNumber = tag >>> 3;
+                        int wireType = tag & 0x7;
+                        switch (fieldNumber) {
+                            case 1: // producer_name (string/bytes)
+                                if (wireType == 2) {
+                                    byte[] name = readBytesField(data, pos);
+                                    if (name != null) producerName = new String(name, StandardCharsets.UTF_8);
+                                } else { skipMetadataField(data, pos, wireType); }
+                                break;
+                            case 2: // sequence_id (varint)
+                                if (wireType == 0) sequenceId = readVarint64From(data, pos);
+                                else skipMetadataField(data, pos, wireType);
+                                break;
+                            case 3: // publish_time (varint)
+                                if (wireType == 0) publishTime = readVarint64From(data, pos);
+                                else skipMetadataField(data, pos, wireType);
+                                break;
+                            default:
+                                // Skip all other fields (including field 11 = num_messages_in_batch)
+                                skipMetadataField(data, pos, wireType);
+                                break;
+                        }
+                    }
+                }
             }
-            // Fallback if prefix is too short
-            byte[] result = new byte[meta.metadataPrefix.length + stubBody.length];
-            System.arraycopy(meta.metadataPrefix, 0, result, 0, meta.metadataPrefix.length);
-            System.arraycopy(stubBody, 0, result, meta.metadataPrefix.length, stubBody.length);
-            return result;
         }
-        // Fallback: build minimal MessageMetadata + body with correct CRC32C
-        // MessageMetadata (Pulsar 2.10.x lightproto):
-        //   optional string producer_name = 7;
-        //   optional uint64 sequence_id  = 8;
-        //   optional uint64 publish_time = 13;
-        byte[] producerName = "baafoo-stub".getBytes(StandardCharsets.UTF_8);
+
+        // Rebuild clean MessageMetadata (no batch fields)
         ByteArrayOutputStream metaOut = new ByteArrayOutputStream();
-        // producer_name (field 7, length-delimited string)
-        PulsarProtobufCodec.writeBytesField(metaOut, 7, producerName);
-        // sequence_id (field 8, varint uint64) = 0
-        PulsarProtobufCodec.writeVarintField64(metaOut, 8, 0);
-        // publish_time (field 13, varint uint64)
-        PulsarProtobufCodec.writeVarintField64(metaOut, 13, System.currentTimeMillis());
+        PulsarProtobufCodec.writeBytesField(metaOut, 1, producerName.getBytes(StandardCharsets.UTF_8));
+        PulsarProtobufCodec.writeVarintField64(metaOut, 2, sequenceId);
+        PulsarProtobufCodec.writeVarintField64(metaOut, 3, publishTime);
 
         byte[] metadataBytes = metaOut.toByteArray();
-        // Wire format: [varint metadataSize] [metadata bytes] [body]
-        byte[] metaAndBody = new byte[1 + metadataBytes.length + stubBody.length];
-        int idx = 0;
-        // write varint metadataSize
+        // Wire format: [4-byte big-endian metadataSize][metadata bytes][body]
+        byte[] metaAndBody = new byte[4 + metadataBytes.length + stubBody.length];
         int metaSize = metadataBytes.length;
-        while (metaSize > 0x7F) {
-            metaAndBody[idx++] = (byte) ((metaSize & 0x7F) | 0x80);
-            metaSize >>>= 7;
-        }
-        metaAndBody[idx++] = (byte) metaSize;
-        System.arraycopy(metadataBytes, 0, metaAndBody, idx, metadataBytes.length);
-        System.arraycopy(stubBody, 0, metaAndBody, idx + metadataBytes.length, stubBody.length);
-        // Trim if varint took more/less than 1 byte
-        if (idx != 1) {
-            byte[] trimmed = new byte[metaAndBody.length - (1 - idx)];
-            System.arraycopy(metaAndBody, 0, trimmed, 0, trimmed.length);
-            metaAndBody = trimmed;
-        }
+        metaAndBody[0] = (byte) (metaSize >>> 24);
+        metaAndBody[1] = (byte) (metaSize >>> 16);
+        metaAndBody[2] = (byte) (metaSize >>> 8);
+        metaAndBody[3] = (byte) metaSize;
+        System.arraycopy(metadataBytes, 0, metaAndBody, 4, metadataBytes.length);
+        System.arraycopy(stubBody, 0, metaAndBody, 4 + metadataBytes.length, stubBody.length);
 
         int checksum = computeCrc32c(metaAndBody, 0, metaAndBody.length);
 
@@ -492,7 +524,76 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
         result[4] = (byte) (checksum >>> 8);
         result[5] = (byte) checksum;
         System.arraycopy(metaAndBody, 0, result, 6, metaAndBody.length);
+        log.debug("rebuildPayloadWithBody: producerName={}, seqId={}, stubBodySize={}, resultLen={}",
+                producerName, sequenceId, stubBody.length, result.length);
         return result;
+    }
+
+    /** Read a length-delimited bytes field at the current position. */
+    private static byte[] readBytesField(byte[] data, int[] pos) {
+        int len = readVarintAt(data, pos);
+        if (len < 0 || pos[0] + len > data.length) return null;
+        byte[] result = new byte[len];
+        System.arraycopy(data, pos[0], result, 0, len);
+        pos[0] += len;
+        return result;
+    }
+
+    /** Read a varint at the current position, updating pos[0]. */
+    private static int readVarintAt(byte[] data, int[] pos) {
+        int value = 0;
+        int shift = 0;
+        int b;
+        do {
+            if (pos[0] >= data.length) return -1;
+            b = data[pos[0]++] & 0xFF;
+            value |= (b & 0x7F) << shift;
+            shift += 7;
+        } while ((b & 0x80) != 0);
+        return value;
+    }
+        if (len < 0 || pos[0] + len > data.length) return null;
+        byte[] result = new byte[len];
+        System.arraycopy(data, pos[0], result, 0, len);
+        pos[0] += len;
+        return result;
+    }
+
+    /** Read a varint64 value at the current position (unsigned). */
+    private static long readVarint64From(byte[] data, int[] pos) {
+        long value = 0;
+        int shift = 0;
+        int b;
+        do {
+            if (pos[0] >= data.length) return 0;
+            b = data[pos[0]++] & 0xFF;
+            value |= ((long) (b & 0x7F)) << shift;
+            shift += 7;
+        } while ((b & 0x80) != 0);
+        return value;
+    }
+
+    /** Skip a single protobuf field based on wire type. */
+    private static void skipMetadataField(byte[] data, int[] pos, int wireType) {
+        switch (wireType) {
+            case 0: // varint
+                while (pos[0] < data.length && (data[pos[0]++] & 0x80) != 0) {}
+                break;
+            case 1: // 64-bit fixed
+                pos[0] += 8;
+                break;
+            case 2: // length-delimited
+                int len = readVarintAt(data, pos);
+                if (len >= 0) pos[0] += len;
+                break;
+            case 5: // 32-bit fixed
+                pos[0] += 4;
+                break;
+            default:
+                // Unknown wire type — cannot skip safely
+                pos[0] = data.length; // force exit
+                break;
+        }
     }
 
     private static final byte PULSAR_MAGIC = (byte) 0x0E;
