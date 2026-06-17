@@ -59,10 +59,10 @@ export const useRulesStore = defineStore('rules', {
       this.pagination.page = 1
     },
     setFilter({ protocol, keyword, environment, host }) {
-      if (protocol !== undefined) this.filter.protocol = protocol
-      if (keyword !== undefined) this.filter.keyword = keyword
-      if (environment !== undefined) this.filter.environment = environment
-      if (host !== undefined) this.filter.host = host
+      this.filter.protocol = protocol ?? ''
+      this.filter.keyword = keyword ?? ''
+      this.filter.environment = environment ?? ''
+      this.filter.host = host ?? ''
       this.pagination.page = 1
     },
     async fetchRule(id) {

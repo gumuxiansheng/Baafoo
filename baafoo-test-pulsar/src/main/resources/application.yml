@@ -1,0 +1,6 @@
+server:
+  port: 9092
+
+logging:
+  level:
+    com.baafoo: DEBUG

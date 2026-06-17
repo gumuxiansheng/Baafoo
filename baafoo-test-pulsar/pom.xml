@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.baafoo</groupId>
+        <artifactId>baafoo-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>baafoo-test-pulsar</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Baafoo Test Pulsar</name>
+    <description>Spring Boot test project for Baafoo stub system — Pulsar 2.7.4 client compatibility test (TDMQ for Pulsar baseline)</description>
+
+    <properties>
+        <!--
+            Hard pin to Apache Pulsar 2.7.4 client — this is the whole point of this module.
+            Tencent TDMQ for Pulsar is built on Pulsar 2.7.4, so this module reproduces the
+            exact wire protocol a TDMQ client would emit, exercising the Agent's
+            PulsarClientAdvice redirect (-> 9003) and the baafoo-plugin-tdmq redirect (-> 9005).
+            Contrast with baafoo-test-spring, which uses pulsar-client 2.10.4.
+        -->
+        <pulsar-client.version>2.7.4</pulsar-client.version>
+    </properties>
+
+    <dependencies>
+        <!-- Baafoo Core -->
+        <dependency>
+            <groupId>com.baafoo</groupId>
+            <artifactId>baafoo-core</artifactId>
+        </dependency>
+
+        <!-- Spring Boot Web -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- Spring Boot Test -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Jackson -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- Pulsar Client 2.7.4 — the only intentional difference vs baafoo-test-spring -->
+        <dependency>
+            <groupId>org.apache.pulsar</groupId>
+            <artifactId>pulsar-client</artifactId>
+            <version>${pulsar-client.version}</version>
+        </dependency>
+
+        <!-- Logging -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
