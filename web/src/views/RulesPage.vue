@@ -11,7 +11,7 @@
     <el-card shadow="never" style="margin-top: 16px">
       <el-form :inline="true" size="small" @submit.prevent="doSearch">
         <el-form-item label="协议">
-          <el-select v-model="filter.protocol" placeholder="全部" clearable style="width: 120px" @change="doSearch" @clear="doSearch">
+          <el-select v-model="filter.protocol" placeholder="全部" clearable style="width: 120px" @change="doSearch">
             <el-option label="HTTP" value="http" />
             <el-option label="TCP" value="tcp" />
             <el-option label="Kafka" value="kafka" />
@@ -20,7 +20,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="生效环境">
-          <el-select v-model="filter.environment" placeholder="全部" clearable style="width: 140px" @change="doSearch" @clear="doSearch">
+          <el-select v-model="filter.environment" placeholder="全部" clearable style="width: 140px" @change="doSearch">
             <el-option v-for="env in environments" :key="env.id" :label="env.name" :value="env.name" />
           </el-select>
         </el-form-item>
