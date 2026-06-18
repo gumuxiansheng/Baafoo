@@ -83,7 +83,7 @@ export default {
         try {
           const success = await authStore.login(form.username, form.password)
           if (success) {
-            ElMessage.success('登录成功')
+            ElMessage.success({ message: '登录成功', duration: 3000 })
             router.push('/')
           } else {
             ElMessage.error('用户名或密码错误')

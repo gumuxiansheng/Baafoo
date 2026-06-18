@@ -1,5 +1,22 @@
 # Baafoo 工作文档变更日志
 
+## 2026-06-18
+
+### UI 测试与问题修复
+- 新增 `7_test-reports/` 测试报告目录
+  - `00-ui-test-summary.md`: UI 测试摘要
+  - `full-ui-test-report.md`: 完整 UI 测试报告
+- 新增 `6_dev-notes/15-ui-test-bugfix.md`: UI 测试问题修复记录
+  - **P0 问题分析**: 认证功能过于宽松是测试环境预期行为（auth.enabled: false）
+  - **P1 问题修复**: "登录成功"提示未自动消失 ✅
+    - 修改文件: `web/src/views/LoginPage.vue`
+    - 添加 `duration: 3000` 配置
+
+### 全链路集成测试
+- 执行全链路协议测试 14/14 通过 (100%)
+- HTTP/TCP/Kafka/Pulsar/JMS 协议验证通过
+- 环境隔离测试通过
+
 ## 2026-05-31
 
 ### 文档结构整理
