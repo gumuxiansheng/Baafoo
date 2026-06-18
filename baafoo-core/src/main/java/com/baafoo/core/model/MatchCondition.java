@@ -7,11 +7,17 @@ package com.baafoo.core.model;
 public class MatchCondition {
 
     /**
-     * Condition type: method, path, topic, header, query, body, bodyContains, bodyJsonPath.
+     * Condition type: method, path, topic, header, query, body, bodyContains, bodyJsonPath,
+     * graphqlOperationName, graphqlOperationType.
      * <p>
      * {@code topic} is an alias of {@code path} used by MQ (Kafka/Pulsar/JMS) rules
      * to match a topic/destination name. The broker passes the topic through the
      * {@code path} parameter slot of {@code MatchEngine.match}.
+     * <p>
+     * {@code graphqlOperationName} and {@code graphqlOperationType} are syntactic
+     * sugars for matching GraphQL requests. They are equivalent to
+     * {@code bodyJsonPath} with {@code key="$.operationName"} and a parsed
+     * operation type respectively. See PRD §5 (R-S2 AC-14).
      */
     private String type;
 
@@ -85,6 +91,62 @@ public class MatchCondition {
         c.type = "body";
         c.operator = operator;
         c.value = value;
+        return c;
+    }
+
+    /**
+     * Factory for a {@code bodyJsonPath} match condition.
+     *
+     * @param jsonPath   the JSON path expression (e.g. {@code $.operationName}
+     *                   or {@code user.address.city}); stored in the {@code key} field
+     * @param operator   the operator to apply ({@code equals}, {@code contains},
+     *                   {@code regex}, {@code exists}, etc.)
+     * @param expectedValue the expected value for comparison operators; ignored
+     *                   for {@code exists}
+     */
+    public static MatchCondition bodyJsonPath(String jsonPath, String operator, String expectedValue) {
+        MatchCondition c = new MatchCondition();
+        c.type = "bodyJsonPath";
+        c.key = jsonPath;
+        c.operator = operator;
+        c.value = expectedValue;
+        return c;
+    }
+
+    /**
+     * Factory for a {@code graphqlOperationName} match condition.
+     * <p>
+     * Syntactic sugar for {@code bodyJsonPath} with {@code key="$.operationName"}.
+     *
+     * @param operator      the operator to apply ({@code equals}, {@code contains},
+     *                      {@code regex}, {@code exists}, etc.)
+     * @param operationName the expected GraphQL operation name (ignored for {@code exists})
+     */
+    public static MatchCondition graphqlOperationName(String operator, String operationName) {
+        MatchCondition c = new MatchCondition();
+        c.type = "graphqlOperationName";
+        c.operator = operator;
+        c.value = operationName;
+        return c;
+    }
+
+    /**
+     * Factory for a {@code graphqlOperationType} match condition.
+     * <p>
+     * Matches the GraphQL operation type extracted from the {@code query} field
+     * of the request body. The operation type is one of {@code query},
+     * {@code mutation}, or {@code subscription}. Anonymous queries (no leading
+     * keyword) are treated as {@code query}.
+     *
+     * @param operator      the operator to apply (typically {@code equals})
+     * @param operationType the expected operation type: {@code query},
+     *                      {@code mutation}, or {@code subscription}
+     */
+    public static MatchCondition graphqlOperationType(String operator, String operationType) {
+        MatchCondition c = new MatchCondition();
+        c.type = "graphqlOperationType";
+        c.operator = operator;
+        c.value = operationType;
         return c;
     }
 

@@ -361,16 +361,192 @@ public class MatchEngineTest {
     }
 
     @Test
-    public void testBodyJsonPathNotImplemented() {
+    public void testBodyJsonPathEquals() {
+        // bodyJsonPath with key=path, value=expected, operator=equals
+        Rule r = createSimpleRule("r1");
+        MatchCondition cond = new MatchCondition();
+        cond.setType("bodyJsonPath");
+        cond.setKey("$.error");
+        cond.setOperator("equals");
+        cond.setValue("true");
+        r.setConditions(Arrays.asList(cond));
+
+        MatchEngine.MatchResult result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "{\"error\":true}");
+        assertTrue(result.isMatched());
+
+        result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "{\"error\":false}");
+        assertFalse(result.isMatched());
+    }
+
+    @Test
+    public void testBodyJsonPathExists() {
+        Rule r = createSimpleRule("r1");
+        MatchCondition cond = new MatchCondition();
+        cond.setType("bodyJsonPath");
+        cond.setKey("$.user.name");
+        cond.setOperator("exists");
+        r.setConditions(Arrays.asList(cond));
+
+        MatchEngine.MatchResult result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "{\"user\":{\"name\":\"alice\"}}");
+        assertTrue(result.isMatched());
+
+        result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "{\"user\":{}}");
+        assertFalse(result.isMatched());
+    }
+
+    @Test
+    public void testBodyJsonPathBackwardCompatValueAsPath() {
+        // Backward-compat: when key is unset, value is treated as the path
+        // with implicit "exists" semantics.
         Rule r = createSimpleRule("r1");
         MatchCondition cond = new MatchCondition();
         cond.setType("bodyJsonPath");
         cond.setValue("$.error");
         r.setConditions(Arrays.asList(cond));
 
-        // bodyJsonPath is not implemented at engine level, so it should NOT match
-        MatchEngine.MatchResult result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "GET", "/", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "{\"error\":true}");
+        MatchEngine.MatchResult result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "{\"error\":true}");
+        assertTrue(result.isMatched());
+
+        result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "{\"ok\":true}");
         assertFalse(result.isMatched());
+    }
+
+    @Test
+    public void testBodyJsonPathNested() {
+        Rule r = createSimpleRule("r1");
+        MatchCondition cond = new MatchCondition();
+        cond.setType("bodyJsonPath");
+        cond.setKey("$.user.address.city");
+        cond.setOperator("equals");
+        cond.setValue("Beijing");
+        r.setConditions(Arrays.asList(cond));
+
+        MatchEngine.MatchResult result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "{\"user\":{\"address\":{\"city\":\"Beijing\"}}}");
+        assertTrue(result.isMatched());
+    }
+
+    @Test
+    public void testGraphqlOperationNameEquals() {
+        Rule r = createSimpleRule("r1");
+        r.setConditions(Arrays.asList(MatchCondition.graphqlOperationName("equals", "GetUser")));
+
+        String body = "{\"query\":\"query GetUser { user { id } }\",\"operationName\":\"GetUser\"}";
+
+        MatchEngine.MatchResult result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/graphql", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), body);
+        assertTrue(result.isMatched());
+
+        body = "{\"query\":\"query OtherUser { user { id } }\",\"operationName\":\"OtherUser\"}";
+        result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/graphql", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), body);
+        assertFalse(result.isMatched());
+    }
+
+    @Test
+    public void testGraphqlOperationNameExists() {
+        Rule r = createSimpleRule("r1");
+        r.setConditions(Arrays.asList(MatchCondition.graphqlOperationName("exists", null)));
+
+        String body = "{\"query\":\"query GetUser { user { id } }\",\"operationName\":\"GetUser\"}";
+        MatchEngine.MatchResult result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/graphql", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), body);
+        assertTrue(result.isMatched());
+
+        // No operationName field → should not match
+        body = "{\"query\":\"query GetUser { user { id } }\"}";
+        result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/graphql", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), body);
+        assertFalse(result.isMatched());
+    }
+
+    @Test
+    public void testGraphqlOperationTypeQuery() {
+        Rule r = createSimpleRule("r1");
+        r.setConditions(Arrays.asList(MatchCondition.graphqlOperationType("equals", "query")));
+
+        // Explicit query
+        String body = "{\"query\":\"query GetUser { user { id } }\"}";
+        MatchEngine.MatchResult result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/graphql", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), body);
+        assertTrue(result.isMatched());
+
+        // Anonymous query (shorthand syntax)
+        body = "{\"query\":\"{ user { id } }\"}";
+        result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/graphql", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), body);
+        assertTrue(result.isMatched());
+    }
+
+    @Test
+    public void testGraphqlOperationTypeMutation() {
+        Rule r = createSimpleRule("r1");
+        r.setConditions(Arrays.asList(MatchCondition.graphqlOperationType("equals", "mutation")));
+
+        String body = "{\"query\":\"mutation UpdateUser($id: ID!) { updateUser(id: $id) { id } }\"}";
+        MatchEngine.MatchResult result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/graphql", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), body);
+        assertTrue(result.isMatched());
+
+        // query should NOT match mutation rule
+        body = "{\"query\":\"query GetUser { user { id } }\"}";
+        result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/graphql", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), body);
+        assertFalse(result.isMatched());
+    }
+
+    @Test
+    public void testGraphqlOperationTypeSubscription() {
+        Rule r = createSimpleRule("r1");
+        r.setConditions(Arrays.asList(MatchCondition.graphqlOperationType("equals", "subscription")));
+
+        String body = "{\"query\":\"subscription UserUpdates { userUpdates { id } }\"}";
+        MatchEngine.MatchResult result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/graphql", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), body);
+        assertTrue(result.isMatched());
+    }
+
+    @Test
+    public void testGraphqlOperationTypeWithLeadingComment() {
+        Rule r = createSimpleRule("r1");
+        r.setConditions(Arrays.asList(MatchCondition.graphqlOperationType("equals", "query")));
+
+        // GraphQL query with a leading # comment
+        String body = "{\"query\":\"# This is a comment\\nquery GetUser { user { id } }\"}";
+        MatchEngine.MatchResult result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/graphql", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), body);
+        assertTrue(result.isMatched());
+    }
+
+    @Test
+    public void testGraphqlCombinedConditions() {
+        // Combine graphqlOperationName + graphqlOperationType (AND logic)
+        Rule r = createSimpleRule("r1");
+        r.setConditions(Arrays.asList(
+                MatchCondition.graphqlOperationName("equals", "GetUser"),
+                MatchCondition.graphqlOperationType("equals", "query")
+        ));
+
+        String body = "{\"query\":\"query GetUser { user { id } }\",\"operationName\":\"GetUser\"}";
+        MatchEngine.MatchResult result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/graphql", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), body);
+        assertTrue(result.isMatched());
+
+        // operationName matches but type is mutation → no match
+        body = "{\"query\":\"mutation GetUser { user { id } }\",\"operationName\":\"GetUser\"}";
+        result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/graphql", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), body);
+        assertFalse(result.isMatched());
+    }
+
+    @Test
+    public void testGraphqlOperationTypeMissingQueryField() {
+        Rule r = createSimpleRule("r1");
+        r.setConditions(Arrays.asList(MatchCondition.graphqlOperationType("equals", "query")));
+
+        // Body without "query" field → should not match
+        String body = "{\"operationName\":\"GetUser\"}";
+        MatchEngine.MatchResult result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/graphql", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), body);
+        assertFalse(result.isMatched());
+    }
+
+    @Test
+    public void testGraphqlOperationNameCaseInsensitive() {
+        Rule r = createSimpleRule("r1");
+        MatchCondition cond = MatchCondition.graphqlOperationName("equals", "getuser");
+        cond.setCaseSensitive(false);
+        r.setConditions(Arrays.asList(cond));
+
+        String body = "{\"query\":\"query GetUser { user { id } }\",\"operationName\":\"GetUser\"}";
+        MatchEngine.MatchResult result = engine.match(Collections.singletonList(r), "http", "host", 80, null, "POST", "/graphql", Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), body);
+        assertTrue(result.isMatched());
     }
 
     @Test

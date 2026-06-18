@@ -207,9 +207,50 @@ public class MatchEngine {
                     return target.contains(search);
 
                 case "bodyJsonPath":
-                    // JSONPath matching deferred to plugin (requires Jackson)
-                    log.warn("bodyJsonPath matching not implemented at engine level, condition does not match");
-                    return false;
+                    // JSONPath matching — extracts a field from the JSON body and
+                    // applies the operator. Path syntax supports dot-notation with
+                    // an optional leading "$" (e.g. "$.operationName" or "user.id").
+                    //
+                    // Field convention (consistent with header/query conditions):
+                    //   key   = JSONPath expression (e.g. "$.operationName")
+                    //   value = expected value (for equals/contains/regex; ignored for exists)
+                    if (body == null) return false;
+                    String jsonPath = cond.getKey();
+                    if (jsonPath == null || jsonPath.isEmpty()) {
+                        // Backward-compat: if key is unset, treat value as the path
+                        // with implicit "exists" semantics.
+                        jsonPath = cond.getValue();
+                        if (jsonPath == null || jsonPath.isEmpty()) return false;
+                        return JsonPathUtil.exists(body, jsonPath);
+                    }
+                    if ("exists".equals(operator)) {
+                        return JsonPathUtil.exists(body, jsonPath);
+                    }
+                    String extracted = JsonPathUtil.extract(body, jsonPath);
+                    if (extracted.isEmpty()) return false;
+                    return applyOperator(extracted, operator, cond.getValue(), cond.isCaseSensitive());
+
+                case "graphqlOperationName":
+                    // Syntactic sugar for bodyJsonPath with key="$.operationName".
+                    // value = expected operation name.
+                    if (body == null) return false;
+                    String opName = JsonPathUtil.extract(body, "$.operationName");
+                    if ("exists".equals(operator)) {
+                        return JsonPathUtil.exists(body, "$.operationName");
+                    }
+                    if (opName.isEmpty()) return false;
+                    return applyOperator(opName, operator, cond.getValue(), cond.isCaseSensitive());
+
+                case "graphqlOperationType":
+                    // Syntactic sugar: parse the GraphQL "query" field and return
+                    // the operation type ("query" / "mutation" / "subscription").
+                    // Anonymous queries (no leading keyword) default to "query".
+                    // value = expected operation type.
+                    if (body == null) return false;
+                    String opType = extractGraphqlOperationType(body);
+                    if (opType == null) return false;
+                    if ("exists".equals(operator)) return true;
+                    return applyOperator(opType, operator, cond.getValue(), cond.isCaseSensitive());
 
                 default:
                     log.warn("Unknown condition type: {}", cond.getType());
@@ -219,6 +260,76 @@ public class MatchEngine {
             log.warn("Error matching condition {}: {}", cond.getType(), e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Extract the GraphQL operation type from a request body.
+     *
+     * <p>GraphQL requests carry the query string in the {@code query} field of
+     * the JSON body. The operation type is determined by the first operation
+     * keyword in the query string:</p>
+     * <ul>
+     *   <li>{@code query GetUser { ... }} → "query"</li>
+     *   <li>{@code mutation UpdateUser { ... }} → "mutation"</li>
+     *   <li>{@code subscription UserUpdates { ... }} → "subscription"</li>
+     *   <li>{@code { user { id } }} → "query" (anonymous query, default)</li>
+     * </ul>
+     *
+     * @param body the HTTP request body (expected to be a GraphQL JSON request)
+     * @return the operation type string, or {@code null} if the body is not a
+     *         valid GraphQL request (e.g. missing {@code query} field)
+     */
+    private static String extractGraphqlOperationType(String body) {
+        if (body == null || body.isEmpty()) return null;
+        String query = JsonPathUtil.extract(body, "$.query");
+        if (query == null || query.isEmpty()) return null;
+
+        // Skip leading whitespace and comments, then look for the first
+        // operation keyword. If the query starts with "{" it's an anonymous
+        // query (shorthand syntax per GraphQL spec §6.1.2).
+        String trimmed = query.trim();
+        if (trimmed.isEmpty()) return null;
+
+        // Remove leading line comments (// ...) and hash comments (# ...)
+        // and block comments before checking the first token.
+        // Simple approach: strip leading whitespace/comments and inspect.
+        int i = 0;
+        while (i < trimmed.length()) {
+            char c = trimmed.charAt(i);
+            if (Character.isWhitespace(c)) {
+                i++;
+                continue;
+            }
+            // GraphQL uses # for line comments
+            if (c == '#') {
+                // skip to end of line
+                int nl = trimmed.indexOf('\n', i);
+                if (nl == -1) return null;
+                i = nl + 1;
+                continue;
+            }
+            break;
+        }
+        if (i >= trimmed.length()) return null;
+
+        // Anonymous query shorthand: starts with "{"
+        if (trimmed.charAt(i) == '{') {
+            return "query";
+        }
+
+        // Extract the first identifier token
+        int start = i;
+        while (i < trimmed.length() && Character.isLetterOrDigit(trimmed.charAt(i))) {
+            i++;
+        }
+        String token = trimmed.substring(start, i).toLowerCase();
+
+        if ("query".equals(token)) return "query";
+        if ("mutation".equals(token)) return "mutation";
+        if ("subscription".equals(token)) return "subscription";
+
+        // Unknown leading token — treat as anonymous query
+        return "query";
     }
 
     private boolean applyOperator(String actual, String operator, String expected, boolean caseSensitive) {

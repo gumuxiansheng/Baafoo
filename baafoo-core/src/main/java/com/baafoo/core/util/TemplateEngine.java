@@ -1,7 +1,5 @@
 package com.baafoo.core.util;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,8 +33,6 @@ import java.util.regex.Pattern;
 public class TemplateEngine {
 
     private static final Logger log = LoggerFactory.getLogger(TemplateEngine.class);
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /**
      * Pattern: {{variable.expression}}
@@ -160,7 +156,7 @@ public class TemplateEngine {
         // request.body.xxx — JSON field extraction
         if (field.startsWith("body.")) {
             String jsonPath = field.substring(5);
-            return extractJsonField(context.getBody(), jsonPath);
+            return JsonPathUtil.extract(context.getBody(), jsonPath);
         }
 
         // request.header.xxx
@@ -177,54 +173,6 @@ public class TemplateEngine {
 
         log.debug("Unresolved request variable: {}", expression);
         return "{{" + expression + "}}";
-    }
-
-    /**
-     * Extract a nested field from a JSON body.
-     * Supports dot-notation like "user.address.city".
-     */
-    private static String extractJsonField(String body, String jsonPath) {
-        if (body == null || body.isEmpty() || jsonPath == null || jsonPath.isEmpty()) {
-            return "";
-        }
-
-        try {
-            JsonNode node = MAPPER.readTree(body);
-            String[] parts = jsonPath.split("\\.");
-            for (String part : parts) {
-                // Handle array index: items[0]
-                if (part.contains("[")) {
-                    int bracketIdx = part.indexOf('[');
-                    String arrayField = part.substring(0, bracketIdx);
-                    if (node.has(arrayField)) {
-                        node = node.get(arrayField);
-                    }
-                    // Extract index
-                    String indexStr = part.substring(bracketIdx + 1, part.indexOf(']'));
-                    int idx = Integer.parseInt(indexStr);
-                    if (node.isArray() && idx < node.size()) {
-                        node = node.get(idx);
-                    } else {
-                        return "";
-                    }
-                } else {
-                    if (node.has(part)) {
-                        node = node.get(part);
-                    } else {
-                        return "";
-                    }
-                }
-            }
-
-            if (node.isValueNode()) {
-                return node.asText();
-            }
-            // For object/array nodes, return the JSON string
-            return node.toString();
-        } catch (Exception e) {
-            log.debug("Failed to extract JSON path '{}' from body: {}", jsonPath, e.getMessage());
-            return "";
-        }
     }
 
     private static String getFromMap(Map<String, String> map, String key) {
