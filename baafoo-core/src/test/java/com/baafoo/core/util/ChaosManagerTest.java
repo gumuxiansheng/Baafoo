@@ -70,6 +70,29 @@ public class ChaosManagerTest {
         manager.registerProfile(profile);
     }
 
+    @Test(expected = IllegalArgumentException.class)
+    public void testRegisterProfileWithSpaceInNameThrows() {
+        // S8 fix: profile names must match [a-zA-Z0-9_-]
+        manager.registerProfile(buildSimpleProfile("has space"));
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testRegisterProfileWithSlashInNameThrows() {
+        manager.registerProfile(buildSimpleProfile("has/slash"));
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testRegisterProfileWithChineseInNameThrows() {
+        manager.registerProfile(buildSimpleProfile("中文"));
+    }
+
+    @Test
+    public void testRegisterProfileWithValidSpecialChars() {
+        // Underscore and hyphen are allowed
+        manager.registerProfile(buildSimpleProfile("my_profile-1"));
+        assertEquals(1, manager.listProfiles().size());
+    }
+
     @Test
     public void testRegisterMultipleProfiles() {
         manager.registerProfiles(Arrays.asList(

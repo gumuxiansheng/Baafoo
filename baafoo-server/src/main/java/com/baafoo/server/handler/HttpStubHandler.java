@@ -20,7 +20,8 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Netty handler for HTTP stub server (port 9000).
@@ -42,13 +43,25 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
 
     private static final Logger log = LoggerFactory.getLogger(HttpStubHandler.class);
 
+    /**
+     * Fallback timeout (seconds) for READ_TIMEOUT fault injection. After this
+     * period the channel is forcibly closed to prevent file-descriptor exhaustion
+     * from accumulated hanging connections (S3 fix).
+     */
+    private static final long READ_TIMEOUT_FALLBACK_SECONDS = 30;
+
     private final StorageService storage;
     private final MatchEngine matchEngine;
     private final ServerConfig config;
     private final AgentResolver agentResolver;
     private final PassthroughProxy passthroughProxy;
-    private final Random faultRandom = new Random();
 
+    /**
+     * Note: this handler must NOT be annotated with {@code @Sharable} — each
+     * Channel gets its own instance via the channel pipeline factory. The
+     * fault evaluation uses {@link ThreadLocalRandom} which is thread-safe
+     * and does not require per-instance state (S4 fix).
+     */
     public HttpStubHandler(StorageService storage, ServerConfig config, EventLoopGroup workerGroup) {
         this.storage = storage;
         this.config = config;
@@ -145,9 +158,10 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                 // Fault injection evaluation (PRD §4 R-S12).
                 // Evaluate before sending the normal response. Phase 1 supports
                 // HTTP_ERROR and DELAY; Phase 2 adds CONNECTION_RESET and READ_TIMEOUT.
+                // Uses ThreadLocalRandom for thread safety (S4 fix).
                 FaultInjection faultConfig = result.getRule().getFaultInjection();
                 FaultInjector.FaultResult faultResult =
-                        FaultInjector.evaluate(faultConfig, faultRandom);
+                        FaultInjector.evaluate(faultConfig, ThreadLocalRandom.current());
                 if (faultResult.isHttpError()) {
                     log.info("Fault injected: HTTP_ERROR {} for rule {} {} {}",
                             faultResult.getStatusCode(), result.getRule().getId(), method, path);
@@ -162,13 +176,14 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                             result.getRule().getId(), method, path);
                     ctx.close();
                 } else if (faultResult.isReadTimeout()) {
-                    // Phase 2: do nothing — let the client's read timeout fire.
-                    // No response is sent, no close is called. The connection
-                    // remains open until the client gives up or the keep-alive
-                    // timeout expires.
-                    log.info("Fault injected: READ_TIMEOUT for rule {} {} {} (no response)",
-                            result.getRule().getId(), method, path);
-                    // Intentionally do nothing
+                    // Phase 2: do not respond — let the client's read timeout fire.
+                    // As a server-side guard against fd exhaustion (S3 fix), schedule
+                    // a forced close after READ_TIMEOUT_FALLBACK_SECONDS so the
+                    // channel is not held open indefinitely.
+                    log.info("Fault injected: READ_TIMEOUT for rule {} {} {} (no response, auto-close in {}s)",
+                            result.getRule().getId(), method, path, READ_TIMEOUT_FALLBACK_SECONDS);
+                    ctx.executor().schedule(ctx::close,
+                            READ_TIMEOUT_FALLBACK_SECONDS, TimeUnit.SECONDS);
                 } else {
                     long faultDelayMs = faultResult.isDelay() ? faultResult.getDelayMs() : 0;
                     if (faultDelayMs > 0) {

@@ -55,6 +55,7 @@ class ChaosApiHandler implements ResourceHandler {
 
         // GET /api/chaos/profiles/status
         if (path.equals(API_PREFIX + "chaos/profiles/status") && "GET".equals(method)) {
+            ctx.requirePermission("rule", "read");
             return handleStatus();
         }
 
@@ -71,7 +72,10 @@ class ChaosApiHandler implements ResourceHandler {
      * Activate a Chaos profile.
      *
      * <p>Request body: {@code {"profileName": "my-scenario"}}</p>
-     * <p>The generated rules are persisted to storage.</p>
+     * <p>The generated rules are persisted to storage. If persistence fails
+     * mid-loop, the in-memory active state is rolled back via
+     * {@link ChaosManager#deactivate(String)} to keep memory and storage
+     * consistent (S10 fix).</p>
      */
     private Object handleActivate(String body, ApiContext ctx) throws Exception {
         @SuppressWarnings("unchecked")
@@ -89,16 +93,31 @@ class ChaosApiHandler implements ResourceHandler {
             return ApiResponse.badRequest("Chaos profile already active: " + profileName);
         }
 
-        // Persist generated rules to storage
+        // Persist generated rules to storage with compensation rollback on
+        // failure (S10 fix): if any rule fails to persist, roll back the
+        // in-memory active state and delete any partially-saved rules.
         List<String> savedRuleIds = new ArrayList<String>();
-        for (Rule rule : result.getGeneratedRules()) {
-            Rule existing = ctx.storage.getRule(rule.getId());
-            if (existing != null) {
-                ctx.storage.updateRule(rule.getId(), rule);
-            } else {
-                ctx.storage.createRule(rule);
+        try {
+            for (Rule rule : result.getGeneratedRules()) {
+                Rule existing = ctx.storage.getRule(rule.getId());
+                if (existing != null) {
+                    ctx.storage.updateRule(rule.getId(), rule);
+                } else {
+                    ctx.storage.createRule(rule);
+                }
+                savedRuleIds.add(rule.getId());
             }
-            savedRuleIds.add(rule.getId());
+        } catch (Exception e) {
+            // Compensation: roll back in-memory state and clean up partial saves
+            chaosManager.deactivate(profileName);
+            for (String ruleId : savedRuleIds) {
+                try {
+                    ctx.storage.deleteRule(ruleId);
+                } catch (Exception cleanupEx) {
+                    // best-effort cleanup; log and continue
+                }
+            }
+            throw e;
         }
 
         Map<String, Object> data = new HashMap<String, Object>();

@@ -39,6 +39,24 @@ public class OpenApiImporterTest {
     }
 
     @Test
+    public void testOversizedContentThrowsException() throws Exception {
+        // S2 fix: payloads exceeding MAX_INPUT_SIZE_BYTES should be rejected
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\"openapi\":\"3.0.0\",\"paths\":{");
+        // Pad to exceed the 10 MB limit
+        while (sb.length() <= OpenApiImporter.MAX_INPUT_SIZE_BYTES) {
+            sb.append("\"x\":\"").append(new String(new char[1024]).replace('\0', 'a')).append("\",");
+        }
+        sb.append("\"/end\":{\"get\":{\"responses\":{\"200\":{\"description\":\"OK\"}}}}}}");
+        try {
+            importer.importSpec(sb.toString(), "openapi-", Collections.<String>emptyList());
+            fail("Should throw OpenApiImportException for oversized input");
+        } catch (OpenApiImportException e) {
+            assertTrue(e.getMessage().contains("maximum allowed size"));
+        }
+    }
+
+    @Test
     public void testNullContentThrowsException() throws Exception {
         try {
             importer.importSpec(null, "openapi-", Collections.<String>emptyList());
@@ -202,7 +220,8 @@ public class OpenApiImporterTest {
         MatchCondition pathCond = rule.getConditions().get(1);
         assertEquals("path", pathCond.getType());
         assertEquals("regex", pathCond.getOperator());
-        assertEquals("/api/users/[^/]+", pathCond.getValue());
+        // Static segments are Pattern.quote()'d to escape regex metacharacters (S1 fix)
+        assertEquals("\\Q/api/users/\\E[^/]+\\Q\\E", pathCond.getValue());
     }
 
     @Test
@@ -215,15 +234,27 @@ public class OpenApiImporterTest {
         Rule rule = result.getRules().get(0);
         MatchCondition pathCond = rule.getConditions().get(1);
         assertEquals("regex", pathCond.getOperator());
-        assertEquals("/api/users/[^/]+/orders/[^/]+", pathCond.getValue());
+        assertEquals("\\Q/api/users/\\E[^/]+\\Q/orders/\\E[^/]+\\Q\\E", pathCond.getValue());
     }
 
     @Test
     public void testConvertPathToRegexDirectly() {
-        assertEquals("/api/users/[^/]+", importer.convertPathToRegex("/api/users/{id}"));
-        assertEquals("/api/users", importer.convertPathToRegex("/api/users"));
-        assertEquals("/api/users/[^/]+/orders/[^/]+",
+        // Static segments are Pattern.quote()'d to escape regex metacharacters (S1 fix)
+        assertEquals("\\Q/api/users/\\E[^/]+\\Q\\E", importer.convertPathToRegex("/api/users/{id}"));
+        assertEquals("\\Q/api/users\\E", importer.convertPathToRegex("/api/users"));
+        assertEquals("\\Q/api/users/\\E[^/]+\\Q/orders/\\E[^/]+\\Q\\E",
                 importer.convertPathToRegex("/api/users/{userId}/orders/{orderId}"));
+    }
+
+    @Test
+    public void testPathWithRegexMetacharactersIsEscaped() {
+        // S1 fix: dots and other regex metacharacters in static segments must be quoted
+        String regex = importer.convertPathToRegex("/api/v1.0/users/{id}");
+        // The dot in "v1.0" must be literal, not "any character"
+        assertTrue("Regex should quote the dot: " + regex, regex.contains("\\Q/api/v1.0/users/\\E"));
+        // Verify the regex actually matches the literal path and not a mutated one
+        assertTrue(java.util.regex.Pattern.matches(regex, "/api/v1.0/users/123"));
+        assertFalse(java.util.regex.Pattern.matches(regex, "/api/v1X0/users/123"));
     }
 
     // ===== Status code extraction =====
@@ -604,7 +635,8 @@ public class OpenApiImporterTest {
         Rule showPet = result.getRules().get(2);
         MatchCondition pathCond = showPet.getConditions().get(1);
         assertEquals("regex", pathCond.getOperator());
-        assertEquals("/pets/[^/]+", pathCond.getValue());
+        // Static segments are Pattern.quote()'d (S1 fix)
+        assertEquals("\\Q/pets/\\E[^/]+\\Q\\E", pathCond.getValue());
 
         // Verify response body for showPetById
         ResponseEntry entry = showPet.getResponses().get(0);

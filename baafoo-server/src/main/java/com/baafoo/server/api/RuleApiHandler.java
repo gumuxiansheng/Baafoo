@@ -143,6 +143,12 @@ class RuleApiHandler implements ResourceHandler {
      * </p>
      */
     private Object handleOpenApiImport(String body, ApiContext ctx) throws Exception {
+        // DoS protection: reject oversized payloads at the API layer (10 MB)
+        if (body != null && body.length() > OpenApiImporter.MAX_INPUT_SIZE_BYTES) {
+            return ApiResponse.badRequest("OpenAPI spec exceeds maximum allowed size of "
+                    + (OpenApiImporter.MAX_INPUT_SIZE_BYTES / 1024 / 1024) + " MB");
+        }
+
         // Parse query parameters
         String envParam = ctx.queryParam("environment");
         List<String> environments = new ArrayList<String>();

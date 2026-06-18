@@ -5,7 +5,7 @@
     width="80%"
     top="5vh"
     :close-on-click-modal="false"
-    @close="handleClose"
+    @closed="handleClosed"
   >
     <el-steps :active="activeStep" finish-status="success" align-center style="margin-bottom: 24px">
       <el-step title="上传规范" />
@@ -63,8 +63,14 @@
         </template>
       </el-alert>
 
-      <el-table :data="previewRules" stripe size="small" @selection-change="handleSelectionChange">
-        <el-table-column type="selection" width="50" />
+      <el-alert type="info" :closable="false" show-icon style="margin-bottom: 12px">
+        <template #title>
+          当前版本将导入全部 {{ previewRules.length }} 条解析规则（不支持选择性导入）
+        </template>
+      </el-alert>
+
+      <el-table :data="previewRules" stripe size="small">
+        <el-table-column type="index" label="#" width="50" />
         <el-table-column prop="name" label="规则名称" min-width="180" show-overflow-tooltip />
         <el-table-column label="方法" width="80">
           <template #default="{ row }">
@@ -114,7 +120,7 @@
           <div style="font-size: 12px; color: #909399; margin-top: 4px">自动生成规则 ID 的前缀</div>
         </el-form-item>
         <el-form-item label="导入数量">
-          <span>{{ selectedRules.length }} / {{ previewRules.length }} 条规则将被导入</span>
+          <span>共 {{ previewRules.length }} 条规则将被导入</span>
         </el-form-item>
       </el-form>
     </div>
@@ -142,7 +148,7 @@
       <el-button @click="handleClose">取消</el-button>
       <el-button v-if="activeStep > 0 && activeStep < 3" @click="activeStep--">上一步</el-button>
       <el-button v-if="activeStep === 0" type="primary" @click="parseOpenApi" :loading="loading" :disabled="!jsonContent">解析</el-button>
-      <el-button v-if="activeStep === 1" type="primary" @click="activeStep = 2" :disabled="selectedRules.length === 0">下一步</el-button>
+      <el-button v-if="activeStep === 1" type="primary" @click="activeStep = 2" :disabled="previewRules.length === 0">下一步</el-button>
       <el-button v-if="activeStep === 2" type="primary" @click="doImport" :loading="importing">确认导入</el-button>
       <el-button v-if="activeStep === 3" type="primary" @click="handleClose">完成</el-button>
     </template>
@@ -175,7 +181,6 @@ export default {
     const importing = ref(false)
     const importResult = ref(null)
     const previewRules = ref([])
-    const selectedRules = ref([])
     const environments = ref([])
     const selectedEnvironments = ref([])
     const ruleIdPrefix = ref('openapi-')
@@ -217,7 +222,6 @@ export default {
         if (res.success && res.data) {
           importResult.value = res.data
           previewRules.value = res.data.rules || []
-          selectedRules.value = [...previewRules.value]
           activeStep.value = 1
         } else {
           parseError.value = res.message || '解析失败'
@@ -256,20 +260,20 @@ export default {
 
     function handleClose() {
       visible.value = false
-      // Reset after close animation
-      setTimeout(() => {
-        activeStep.value = 0
-        jsonContent.value = ''
-        parseError.value = ''
-        importResult.value = null
-        previewRules.value = []
-        selectedRules.value = []
-        selectedEnvironments.value = []
-      }, 300)
     }
 
-    function handleSelectionChange(val) {
-      selectedRules.value = val
+    /**
+     * Called by el-dialog after the close transition completes (S11 fix).
+     * Replaces the previous setTimeout(300) approach which could race with
+     * a rapid re-open and wipe the new dialog's state.
+     */
+    function handleClosed() {
+      activeStep.value = 0
+      jsonContent.value = ''
+      parseError.value = ''
+      importResult.value = null
+      previewRules.value = []
+      selectedEnvironments.value = []
     }
 
     // Helper functions to extract data from rule objects
@@ -322,8 +326,8 @@ export default {
 
     return {
       visible, activeStep, jsonContent, parseError, loading, importing,
-      importResult, previewRules, selectedRules, environments, selectedEnvironments, ruleIdPrefix,
-      handleFileChange, handleExceed, parseOpenApi, doImport, handleClose, handleSelectionChange,
+      importResult, previewRules, environments, selectedEnvironments, ruleIdPrefix,
+      handleFileChange, handleExceed, parseOpenApi, doImport, handleClose, handleClosed,
       getRuleMethod, getRulePath, getRuleStatusCode, getRuleBodyPreview, methodTagType
     }
   }

@@ -47,6 +47,12 @@ public final class OpenApiImporter {
     /** Pattern to find path parameters like {@code {id}} or {@code {user-id}}. */
     private static final Pattern PATH_PARAM_PATTERN = Pattern.compile("\\{[^}]+}");
 
+    /**
+     * Maximum allowed input size for an OpenAPI spec, in bytes (10 MB).
+     * Prevents DoS via oversized payloads that could cause OOM during parsing.
+     */
+    public static final int MAX_INPUT_SIZE_BYTES = 10 * 1024 * 1024;
+
     private final ObjectMapper mapper;
 
     public OpenApiImporter() {
@@ -69,6 +75,13 @@ public final class OpenApiImporter {
 
         if (jsonContent == null || jsonContent.trim().isEmpty()) {
             throw new OpenApiImportException("OpenAPI spec content is empty", 0);
+        }
+
+        // DoS protection: reject oversized payloads before parsing
+        if (jsonContent.length() > MAX_INPUT_SIZE_BYTES) {
+            throw new OpenApiImportException(
+                    "OpenAPI spec exceeds maximum allowed size of "
+                            + (MAX_INPUT_SIZE_BYTES / 1024 / 1024) + " MB", 0);
         }
 
         JsonNode root;
@@ -201,16 +214,38 @@ public final class OpenApiImporter {
 
     /**
      * Convert an OpenAPI path with parameters to a regex pattern.
-     * Example: {@code /api/users/{id}/orders/{orderId}}
-     *       → {@code /api/users/[^/]+/orders/[^/]+}
+     *
+     * <p>Static segments are {@link Pattern#quote(String) quoted} so that
+     * regex metacharacters in the path (e.g. {@code .} in {@code /api/v1.0/users})
+     * are treated as literals. Parameter placeholders {@code {id}} are replaced
+     * with the capture group {@code [^/]+}.</p>
+     *
+     * <p>Example: {@code /api/v1.0/users/{id}}
+     *       → {@code \Q/api/v1.0/users/\E[^/]+}</p>
      */
     String convertPathToRegex(String path) {
+        return quoteStaticSegments(path);
+    }
+
+    /**
+     * Quote static (non-parameter) segments of the path and join parameter
+     * placeholders with {@code [^/]+}, producing a regex that matches the path
+     * literally except for parameter positions.
+     */
+    private String quoteStaticSegments(String path) {
         Matcher m = PATH_PARAM_PATTERN.matcher(path);
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
+        int lastEnd = 0;
         while (m.find()) {
-            m.appendReplacement(sb, "[^/]+");
+            // Append the quoted static segment before this parameter
+            String staticSegment = path.substring(lastEnd, m.start());
+            sb.append(Pattern.quote(staticSegment));
+            sb.append("[^/]+");
+            lastEnd = m.end();
         }
-        m.appendTail(sb);
+        // Append the trailing static segment (after the last parameter)
+        String trailing = path.substring(lastEnd);
+        sb.append(Pattern.quote(trailing));
         return sb.toString();
     }
 
