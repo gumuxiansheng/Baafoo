@@ -21,11 +21,16 @@ import java.util.regex.Pattern;
  *   <li>{@code {{request.method}}} — HTTP method</li>
  *   <li>{@code {{environment}}} — current agent environment name</li>
  *   <li>{@code {{faker.phone}}} / {@code {{faker.email}}} / etc. — dynamic fake data</li>
+ *   <li>{@code {{faker.randomElement [a,b,c]}}} — pick a random element from a list</li>
+ *   <li>{@code {{faker.regexify 'pattern'}}} — generate a string matching a regex</li>
  * </ul>
  * </p>
  *
  * <p>Variables are resolved on every request, so faker functions produce
- * different values each time (useful for generating unique test data).</p>
+ * different values each time (useful for generating unique test data).
+ * When a rule has {@code fakerSeed} set, the seed is applied via
+ * {@link FakerProvider#setSeed(Long)} before rendering and cleared afterwards,
+ * so the same seed produces a deterministic sequence of values.</p>
  */
 public class TemplateEngine {
 
@@ -33,8 +38,19 @@ public class TemplateEngine {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    /** Pattern: {{variable.expression}} */
-    private static final Pattern TEMPLATE_PATTERN = Pattern.compile("\\{\\{([\\w.]+)}}");
+    /**
+     * Pattern: {{variable.expression}}
+     *
+     * <p>The expression body is permissive — it allows word chars, dots, spaces,
+     * brackets, commas, single quotes, and double quotes. This is necessary so
+     * that faker functions like {@code randomElement [a,b,c]} and
+     * {@code regexify '[A-Z]{3}'} can be expressed inside a template.</p>
+     *
+     * <p>The pattern is non-greedy and stops at the first {@code }}}. This means
+     * a template variable cannot itself contain the literal sequence
+     * {@code }}}, which is an acceptable limitation for response body templates.</p>
+     */
+    private static final Pattern TEMPLATE_PATTERN = Pattern.compile("\\{\\{([\\w. \\[\\],:'\"{}()|*+?\\\\-]+?)}}");
 
     /**
      * Render a response body template by substituting all template variables.
@@ -44,6 +60,20 @@ public class TemplateEngine {
      * @return rendered body string with all variables resolved
      */
     public static String render(String template, RequestContext context) {
+        return render(template, context, null);
+    }
+
+    /**
+     * Render a response body template by substituting all template variables.
+     *
+     * @param template    raw body template (may contain {{...}} expressions)
+     * @param context     request context providing request.* variables
+     * @param fakerSeed   optional seed for deterministic faker output. When non-null,
+     *                    all faker functions in this template use a deterministic
+     *                    {@link java.util.Random} seeded with this value.
+     * @return rendered body string with all variables resolved
+     */
+    public static String render(String template, RequestContext context, Long fakerSeed) {
         if (template == null || template.isEmpty()) {
             return template;
         }
@@ -51,18 +81,28 @@ public class TemplateEngine {
             return template;
         }
 
-        Matcher matcher = TEMPLATE_PATTERN.matcher(template);
-        StringBuffer sb = new StringBuffer(template.length() + 128);
-
-        while (matcher.find()) {
-            String expression = matcher.group(1);
-            String replacement = resolveExpression(expression, context);
-            // Use Matcher.quoteReplacement to handle $ and \ in replacement
-            matcher.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+        // Apply seed for the duration of this render call if provided.
+        if (fakerSeed != null) {
+            FakerProvider.setSeed(fakerSeed);
         }
-        matcher.appendTail(sb);
+        try {
+            Matcher matcher = TEMPLATE_PATTERN.matcher(template);
+            StringBuffer sb = new StringBuffer(template.length() + 128);
 
-        return sb.toString();
+            while (matcher.find()) {
+                String expression = matcher.group(1);
+                String replacement = resolveExpression(expression, context);
+                // Use Matcher.quoteReplacement to handle $ and \ in replacement
+                matcher.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+            }
+            matcher.appendTail(sb);
+
+            return sb.toString();
+        } finally {
+            if (fakerSeed != null) {
+                FakerProvider.setSeed(null);
+            }
+        }
     }
 
     /**

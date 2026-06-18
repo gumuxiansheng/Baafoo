@@ -74,6 +74,12 @@ public class DdlBuilder {
         addColumnIfMissing(stmt, "rules", "tcp_offset_start", "INT DEFAULT -1");
         addColumnIfMissing(stmt, "rules", "tcp_offset_end", "INT DEFAULT -1");
         addColumnIfMissing(stmt, "rules", "tcp_offset_hex", "VARCHAR(1024)");
+        // R-C2 AC-01: rule-level faker seed for deterministic Faker output
+        addColumnIfMissing(stmt, "rules", "faker_seed", "BIGINT");
+        // R-C2 extension: requestCount auto-reset threshold (stateful mock)
+        addColumnIfMissing(stmt, "rules", "request_count_reset", "INT");
+        // R-S12: fault injection configuration (stored as JSON)
+        addColumnIfMissing(stmt, "rules", "fault_injection_json", "TEXT");
     }
 
     private void createRuleHistoryTable(Statement stmt) throws SQLException {

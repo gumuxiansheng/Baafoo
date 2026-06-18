@@ -65,6 +65,35 @@ public class Rule {
     /** TCP-specific: expected hex value at the byte offset range */
     private String tcpOffsetHex;
 
+    /**
+     * Optional seed for deterministic Faker output (R-C2 AC-01).
+     *
+     * <p>When set, all {@code {{faker.xxx}}} template variables in this rule's
+     * responses use a deterministic {@link java.util.Random} seeded with this
+     * value, so the same seed produces the same sequence of values across
+     * requests. When null, a cryptographically strong random source is used.</p>
+     */
+    private Long fakerSeed;
+
+    /**
+     * Optional auto-reset threshold for the per-rule request counter
+     * (R-C2 extension, R-S2 AC-13 stateful mock).
+     *
+     * <p>When set to a positive integer N, the rule's request counter resets to 0
+     * after reaching N, enabling cyclic "first N requests differ" behavior.
+     * When null or {@code <= 0}, the counter increments indefinitely.</p>
+     */
+    private Integer requestCountReset;
+
+    /**
+     * Optional fault injection configuration (R-S12).
+     *
+     * <p>When set, faults are evaluated in declaration order; the first fault
+     * whose {@code probability} is hit takes effect. If no fault is hit, the
+     * normal response flow proceeds.</p>
+     */
+    private FaultInjection faultInjection;
+
     /** Rule version for undo support */
     private int version;
 
@@ -154,6 +183,15 @@ public class Rule {
 
     public String getTcpOffsetHex() { return tcpOffsetHex; }
     public void setTcpOffsetHex(String tcpOffsetHex) { this.tcpOffsetHex = tcpOffsetHex; }
+
+    public Long getFakerSeed() { return fakerSeed; }
+    public void setFakerSeed(Long fakerSeed) { this.fakerSeed = fakerSeed; }
+
+    public Integer getRequestCountReset() { return requestCountReset; }
+    public void setRequestCountReset(Integer requestCountReset) { this.requestCountReset = requestCountReset; }
+
+    public FaultInjection getFaultInjection() { return faultInjection; }
+    public void setFaultInjection(FaultInjection faultInjection) { this.faultInjection = faultInjection; }
 
     @Override
     public String toString() {

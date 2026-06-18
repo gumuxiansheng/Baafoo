@@ -37,6 +37,10 @@
         <result property="tcpOffsetStart" column="tcp_offset_start"/>
         <result property="tcpOffsetEnd" column="tcp_offset_end"/>
         <result property="tcpOffsetHex" column="tcp_offset_hex"/>
+        <result property="fakerSeed" column="faker_seed"/>
+        <result property="requestCountReset" column="request_count_reset"/>
+        <result property="faultInjection" column="fault_injection_json"
+                typeHandler="com.baafoo.server.storage.mybatis.FaultInjectionTypeHandler"/>
     </resultMap>
 
     <!-- Result map for RuleSet -->
@@ -107,6 +111,7 @@
             conditions_json, responses_json, enabled, priority, tags_json,
             environments_json, tcp_rounds_json, tcp_loop, tcp_pattern,
             tcp_prefix_hex, tcp_offset_start, tcp_offset_end, tcp_offset_hex,
+            faker_seed, request_count_reset, fault_injection_json,
             version, created_at, updated_at)
         VALUES (#{id}, #{name}, #{protocol}, #{serviceName}, #{host}, #{port},
             #{conditions, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
@@ -117,6 +122,8 @@
             #{tcpRounds, typeHandler=com.baafoo.server.storage.mybatis.TcpRoundListHandler},
             #{tcpLoop}, #{tcpPattern},
             #{tcpPrefixHex}, #{tcpOffsetStart}, #{tcpOffsetEnd}, #{tcpOffsetHex},
+            #{fakerSeed}, #{requestCountReset},
+            #{faultInjection, typeHandler=com.baafoo.server.storage.mybatis.FaultInjectionTypeHandler},
             #{version}, #{createdAt}, #{updatedAt})
     </insert>
 
@@ -141,6 +148,9 @@
             tcp_offset_start = #{tcpOffsetStart},
             tcp_offset_end = #{tcpOffsetEnd},
             tcp_offset_hex = #{tcpOffsetHex},
+            faker_seed = #{fakerSeed},
+            request_count_reset = #{requestCountReset},
+            fault_injection_json = #{faultInjection, typeHandler=com.baafoo.server.storage.mybatis.FaultInjectionTypeHandler},
             version = #{version},
             created_at = #{createdAt},
             updated_at = #{updatedAt}

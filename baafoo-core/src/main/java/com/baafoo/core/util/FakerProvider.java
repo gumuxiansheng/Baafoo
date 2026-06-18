@@ -2,6 +2,9 @@ package com.baafoo.core.util;
 
 import java.security.SecureRandom;
 import java.util.Random;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * Lightweight faker data provider — zero external dependencies, Java 8 compatible.
@@ -36,12 +39,30 @@ import java.util.Random;
  *   <li>{@code {{faker.userAgent}}} — random browser user-agent</li>
  *   <li>{@code {{faker.statusCode}}} — common HTTP status code (200/404/500 etc.)</li>
  *   <li>{@code {{faker.color}}} / {@code {{faker.hexColor}}} — hex color like #A3F2C1</li>
+ *   <li>{@code {{faker.randomElement [a,b,c]}}} — pick a random element from the given array</li>
+ *   <li>{@code {{faker.regexify 'pattern'}}} — generate a string matching the given regex</li>
  * </ul>
  * </p>
+ *
+ * <p>Seed support: when a rule has {@code fakerSeed} set, all faker functions for that
+ * rule use a deterministic {@link Random} seeded with that value, so the same seed
+ * produces the same sequence of values. Without a seed, a {@link SecureRandom} is used.</p>
  */
 public class FakerProvider {
 
-    private static final Random RND = new SecureRandom();
+    /** Default random source (no seed) — cryptographically strong, non-deterministic. */
+    private static final Random DEFAULT_RND = new SecureRandom();
+
+    /** Thread-local random source; when seeded, replaces DEFAULT_RND for the current thread. */
+    private static final ThreadLocal<Random> SEEDED_RND = new ThreadLocal<Random>();
+
+    /** Cached compiled regex for randomElement argument parsing: [a,b,c] or a,b,c. */
+    private static final Pattern RANDOM_ELEMENT_PATTERN =
+            Pattern.compile("^\\s*\\[?\\s*(.*?)\\s*\\]?\\s*$");
+
+    /** Cached compiled regex for regexify argument parsing: 'pattern' or "pattern" or pattern. */
+    private static final Pattern REGEXIFY_QUOTE_PATTERN =
+            Pattern.compile("^['\"]?(.*?)['\"]?$");
 
     // --- Chinese name data ---
     private static final String[] LAST_NAMES = {
@@ -160,6 +181,47 @@ public class FakerProvider {
     }
 
     /**
+     * Obtain the random source for the current thread.
+     *
+     * <p>If a seed has been set via {@link #setSeed(Long)} for the current thread,
+     * the seeded {@link Random} is returned; otherwise the default
+     * {@link SecureRandom} is used.</p>
+     */
+    private static Random rnd() {
+        Random seeded = SEEDED_RND.get();
+        return seeded != null ? seeded : DEFAULT_RND;
+    }
+
+    /**
+     * Set a deterministic seed for faker functions on the current thread.
+     *
+     * <p>When {@code seed} is non-null, all subsequent faker calls on this thread
+     * use a {@link Random} seeded with that value, producing a deterministic
+     * sequence. Pass {@code null} to clear the seed and revert to the default
+     * {@link SecureRandom}.</p>
+     *
+     * <p>This is intended to be wrapped in a try/finally by the caller to ensure
+     * the seed is cleared after rendering a rule response:</p>
+     * <pre>
+     * FakerProvider.setSeed(rule.getFakerSeed());
+     * try {
+     *     String body = TemplateEngine.render(template, ctx);
+     * } finally {
+     *     FakerProvider.setSeed(null);
+     * }
+     * </pre>
+     *
+     * @param seed seed value, or null to clear
+     */
+    public static void setSeed(Long seed) {
+        if (seed == null) {
+            SEEDED_RND.remove();
+        } else {
+            SEEDED_RND.set(new Random(seed));
+        }
+    }
+
+    /**
      * Resolve a faker function name to a random value.
      *
      * @param functionName function name without the "faker." prefix, e.g. "phone", "int.1.100"
@@ -173,6 +235,22 @@ public class FakerProvider {
         // Handle parameterized functions like "int.1.100"
         if (functionName.startsWith("int.") || functionName.startsWith("integer.")) {
             return resolveIntRange(functionName);
+        }
+
+        // randomElement [a,b,c] — note: the rest of the string after "randomElement" is the arg
+        if (functionName.equals("randomElement") || functionName.startsWith("randomElement ")) {
+            String arg = functionName.startsWith("randomElement ")
+                    ? functionName.substring("randomElement ".length())
+                    : "";
+            return resolveRandomElement(arg);
+        }
+
+        // regexify 'pattern' — note: the rest of the string after "regexify" is the arg
+        if (functionName.equals("regexify") || functionName.startsWith("regexify ")) {
+            String arg = functionName.startsWith("regexify ")
+                    ? functionName.substring("regexify ".length())
+                    : "";
+            return resolveRegexify(arg);
         }
 
         switch (functionName) {
@@ -246,12 +324,12 @@ public class FakerProvider {
             // Number
             case "int":
             case "integer":
-                return String.valueOf(RND.nextInt(10000));
+                return String.valueOf(rnd().nextInt(10000));
             case "float":
             case "decimal":
-                return String.format("%.2f", RND.nextDouble() * 10000);
+                return String.format("%.2f", rnd().nextDouble() * 10000);
             case "boolean":
-                return String.valueOf(RND.nextBoolean());
+                return String.valueOf(rnd().nextBoolean());
 
             // String
             case "hex":
@@ -263,11 +341,11 @@ public class FakerProvider {
 
             // Misc
             case "locale":
-                return LOCALES[RND.nextInt(LOCALES.length)];
+                return LOCALES[rnd().nextInt(LOCALES.length)];
             case "userAgent":
-                return USER_AGENTS[RND.nextInt(USER_AGENTS.length)];
+                return USER_AGENTS[rnd().nextInt(USER_AGENTS.length)];
             case "statusCode":
-                return HTTP_STATUS_CODES[RND.nextInt(HTTP_STATUS_CODES.length)];
+                return HTTP_STATUS_CODES[rnd().nextInt(HTTP_STATUS_CODES.length)];
             case "color":
             case "hexColor":
                 return randomHexColor();
@@ -285,12 +363,12 @@ public class FakerProvider {
                 "150", "151", "152", "153", "155", "156", "157", "158", "159",
                 "170", "176", "177", "178", "180", "181", "182", "183", "184", "185", "186", "187", "188", "189",
                 "191", "198", "199"};
-        return prefixes[RND.nextInt(prefixes.length)] + randomDigits(8);
+        return prefixes[rnd().nextInt(prefixes.length)] + randomDigits(8);
     }
 
     private static String randomEmail() {
-        String user = randomAlphaNumeric(4 + RND.nextInt(8)).toLowerCase();
-        String domain = EMAIL_DOMAINS[RND.nextInt(EMAIL_DOMAINS.length)];
+        String user = randomAlphaNumeric(4 + rnd().nextInt(8)).toLowerCase();
+        String domain = EMAIL_DOMAINS[rnd().nextInt(EMAIL_DOMAINS.length)];
         return user + "@" + domain;
     }
 
@@ -299,26 +377,26 @@ public class FakerProvider {
     }
 
     private static String randomFirstName() {
-        return FIRST_NAMES[RND.nextInt(FIRST_NAMES.length)];
+        return FIRST_NAMES[rnd().nextInt(FIRST_NAMES.length)];
     }
 
     private static String randomLastName() {
-        return LAST_NAMES[RND.nextInt(LAST_NAMES.length)];
+        return LAST_NAMES[rnd().nextInt(LAST_NAMES.length)];
     }
 
     private static String randomProvince() {
-        return PROVINCES[RND.nextInt(PROVINCES.length)];
+        return PROVINCES[rnd().nextInt(PROVINCES.length)];
     }
 
     private static String randomCity() {
-        int idx = RND.nextInt(CITIES.length);
+        int idx = rnd().nextInt(CITIES.length);
         String[] provinceCities = CITIES[idx];
-        return provinceCities[RND.nextInt(provinceCities.length)];
+        return provinceCities[rnd().nextInt(provinceCities.length)];
     }
 
     private static String randomStreetAddress() {
-        String street = STREETS[RND.nextInt(STREETS.length)];
-        String number = String.valueOf(1 + RND.nextInt(999));
+        String street = STREETS[rnd().nextInt(STREETS.length)];
+        String number = String.valueOf(1 + rnd().nextInt(999));
         return street + number + "号";
     }
 
@@ -333,11 +411,11 @@ public class FakerProvider {
     private static String randomIdCard() {
         // Area code (6 digits) + birth date (8 digits) + sequence (3 digits) + check digit
         String areaCode = randomDigits(6);
-        int year = 1960 + RND.nextInt(50);
-        int month = 1 + RND.nextInt(12);
-        int day = 1 + RND.nextInt(28);
+        int year = 1960 + rnd().nextInt(50);
+        int month = 1 + rnd().nextInt(12);
+        int day = 1 + rnd().nextInt(28);
         String birth = String.format("%04d%02d%02d", year, month, day);
-        String seq = String.format("%03d", 1 + RND.nextInt(999));
+        String seq = String.format("%03d", 1 + rnd().nextInt(999));
         String base = areaCode + birth + seq;
         // Check digit
         int[] weights = {7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2};
@@ -350,33 +428,33 @@ public class FakerProvider {
     }
 
     private static String randomCompany() {
-        return COMPANIES_PREFIX[RND.nextInt(COMPANIES_PREFIX.length)]
-                + COMPANIES_PREFIX[RND.nextInt(COMPANIES_PREFIX.length)]
-                + COMPANIES_SUFFIX[RND.nextInt(COMPANIES_SUFFIX.length)];
+        return COMPANIES_PREFIX[rnd().nextInt(COMPANIES_PREFIX.length)]
+                + COMPANIES_PREFIX[rnd().nextInt(COMPANIES_PREFIX.length)]
+                + COMPANIES_SUFFIX[rnd().nextInt(COMPANIES_SUFFIX.length)];
     }
 
     private static String randomUrl() {
         String[] protocols = {"http", "https"};
         String[] domains = {"example", "mock", "test", "demo", "api", "service"};
         String[] tlds = {".com", ".cn", ".io", ".net", ".org"};
-        return protocols[RND.nextInt(protocols.length)] + "://"
-                + domains[RND.nextInt(domains.length)]
+        return protocols[rnd().nextInt(protocols.length)] + "://"
+                + domains[rnd().nextInt(domains.length)]
                 + randomDigits(2)
-                + tlds[RND.nextInt(tlds.length)];
+                + tlds[rnd().nextInt(tlds.length)];
     }
 
     private static String randomIpv4() {
-        return (10 + RND.nextInt(240)) + "."
-                + RND.nextInt(256) + "."
-                + RND.nextInt(256) + "."
-                + (1 + RND.nextInt(254));
+        return (10 + rnd().nextInt(240)) + "."
+                + rnd().nextInt(256) + "."
+                + rnd().nextInt(256) + "."
+                + (1 + rnd().nextInt(254));
     }
 
     private static String randomIpv6() {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < 8; i++) {
             if (i > 0) sb.append(":");
-            sb.append(String.format("%04x", RND.nextInt(65536)));
+            sb.append(String.format("%04x", rnd().nextInt(65536)));
         }
         return sb.toString();
     }
@@ -385,7 +463,7 @@ public class FakerProvider {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < 6; i++) {
             if (i > 0) sb.append(":");
-            sb.append(String.format("%02X", RND.nextInt(256)));
+            sb.append(String.format("%02X", rnd().nextInt(256)));
         }
         return sb.toString();
     }
@@ -407,7 +485,7 @@ public class FakerProvider {
     private static String randomHex(int length) {
         StringBuilder sb = new StringBuilder(length);
         for (int i = 0; i < length; i++) {
-            sb.append(HEX_CHARS[RND.nextInt(16)]);
+            sb.append(HEX_CHARS[rnd().nextInt(16)]);
         }
         return sb.toString();
     }
@@ -419,7 +497,7 @@ public class FakerProvider {
     private static String randomAlphaNumeric(int length) {
         StringBuilder sb = new StringBuilder(length);
         for (int i = 0; i < length; i++) {
-            sb.append(ALPHANUMERIC[RND.nextInt(ALPHANUMERIC.length)]);
+            sb.append(ALPHANUMERIC[rnd().nextInt(ALPHANUMERIC.length)]);
         }
         return sb.toString();
     }
@@ -427,7 +505,7 @@ public class FakerProvider {
     private static String randomDigits(int length) {
         StringBuilder sb = new StringBuilder(length);
         for (int i = 0; i < length; i++) {
-            sb.append(RND.nextInt(10));
+            sb.append(rnd().nextInt(10));
         }
         return sb.toString();
     }
@@ -444,11 +522,345 @@ public class FakerProvider {
                 int min = Integer.parseInt(parts[0]);
                 int max = Integer.parseInt(parts[1]);
                 if (min > max) { int t = min; min = max; max = t; }
-                return String.valueOf(min + RND.nextInt(max - min + 1));
+                return String.valueOf(min + rnd().nextInt(max - min + 1));
             } catch (NumberFormatException e) {
                 // fall through to default
             }
         }
-        return String.valueOf(RND.nextInt(10000));
+        return String.valueOf(rnd().nextInt(10000));
+    }
+
+    /**
+     * Resolve {@code randomElement [a,b,c]} — pick a random element from a comma-separated list.
+     * Surrounding brackets are optional. Empty input returns an empty string.
+     * Elements are not trimmed of internal whitespace, but leading/trailing whitespace
+     * around the whole list and around the brackets is stripped.
+     *
+     * <p>Examples:</p>
+     * <ul>
+     *   <li>{@code randomElement [a,b,c]} → one of "a", "b", "c"</li>
+     *   <li>{@code randomElement apple,banana,cherry} → one of the three</li>
+     *   <li>{@code randomElement [1,2,3]} → one of "1", "2", "3"</li>
+     * </ul>
+     */
+    private static String resolveRandomElement(String arg) {
+        if (arg == null || arg.isEmpty()) {
+            return "";
+        }
+        Matcher m = RANDOM_ELEMENT_PATTERN.matcher(arg);
+        String inner = m.matches() ? m.group(1) : arg;
+        if (inner == null || inner.isEmpty()) {
+            return "";
+        }
+        String[] elements = inner.split(",");
+        if (elements.length == 0) {
+            return "";
+        }
+        // Trim each element so "[a, b, c]" works as users expect.
+        for (int i = 0; i < elements.length; i++) {
+            elements[i] = elements[i].trim();
+        }
+        return elements[rnd().nextInt(elements.length)];
+    }
+
+    /**
+     * Resolve {@code regexify 'pattern'} — generate a string matching the given regex.
+     * The pattern may be wrapped in single or double quotes (which are stripped).
+     * Uses a bounded backtracking generator that supports the most common regex
+     * constructs: literal chars, character classes {@code [a-z]}, quantifiers
+     * {@code ? * + {n} {n,m}}, alternation {@code a|b}, and groups {@code (...)}.
+     *
+     * <p>If the pattern cannot be parsed, the original pattern string is returned
+     * (so the user sees the unresolved template in the response, making the
+     * misconfiguration visible).</p>
+     *
+     * <p>Examples:</p>
+     * <ul>
+     *   <li>{@code regexify '[A-Z]{3}[0-9]{4}'} → e.g. "ABC1234"</li>
+     *   <li>{@code regexify 'foo|bar|baz'} → one of "foo", "bar", "baz"</li>
+     * </ul>
+     */
+    private static String resolveRegexify(String arg) {
+        if (arg == null || arg.isEmpty()) {
+            return "";
+        }
+        Matcher m = REGEXIFY_QUOTE_PATTERN.matcher(arg);
+        String pattern = m.matches() ? m.group(1) : arg;
+        if (pattern == null || pattern.isEmpty()) {
+            return "";
+        }
+        try {
+            return new RegexGenerator(pattern, rnd()).generate();
+        } catch (PatternSyntaxException e) {
+            // Return the raw pattern so the misconfiguration is visible in the response.
+            return pattern;
+        } catch (Exception e) {
+            return pattern;
+        }
+    }
+
+    // --- Regex generator for regexify ---
+
+    /**
+     * Minimal regex string generator supporting literals, character classes
+     * {@code [a-z]}, quantifiers {@code ? * + {n} {n,m}}, alternation {@code |},
+     * and non-capturing groups {@code (...)}. Anchors {@code ^ $} are ignored.
+     *
+     * <p>This is intentionally simple — it does not support backreferences,
+     * lookaround, or Unicode classes. It exists to support the common case of
+     * generating test data from simple patterns like {@code [A-Z]{3}[0-9]{4}}.</p>
+     */
+    static final class RegexGenerator {
+        private final String pattern;
+        private final Random random;
+        private int pos;
+
+        RegexGenerator(String pattern, Random random) {
+            this.pattern = pattern;
+            this.random = random;
+            this.pos = 0;
+        }
+
+        String generate() {
+            StringBuilder sb = new StringBuilder();
+            // Top-level: alternation over '|'-separated sequences.
+            sb.append(parseAlternation());
+            return sb.toString();
+        }
+
+        private String parseAlternation() {
+            StringBuilder sb = new StringBuilder();
+            sb.append(parseSequence());
+            // Collect alternatives so we can pick one at random.
+            java.util.List<String> alternatives = new java.util.ArrayList<String>();
+            alternatives.add(sb.toString());
+            while (pos < pattern.length() && pattern.charAt(pos) == '|') {
+                pos++; // consume '|'
+                StringBuilder alt = new StringBuilder();
+                alt.append(parseSequence());
+                alternatives.add(alt.toString());
+            }
+            if (alternatives.size() == 1) {
+                return alternatives.get(0);
+            }
+            return alternatives.get(random.nextInt(alternatives.size()));
+        }
+
+        private String parseSequence() {
+            StringBuilder sb = new StringBuilder();
+            while (pos < pattern.length()) {
+                char c = pattern.charAt(pos);
+                if (c == '|' || c == ')') {
+                    break;
+                }
+                String unit = parseUnit();
+                // Apply quantifier if present
+                unit = applyQuantifier(unit);
+                sb.append(unit);
+            }
+            return sb.toString();
+        }
+
+        private String parseUnit() {
+            char c = pattern.charAt(pos);
+            if (c == '(') {
+                pos++; // consume '('
+                String result = parseAlternation();
+                if (pos < pattern.length() && pattern.charAt(pos) == ')') {
+                    pos++; // consume ')'
+                }
+                return result;
+            }
+            if (c == '[') {
+                return parseCharClass();
+            }
+            if (c == '\\' && pos + 1 < pattern.length()) {
+                pos += 2;
+                return resolveEscape(pattern.charAt(pos - 1));
+            }
+            if (c == '^' || c == '$') {
+                // Anchors are ignored for generation purposes.
+                pos++;
+                return "";
+            }
+            if (c == '.' && pos + 1 < pattern.length() && pattern.charAt(pos + 1) == '*') {
+                // Avoid runaway generation for ".*" — emit a short random string.
+                pos++;
+                return randomAlpha(3);
+            }
+            if (c == '.') {
+                pos++;
+                return randomAlpha(1);
+            }
+            pos++;
+            return String.valueOf(c);
+        }
+
+        private String parseCharClass() {
+            // Consume '['
+            pos++;
+            boolean negate = false;
+            if (pos < pattern.length() && pattern.charAt(pos) == '^') {
+                negate = true;
+                pos++;
+            }
+            java.util.List<char[]> ranges = new java.util.ArrayList<char[]>();
+            java.util.List<Character> singles = new java.util.ArrayList<Character>();
+            while (pos < pattern.length() && pattern.charAt(pos) != ']') {
+                char ch = pattern.charAt(pos);
+                if (ch == '\\' && pos + 1 < pattern.length()) {
+                    pos++;
+                    char escaped = pattern.charAt(pos);
+                    pos++;
+                    // Treat escape as a single literal char in the class.
+                    singles.add(escaped);
+                    continue;
+                }
+                // Range: a-z
+                if (pos + 2 < pattern.length() && pattern.charAt(pos + 1) == '-'
+                        && pattern.charAt(pos + 2) != ']') {
+                    char lo = ch;
+                    char hi = pattern.charAt(pos + 2);
+                    pos += 3;
+                    ranges.add(new char[]{lo, hi});
+                } else {
+                    singles.add(ch);
+                    pos++;
+                }
+            }
+            // Consume ']'
+            if (pos < pattern.length() && pattern.charAt(pos) == ']') {
+                pos++;
+            }
+            // Build the candidate set.
+            java.util.List<Character> candidates = new java.util.ArrayList<Character>();
+            for (char[] r : ranges) {
+                for (char ch = r[0]; ch <= r[1]; ch++) {
+                    candidates.add(ch);
+                }
+            }
+            for (Character ch : singles) {
+                candidates.add(ch);
+            }
+            if (candidates.isEmpty()) {
+                return "";
+            }
+            if (negate) {
+                // Pick a printable ASCII char not in the candidate set.
+                java.util.Set<Character> excluded = new java.util.HashSet<Character>(candidates);
+                java.util.List<Character> complement = new java.util.ArrayList<Character>();
+                for (char ch = 32; ch < 127; ch++) {
+                    if (!excluded.contains(ch)) {
+                        complement.add(ch);
+                    }
+                }
+                if (complement.isEmpty()) {
+                    return "";
+                }
+                return String.valueOf(complement.get(random.nextInt(complement.size())));
+            }
+            return String.valueOf(candidates.get(random.nextInt(candidates.size())));
+        }
+
+        private String applyQuantifier(String unit) {
+            if (pos >= pattern.length()) {
+                return unit;
+            }
+            char c = pattern.charAt(pos);
+            if (c == '?') {
+                pos++;
+                return random.nextBoolean() ? unit : "";
+            }
+            if (c == '*') {
+                pos++;
+                int count = random.nextInt(4); // 0-3 repetitions
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < count; i++) {
+                    sb.append(unit);
+                }
+                return sb.toString();
+            }
+            if (c == '+') {
+                pos++;
+                int count = 1 + random.nextInt(3); // 1-3 repetitions
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < count; i++) {
+                    sb.append(unit);
+                }
+                return sb.toString();
+            }
+            if (c == '{') {
+                int end = pattern.indexOf('}', pos);
+                if (end < 0) {
+                    return unit;
+                }
+                String spec = pattern.substring(pos + 1, end);
+                pos = end + 1;
+                int min, max;
+                int comma = spec.indexOf(',');
+                if (comma < 0) {
+                    // {n} — exact
+                    try {
+                        min = max = Integer.parseInt(spec.trim());
+                    } catch (NumberFormatException e) {
+                        return unit;
+                    }
+                } else {
+                    String minStr = spec.substring(0, comma).trim();
+                    String maxStr = spec.substring(comma + 1).trim();
+                    try {
+                        min = minStr.isEmpty() ? 0 : Integer.parseInt(minStr);
+                        max = maxStr.isEmpty() ? min + 3 : Integer.parseInt(maxStr);
+                    } catch (NumberFormatException e) {
+                        return unit;
+                    }
+                }
+                if (max < min) {
+                    max = min;
+                }
+                // Cap to avoid runaway generation.
+                if (max > 32) {
+                    max = 32;
+                }
+                int count = min + (max > min ? random.nextInt(max - min + 1) : 0);
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < count; i++) {
+                    sb.append(unit);
+                }
+                return sb.toString();
+            }
+            return unit;
+        }
+
+        private String resolveEscape(char escaped) {
+            switch (escaped) {
+                case 'd':
+                    return String.valueOf(random.nextInt(10));
+                case 'D':
+                    return String.valueOf((char) ('A' + random.nextInt(26)));
+                case 'w':
+                    String w = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
+                    return String.valueOf(w.charAt(random.nextInt(w.length())));
+                case 's':
+                    return " ";
+                case 'n':
+                    return "\n";
+                case 't':
+                    return "\t";
+                case 'r':
+                    return "\r";
+                default:
+                    return String.valueOf(escaped);
+            }
+        }
+
+        private String randomAlpha(int len) {
+            String alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < len; i++) {
+                sb.append(alpha.charAt(random.nextInt(alpha.length())));
+            }
+            return sb.toString();
+        }
     }
 }

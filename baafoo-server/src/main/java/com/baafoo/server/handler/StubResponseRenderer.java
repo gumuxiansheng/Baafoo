@@ -1,6 +1,7 @@
 package com.baafoo.server.handler;
 
 import com.baafoo.core.model.ResponseEntry;
+import com.baafoo.core.model.Rule;
 import com.baafoo.core.util.TemplateEngine;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFutureListener;
@@ -34,6 +35,20 @@ public class StubResponseRenderer {
                                          String method, String path, String host,
                                          Map<String, String> headers, Map<String, String> queryParams,
                                          String requestBody, String environment) {
+        sendStubResponse(ctx, entry, ruleId, method, path, host, headers, queryParams,
+                requestBody, environment, null);
+    }
+
+    /**
+     * Render and send a stub response, applying the rule's {@code fakerSeed} (if any)
+     * to make Faker output deterministic for that rule.
+     *
+     * @param fakerSeed optional seed from {@link Rule#getFakerSeed()}; null means no seed.
+     */
+    public static void sendStubResponse(ChannelHandlerContext ctx, ResponseEntry entry, String ruleId,
+                                         String method, String path, String host,
+                                         Map<String, String> headers, Map<String, String> queryParams,
+                                         String requestBody, String environment, Long fakerSeed) {
         try {
             int statusCode = entry.getStatusCode();
             String rawBody = entry.getBody() != null ? entry.getBody() : "";
@@ -43,7 +58,7 @@ public class StubResponseRenderer {
             if (rawBody.contains("{{")) {
                 TemplateEngine.RequestContext templateCtx = new TemplateEngine.RequestContext(
                         method, path, host, headers, queryParams, requestBody, environment);
-                responseBody = TemplateEngine.render(rawBody, templateCtx);
+                responseBody = TemplateEngine.render(rawBody, templateCtx, fakerSeed);
             }
             HttpResponseStatus status = HttpResponseStatus.valueOf(statusCode);
 
