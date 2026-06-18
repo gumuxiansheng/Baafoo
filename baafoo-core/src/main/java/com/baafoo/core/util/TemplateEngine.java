@@ -125,6 +125,11 @@ public class TemplateEngine {
             return nullToEmpty(context != null ? context.getEnvironment() : null);
         }
 
+        // requestCount — per-rule request counter (stateful Mock, PRD §3)
+        if ("requestCount".equals(expression)) {
+            return context != null ? String.valueOf(context.getRequestCount()) : "0";
+        }
+
         // Unknown prefix — return as-is
         log.debug("Unknown template variable: {}", expression);
         return "{{" + expression + "}}";
@@ -205,6 +210,7 @@ public class TemplateEngine {
         private Map<String, String> queryParams;
         private String body;
         private String environment;
+        private int requestCount;
 
         public RequestContext() {
         }
@@ -252,5 +258,14 @@ public class TemplateEngine {
 
         public String getEnvironment() { return environment; }
         public void setEnvironment(String environment) { this.environment = environment; }
+
+        /**
+         * Get the per-rule request count (1-based) for {@code {{requestCount}}}
+         * template variable substitution (PRD §3 R-S2 AC-13).
+         *
+         * @return the request count, or 0 if not set
+         */
+        public int getRequestCount() { return requestCount; }
+        public void setRequestCount(int requestCount) { this.requestCount = requestCount; }
     }
 }

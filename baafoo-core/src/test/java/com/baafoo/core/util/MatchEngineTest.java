@@ -3,6 +3,7 @@ package com.baafoo.core.util;
 import com.baafoo.core.model.MatchCondition;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.model.Rule;
+import org.junit.Before;
 import org.junit.Test;
 
 import java.util.*;
@@ -12,6 +13,12 @@ import static org.junit.Assert.*;
 public class MatchEngineTest {
 
     private final MatchEngine engine = new MatchEngine();
+
+    @Before
+    public void setUp() {
+        // Reset the global counter store before each test to ensure isolation
+        StatefulCounterStore.global().resetAll();
+    }
 
     @Test
     public void testNoMatchWhenRulesNull() {
@@ -626,6 +633,332 @@ public class MatchEngineTest {
                 Collections.singletonList(r), "kafka", null, 0, "order-events", null, "order-events",
                 Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
         assertTrue(result.isMatched());
+    }
+
+    // ===== Stateful Mock tests (PRD §3 R-S2 AC-13) =====
+
+    @Test
+    public void testRequestCountLessThan() {
+        // PRD example: first 2 requests return "pending", 3rd onwards returns "paid"
+        Rule r = createSimpleRule("stateful-order");
+        ResponseEntry pendingResp = new ResponseEntry();
+        pendingResp.setBody("pending");
+        pendingResp.setName("pending");
+        pendingResp.setCondition(MatchCondition.requestCount("lessThan", "3"));
+
+        ResponseEntry paidResp = new ResponseEntry();
+        paidResp.setBody("paid");
+        paidResp.setName("paid");
+
+        r.setResponses(Arrays.asList(pendingResp, paidResp));
+
+        // Request 1: count=1, lessThan 3 → pending
+        MatchEngine.MatchResult result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/order",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertTrue(result.isMatched());
+        assertEquals("pending", result.getResponse().getBody());
+        assertEquals(1, result.getRequestCount());
+
+        // Request 2: count=2, lessThan 3 → pending
+        result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/order",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertTrue(result.isMatched());
+        assertEquals("pending", result.getResponse().getBody());
+        assertEquals(2, result.getRequestCount());
+
+        // Request 3: count=3, lessThan 3 → false → default "paid"
+        result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/order",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertTrue(result.isMatched());
+        assertEquals("paid", result.getResponse().getBody());
+        assertEquals(3, result.getRequestCount());
+    }
+
+    @Test
+    public void testRequestCountEquals() {
+        Rule r = createSimpleRule("stateful-equals");
+        ResponseEntry specialResp = new ResponseEntry();
+        specialResp.setBody("special");
+        specialResp.setName("special");
+        specialResp.setCondition(MatchCondition.requestCount("equals", "2"));
+
+        ResponseEntry defaultResp = new ResponseEntry();
+        defaultResp.setBody("default");
+        defaultResp.setName("default");
+
+        r.setResponses(Arrays.asList(specialResp, defaultResp));
+
+        // Request 1: count=1, equals 2 → false → default
+        MatchEngine.MatchResult result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertEquals("default", result.getResponse().getBody());
+
+        // Request 2: count=2, equals 2 → true → special
+        result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertEquals("special", result.getResponse().getBody());
+
+        // Request 3: count=3, equals 2 → false → default
+        result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertEquals("default", result.getResponse().getBody());
+    }
+
+    @Test
+    public void testRequestCountGreaterThan() {
+        Rule r = createSimpleRule("stateful-gt");
+        ResponseEntry afterResp = new ResponseEntry();
+        afterResp.setBody("after");
+        afterResp.setName("after");
+        afterResp.setCondition(MatchCondition.requestCount("greaterThan", "2"));
+
+        ResponseEntry beforeResp = new ResponseEntry();
+        beforeResp.setBody("before");
+        beforeResp.setName("before");
+
+        r.setResponses(Arrays.asList(afterResp, beforeResp));
+
+        // Requests 1, 2: count ≤ 2 → before
+        for (int i = 0; i < 2; i++) {
+            MatchEngine.MatchResult result = engine.match(
+                    Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                    Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+            assertEquals("before", result.getResponse().getBody());
+        }
+
+        // Request 3: count=3 > 2 → after
+        MatchEngine.MatchResult result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertEquals("after", result.getResponse().getBody());
+    }
+
+    @Test
+    public void testRequestCountRange() {
+        Rule r = createSimpleRule("stateful-range");
+        ResponseEntry midResp = new ResponseEntry();
+        midResp.setBody("mid");
+        midResp.setName("mid");
+        midResp.setCondition(MatchCondition.requestCount("range", "[2,4]"));
+
+        ResponseEntry defaultResp = new ResponseEntry();
+        defaultResp.setBody("default");
+        defaultResp.setName("default");
+
+        r.setResponses(Arrays.asList(midResp, defaultResp));
+
+        // Request 1: count=1, not in [2,4] → default
+        MatchEngine.MatchResult result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertEquals("default", result.getResponse().getBody());
+
+        // Requests 2-4: in [2,4] → mid
+        for (int i = 0; i < 3; i++) {
+            result = engine.match(
+                    Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                    Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+            assertEquals("mid", result.getResponse().getBody());
+        }
+
+        // Request 5: count=5, not in [2,4] → default
+        result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertEquals("default", result.getResponse().getBody());
+    }
+
+    @Test
+    public void testRequestCountMod() {
+        // Every 3rd request triggers special response
+        Rule r = createSimpleRule("stateful-mod");
+        ResponseEntry specialResp = new ResponseEntry();
+        specialResp.setBody("every-third");
+        specialResp.setName("every-third");
+        specialResp.setCondition(MatchCondition.requestCount("mod", "0", "3"));
+
+        ResponseEntry defaultResp = new ResponseEntry();
+        defaultResp.setBody("normal");
+        defaultResp.setName("normal");
+
+        r.setResponses(Arrays.asList(specialResp, defaultResp));
+
+        // Requests 1, 2: count%3 != 0 → normal
+        for (int i = 0; i < 2; i++) {
+            MatchEngine.MatchResult result = engine.match(
+                    Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                    Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+            assertEquals("normal", result.getResponse().getBody());
+        }
+
+        // Request 3: count=3, 3%3=0 → every-third
+        MatchEngine.MatchResult result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertEquals("every-third", result.getResponse().getBody());
+
+        // Requests 4, 5: normal
+        for (int i = 0; i < 2; i++) {
+            result = engine.match(
+                    Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                    Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+            assertEquals("normal", result.getResponse().getBody());
+        }
+
+        // Request 6: count=6, 6%3=0 → every-third
+        result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertEquals("every-third", result.getResponse().getBody());
+    }
+
+    @Test
+    public void testRequestCountResetThreshold() {
+        // requestCountReset=3: counter resets after count reaches 3
+        Rule r = createSimpleRule("stateful-reset");
+        r.setRequestCountReset(3);
+
+        ResponseEntry firstResp = new ResponseEntry();
+        firstResp.setBody("first");
+        firstResp.setName("first");
+        firstResp.setCondition(MatchCondition.requestCount("equals", "1"));
+
+        ResponseEntry otherResp = new ResponseEntry();
+        otherResp.setBody("other");
+        otherResp.setName("other");
+
+        r.setResponses(Arrays.asList(firstResp, otherResp));
+
+        // Request 1: count=1 → first
+        MatchEngine.MatchResult result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertEquals("first", result.getResponse().getBody());
+
+        // Request 2: count=2 → other
+        result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertEquals("other", result.getResponse().getBody());
+
+        // Request 3: count=3 → other, then counter resets
+        result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertEquals("other", result.getResponse().getBody());
+
+        // Request 4: count=1 again (reset) → first
+        result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertEquals("first", result.getResponse().getBody());
+    }
+
+    @Test
+    public void testRequestCountManualReset() {
+        Rule r = createSimpleRule("stateful-manual-reset");
+        ResponseEntry firstResp = new ResponseEntry();
+        firstResp.setBody("first");
+        firstResp.setName("first");
+        firstResp.setCondition(MatchCondition.requestCount("equals", "1"));
+
+        ResponseEntry otherResp = new ResponseEntry();
+        otherResp.setBody("other");
+        otherResp.setName("other");
+
+        r.setResponses(Arrays.asList(firstResp, otherResp));
+
+        // Request 1: count=1 → first
+        MatchEngine.MatchResult result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertEquals("first", result.getResponse().getBody());
+
+        // Request 2: count=2 → other
+        result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertEquals("other", result.getResponse().getBody());
+
+        // Manual reset
+        StatefulCounterStore.global().reset("stateful-manual-reset");
+
+        // Request 3: count=1 again → first
+        result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertEquals("first", result.getResponse().getBody());
+    }
+
+    @Test
+    public void testRequestCountWithNoConditions() {
+        // Rule with no rule-level conditions still increments counter
+        Rule r = createSimpleRule("stateful-no-cond");
+        ResponseEntry firstResp = new ResponseEntry();
+        firstResp.setBody("first");
+        firstResp.setName("first");
+        firstResp.setCondition(MatchCondition.requestCount("equals", "1"));
+
+        ResponseEntry otherResp = new ResponseEntry();
+        otherResp.setBody("other");
+        otherResp.setName("other");
+
+        r.setResponses(Arrays.asList(firstResp, otherResp));
+        // No rule-level conditions set
+
+        MatchEngine.MatchResult result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertTrue(result.isMatched());
+        assertEquals(1, result.getRequestCount());
+        assertEquals("first", result.getResponse().getBody());
+    }
+
+    @Test
+    public void testRequestCountInvalidValue() {
+        Rule r = createSimpleRule("stateful-invalid");
+        ResponseEntry resp = new ResponseEntry();
+        resp.setBody("resp");
+        resp.setName("resp");
+        resp.setCondition(MatchCondition.requestCount("equals", "not-a-number"));
+
+        r.setResponses(Arrays.asList(resp));
+
+        // Invalid number → condition fails → falls through to default (first entry)
+        MatchEngine.MatchResult result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertTrue(result.isMatched());
+        // The conditioned entry didn't match, so it falls through to entry 0 (the same entry)
+        assertEquals("resp", result.getResponse().getBody());
+    }
+
+    @Test
+    public void testRequestCountUnknownOperator() {
+        Rule r = createSimpleRule("stateful-unknown-op");
+        ResponseEntry condResp = new ResponseEntry();
+        condResp.setBody("cond");
+        condResp.setName("cond");
+        condResp.setCondition(MatchCondition.requestCount("unknownOp", "1"));
+
+        ResponseEntry defaultResp = new ResponseEntry();
+        defaultResp.setBody("default");
+        defaultResp.setName("default");
+
+        r.setResponses(Arrays.asList(condResp, defaultResp));
+
+        MatchEngine.MatchResult result = engine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertTrue(result.isMatched());
+        // Unknown operator → condition fails → default
+        assertEquals("default", result.getResponse().getBody());
     }
 
     private static Rule createSimpleRule(String id) {

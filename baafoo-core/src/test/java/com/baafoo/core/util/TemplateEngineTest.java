@@ -344,4 +344,34 @@ public class TemplateEngineTest {
         assertTrue(result.startsWith("Price: $100, ID: "));
         assertTrue(result.length() > 20);
     }
+
+    @Test
+    public void testRequestCountTemplateVariable() {
+        // {{requestCount}} substitutes the per-rule request count (PRD §3)
+        String template = "{\"count\": {{requestCount}}}";
+        TemplateEngine.RequestContext ctx = new TemplateEngine.RequestContext();
+        ctx.setRequestCount(5);
+        String result = TemplateEngine.render(template, ctx);
+        assertEquals("{\"count\": 5}", result);
+    }
+
+    @Test
+    public void testRequestCountDefaultZero() {
+        String template = "count={{requestCount}}";
+        TemplateEngine.RequestContext ctx = new TemplateEngine.RequestContext();
+        // requestCount not set → defaults to 0
+        String result = TemplateEngine.render(template, ctx);
+        assertEquals("count=0", result);
+    }
+
+    @Test
+    public void testRequestCountWithFakerCombo() {
+        // requestCount can be combined with faker variables
+        String template = "{\"seq\": {{requestCount}}, \"name\": \"{{faker.name}}\"}";
+        TemplateEngine.RequestContext ctx = new TemplateEngine.RequestContext();
+        ctx.setRequestCount(3);
+        String result = TemplateEngine.render(template, ctx);
+        assertTrue(result.contains("\"seq\": 3"));
+        assertTrue(result.contains("\"name\": \""));
+    }
 }

@@ -70,7 +70,8 @@ public class MatchEngine {
             int responseIdx = matchConditions(rule, method, path, headers, queryParams, body);
             if (responseIdx >= 0) {
                 log.debug("Rule matched: {} (name={})", rule.getId(), rule.getName());
-                return new MatchResult(rule, responseIdx);
+                int count = StatefulCounterStore.global().get(rule.getId());
+                return new MatchResult(rule, responseIdx, count);
             }
         }
 
@@ -118,25 +119,51 @@ public class MatchEngine {
                                  String body) {
 
         List<MatchCondition> conditions = rule.getConditions();
-        if (conditions == null || conditions.isEmpty()) {
-            // No conditions = match all, return first response
-            return 0;
-        }
 
-        // Check if all rule-level conditions match
-        boolean allMatch = true;
-        for (MatchCondition cond : conditions) {
-            if (!matchSingleCondition(cond, method, path, headers, queryParams, body)) {
-                allMatch = false;
-                break;
+        // Check if all rule-level conditions match.
+        // requestCount at rule level uses the pre-increment count (0 on first request).
+        if (conditions != null && !conditions.isEmpty()) {
+            for (MatchCondition cond : conditions) {
+                if (!matchSingleCondition(cond, method, path, headers, queryParams, body, 0)) {
+                    return -1;
+                }
             }
         }
 
-        if (!allMatch) {
-            return -1;
+        // Rule matched (or has no rule-level conditions) — increment per-rule
+        // counter (1-based). This happens AFTER rule-level conditions pass but
+        // BEFORE response entry evaluation, so requestCount conditions in
+        // response entries see the incremented count.
+        int count = StatefulCounterStore.global().incrementAndGet(rule.getId());
+
+        // Select response entry, evaluating requestCount conditions with the
+        // incremented count.
+        int responseIdx = selectResponseEntry(rule, method, path, headers, queryParams, body, count);
+
+        // Auto-reset counter if requestCountReset threshold is reached.
+        // This happens AFTER the response is selected, so the current request
+        // still uses the threshold-reaching count.
+        Integer resetThreshold = rule.getRequestCountReset();
+        if (resetThreshold != null && resetThreshold > 0) {
+            StatefulCounterStore.global().resetIfThreshold(rule.getId(), resetThreshold);
         }
 
-        // Determine which response entry to use (for parameterized rules)
+        return responseIdx;
+    }
+
+    /**
+     * Select the response entry index by evaluating per-entry conditions.
+     *
+     * <p>Per AC-03: entries with conditions are evaluated in declaration order;
+     * the first match wins. If no conditioned entry matches, the first
+     * unconditional entry (or entry 0) is used as default.</p>
+     *
+     * @param count the current request count (1-based) for requestCount conditions
+     */
+    private int selectResponseEntry(Rule rule, String method, String path,
+                                     Map<String, String> headers, Map<String, String> queryParams,
+                                     String body, int count) {
+
         List<ResponseEntry> responses = rule.getResponses();
         if (responses == null || responses.isEmpty()) {
             return 0;
@@ -149,7 +176,7 @@ public class MatchEngine {
                 // No condition = default response
                 return i;
             }
-            if (matchSingleCondition(entryCond, method, path, headers, queryParams, body)) {
+            if (matchSingleCondition(entryCond, method, path, headers, queryParams, body, count)) {
                 return i;
             }
         }
@@ -160,7 +187,7 @@ public class MatchEngine {
 
     private boolean matchSingleCondition(MatchCondition cond, String method, String path,
                                           Map<String, String> headers, Map<String, String> queryParams,
-                                          String body) {
+                                          String body, int requestCount) {
 
         if (cond == null || cond.getType() == null) {
             return true;
@@ -252,6 +279,17 @@ public class MatchEngine {
                     if ("exists".equals(operator)) return true;
                     return applyOperator(opType, operator, cond.getValue(), cond.isCaseSensitive());
 
+                case "requestCount":
+                    // Stateful Mock (PRD §3 R-S2 AC-13): match based on the
+                    // per-rule request counter. The count is 1-based (first
+                    // request = 1). Supported operators:
+                    //   equals       — count == value
+                    //   greaterThan  — count > value
+                    //   lessThan     — count < value
+                    //   range        — value is "[min,max]" (inclusive)
+                    //   mod          — count % key == value (periodic trigger)
+                    return matchRequestCount(requestCount, operator, cond.getValue(), cond.getKey());
+
                 default:
                     log.warn("Unknown condition type: {}", cond.getType());
                     return false;
@@ -332,6 +370,74 @@ public class MatchEngine {
         return "query";
     }
 
+    /**
+     * Evaluate a {@code requestCount} condition (PRD §3 R-S2 AC-13).
+     *
+     * <p>Supported operators:
+     * <ul>
+     *   <li>{@code equals} — count equals the integer value</li>
+     *   <li>{@code greaterThan} — count is strictly greater than value</li>
+     *   <li>{@code lessThan} — count is strictly less than value</li>
+     *   <li>{@code range} — value is {@code "[min,max]"} (inclusive on both ends)</li>
+     *   <li>{@code mod} — {@code count % divisor == remainder}, where
+     *       {@code key} is the divisor and {@code value} is the remainder.
+     *       Example: {@code key=3, value=0} triggers every 3rd request.</li>
+     * </ul>
+     * </p>
+     *
+     * @param count     the current request count (1-based)
+     * @param operator  the comparison operator
+     * @param value     the expected value (or range string, or remainder for mod)
+     * @param key       the divisor for {@code mod} operator (ignored otherwise)
+     * @return true if the count matches the condition
+     */
+    private boolean matchRequestCount(int count, String operator, String value, String key) {
+        if (value == null) {
+            return false;
+        }
+        try {
+            switch (operator) {
+                case "equals":
+                    return count == Integer.parseInt(value.trim());
+
+                case "greaterThan":
+                    return count > Integer.parseInt(value.trim());
+
+                case "lessThan":
+                    return count < Integer.parseInt(value.trim());
+
+                case "range": {
+                    // value format: "[min,max]" or "min,max"
+                    String rangeStr = value.trim();
+                    if (rangeStr.startsWith("[")) rangeStr = rangeStr.substring(1);
+                    if (rangeStr.endsWith("]")) rangeStr = rangeStr.substring(0, rangeStr.length() - 1);
+                    String[] parts = rangeStr.split(",");
+                    if (parts.length != 2) return false;
+                    int min = Integer.parseInt(parts[0].trim());
+                    int max = Integer.parseInt(parts[1].trim());
+                    return count >= min && count <= max;
+                }
+
+                case "mod": {
+                    // key = divisor, value = expected remainder
+                    if (key == null) return false;
+                    int divisor = Integer.parseInt(key.trim());
+                    if (divisor <= 0) return false;
+                    int remainder = Integer.parseInt(value.trim());
+                    return count % divisor == remainder;
+                }
+
+                default:
+                    log.warn("Unknown operator for requestCount: {}", operator);
+                    return false;
+            }
+        } catch (NumberFormatException e) {
+            log.warn("Invalid numeric value for requestCount condition: operator={}, value={}, key={}",
+                    operator, value, key);
+            return false;
+        }
+    }
+
     private boolean applyOperator(String actual, String operator, String expected, boolean caseSensitive) {
         if (actual == null) return "exists".equals(operator) ? false : false;
 
@@ -387,14 +493,20 @@ public class MatchEngine {
      */
     public static class MatchResult {
 
-        public static final MatchResult NO_MATCH = new MatchResult(null, -1);
+        public static final MatchResult NO_MATCH = new MatchResult(null, -1, 0);
 
         private final Rule rule;
         private final int responseIndex;
+        private final int requestCount;
 
         public MatchResult(Rule rule, int responseIndex) {
+            this(rule, responseIndex, 0);
+        }
+
+        public MatchResult(Rule rule, int responseIndex, int requestCount) {
             this.rule = rule;
             this.responseIndex = responseIndex;
+            this.requestCount = requestCount;
         }
 
         public boolean isMatched() { return rule != null; }
@@ -402,6 +514,16 @@ public class MatchEngine {
         public Rule getRule() { return rule; }
 
         public int getResponseIndex() { return responseIndex; }
+
+        /**
+         * Get the request count (1-based) at the time this rule matched.
+         *
+         * <p>Used for {@code {{requestCount}}} template variable substitution
+         * in response bodies (PRD §3 R-S2 AC-13 example).</p>
+         *
+         * @return the request count, or 0 if no counter was incremented
+         */
+        public int getRequestCount() { return requestCount; }
 
         public ResponseEntry getResponse() {
             if (rule == null || rule.getResponses() == null || rule.getResponses().isEmpty()) {

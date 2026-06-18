@@ -140,7 +140,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                 }
                 StubResponseRenderer.sendStubResponse(ctx, result.getResponse(), result.getRule().getId(),
                         method, path, host, headers, queryParams, body, agentEnvironment,
-                        result.getRule().getFakerSeed());
+                        result.getRule().getFakerSeed(), result.getRequestCount());
             }
         } else {
             String unmatchedDefault = config.getUnmatchedDefault();

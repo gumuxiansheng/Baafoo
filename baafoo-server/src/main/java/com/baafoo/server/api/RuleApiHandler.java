@@ -3,6 +3,7 @@ package com.baafoo.server.api;
 import com.baafoo.core.api.ApiResponse;
 import com.baafoo.core.api.PaginatedResult;
 import com.baafoo.core.model.*;
+import com.baafoo.core.util.StatefulCounterStore;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -41,6 +42,20 @@ class RuleApiHandler implements ResourceHandler {
                 Rule rule = ctx.mapper.readValue(body, Rule.class);
                 return ApiResponse.created(ctx.storage.createRule(rule));
             }
+        }
+
+        // Stateful Mock counter reset (PRD §3 R-S2 AC-04)
+        if (path.equals(API_PREFIX + "rules/reset-all-state") && "POST".equals(method)) {
+            ctx.requirePermission("rule", "update");
+            StatefulCounterStore.global().resetAll();
+            return ApiResponse.ok("All rule counters reset", null);
+        }
+
+        if (path.startsWith(API_PREFIX + "rules/") && path.endsWith("/reset-state") && "POST".equals(method)) {
+            String id = ApiUtils.extractId(path, API_PREFIX + "rules/", "/reset-state");
+            ctx.requirePermission("rule", "update");
+            StatefulCounterStore.global().reset(id);
+            return ApiResponse.ok("Rule counter reset", null);
         }
 
         if (path.startsWith(API_PREFIX + "rules/") && path.contains("/undo")) {

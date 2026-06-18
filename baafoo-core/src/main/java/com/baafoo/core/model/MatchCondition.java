@@ -150,6 +150,43 @@ public class MatchCondition {
         return c;
     }
 
+    /**
+     * Factory for a {@code requestCount} match condition (stateful Mock,
+     * PRD §3 R-S2 AC-13).
+     * <p>
+     * Matches based on the per-rule request counter (1-based). Supported
+     * operators: {@code equals}, {@code greaterThan}, {@code lessThan},
+     * {@code range} (value is {@code "[min,max]"}), {@code mod}
+     * (key is divisor, value is expected remainder).
+     *
+     * @param operator the comparison operator
+     * @param value    the expected value (or range string, or remainder for mod)
+     */
+    public static MatchCondition requestCount(String operator, String value) {
+        MatchCondition c = new MatchCondition();
+        c.type = "requestCount";
+        c.operator = operator;
+        c.value = value;
+        return c;
+    }
+
+    /**
+     * Factory for a {@code requestCount} match condition with a key field
+     * (used for the {@code mod} operator where key is the divisor).
+     *
+     * @param operator the comparison operator
+     * @param value    the expected value (or remainder for mod)
+     * @param key      the divisor for {@code mod} operator (null for other operators)
+     */
+    public static MatchCondition requestCount(String operator, String value, String key) {
+        MatchCondition c = new MatchCondition();
+        c.type = "requestCount";
+        c.operator = operator;
+        c.value = value;
+        c.key = key;
+        return c;
+    }
+
     // --- Getters / Setters ---
 
     public String getType() { return type; }

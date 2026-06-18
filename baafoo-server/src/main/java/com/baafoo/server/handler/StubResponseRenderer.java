@@ -36,7 +36,7 @@ public class StubResponseRenderer {
                                          Map<String, String> headers, Map<String, String> queryParams,
                                          String requestBody, String environment) {
         sendStubResponse(ctx, entry, ruleId, method, path, host, headers, queryParams,
-                requestBody, environment, null);
+                requestBody, environment, null, 0);
     }
 
     /**
@@ -49,15 +49,32 @@ public class StubResponseRenderer {
                                          String method, String path, String host,
                                          Map<String, String> headers, Map<String, String> queryParams,
                                          String requestBody, String environment, Long fakerSeed) {
+        sendStubResponse(ctx, entry, ruleId, method, path, host, headers, queryParams,
+                requestBody, environment, fakerSeed, 0);
+    }
+
+    /**
+     * Render and send a stub response with full context.
+     *
+     * @param fakerSeed     optional seed from {@link Rule#getFakerSeed()}; null means no seed.
+     * @param requestCount  per-rule request count (1-based) for {@code {{requestCount}}}
+     *                      template variable substitution (PRD §3 R-S2 AC-13).
+     */
+    public static void sendStubResponse(ChannelHandlerContext ctx, ResponseEntry entry, String ruleId,
+                                         String method, String path, String host,
+                                         Map<String, String> headers, Map<String, String> queryParams,
+                                         String requestBody, String environment, Long fakerSeed,
+                                         int requestCount) {
         try {
             int statusCode = entry.getStatusCode();
             String rawBody = entry.getBody() != null ? entry.getBody() : "";
 
-            // Render template variables ({{request.*}}, {{faker.*}})
+            // Render template variables ({{request.*}}, {{faker.*}}, {{requestCount}})
             String responseBody = rawBody;
             if (rawBody.contains("{{")) {
                 TemplateEngine.RequestContext templateCtx = new TemplateEngine.RequestContext(
                         method, path, host, headers, queryParams, requestBody, environment);
+                templateCtx.setRequestCount(requestCount);
                 responseBody = TemplateEngine.render(rawBody, templateCtx, fakerSeed);
             }
             HttpResponseStatus status = HttpResponseStatus.valueOf(statusCode);
