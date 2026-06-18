@@ -127,4 +127,87 @@ class RuleApiHandler implements ResourceHandler {
 
         return null;
     }
+
+    /**
+     * Handle OpenAPI spec import (PRD §1 R-S10).
+     *
+     * <p>Parses the OpenAPI 3.0 JSON spec, generates rule skeletons, and
+     * optionally saves them. Returns a preview with statistics.</p>
+     *
+     * <p>Query parameters:
+     * <ul>
+     *   <li>{@code environment} — comma-separated environment IDs (default: empty)</li>
+     *   <li>{@code save} — {@code true} to persist rules (default: {@code false}, preview only)</li>
+     *   <li>{@code prefix} — rule ID prefix (default: {@code openapi-})</li>
+     * </ul>
+     * </p>
+     */
+    private Object handleOpenApiImport(String body, ApiContext ctx) throws Exception {
+        // Parse query parameters
+        String envParam = ctx.queryParam("environment");
+        List<String> environments = new ArrayList<String>();
+        if (envParam != null && !envParam.trim().isEmpty()) {
+            for (String env : envParam.split(",")) {
+                String trimmed = env.trim();
+                if (!trimmed.isEmpty()) {
+                    environments.add(trimmed);
+                }
+            }
+        }
+
+        String saveParam = ctx.queryParam("save");
+        boolean save = "true".equalsIgnoreCase(saveParam);
+
+        String prefix = ctx.queryParam("prefix");
+        if (prefix == null || prefix.trim().isEmpty()) {
+            prefix = "openapi-";
+        }
+
+        // Import the spec
+        OpenApiImporter importer = new OpenApiImporter();
+        OpenApiImporter.OpenApiImportResult importResult;
+        try {
+            importResult = importer.importSpec(body, prefix, environments);
+        } catch (OpenApiImporter.OpenApiImportException e) {
+            return ApiResponse.badRequest("OpenAPI import failed: " + e.getMessage());
+        }
+
+        // Build response with stats
+        Map<String, Object> resultData = new HashMap<String, Object>();
+        resultData.put("rules", importResult.getRules());
+        resultData.put("generatedCount", importResult.getGeneratedCount());
+        resultData.put("skippedCount", importResult.getSkippedCount());
+        resultData.put("warnings", importResult.getWarnings());
+
+        if (save) {
+            // Persist rules, detecting conflicts by rule ID (AC-05: path+method is the
+            // stable key, encoded in the rule ID)
+            int savedCount = 0;
+            int conflictCount = 0;
+            List<String> savedIds = new ArrayList<String>();
+            for (Rule rule : importResult.getRules()) {
+                Rule existing = ctx.storage.getRule(rule.getId());
+                if (existing != null) {
+                    conflictCount++;
+                    ctx.storage.updateRule(rule.getId(), rule);
+                } else {
+                    ctx.storage.createRule(rule);
+                }
+                savedCount++;
+                savedIds.add(rule.getId());
+            }
+            resultData.put("savedCount", savedCount);
+            resultData.put("conflictCount", conflictCount);
+            resultData.put("savedIds", savedIds);
+            resultData.put("summary", String.format(
+                    "Imported %d rules (%d conflicts overwritten), skipped %d paths",
+                    savedCount, conflictCount, importResult.getSkippedCount()));
+        } else {
+            resultData.put("conflictCount", 0);
+            resultData.put("summary", importResult.getSummary()
+                    + " (preview only — pass ?save=true to persist)");
+        }
+
+        return ApiResponse.ok(resultData);
+    }
 }
