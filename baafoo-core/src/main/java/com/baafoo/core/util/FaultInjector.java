@@ -21,6 +21,14 @@ import java.util.Random;
  * </ul>
  * </p>
  *
+ * <p>Phase 2 adds:
+ * <ul>
+ *   <li>{@code CONNECTION_RESET} — close the connection abruptly (RST) before
+ *       sending a response</li>
+ *   <li>{@code READ_TIMEOUT} — never respond, let the client time out</li>
+ * </ul>
+ * </p>
+ *
  * <p>Thread-safety: stateless, safe for concurrent use. The caller provides the
  * {@link Random} instance, allowing deterministic testing with a seeded random.</p>
  */
@@ -67,8 +75,19 @@ public final class FaultInjector {
             long delay = Math.max(0, fault.getDelayMs());
             return FaultResult.delay(delay, fault);
         }
+        if ("CONNECTION_RESET".equals(type)) {
+            // Phase 2: close the connection abruptly (RST) before responding.
+            // The handler is responsible for calling ctx.close() or setting
+            // SO_LINGER=0 to send a TCP RST. No response body is sent.
+            return FaultResult.connectionReset(fault);
+        }
+        if ("READ_TIMEOUT".equals(type)) {
+            // Phase 2: never respond. The handler simply does nothing, letting
+            // the client's read timeout fire. No response, no close.
+            return FaultResult.readTimeout(fault);
+        }
         // Unknown fault type — log and treat as no fault so the normal flow proceeds.
-        // (Phase 2 will add CONNECTION_RESET and READ_TIMEOUT here.)
+        // (Phase 3 will add Kafka/Pulsar protocol-specific faults here.)
         return FaultResult.noFault();
     }
 
@@ -86,11 +105,13 @@ public final class FaultInjector {
     /**
      * Result of fault evaluation.
      *
-     * <p>One of three outcomes:
+     * <p>One of five outcomes:
      * <ul>
      *   <li>{@link Action#NO_FAULT} — proceed with normal response</li>
      *   <li>{@link Action#HTTP_ERROR} — return an error response with {@link #statusCode}</li>
      *   <li>{@link Action#DELAY} — delay the normal response by {@link #delayMs}</li>
+     *   <li>{@link Action#CONNECTION_RESET} — close the connection abruptly (Phase 2)</li>
+     *   <li>{@link Action#READ_TIMEOUT} — never respond, let client time out (Phase 2)</li>
      * </ul>
      * </p>
      */
@@ -99,7 +120,9 @@ public final class FaultInjector {
         public enum Action {
             NO_FAULT,
             HTTP_ERROR,
-            DELAY
+            DELAY,
+            CONNECTION_RESET,
+            READ_TIMEOUT
         }
 
         private final Action action;
@@ -126,6 +149,14 @@ public final class FaultInjector {
             return new FaultResult(Action.DELAY, 0, delayMs, fault);
         }
 
+        public static FaultResult connectionReset(Fault fault) {
+            return new FaultResult(Action.CONNECTION_RESET, 0, 0, fault);
+        }
+
+        public static FaultResult readTimeout(Fault fault) {
+            return new FaultResult(Action.READ_TIMEOUT, 0, 0, fault);
+        }
+
         public Action getAction() { return action; }
 
         public boolean isNoFault() { return action == Action.NO_FAULT; }
@@ -133,6 +164,10 @@ public final class FaultInjector {
         public boolean isHttpError() { return action == Action.HTTP_ERROR; }
 
         public boolean isDelay() { return action == Action.DELAY; }
+
+        public boolean isConnectionReset() { return action == Action.CONNECTION_RESET; }
+
+        public boolean isReadTimeout() { return action == Action.READ_TIMEOUT; }
 
         /** The HTTP status code to return (only valid when {@link #isHttpError()} is true). */
         public int getStatusCode() { return statusCode; }

@@ -143,10 +143,8 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     storage.addRecording(rec);
                 }
                 // Fault injection evaluation (PRD §4 R-S12).
-                // Evaluate before sending the normal response. If HTTP_ERROR is
-                // triggered, send the error response instead. If DELAY is
-                // triggered, pass the delay to the renderer to schedule the
-                // normal response with the added delay.
+                // Evaluate before sending the normal response. Phase 1 supports
+                // HTTP_ERROR and DELAY; Phase 2 adds CONNECTION_RESET and READ_TIMEOUT.
                 FaultInjection faultConfig = result.getRule().getFaultInjection();
                 FaultInjector.FaultResult faultResult =
                         FaultInjector.evaluate(faultConfig, faultRandom);
@@ -155,6 +153,22 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                             faultResult.getStatusCode(), result.getRule().getId(), method, path);
                     StubResponseRenderer.sendFaultErrorResponse(ctx, faultResult.getStatusCode(),
                             "HTTP_ERROR", result.getRule().getId());
+                } else if (faultResult.isConnectionReset()) {
+                    // Phase 2: close the connection abruptly to simulate a TCP RST.
+                    // ctx.close() sends a FIN by default; for a true RST, the channel
+                    // would need SO_LINGER=0, but ctx.close() is sufficient to abort
+                    // the response from the client's perspective.
+                    log.info("Fault injected: CONNECTION_RESET for rule {} {} {}",
+                            result.getRule().getId(), method, path);
+                    ctx.close();
+                } else if (faultResult.isReadTimeout()) {
+                    // Phase 2: do nothing — let the client's read timeout fire.
+                    // No response is sent, no close is called. The connection
+                    // remains open until the client gives up or the keep-alive
+                    // timeout expires.
+                    log.info("Fault injected: READ_TIMEOUT for rule {} {} {} (no response)",
+                            result.getRule().getId(), method, path);
+                    // Intentionally do nothing
                 } else {
                     long faultDelayMs = faultResult.isDelay() ? faultResult.getDelayMs() : 0;
                     if (faultDelayMs > 0) {

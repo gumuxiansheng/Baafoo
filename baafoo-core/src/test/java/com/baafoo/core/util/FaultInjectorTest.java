@@ -337,6 +337,183 @@ public class FaultInjectorTest {
         assertSame(dummy, delay.getTriggeredFault());
     }
 
+    // ===== Phase 2: CONNECTION_RESET + READ_TIMEOUT =====
+
+    @Test
+    public void testConnectionResetAlwaysTriggersWithProbabilityOne() {
+        Fault fault = new Fault();
+        fault.setType("CONNECTION_RESET");
+        fault.setProbability(1.0);
+
+        FaultInjection config = new FaultInjection();
+        config.setFaults(Arrays.asList(fault));
+
+        Random random = new Random(0);
+        for (int i = 0; i < 20; i++) {
+            FaultInjector.FaultResult result = FaultInjector.evaluate(config, random);
+            assertTrue("Iteration " + i + " should trigger CONNECTION_RESET",
+                    result.isConnectionReset());
+            assertNotNull(result.getTriggeredFault());
+            assertEquals("CONNECTION_RESET", result.getTriggeredFault().getType());
+            // No status code or delay for connection reset
+            assertEquals(0, result.getStatusCode());
+            assertEquals(0, result.getDelayMs());
+        }
+    }
+
+    @Test
+    public void testConnectionResetNeverTriggersWithProbabilityZero() {
+        Fault fault = new Fault();
+        fault.setType("CONNECTION_RESET");
+        fault.setProbability(0.0);
+
+        FaultInjection config = new FaultInjection();
+        config.setFaults(Arrays.asList(fault));
+
+        Random random = new Random(0);
+        for (int i = 0; i < 20; i++) {
+            FaultInjector.FaultResult result = FaultInjector.evaluate(config, random);
+            assertTrue(result.isNoFault());
+        }
+    }
+
+    @Test
+    public void testReadTimeoutAlwaysTriggersWithProbabilityOne() {
+        Fault fault = new Fault();
+        fault.setType("READ_TIMEOUT");
+        fault.setProbability(1.0);
+
+        FaultInjection config = new FaultInjection();
+        config.setFaults(Arrays.asList(fault));
+
+        Random random = new Random(0);
+        for (int i = 0; i < 20; i++) {
+            FaultInjector.FaultResult result = FaultInjector.evaluate(config, random);
+            assertTrue("Iteration " + i + " should trigger READ_TIMEOUT",
+                    result.isReadTimeout());
+            assertNotNull(result.getTriggeredFault());
+            assertEquals("READ_TIMEOUT", result.getTriggeredFault().getType());
+            assertEquals(0, result.getStatusCode());
+            assertEquals(0, result.getDelayMs());
+        }
+    }
+
+    @Test
+    public void testReadTimeoutNeverTriggersWithProbabilityZero() {
+        Fault fault = new Fault();
+        fault.setType("READ_TIMEOUT");
+        fault.setProbability(0.0);
+
+        FaultInjection config = new FaultInjection();
+        config.setFaults(Arrays.asList(fault));
+
+        Random random = new Random(0);
+        for (int i = 0; i < 20; i++) {
+            FaultInjector.FaultResult result = FaultInjector.evaluate(config, random);
+            assertTrue(result.isNoFault());
+        }
+    }
+
+    @Test
+    public void testConnectionResetBeforeReadTimeout() {
+        // CONNECTION_RESET (p=1.0) before READ_TIMEOUT (p=1.0) → CONNECTION_RESET wins
+        Fault reset = new Fault();
+        reset.setType("CONNECTION_RESET");
+        reset.setProbability(1.0);
+
+        Fault timeout = new Fault();
+        timeout.setType("READ_TIMEOUT");
+        timeout.setProbability(1.0);
+
+        FaultInjection config = new FaultInjection();
+        config.setFaults(Arrays.asList(reset, timeout));
+
+        FaultInjector.FaultResult result = FaultInjector.evaluate(config, new Random(0));
+        assertTrue(result.isConnectionReset());
+    }
+
+    @Test
+    public void testReadTimeoutWhenConnectionResetMisses() {
+        // CONNECTION_RESET (p=0.0) before READ_TIMEOUT (p=1.0) → READ_TIMEOUT wins
+        Fault reset = new Fault();
+        reset.setType("CONNECTION_RESET");
+        reset.setProbability(0.0);
+
+        Fault timeout = new Fault();
+        timeout.setType("READ_TIMEOUT");
+        timeout.setProbability(1.0);
+
+        FaultInjection config = new FaultInjection();
+        config.setFaults(Arrays.asList(reset, timeout));
+
+        FaultInjector.FaultResult result = FaultInjector.evaluate(config, new Random(0));
+        assertTrue(result.isReadTimeout());
+    }
+
+    @Test
+    public void testAllFourFaultTypesMixed() {
+        // HTTP_ERROR (p=0.0) + DELAY (p=0.0) + CONNECTION_RESET (p=0.0) + READ_TIMEOUT (p=1.0)
+        Fault httpError = new Fault();
+        httpError.setType("HTTP_ERROR");
+        httpError.setProbability(0.0);
+        httpError.setStatusCodes(Arrays.asList(503));
+
+        Fault delay = new Fault();
+        delay.setType("DELAY");
+        delay.setProbability(0.0);
+        delay.setDelayMs(1000);
+
+        Fault reset = new Fault();
+        reset.setType("CONNECTION_RESET");
+        reset.setProbability(0.0);
+
+        Fault timeout = new Fault();
+        timeout.setType("READ_TIMEOUT");
+        timeout.setProbability(1.0);
+
+        FaultInjection config = new FaultInjection();
+        config.setFaults(Arrays.asList(httpError, delay, reset, timeout));
+
+        FaultInjector.FaultResult result = FaultInjector.evaluate(config, new Random(0));
+        assertTrue(result.isReadTimeout());
+    }
+
+    @Test
+    public void testPhase2FaultResultConvenienceMethods() {
+        Fault dummy = new Fault();
+
+        FaultInjector.FaultResult reset = FaultInjector.FaultResult.connectionReset(dummy);
+        assertFalse(reset.isNoFault());
+        assertFalse(reset.isHttpError());
+        assertFalse(reset.isDelay());
+        assertTrue(reset.isConnectionReset());
+        assertFalse(reset.isReadTimeout());
+        assertSame(dummy, reset.getTriggeredFault());
+
+        FaultInjector.FaultResult timeout = FaultInjector.FaultResult.readTimeout(dummy);
+        assertFalse(timeout.isNoFault());
+        assertFalse(timeout.isHttpError());
+        assertFalse(timeout.isDelay());
+        assertFalse(timeout.isConnectionReset());
+        assertTrue(timeout.isReadTimeout());
+        assertSame(dummy, timeout.getTriggeredFault());
+    }
+
+    @Test
+    public void testPhase2ActionEnumValues() {
+        assertEquals(5, FaultInjector.FaultResult.Action.values().length);
+        assertEquals(FaultInjector.FaultResult.Action.NO_FAULT,
+                FaultInjector.FaultResult.noFault().getAction());
+        assertEquals(FaultInjector.FaultResult.Action.HTTP_ERROR,
+                FaultInjector.FaultResult.httpError(503, null).getAction());
+        assertEquals(FaultInjector.FaultResult.Action.DELAY,
+                FaultInjector.FaultResult.delay(100, null).getAction());
+        assertEquals(FaultInjector.FaultResult.Action.CONNECTION_RESET,
+                FaultInjector.FaultResult.connectionReset(null).getAction());
+        assertEquals(FaultInjector.FaultResult.Action.READ_TIMEOUT,
+                FaultInjector.FaultResult.readTimeout(null).getAction());
+    }
+
     // ===== PRD example scenario =====
 
     @Test
