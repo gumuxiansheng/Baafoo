@@ -183,8 +183,18 @@ public class StubResponseRenderer {
             errorMap.put("faultType", faultType);
             errorMap.put("statusCode", statusCode);
             String json = MAPPER.writeValueAsString(errorMap);
+            // Guard against non-standard HTTP status codes that Netty doesn't recognize.
+            // HttpResponseStatus.valueOf() throws IllegalArgumentException for unknown codes,
+            // which would cause the client to receive a connection close instead of any response.
+            HttpResponseStatus faultStatus;
+            try {
+                faultStatus = HttpResponseStatus.valueOf(statusCode);
+            } catch (IllegalArgumentException e) {
+                log.warn("Non-standard fault status code {}, falling back to 500", statusCode);
+                faultStatus = INTERNAL_SERVER_ERROR;
+            }
             FullHttpResponse response = new DefaultFullHttpResponse(
-                    HTTP_1_1, HttpResponseStatus.valueOf(statusCode),
+                    HTTP_1_1, faultStatus,
                     Unpooled.copiedBuffer(json, StandardCharsets.UTF_8));
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json; charset=UTF-8");
             response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());

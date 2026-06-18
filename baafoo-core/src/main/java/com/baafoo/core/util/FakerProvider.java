@@ -685,7 +685,7 @@ public class FakerProvider {
             }
             if (c == '.' && pos + 1 < pattern.length() && pattern.charAt(pos + 1) == '*') {
                 // Avoid runaway generation for ".*" — emit a short random string.
-                pos++;
+                pos += 2; // consume both '.' and '*'
                 return randomAlpha(3);
             }
             if (c == '.') {

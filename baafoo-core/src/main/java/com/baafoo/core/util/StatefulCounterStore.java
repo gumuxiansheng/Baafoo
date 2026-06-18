@@ -108,15 +108,17 @@ public class StatefulCounterStore {
         if (ruleId == null || ruleId.isEmpty() || threshold <= 0) {
             return false;
         }
-        AtomicInteger counter = counters.get(ruleId);
-        if (counter == null) {
-            return false;
-        }
-        if (counter.get() >= threshold) {
-            counters.remove(ruleId);
-            return true;
-        }
-        return false;
+        // Use compute() for atomic read-check-remove to avoid TOCTOU race:
+        // returning null from the BiFunction removes the entry atomically.
+        final boolean[] reset = {false};
+        counters.compute(ruleId, (k, v) -> {
+            if (v != null && v.get() >= threshold) {
+                reset[0] = true;
+                return null; // remove entry
+            }
+            return v;
+        });
+        return reset[0];
     }
 
     /**

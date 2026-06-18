@@ -67,11 +67,12 @@ public class MatchEngine {
             }
 
             // Match all conditions (AND logic)
-            int responseIdx = matchConditions(rule, method, path, headers, queryParams, body);
-            if (responseIdx >= 0) {
+            int[] matchResult = matchConditions(rule, method, path, headers, queryParams, body);
+            if (matchResult != null) {
                 log.debug("Rule matched: {} (name={})", rule.getId(), rule.getName());
-                int count = StatefulCounterStore.global().get(rule.getId());
-                return new MatchResult(rule, responseIdx, count);
+                // Use the count captured at increment time to avoid TOCTOU race
+                // between incrementAndGet() and a separate get() call.
+                return new MatchResult(rule, matchResult[0], matchResult[1]);
             }
         }
 
@@ -110,11 +111,14 @@ public class MatchEngine {
     }
 
     /**
-     * Match conditions and return the response entry index.
+     * Match conditions and return the response entry index along with the
+     * request count captured at increment time.
      *
-     * @return >= 0 if matched (index into responses array), -1 if no match
+     * @return int array [responseIdx, count] if matched, or null if no match.
+     *         Using the captured count avoids a TOCTOU race between
+     *         incrementAndGet() and a separate get() call.
      */
-    private int matchConditions(Rule rule, String method, String path,
+    private int[] matchConditions(Rule rule, String method, String path,
                                  Map<String, String> headers, Map<String, String> queryParams,
                                  String body) {
 
@@ -125,7 +129,7 @@ public class MatchEngine {
         if (conditions != null && !conditions.isEmpty()) {
             for (MatchCondition cond : conditions) {
                 if (!matchSingleCondition(cond, method, path, headers, queryParams, body, 0)) {
-                    return -1;
+                    return null;
                 }
             }
         }
@@ -148,7 +152,7 @@ public class MatchEngine {
             StatefulCounterStore.global().resetIfThreshold(rule.getId(), resetThreshold);
         }
 
-        return responseIdx;
+        return new int[]{responseIdx, count};
     }
 
     /**
@@ -328,9 +332,8 @@ public class MatchEngine {
         String trimmed = query.trim();
         if (trimmed.isEmpty()) return null;
 
-        // Remove leading line comments (// ...) and hash comments (# ...)
-        // and block comments before checking the first token.
-        // Simple approach: strip leading whitespace/comments and inspect.
+        // Remove leading hash comments (# ...) before checking the first token.
+        // Note: GraphQL spec only defines # as line comment; // is NOT a valid comment.
         int i = 0;
         while (i < trimmed.length()) {
             char c = trimmed.charAt(i);
@@ -366,8 +369,9 @@ public class MatchEngine {
         if ("mutation".equals(token)) return "mutation";
         if ("subscription".equals(token)) return "subscription";
 
-        // Unknown leading token — treat as anonymous query
-        return "query";
+        // Unknown leading token — cannot determine operation type.
+        // Return null to avoid matching malformed GraphQL requests to query-type rules.
+        return null;
     }
 
     /**

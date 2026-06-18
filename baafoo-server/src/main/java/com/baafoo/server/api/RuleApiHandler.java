@@ -3,10 +3,15 @@ package com.baafoo.server.api;
 import com.baafoo.core.api.ApiResponse;
 import com.baafoo.core.api.PaginatedResult;
 import com.baafoo.core.model.*;
+import com.baafoo.core.util.OpenApiImporter;
 import com.baafoo.core.util.StatefulCounterStore;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 class RuleApiHandler implements ResourceHandler {
     @Override
@@ -51,9 +56,18 @@ class RuleApiHandler implements ResourceHandler {
             return ApiResponse.ok("All rule counters reset", null);
         }
 
+        // OpenAPI import (PRD §1 R-S10)
+        if (path.equals(API_PREFIX + "rules/import-openapi") && "POST".equals(method)) {
+            ctx.requirePermission("rule", "create");
+            return handleOpenApiImport(body, ctx);
+        }
+
         if (path.startsWith(API_PREFIX + "rules/") && path.endsWith("/reset-state") && "POST".equals(method)) {
             String id = ApiUtils.extractId(path, API_PREFIX + "rules/", "/reset-state");
             ctx.requirePermission("rule", "update");
+            if (ctx.storage.getRule(id) == null) {
+                return ApiResponse.notFound("Rule not found");
+            }
             StatefulCounterStore.global().reset(id);
             return ApiResponse.ok("Rule counter reset", null);
         }
@@ -94,6 +108,10 @@ class RuleApiHandler implements ResourceHandler {
             if ("DELETE".equals(method)) {
                 ctx.requirePermission("rule", "delete");
                 boolean deleted = ctx.storage.deleteRule(id);
+                if (deleted) {
+                    // Clean up the per-rule counter to prevent unbounded map growth (S4 fix).
+                    StatefulCounterStore.global().reset(id);
+                }
                 return deleted ? ApiResponse.ok("Deleted", null) : ApiResponse.notFound("Rule not found");
             }
         }
