@@ -50,7 +50,7 @@ public class StubResponseRenderer {
                                          Map<String, String> headers, Map<String, String> queryParams,
                                          String requestBody, String environment, Long fakerSeed) {
         sendStubResponse(ctx, entry, ruleId, method, path, host, headers, queryParams,
-                requestBody, environment, fakerSeed, 0);
+                requestBody, environment, fakerSeed, 0, 0);
     }
 
     /**
@@ -65,6 +65,24 @@ public class StubResponseRenderer {
                                          Map<String, String> headers, Map<String, String> queryParams,
                                          String requestBody, String environment, Long fakerSeed,
                                          int requestCount) {
+        sendStubResponse(ctx, entry, ruleId, method, path, host, headers, queryParams,
+                requestBody, environment, fakerSeed, requestCount, 0);
+    }
+
+    /**
+     * Render and send a stub response with full context, including fault-injection delay.
+     *
+     * @param fakerSeed     optional seed from {@link Rule#getFakerSeed()}; null means no seed.
+     * @param requestCount  per-rule request count (1-based) for {@code {{requestCount}}}
+     *                      template variable substitution (PRD §3 R-S2 AC-13).
+     * @param faultDelayMs  additional delay from fault injection (PRD §4 R-S12 DELAY);
+     *                      added on top of {@link ResponseEntry#getDelayMs()}.
+     */
+    public static void sendStubResponse(ChannelHandlerContext ctx, ResponseEntry entry, String ruleId,
+                                         String method, String path, String host,
+                                         Map<String, String> headers, Map<String, String> queryParams,
+                                         String requestBody, String environment, Long fakerSeed,
+                                         int requestCount, long faultDelayMs) {
         try {
             int statusCode = entry.getStatusCode();
             String rawBody = entry.getBody() != null ? entry.getBody() : "";
@@ -106,14 +124,16 @@ public class StubResponseRenderer {
             log.debug("Stub response: {} {} body={}bytes", statusCode,
                     entry.getName(), responseBody.length());
 
-            // Use scheduled executor for delay instead of blocking the event loop
-            if (entry.getDelayMs() > 0) {
+            // Use scheduled executor for delay instead of blocking the event loop.
+            // Total delay = entry delay + fault injection delay (PRD §4 R-S12 DELAY).
+            long totalDelayMs = entry.getDelayMs() + faultDelayMs;
+            if (totalDelayMs > 0) {
                 ctx.executor().schedule(new Runnable() {
                     @Override
                     public void run() {
                         ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
                     }
-                }, entry.getDelayMs(), TimeUnit.MILLISECONDS);
+                }, totalDelayMs, TimeUnit.MILLISECONDS);
             } else {
                 ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
             }
@@ -138,6 +158,43 @@ public class StubResponseRenderer {
             ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
         } catch (Exception e) {
             log.error("Error serializing 404 response: {}", e.getMessage());
+            ctx.close();
+        }
+    }
+
+    /**
+     * Send a fault-injection HTTP error response (PRD §4 R-S12 HTTP_ERROR).
+     *
+     * <p>Returns the given status code with a simple JSON error body and an
+     * {@code X-Baafoo-Fault} header indicating the fault type. The response is
+     * sent immediately (no delay) — DELAY faults are handled separately by
+     * scheduling the normal response.</p>
+     *
+     * @param ctx         the channel context
+     * @param statusCode  the HTTP status code to return (e.g. 503, 504)
+     * @param faultType   the fault type string for the {@code X-Baafoo-Fault} header
+     * @param ruleId      the rule ID for the {@code X-Baafoo-Rule-Id} header
+     */
+    public static void sendFaultErrorResponse(ChannelHandlerContext ctx, int statusCode,
+                                                String faultType, String ruleId) {
+        try {
+            Map<String, Object> errorMap = new HashMap<String, Object>();
+            errorMap.put("error", "Fault injected");
+            errorMap.put("faultType", faultType);
+            errorMap.put("statusCode", statusCode);
+            String json = MAPPER.writeValueAsString(errorMap);
+            FullHttpResponse response = new DefaultFullHttpResponse(
+                    HTTP_1_1, HttpResponseStatus.valueOf(statusCode),
+                    Unpooled.copiedBuffer(json, StandardCharsets.UTF_8));
+            response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json; charset=UTF-8");
+            response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
+            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+            response.headers().set("X-Baafoo-Stub", "true");
+            response.headers().set("X-Baafoo-Rule-Id", ruleId);
+            response.headers().set("X-Baafoo-Fault", faultType);
+            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+        } catch (Exception e) {
+            log.error("Error sending fault error response: {}", e.getMessage());
             ctx.close();
         }
     }

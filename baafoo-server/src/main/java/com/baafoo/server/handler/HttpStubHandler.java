@@ -2,8 +2,10 @@ package com.baafoo.server.handler;
 
 import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.model.EnvironmentMode;
+import com.baafoo.core.model.FaultInjection;
 import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.Rule;
+import com.baafoo.core.util.FaultInjector;
 import com.baafoo.core.util.MatchEngine;
 import com.baafoo.server.storage.StorageService;
 import io.netty.buffer.Unpooled;
@@ -18,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 
 /**
  * Netty handler for HTTP stub server (port 9000).
@@ -44,6 +47,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
     private final ServerConfig config;
     private final AgentResolver agentResolver;
     private final PassthroughProxy passthroughProxy;
+    private final Random faultRandom = new Random();
 
     public HttpStubHandler(StorageService storage, ServerConfig config, EventLoopGroup workerGroup) {
         this.storage = storage;
@@ -138,9 +142,29 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     rec.setEnvironmentId(agentEnvironment);
                     storage.addRecording(rec);
                 }
-                StubResponseRenderer.sendStubResponse(ctx, result.getResponse(), result.getRule().getId(),
-                        method, path, host, headers, queryParams, body, agentEnvironment,
-                        result.getRule().getFakerSeed(), result.getRequestCount());
+                // Fault injection evaluation (PRD §4 R-S12).
+                // Evaluate before sending the normal response. If HTTP_ERROR is
+                // triggered, send the error response instead. If DELAY is
+                // triggered, pass the delay to the renderer to schedule the
+                // normal response with the added delay.
+                FaultInjection faultConfig = result.getRule().getFaultInjection();
+                FaultInjector.FaultResult faultResult =
+                        FaultInjector.evaluate(faultConfig, faultRandom);
+                if (faultResult.isHttpError()) {
+                    log.info("Fault injected: HTTP_ERROR {} for rule {} {} {}",
+                            faultResult.getStatusCode(), result.getRule().getId(), method, path);
+                    StubResponseRenderer.sendFaultErrorResponse(ctx, faultResult.getStatusCode(),
+                            "HTTP_ERROR", result.getRule().getId());
+                } else {
+                    long faultDelayMs = faultResult.isDelay() ? faultResult.getDelayMs() : 0;
+                    if (faultDelayMs > 0) {
+                        log.info("Fault injected: DELAY {}ms for rule {} {} {}",
+                                faultDelayMs, result.getRule().getId(), method, path);
+                    }
+                    StubResponseRenderer.sendStubResponse(ctx, result.getResponse(), result.getRule().getId(),
+                            method, path, host, headers, queryParams, body, agentEnvironment,
+                            result.getRule().getFakerSeed(), result.getRequestCount(), faultDelayMs);
+                }
             }
         } else {
             String unmatchedDefault = config.getUnmatchedDefault();
