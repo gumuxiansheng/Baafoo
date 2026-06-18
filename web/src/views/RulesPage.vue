@@ -2,9 +2,14 @@
   <div class="rules-page">
     <div class="page-header">
       <h2>规则管理</h2>
-      <el-button type="primary" @click="createRule" v-if="authStore.canWriteRule">
-        <el-icon><Plus /></el-icon> 新建规则
-      </el-button>
+      <div>
+        <el-button @click="showImportDialog = true" v-if="authStore.canWriteRule">
+          <el-icon><Upload /></el-icon> 导入 OpenAPI
+        </el-button>
+        <el-button type="primary" @click="createRule" v-if="authStore.canWriteRule">
+          <el-icon><Plus /></el-icon> 新建规则
+        </el-button>
+      </div>
     </div>
 
     <!-- Filters -->
@@ -97,6 +102,9 @@
         />
       </div>
     </el-card>
+
+    <!-- OpenAPI Import Dialog -->
+    <OpenApiImportDialog v-model="showImportDialog" @imported="onImported" />
   </div>
 </template>
 
@@ -104,16 +112,20 @@
 import { reactive, ref, onMounted } from 'vue'
 import { useRulesStore, useAuthStore } from '@/store'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import api from '@/api'
+import OpenApiImportDialog from '@/components/OpenApiImportDialog.vue'
 
 export default {
   name: 'RulesPage',
+  components: { OpenApiImportDialog },
   setup() {
     const router = useRouter()
     const rulesStore = useRulesStore()
     const authStore = useAuthStore()
     const filter = reactive({ protocol: '', keyword: '', environment: '', host: '' })
     const environments = ref([])
+    const showImportDialog = ref(false)
 
     async function loadEnvironments() {
       try {
@@ -170,15 +182,20 @@ export default {
       await rulesStore.undoRule(rule.id)
     }
 
+    function onImported() {
+      ElMessage.success('OpenAPI 规范导入成功')
+      rulesStore.fetchRulesPaged()
+    }
+
     onMounted(() => {
       loadEnvironments()
       rulesStore.fetchRulesPaged()
     })
 
     return {
-      filter, environments, rulesStore, authStore,
+      filter, environments, rulesStore, authStore, showImportDialog,
       doSearch, resetFilter, onPageChange, onSizeChange,
-      createRule, editRule, toggleRule, deleteRuleItem, undoRuleItem
+      createRule, editRule, toggleRule, deleteRuleItem, undoRuleItem, onImported
     }
   }
 }

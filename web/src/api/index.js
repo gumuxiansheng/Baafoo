@@ -67,6 +67,22 @@ export default {
   undoRule: (id) => http.post(`/rules/${id}/undo`),
   getInheritedEnvironments: (id) => http.get(`/rules/${id}/inherited-environments`),
 
+  // OpenAPI Import (R-S10 / R-W8)
+  importOpenApi: (jsonContent, { environment, save, prefix } = {}) => {
+    const params = new URLSearchParams()
+    if (environment) params.set('environment', environment)
+    if (save) params.set('save', 'true')
+    if (prefix) params.set('prefix', prefix)
+    const query = params.toString()
+    return http.post(`/rules/import-openapi${query ? '?' + query : ''}`, jsonContent, {
+      headers: { 'Content-Type': 'application/json' }
+    })
+  },
+
+  // Stateful Mock — counter reset (R-S2 AC-13 AC-04)
+  resetRuleState: (id) => http.post(`/rules/${id}/reset-state`),
+  resetAllRuleState: () => http.post('/rules/reset-all-state'),
+
   // --- Rule Sets ---
   getRuleSets: () => http.get('/rulesets'),
   createRuleSet: (data) => http.post('/rulesets', data),
@@ -108,5 +124,11 @@ export default {
   getAgents: () => http.get('/agents'),
 
   // --- Status ---
-  getStatus: () => http.get('/status')
+  getStatus: () => http.get('/status'),
+
+  // --- Chaos Engineering (R-S13) ---
+  chaosActivate: (profileName) => http.post('/chaos/profiles/activate', { profileName }),
+  chaosDeactivate: (profileName) => http.post('/chaos/profiles/deactivate', { profileName }),
+  chaosStatus: () => http.get('/chaos/profiles/status'),
+  chaosEmergencyStop: () => http.post('/chaos/emergency-stop')
 }

@@ -54,6 +54,26 @@
         <el-form-item label="启用">
           <el-switch v-model="form.enabled" />
         </el-form-item>
+        <el-row :gutter="20">
+          <el-col :span="8">
+            <el-form-item label="Faker Seed">
+              <el-input-number v-model="form.fakerSeed" :min="0" :step="1" placeholder="留空随机" />
+              <div style="font-size: 12px; color: #909399; margin-top: 4px">设置后该规则所有 Faker 函数使用相同种子，可复现数据</div>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="计数器重置">
+              <el-input-number v-model="form.requestCountReset" :min="0" :step="1" placeholder="不重置" />
+              <div style="font-size: 12px; color: #909399; margin-top: 4px">达到该次数后计数器归零（循环模式），0 表示不重置</div>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8" v-if="!isNew && form.protocol === 'http'">
+            <el-form-item label="状态重置">
+              <el-button size="small" @click="resetRuleState" v-if="authStore.canWriteRule">重置请求计数器</el-button>
+              <div style="font-size: 12px; color: #909399; margin-top: 4px">清空该规则的 requestCount 计数器</div>
+            </el-form-item>
+          </el-col>
+        </el-row>
         <el-form-item label="标签">
           <el-input v-model="form.tagsStr" placeholder="逗号分隔" />
         </el-form-item>
@@ -75,7 +95,15 @@
         <!-- Match Conditions -->
         <el-divider content-position="left">匹配条件
           <el-button size="small" @click="addCondition" v-if="authStore.canWriteRule">+ 添加条件</el-button>
+          <el-button size="small" @click="addGraphqlHelper" v-if="authStore.canWriteRule && isGraphqlPath">+ GraphQL 快捷</el-button>
         </el-divider>
+        <div v-if="isGraphqlPath" class="graphql-hint">
+          <el-alert type="info" :closable="false" show-icon>
+            <template #title>
+              检测到 GraphQL 路径，可使用"GraphQL 快捷"按钮快速添加 operationName / operationType 匹配条件
+            </template>
+          </el-alert>
+        </div>
         <div v-if="form.conditions.length === 0" style="color: #909399; font-size: 12px; margin-bottom: 8px">
           未添加条件时，该规则对所有请求生效（受主机/端口/环境约束）
         </div>
@@ -90,6 +118,9 @@
                 <el-option label="Body" value="body" />
                 <el-option label="Body包含" value="bodyContains" />
                 <el-option label="JSONPath" value="bodyJsonPath" />
+                <el-option label="请求次数" value="requestCount" />
+                <el-option label="GraphQL OpName" value="graphqlOperationName" />
+                <el-option label="GraphQL OpType" value="graphqlOperationType" />
               </el-select>
             </el-col>
             <el-col :span="3">
@@ -100,6 +131,10 @@
                 <el-option label="结尾" value="endsWith" />
                 <el-option label="正则" value="regex" />
                 <el-option label="存在" value="exists" />
+                <el-option label="大于" value="greaterThan" v-if="cond.type === 'requestCount'" />
+                <el-option label="小于" value="lessThan" v-if="cond.type === 'requestCount'" />
+                <el-option label="区间" value="range" v-if="cond.type === 'requestCount'" />
+                <el-option label="取模" value="mod" v-if="cond.type === 'requestCount'" />
               </el-select>
             </el-col>
             <el-col :span="4" v-if="cond.type === 'header' || cond.type === 'query'">
@@ -189,6 +224,9 @@
                     <el-option label="Body" value="body" />
                     <el-option label="Body包含" value="bodyContains" />
                     <el-option label="JSONPath" value="bodyJsonPath" />
+                    <el-option label="请求次数" value="requestCount" />
+                    <el-option label="GraphQL OpName" value="graphqlOperationName" />
+                    <el-option label="GraphQL OpType" value="graphqlOperationType" />
                   </el-select>
                 </el-col>
                 <el-col :span="3">
@@ -199,6 +237,10 @@
                     <el-option label="结尾" value="endsWith" />
                     <el-option label="正则" value="regex" />
                     <el-option label="存在" value="exists" />
+                    <el-option label="大于" value="greaterThan" v-if="resp.condition.type === 'requestCount'" />
+                    <el-option label="小于" value="lessThan" v-if="resp.condition.type === 'requestCount'" />
+                    <el-option label="区间" value="range" v-if="resp.condition.type === 'requestCount'" />
+                    <el-option label="取模" value="mod" v-if="resp.condition.type === 'requestCount'" />
                   </el-select>
                 </el-col>
                 <el-col :span="4" v-if="resp.condition.type === 'header' || resp.condition.type === 'query'">
@@ -267,6 +309,49 @@
           </el-form-item>
         </div>
 
+        <!-- Fault Injection -->
+        <el-divider content-position="left">故障注入
+          <el-switch v-model="form.faultInjectionEnabled" size="small" v-if="authStore.canWriteRule" />
+        </el-divider>
+        <div v-if="form.faultInjectionEnabled" class="fault-injection-panel">
+          <div style="font-size: 12px; color: #909399; margin-bottom: 8px">
+            按 declaration 顺序评估，首个 probability 命中的 fault 生效；全部未命中则走正常响应
+          </div>
+          <div v-for="(fault, fIdx) in form.faults" :key="'fault-' + fIdx" class="fault-card">
+            <el-row :gutter="10" align="middle">
+              <el-col :span="5">
+                <el-select v-model="fault.type" size="small" placeholder="故障类型">
+                  <el-option label="HTTP 错误" value="HTTP_ERROR" />
+                  <el-option label="延迟" value="DELAY" />
+                  <el-option label="连接重置" value="CONNECTION_RESET" />
+                  <el-option label="读超时" value="READ_TIMEOUT" />
+                </el-select>
+              </el-col>
+              <el-col :span="4">
+                <el-input-number v-model="fault.probability" :min="0" :max="1" :step="0.1" :precision="2" size="small" placeholder="概率" />
+                <div style="font-size: 11px; color: #909399">概率 (0-1)</div>
+              </el-col>
+              <el-col :span="6" v-if="fault.type === 'HTTP_ERROR'">
+                <el-input v-model="fault.statusCodesStr" size="small" placeholder="如: 503,504" />
+                <div style="font-size: 11px; color: #909399">状态码列表（逗号分隔，等概率分配）</div>
+              </el-col>
+              <el-col :span="6" v-if="fault.type === 'DELAY'">
+                <el-input-number v-model="fault.delayMs" :min="0" :max="60000" size="small" />
+                <div style="font-size: 11px; color: #909399">延迟毫秒</div>
+              </el-col>
+              <el-col :span="6" v-if="fault.type === 'CONNECTION_RESET' || fault.type === 'READ_TIMEOUT'">
+                <span style="font-size: 12px; color: #909399">
+                  {{ fault.type === 'CONNECTION_RESET' ? '响应前关闭连接 (RST)' : '收到请求后不响应，等待客户端超时' }}
+                </span>
+              </el-col>
+              <el-col :span="4" style="text-align: right">
+                <el-button size="small" type="danger" text @click="removeFault(fIdx)" v-if="authStore.canWriteRule">删除</el-button>
+              </el-col>
+            </el-row>
+          </div>
+          <el-button size="small" @click="addFault" v-if="authStore.canWriteRule" style="margin-top: 8px">+ 添加故障</el-button>
+        </div>
+
         <div style="margin-top: 24px; text-align: right">
           <el-button @click="$router.back()">取消</el-button>
           <el-button type="primary" @click="saveRule" :loading="saving" v-if="authStore.canWriteRule">保存规则</el-button>
@@ -281,6 +366,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useRulesStore, useAuthStore } from '@/store'
+import { ElMessage } from 'element-plus'
 import api from '@/api'
 
 export default {
@@ -302,10 +388,15 @@ export default {
       address: ['faker.address', 'faker.province', 'faker.city', 'faker.zipCode', 'faker.street'],
       network: ['faker.company', 'faker.url', 'faker.ip', 'faker.ipv6', 'faker.mac', 'faker.userAgent'],
       numeric: ['faker.int', 'faker.int.1.100', 'faker.float', 'faker.boolean', 'faker.uuid', 'faker.timestamp', 'faker.date', 'faker.dateTime'],
-      misc: ['faker.hex', 'faker.hexColor', 'faker.alphaNumeric', 'faker.locale', 'faker.statusCode']
+      misc: ['faker.hex', 'faker.hexColor', 'faker.alphaNumeric', 'faker.locale', 'faker.statusCode', 'faker.randomElement', 'faker.regexify']
     }
 
     const isNew = computed(() => route.params.id === 'new')
+
+    const isGraphqlPath = computed(() => {
+      const pathCond = form.conditions.find(c => c.type === 'path')
+      return pathCond && pathCond.value && pathCond.value.includes('/graphql')
+    })
 
     const envTagType = (val) => {
       return inheritedEnvs.value.includes(val) ? 'warning' : ''
@@ -325,7 +416,9 @@ export default {
     const form = reactive({
       name: '', protocol: 'http', host: '', port: null,
       serviceName: '', priority: 100, enabled: true,
-      tagsStr: '', environments: [], conditions: [], responses: []
+      tagsStr: '', environments: [], conditions: [], responses: [],
+      fakerSeed: null, requestCountReset: null,
+      faultInjectionEnabled: false, faults: []
     })
 
     onMounted(async () => {
@@ -351,6 +444,22 @@ export default {
         form.environments = rule.value.environments || []
         form.conditions = JSON.parse(JSON.stringify(rule.value.conditions || []))
         form.responses = JSON.parse(JSON.stringify(rule.value.responses || []))
+        form.fakerSeed = rule.value.fakerSeed || null
+        form.requestCountReset = rule.value.requestCountReset || null
+        // Load fault injection
+        const fi = rule.value.faultInjection
+        if (fi && fi.faults && fi.faults.length > 0) {
+          form.faultInjectionEnabled = true
+          form.faults = fi.faults.map(f => ({
+            type: f.type || 'HTTP_ERROR',
+            probability: f.probability != null ? f.probability : 1.0,
+            statusCodesStr: (f.statusCodes || []).join(','),
+            delayMs: f.delayMs || 0
+          }))
+        } else {
+          form.faultInjectionEnabled = false
+          form.faults = []
+        }
         if (form.responses.length === 0) {
           form.responses.push({ name: '默认', statusCode: 200, delayMs: 0, body: '', headers: {}, condition: null })
         }
@@ -368,6 +477,10 @@ export default {
         cond.operator = 'equals'
       } else if (cond.type === 'bodyContains') {
         cond.operator = 'contains'
+      } else if (cond.type === 'graphqlOperationName' || cond.type === 'graphqlOperationType') {
+        cond.operator = 'equals'
+      } else if (cond.type === 'requestCount') {
+        cond.operator = 'equals'
       }
     }
 
@@ -394,6 +507,12 @@ export default {
         case 'body': return '请求体内容'
         case 'bodyContains': return '包含的文本'
         case 'bodyJsonPath': return '如: $.user.id'
+        case 'requestCount':
+          if (cond.operator === 'range') return '如: 1,3 (第1到3次)'
+          if (cond.operator === 'mod') return '如: 3,0 (每3次,余0触发)'
+          return '如: 3'
+        case 'graphqlOperationName': return '如: GetUser'
+        case 'graphqlOperationType': return '如: query / mutation / subscription'
         default: return '值'
       }
     }
@@ -404,6 +523,32 @@ export default {
 
     function removeCondition(idx) {
       form.conditions.splice(idx, 1)
+    }
+
+    function addGraphqlHelper() {
+      form.conditions.push({ type: 'graphqlOperationName', operator: 'equals', key: '', value: '', caseSensitive: true })
+      form.conditions.push({ type: 'graphqlOperationType', operator: 'equals', key: '', value: 'query', caseSensitive: true })
+    }
+
+    function addFault() {
+      form.faults.push({ type: 'HTTP_ERROR', probability: 0.5, statusCodesStr: '503', delayMs: 0 })
+    }
+
+    function removeFault(idx) {
+      form.faults.splice(idx, 1)
+    }
+
+    async function resetRuleState() {
+      try {
+        const res = await api.resetRuleState(route.params.id)
+        if (res.success) {
+          ElMessage.success('请求计数器已重置')
+        } else {
+          ElMessage.error(res.message || '重置失败')
+        }
+      } catch (e) {
+        ElMessage.error('重置失败: ' + (e.message || e))
+      }
     }
 
     function addResponse() {
@@ -465,6 +610,26 @@ export default {
         return entry
       })
 
+      // Build fault injection config
+      let faultInjection = null
+      if (form.faultInjectionEnabled && form.faults.length > 0) {
+        faultInjection = {
+          faults: form.faults.map(f => {
+            const fault = {
+              type: f.type,
+              probability: f.probability != null ? f.probability : 1.0
+            }
+            if (f.type === 'HTTP_ERROR') {
+              fault.statusCodes = (f.statusCodesStr || '').split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n > 0)
+              if (fault.statusCodes.length === 0) fault.statusCodes = [500]
+            } else if (f.type === 'DELAY') {
+              fault.delayMs = f.delayMs || 0
+            }
+            return fault
+          })
+        }
+      }
+
       const data = {
         name: form.name,
         protocol: form.protocol,
@@ -476,7 +641,10 @@ export default {
         tags: form.tagsStr ? form.tagsStr.split(',').map(s => s.trim()).filter(Boolean) : [],
         environments: form.environments || [],
         conditions: form.conditions,
-        responses: responsesData
+        responses: responsesData,
+        fakerSeed: form.fakerSeed || null,
+        requestCountReset: form.requestCountReset || null,
+        faultInjection: faultInjection
       }
 
       if (isNew.value) {
@@ -498,9 +666,11 @@ export default {
     return {
       isNew, rule, loading, saving, form, allEnvironments, inheritedEnvs, envTagType, templateVarHint, bodyPlaceholder,
       showFakerRef, fakerGroups, insertFakerVar,
+      isGraphqlPath, addGraphqlHelper,
       addCondition, removeCondition,
       addResponse, removeResponse, addResponseCondition,
       getResponseHeaders, addResponseHeader, removeResponseHeader,
+      addFault, removeFault, resetRuleState,
       onConditionTypeChange, getValuePlaceholder, saveRule, authStore
     }
   }
@@ -569,5 +739,21 @@ export default {
 .faker-tag:hover {
   color: #409EFF;
   border-color: #409EFF;
+}
+.graphql-hint {
+  margin-bottom: 12px;
+}
+.fault-injection-panel {
+  background: #fafafa;
+  border-radius: 6px;
+  padding: 12px;
+  border: 1px solid #ebeef5;
+}
+.fault-card {
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
 }
 </style>
