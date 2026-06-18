@@ -1,6 +1,7 @@
 package com.baafoo.server.api;
 
 import com.baafoo.core.api.ApiResponse;
+import com.baafoo.core.util.ChaosManager;
 import com.baafoo.server.auth.AuthService;
 import com.baafoo.server.storage.StorageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -25,11 +26,18 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
     private final AuthService authService;
     private final ObjectMapper mapper;
     private final List<ResourceHandler> handlers;
+    private final ChaosManager chaosManager;
 
     public ManagementApiHandler(StorageService storage, AuthService authService) {
+        this(storage, authService, new ChaosManager());
+    }
+
+    public ManagementApiHandler(StorageService storage, AuthService authService,
+                                 ChaosManager chaosManager) {
         this.storage = storage;
         this.authService = authService;
         this.mapper = new ObjectMapper();
+        this.chaosManager = chaosManager != null ? chaosManager : new ChaosManager();
         this.handlers = Arrays.asList(
                 new AuthApiHandler(),
                 new UserApiHandler(),
@@ -38,8 +46,16 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
                 new AgentApiHandler(),
                 new SceneApiHandler(),
                 new RecordingApiHandler(),
-                new StatusApiHandler()
+                new StatusApiHandler(),
+                new ChaosApiHandler(this.chaosManager)
         );
+    }
+
+    /**
+     * Get the Chaos manager instance (for programmatic profile registration).
+     */
+    public ChaosManager getChaosManager() {
+        return chaosManager;
     }
 
     @Override
