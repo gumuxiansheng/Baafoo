@@ -501,7 +501,7 @@ public class FaultInjectorTest {
 
     @Test
     public void testPhase2ActionEnumValues() {
-        assertEquals(5, FaultInjector.FaultResult.Action.values().length);
+        // Phase 2 added CONNECTION_RESET and READ_TIMEOUT to the existing actions.
         assertEquals(FaultInjector.FaultResult.Action.NO_FAULT,
                 FaultInjector.FaultResult.noFault().getAction());
         assertEquals(FaultInjector.FaultResult.Action.HTTP_ERROR,
@@ -512,6 +512,120 @@ public class FaultInjectorTest {
                 FaultInjector.FaultResult.connectionReset(null).getAction());
         assertEquals(FaultInjector.FaultResult.Action.READ_TIMEOUT,
                 FaultInjector.FaultResult.readTimeout(null).getAction());
+    }
+
+    // ===== Phase 3: Kafka protocol faults =====
+
+    @Test
+    public void testKafkaNotLeaderForPartition() {
+        Fault fault = new Fault();
+        fault.setType("KAFKA_NOT_LEADER_FOR_PARTITION");
+        fault.setProbability(1.0);
+
+        FaultInjection config = new FaultInjection();
+        config.setFaults(Arrays.asList(fault));
+
+        FaultInjector.FaultResult result = FaultInjector.evaluate(config, new Random(0));
+        assertTrue(result.isKafkaError());
+        assertEquals(6, result.getErrorCode());
+    }
+
+    @Test
+    public void testKafkaOffsetOutOfRange() {
+        Fault fault = new Fault();
+        fault.setType("KAFKA_OFFSET_OUT_OF_RANGE");
+        fault.setProbability(1.0);
+
+        FaultInjection config = new FaultInjection();
+        config.setFaults(Arrays.asList(fault));
+
+        FaultInjector.FaultResult result = FaultInjector.evaluate(config, new Random(0));
+        assertTrue(result.isKafkaError());
+        assertEquals(1, result.getErrorCode());
+    }
+
+    @Test
+    public void testKafkaErrorCustomErrorCode() {
+        Fault fault = new Fault();
+        fault.setType("KAFKA_NOT_LEADER_FOR_PARTITION");
+        fault.setProbability(1.0);
+        fault.setErrorCode(42);
+
+        FaultInjection config = new FaultInjection();
+        config.setFaults(Arrays.asList(fault));
+
+        FaultInjector.FaultResult result = FaultInjector.evaluate(config, new Random(0));
+        assertTrue(result.isKafkaError());
+        assertEquals(42, result.getErrorCode());
+    }
+
+    @Test
+    public void testKafkaProduceThrottle() {
+        Fault fault = new Fault();
+        fault.setType("KAFKA_PRODUCE_THROTTLE");
+        fault.setProbability(1.0);
+        fault.setDelayMs(500);
+
+        FaultInjection config = new FaultInjection();
+        config.setFaults(Arrays.asList(fault));
+
+        FaultInjector.FaultResult result = FaultInjector.evaluate(config, new Random(0));
+        assertTrue(result.isKafkaThrottle());
+        assertEquals(500, result.getDelayMs());
+    }
+
+    @Test
+    public void testKafkaDelay() {
+        Fault fault = new Fault();
+        fault.setType("KAFKA_DELAY");
+        fault.setProbability(1.0);
+        fault.setDelayMs(1000);
+
+        FaultInjection config = new FaultInjection();
+        config.setFaults(Arrays.asList(fault));
+
+        FaultInjector.FaultResult result = FaultInjector.evaluate(config, new Random(0));
+        assertTrue(result.isKafkaDelay());
+        assertEquals(1000, result.getDelayMs());
+    }
+
+    @Test
+    public void testKafkaConnectionReset() {
+        Fault fault = new Fault();
+        fault.setType("KAFKA_CONNECTION_RESET");
+        fault.setProbability(1.0);
+
+        FaultInjection config = new FaultInjection();
+        config.setFaults(Arrays.asList(fault));
+
+        FaultInjector.FaultResult result = FaultInjector.evaluate(config, new Random(0));
+        assertTrue(result.isKafkaConnectionReset());
+    }
+
+    @Test
+    public void testKafkaFaultResultConvenienceMethods() {
+        Fault dummy = new Fault();
+
+        FaultInjector.FaultResult error = FaultInjector.FaultResult.kafkaError(6, dummy);
+        assertTrue(error.isKafkaError());
+        assertEquals(6, error.getErrorCode());
+        assertSame(dummy, error.getTriggeredFault());
+
+        FaultInjector.FaultResult throttle = FaultInjector.FaultResult.kafkaThrottle(250, dummy);
+        assertTrue(throttle.isKafkaThrottle());
+        assertEquals(250, throttle.getDelayMs());
+
+        FaultInjector.FaultResult delay = FaultInjector.FaultResult.kafkaDelay(750, dummy);
+        assertTrue(delay.isKafkaDelay());
+        assertEquals(750, delay.getDelayMs());
+
+        FaultInjector.FaultResult reset = FaultInjector.FaultResult.kafkaConnectionReset(dummy);
+        assertTrue(reset.isKafkaConnectionReset());
+    }
+
+    @Test
+    public void testPhase3ActionEnumValues() {
+        assertEquals(9, FaultInjector.FaultResult.Action.values().length);
     }
 
     // ===== PRD example scenario =====

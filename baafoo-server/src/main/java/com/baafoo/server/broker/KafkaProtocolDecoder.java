@@ -1,8 +1,11 @@
 package com.baafoo.server.broker;
 
 import com.baafoo.core.model.EnvironmentMode;
+import com.baafoo.core.model.FaultInjection;
+import com.baafoo.core.model.MqRelationship;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.model.Rule;
+import com.baafoo.core.util.FaultInjector;
 import com.baafoo.core.util.MatchEngine;
 import com.baafoo.server.handler.AgentResolver;
 import com.baafoo.server.storage.StorageService;
@@ -17,6 +20,8 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Netty handler that implements a subset of the Kafka binary protocol.
@@ -186,7 +191,9 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             response = buildErrorResponse(correlationId, UNKNOWN_SERVER_ERROR);
         }
 
-        ctx.writeAndFlush(response);
+        if (response != null) {
+            ctx.writeAndFlush(response);
+        }
     }
 
     // --- Metadata (API key 3) ---
@@ -302,11 +309,13 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         int topicCount = msg.readInt();
         // Collect results for response
         List<ProduceTopicResult> results = new ArrayList<ProduceTopicResult>();
+        KafkaFaultAggregation faults = new KafkaFaultAggregation();
 
         for (int t = 0; t < topicCount; t++) {
             String topic = readNullableString(msg);
             int partitionCount = msg.readInt();
             List<ProducePartitionResult> partitionResults = new ArrayList<ProducePartitionResult>();
+            List<MqRelationship> relationships = storage.listMqRelationshipsByFrom("kafka", topic);
 
             for (int p = 0; p < partitionCount; p++) {
                 int partition = msg.readInt();
@@ -328,6 +337,9 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
                         MatchEngine.MatchResult m = matchHelper.match(rules, "kafka", topic, bodyStr);
                         if (m.isMatched()) {
+                            // Evaluate Kafka protocol faults configured on the matched rule.
+                            evaluateKafkaFaults(m.getRule().getFaultInjection(), faults);
+
                             // Record the original payload (so replays show what the app sent).
                             if (shouldRecord) {
                                 String respBody = null;
@@ -344,9 +356,11 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                                 byte[] stubValue = resp != null && resp.getBody() != null
                                         ? resp.getBody().getBytes(StandardCharsets.UTF_8) : rec.value;
                                 lastOffset = messageStore.append(topic, partition, rec.key, stubValue);
+                                deriveMqRelationships(ctx, relationships, topic, partition, rec, agentInfo.environment);
                             } else {
                                 // PASSTHROUGH / RECORD — store the original record.
                                 lastOffset = messageStore.append(topic, partition, rec.key, rec.value);
+                                deriveMqRelationships(ctx, relationships, topic, partition, rec, agentInfo.environment);
                             }
                         } else {
                             // Unmatched — store the original record (passthrough behaviour).
@@ -354,6 +368,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                                 matchHelper.record(null, "kafka", topic, bodyStr, null, agentInfo);
                             }
                             lastOffset = messageStore.append(topic, partition, rec.key, rec.value);
+                            deriveMqRelationships(ctx, relationships, topic, partition, rec, agentInfo.environment);
                         }
                     }
                     offset = lastOffset;
@@ -362,6 +377,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                     // but still attempt a topic-only match so topic rules can stub it.
                     MatchEngine.MatchResult m = matchHelper.match(rules, "kafka", topic, null);
                     if (m.isMatched() && (mode == EnvironmentMode.STUB || mode == EnvironmentMode.RECORD_AND_STUB)) {
+                        evaluateKafkaFaults(m.getRule().getFaultInjection(), faults);
                         ResponseEntry resp = m.getResponse();
                         if (resp != null && resp.getBody() != null) {
                             byte[] stubValue = resp.getBody().getBytes(StandardCharsets.UTF_8);
@@ -369,14 +385,20 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                             if (shouldRecord) {
                                 matchHelper.record(m.getRule().getId(), "kafka", topic, null, resp.getBody(), agentInfo);
                             }
+                            deriveMqRelationships(ctx, relationships, topic, partition,
+                                    new ParsedRecord(null, stubValue), agentInfo.environment);
                         } else {
                             offset = messageStore.append(topic, partition, null, batchData);
+                            deriveMqRelationships(ctx, relationships, topic, partition,
+                                    new ParsedRecord(null, batchData), agentInfo.environment);
                         }
                     } else {
                         if (shouldRecord && m.isMatched()) {
                             matchHelper.record(m.getRule().getId(), "kafka", topic, null, null, agentInfo);
                         }
                         offset = messageStore.append(topic, partition, null, batchData);
+                        deriveMqRelationships(ctx, relationships, topic, partition,
+                                new ParsedRecord(null, batchData), agentInfo.environment);
                     }
                 }
                 partitionResults.add(new ProducePartitionResult(partition, offset));
@@ -389,9 +411,44 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             log.warn("Produce request has {} remaining bytes after parsing! This indicates a request parsing issue.", msg.readableBytes());
         }
 
+        // Apply terminal faults that bypass the normal response.
+        if (faults.connectionReset) {
+            log.info("Kafka fault injected: CONNECTION_RESET on channel {}", ctx.channel());
+            ctx.close();
+            return null;
+        }
+
+        ByteBuf response = buildProduceResponse(correlationId, apiVersion, results, faults);
+
+        if (faults.delay && faults.delayMs > 0) {
+            log.info("Kafka fault injected: DELAY {}ms before produce response", faults.delayMs);
+            ctx.executor().schedule((Runnable) () -> ctx.writeAndFlush(response), faults.delayMs, TimeUnit.MILLISECONDS);
+            return null;
+        }
+
+        return response;
+    }
+
+    private void evaluateKafkaFaults(FaultInjection faultInjection, KafkaFaultAggregation faults) {
+        if (faultInjection == null) {
+            return;
+        }
+        FaultInjector.FaultResult result = FaultInjector.evaluate(faultInjection, ThreadLocalRandom.current());
+        if (!result.isNoFault()) {
+            log.info("Kafka fault evaluated: action={}", result.getAction());
+        }
+        faults.apply(result);
+    }
+
+    private ByteBuf buildProduceResponse(int correlationId, short apiVersion,
+                                          List<ProduceTopicResult> results,
+                                          KafkaFaultAggregation faults) {
         // Build response
         ByteBuf buf = Unpooled.buffer();
         buf.writeInt(correlationId);
+
+        short errorCode = faults.error ? faults.errorCode : NONE;
+        int throttleMs = faults.throttle ? faults.throttleMs : 0;
 
         // Topics array (comes BEFORE throttle_time_ms in Produce response)
         buf.writeInt(results.size());
@@ -400,7 +457,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             buf.writeInt(topicResult.partitions.size());
             for (ProducePartitionResult partResult : topicResult.partitions) {
                 buf.writeInt(partResult.partition); // index (partition_index) — comes BEFORE error_code
-                buf.writeShort(NONE); // error_code
+                buf.writeShort(errorCode); // error_code (0 = NONE unless fault injected)
                 buf.writeLong(partResult.offset); // base_offset
                 // log_append_time_ms (v2+)
                 if (apiVersion >= 2) {
@@ -415,13 +472,86 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
         // throttle_time_ms (v1+) — comes AFTER topics array in Produce response
         if (apiVersion >= 1) {
-            buf.writeInt(0);
+            buf.writeInt(throttleMs);
         }
 
-        log.info("Produce response: {} topics, apiVersion={}", results.size(), apiVersion);
+        log.info("Produce response: {} topics, apiVersion={}, errorCode={}, throttleMs={}",
+                results.size(), apiVersion, errorCode, throttleMs);
         ByteBuf framed = frameResponse(buf);
         log.info("Produce response hex: {}", io.netty.buffer.ByteBufUtil.hexDump(framed));
         return framed;
+    }
+
+    /**
+     * Derive downstream Kafka messages from an upstream record according to
+     * configured MQ relationships. Relationships with a non-zero delay are
+     * scheduled on the channel's event loop.
+     */
+    private void deriveMqRelationships(ChannelHandlerContext ctx, List<MqRelationship> relationships,
+                                        String topic, int partition, ParsedRecord rec, String environment) {
+        if (relationships == null || relationships.isEmpty()) {
+            return;
+        }
+        String bodyStr = rec.value != null ? new String(rec.value, StandardCharsets.UTF_8) : null;
+        String keyStr = rec.key != null ? new String(rec.key, StandardCharsets.UTF_8) : null;
+        for (MqRelationship rel : relationships) {
+            if (!rel.isEnabled() || !"kafka".equals(rel.getToProtocol())) {
+                continue;
+            }
+            String derivedKey = MqRelationshipRenderer.renderKey(rel, topic, keyStr, partition, bodyStr, environment);
+            String derivedValue = MqRelationshipRenderer.renderValue(rel, topic, keyStr, partition, bodyStr, environment);
+            Runnable appendTask = new Runnable() {
+                @Override
+                public void run() {
+                    byte[] keyBytes = derivedKey != null ? derivedKey.getBytes(StandardCharsets.UTF_8) : null;
+                    byte[] valueBytes = derivedValue != null ? derivedValue.getBytes(StandardCharsets.UTF_8) : null;
+                    messageStore.append(rel.getToTopic(), partition, keyBytes, valueBytes);
+                    log.info("Derived Kafka message from {} to {} (partition={}, delayMs={})",
+                            topic, rel.getToTopic(), partition, rel.getDelayMs());
+                }
+            };
+            if (rel.getDelayMs() > 0) {
+                ctx.executor().schedule(appendTask, rel.getDelayMs(), TimeUnit.MILLISECONDS);
+            } else {
+                appendTask.run();
+            }
+        }
+    }
+
+    /**
+     * Accumulates Kafka protocol faults found while processing a Produce request.
+     * Multiple records / partitions may trigger faults; the most severe effect wins
+     * for the aggregated response (error code, throttle time, delay time).
+     */
+    private static class KafkaFaultAggregation {
+        boolean error;
+        short errorCode;
+        boolean throttle;
+        int throttleMs;
+        boolean delay;
+        long delayMs;
+        boolean connectionReset;
+
+        void apply(FaultInjector.FaultResult result) {
+            if (result == null || result.isNoFault()) {
+                return;
+            }
+            if (result.isKafkaError()) {
+                this.error = true;
+                this.errorCode = (short) result.getErrorCode();
+            }
+            if (result.isKafkaThrottle()) {
+                this.throttle = true;
+                this.throttleMs = (int) Math.max(this.throttleMs, result.getDelayMs());
+            }
+            if (result.isKafkaDelay()) {
+                this.delay = true;
+                this.delayMs = Math.max(this.delayMs, result.getDelayMs());
+            }
+            if (result.isKafkaConnectionReset()) {
+                this.connectionReset = true;
+            }
+        }
     }
 
     // --- Fetch (API key 1) ---

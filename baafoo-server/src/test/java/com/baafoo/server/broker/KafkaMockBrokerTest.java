@@ -2,6 +2,7 @@ package com.baafoo.server.broker;
 
 import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.MatchCondition;
+import com.baafoo.core.model.MqRelationship;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.model.Rule;
 import com.baafoo.server.storage.StorageService;
@@ -448,6 +449,127 @@ public class KafkaMockBrokerTest {
 
         messageStore.clear();
         assertTrue(messageStore.fetch("topic1", 0, 0, 1024).isEmpty());
+    }
+
+    // ----------------------------------------------------------------------
+    // MQ Relationship derivation tests
+    // ----------------------------------------------------------------------
+
+    /**
+     * A configured MQ relationship derives a downstream Kafka message from
+     * an upstream produce, applying key/value templates.
+     */
+    @Test
+    public void testMqRelationshipDerivesMessage() throws Exception {
+        MqRelationship rel = new MqRelationship();
+        rel.setId("rel-1");
+        rel.setFromProtocol("kafka");
+        rel.setFromTopic("source-topic");
+        rel.setToProtocol("kafka");
+        rel.setToTopic("target-topic");
+        rel.setKeyTemplate("derived-{{key}}");
+        rel.setValueTemplate("from-{{topic}}:{{request.body}}");
+        rel.setDelayMs(0);
+        rel.setEnabled(true);
+
+        when(storage.listMqRelationshipsByFrom("kafka", "source-topic"))
+                .thenReturn(Collections.singletonList(rel));
+
+        ByteBuf r = sendRequest(buildProduceRequest("source-topic", 0, "k1", "hello"));
+        consumeProduceResponse(r);
+
+        List<KafkaMessageStore.StoredMessage> derived =
+                messageStore.fetch("target-topic", 0, 0, 1024 * 1024);
+        assertEquals("Should derive 1 message", 1, derived.size());
+        assertEquals("derived-k1",
+                new String(derived.get(0).key, StandardCharsets.UTF_8));
+        assertEquals("from-source-topic:hello",
+                new String(derived.get(0).value, StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Relationships with a non-zero delay schedule the derived message.
+     */
+    @Test
+    public void testMqRelationshipDelayedDerivation() throws Exception {
+        MqRelationship rel = new MqRelationship();
+        rel.setId("rel-delay");
+        rel.setFromProtocol("kafka");
+        rel.setFromTopic("source-topic");
+        rel.setToProtocol("kafka");
+        rel.setToTopic("target-topic");
+        rel.setValueTemplate("delayed-body");
+        rel.setDelayMs(300);
+        rel.setEnabled(true);
+
+        when(storage.listMqRelationshipsByFrom("kafka", "source-topic"))
+                .thenReturn(Collections.singletonList(rel));
+
+        ByteBuf r = sendRequest(buildProduceRequest("source-topic", 0, null, "hello"));
+        consumeProduceResponse(r);
+
+        // Immediately after produce, the delayed message should not yet exist.
+        assertTrue("Delayed message should not exist immediately",
+                messageStore.fetch("target-topic", 0, 0, 1024).isEmpty());
+
+        // Wait for the scheduled task to run.
+        Thread.sleep(600);
+
+        List<KafkaMessageStore.StoredMessage> derived =
+                messageStore.fetch("target-topic", 0, 0, 1024 * 1024);
+        assertEquals("Delayed message should be derived", 1, derived.size());
+        assertEquals("delayed-body",
+                new String(derived.get(0).value, StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Relationships whose target protocol is not kafka must be ignored.
+     */
+    @Test
+    public void testMqRelationshipIgnoresDifferentProtocol() throws Exception {
+        MqRelationship rel = new MqRelationship();
+        rel.setId("rel-pulsar");
+        rel.setFromProtocol("kafka");
+        rel.setFromTopic("source-topic");
+        rel.setToProtocol("pulsar");
+        rel.setToTopic("target-topic");
+        rel.setValueTemplate("pulsar-body");
+        rel.setDelayMs(0);
+        rel.setEnabled(true);
+
+        when(storage.listMqRelationshipsByFrom("kafka", "source-topic"))
+                .thenReturn(Collections.singletonList(rel));
+
+        ByteBuf r = sendRequest(buildProduceRequest("source-topic", 0, null, "hello"));
+        consumeProduceResponse(r);
+
+        assertTrue("Non-kafka target protocol should be ignored",
+                messageStore.fetch("target-topic", 0, 0, 1024).isEmpty());
+    }
+
+    /**
+     * Disabled relationships must not produce derived messages.
+     */
+    @Test
+    public void testMqRelationshipDisabledNotDerived() throws Exception {
+        MqRelationship rel = new MqRelationship();
+        rel.setId("rel-disabled");
+        rel.setFromProtocol("kafka");
+        rel.setFromTopic("source-topic");
+        rel.setToProtocol("kafka");
+        rel.setToTopic("target-topic");
+        rel.setValueTemplate("should-not-appear");
+        rel.setDelayMs(0);
+        rel.setEnabled(false);
+
+        when(storage.listMqRelationshipsByFrom("kafka", "source-topic"))
+                .thenReturn(Collections.singletonList(rel));
+
+        ByteBuf r = sendRequest(buildProduceRequest("source-topic", 0, null, "hello"));
+        consumeProduceResponse(r);
+
+        assertTrue("Disabled relationship should not derive messages",
+                messageStore.fetch("target-topic", 0, 0, 1024).isEmpty());
     }
 
     // --- Helper methods for building Kafka protocol requests ---

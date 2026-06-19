@@ -66,6 +66,20 @@ public interface StorageService {
 
     boolean deleteRuleSet(String id);
 
+    // --- MQ Relationship CRUD ---
+
+    List<MqRelationship> listMqRelationships();
+
+    List<MqRelationship> listMqRelationshipsByFrom(String fromProtocol, String fromTopic);
+
+    MqRelationship getMqRelationship(String id);
+
+    MqRelationship createMqRelationship(MqRelationship relationship);
+
+    MqRelationship updateMqRelationship(String id, MqRelationship update);
+
+    boolean deleteMqRelationship(String id);
+
     // --- Recording ---
 
     List<RecordingEntry> listRecordings(String ruleId, int limit);

@@ -12,7 +12,10 @@ import java.util.List;
  *
  * <p>Phase 1 (P1) supports HTTP {@code HTTP_ERROR} and {@code DELAY} faults.
  * Phase 2 (P1) adds {@code CONNECTION_RESET} and {@code READ_TIMEOUT}.
- * Phase 3 (P2) extends to Kafka/Pulsar protocols.</p>
+ * Phase 3 (P2) extends to Kafka/Pulsar protocols, adding Kafka protocol
+ * faults such as {@code KAFKA_NOT_LEADER_FOR_PARTITION},
+ * {@code KAFKA_OFFSET_OUT_OF_RANGE}, {@code KAFKA_PRODUCE_THROTTLE},
+ * {@code KAFKA_DELAY} and {@code KAFKA_CONNECTION_RESET}.</p>
  */
 public class FaultInjection {
 
@@ -46,6 +49,11 @@ public class FaultInjection {
          *   <li>{@code DELAY} — delay the response by {@code delayMs} (Phase 1)</li>
          *   <li>{@code CONNECTION_RESET} — close the connection with RST (Phase 2)</li>
          *   <li>{@code READ_TIMEOUT} — never respond, let the client time out (Phase 2)</li>
+         *   <li>{@code KAFKA_NOT_LEADER_FOR_PARTITION} — return Kafka error code 6 (Phase 3)</li>
+         *   <li>{@code KAFKA_OFFSET_OUT_OF_RANGE} — return Kafka error code 1 (Phase 3)</li>
+         *   <li>{@code KAFKA_PRODUCE_THROTTLE} — throttle produce by {@code delayMs} ms (Phase 3)</li>
+         *   <li>{@code KAFKA_DELAY} — delay produce processing by {@code delayMs} ms (Phase 3)</li>
+         *   <li>{@code KAFKA_CONNECTION_RESET} — close the Kafka connection (Phase 3)</li>
          * </ul>
          */
         private String type;
@@ -78,6 +86,14 @@ public class FaultInjection {
          */
         private long delayStdDevMs;
 
+        /**
+         * For Kafka protocol faults: the Kafka error code to return.
+         * Used by {@code KAFKA_NOT_LEADER_FOR_PARTITION} (6),
+         * {@code KAFKA_OFFSET_OUT_OF_RANGE} (1) and other custom error faults.
+         * When not set, a type-specific default is used.
+         */
+        private Integer errorCode;
+
         public Fault() {
             this.probability = 1.0;
         }
@@ -96,6 +112,9 @@ public class FaultInjection {
 
         public long getDelayStdDevMs() { return delayStdDevMs; }
         public void setDelayStdDevMs(long delayStdDevMs) { this.delayStdDevMs = delayStdDevMs; }
+
+        public Integer getErrorCode() { return errorCode; }
+        public void setErrorCode(Integer errorCode) { this.errorCode = errorCode; }
 
         @Override
         public String toString() {

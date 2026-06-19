@@ -135,6 +135,7 @@ public class JdbcStorageService implements StorageService {
             "mapper/RuleMapper.xml",
             "mapper/EnvironmentMapper.xml",
             "mapper/SceneMapper.xml",
+            "mapper/MqRelationshipMapper.xml",
             "mapper/RecordingMapper.xml",
             "mapper/AgentMapper.xml",
             "mapper/UserMapper.xml"
@@ -665,6 +666,84 @@ public class JdbcStorageService implements StorageService {
             return session.getMapper(RuleMapper.class).deleteRuleSet(id) > 0;
         } catch (Exception e) {
             log.error("Failed to delete rule set {}: {}", id, e.getMessage());
+            return false;
+        }
+    }
+
+    // --- MQ Relationship CRUD ---
+
+    @Override
+    public List<MqRelationship> listMqRelationships() {
+        try (SqlSession session = openSession()) {
+            return session.getMapper(MqRelationshipMapper.class).listMqRelationships();
+        }
+    }
+
+    @Override
+    public List<MqRelationship> listMqRelationshipsByFrom(String fromProtocol, String fromTopic) {
+        try (SqlSession session = openSession()) {
+            return session.getMapper(MqRelationshipMapper.class)
+                    .listMqRelationshipsByFrom(fromProtocol, fromTopic);
+        }
+    }
+
+    @Override
+    public MqRelationship getMqRelationship(String id) {
+        try (SqlSession session = openSession()) {
+            return session.getMapper(MqRelationshipMapper.class).getMqRelationship(id);
+        }
+    }
+
+    @Override
+    public MqRelationship createMqRelationship(MqRelationship relationship) {
+        if (relationship.getId() == null || relationship.getId().isEmpty()) {
+            relationship.setId(IdGenerator.uuid());
+        }
+        long now = System.currentTimeMillis();
+        relationship.setCreatedAt(now);
+        relationship.setUpdatedAt(now);
+
+        try (SqlSession session = openSession()) {
+            session.getMapper(MqRelationshipMapper.class).createMqRelationship(relationship);
+            return relationship;
+        } catch (Exception e) {
+            log.error("Failed to create MQ relationship: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public MqRelationship updateMqRelationship(String id, MqRelationship update) {
+        try (SqlSession session = openSession()) {
+            MqRelationshipMapper mapper = session.getMapper(MqRelationshipMapper.class);
+            MqRelationship existing = mapper.getMqRelationship(id);
+            if (existing == null) return null;
+
+            if (update.getName() != null) existing.setName(update.getName());
+            if (update.getFromProtocol() != null) existing.setFromProtocol(update.getFromProtocol());
+            if (update.getFromTopic() != null) existing.setFromTopic(update.getFromTopic());
+            if (update.getToProtocol() != null) existing.setToProtocol(update.getToProtocol());
+            if (update.getToTopic() != null) existing.setToTopic(update.getToTopic());
+            if (update.getKeyTemplate() != null) existing.setKeyTemplate(update.getKeyTemplate());
+            if (update.getValueTemplate() != null) existing.setValueTemplate(update.getValueTemplate());
+            existing.setDelayMs(update.getDelayMs());
+            existing.setEnabled(update.isEnabled());
+            existing.setUpdatedAt(System.currentTimeMillis());
+
+            mapper.updateMqRelationship(existing);
+            return existing;
+        } catch (Exception e) {
+            log.error("Failed to update MQ relationship {}: {}", id, e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public boolean deleteMqRelationship(String id) {
+        try (SqlSession session = openSession()) {
+            return session.getMapper(MqRelationshipMapper.class).deleteMqRelationship(id) > 0;
+        } catch (Exception e) {
+            log.error("Failed to delete MQ relationship {}: {}", id, e.getMessage());
             return false;
         }
     }

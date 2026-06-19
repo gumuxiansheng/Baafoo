@@ -29,6 +29,16 @@ import java.util.Random;
  * </ul>
  * </p>
  *
+ * <p>Phase 3 adds Kafka protocol faults:
+ * <ul>
+ *   <li>{@code KAFKA_NOT_LEADER_FOR_PARTITION} / {@code KAFKA_OFFSET_OUT_OF_RANGE}
+ *       — return a Kafka error code in Produce/Fetch responses</li>
+ *   <li>{@code KAFKA_PRODUCE_THROTTLE} — set throttle_time_ms in Produce response</li>
+ *   <li>{@code KAFKA_DELAY} — delay produce processing on the broker</li>
+ *   <li>{@code KAFKA_CONNECTION_RESET} — close the Kafka client connection</li>
+ * </ul>
+ * </p>
+ *
  * <p>Thread-safety: stateless, safe for concurrent use. The caller provides the
  * {@link Random} instance, allowing deterministic testing with a seeded random.</p>
  */
@@ -86,8 +96,27 @@ public final class FaultInjector {
             // the client's read timeout fire. No response, no close.
             return FaultResult.readTimeout(fault);
         }
+        // Phase 3: Kafka protocol faults.
+        if ("KAFKA_NOT_LEADER_FOR_PARTITION".equals(type)) {
+            int code = fault.getErrorCode() != null ? fault.getErrorCode() : 6;
+            return FaultResult.kafkaError(code, fault);
+        }
+        if ("KAFKA_OFFSET_OUT_OF_RANGE".equals(type)) {
+            int code = fault.getErrorCode() != null ? fault.getErrorCode() : 1;
+            return FaultResult.kafkaError(code, fault);
+        }
+        if ("KAFKA_PRODUCE_THROTTLE".equals(type)) {
+            long delay = Math.max(0, fault.getDelayMs());
+            return FaultResult.kafkaThrottle(delay, fault);
+        }
+        if ("KAFKA_DELAY".equals(type)) {
+            long delay = Math.max(0, fault.getDelayMs());
+            return FaultResult.kafkaDelay(delay, fault);
+        }
+        if ("KAFKA_CONNECTION_RESET".equals(type)) {
+            return FaultResult.kafkaConnectionReset(fault);
+        }
         // Unknown fault type — log and treat as no fault so the normal flow proceeds.
-        // (Phase 3 will add Kafka/Pulsar protocol-specific faults here.)
         return FaultResult.noFault();
     }
 
@@ -105,13 +134,17 @@ public final class FaultInjector {
     /**
      * Result of fault evaluation.
      *
-     * <p>One of five outcomes:
+     * <p>One of several outcomes:
      * <ul>
      *   <li>{@link Action#NO_FAULT} — proceed with normal response</li>
      *   <li>{@link Action#HTTP_ERROR} — return an error response with {@link #statusCode}</li>
      *   <li>{@link Action#DELAY} — delay the normal response by {@link #delayMs}</li>
      *   <li>{@link Action#CONNECTION_RESET} — close the connection abruptly (Phase 2)</li>
      *   <li>{@link Action#READ_TIMEOUT} — never respond, let client time out (Phase 2)</li>
+     *   <li>{@link Action#KAFKA_ERROR} — return Kafka error {@link #errorCode}</li>
+     *   <li>{@link Action#KAFKA_THROTTLE} — set Kafka throttle_time_ms to {@link #delayMs}</li>
+     *   <li>{@link Action#KAFKA_DELAY} — delay Kafka request processing by {@link #delayMs}</li>
+     *   <li>{@link Action#KAFKA_CONNECTION_RESET} — close the Kafka client connection</li>
      * </ul>
      * </p>
      */
@@ -122,39 +155,61 @@ public final class FaultInjector {
             HTTP_ERROR,
             DELAY,
             CONNECTION_RESET,
-            READ_TIMEOUT
+            READ_TIMEOUT,
+            KAFKA_ERROR,
+            KAFKA_THROTTLE,
+            KAFKA_DELAY,
+            KAFKA_CONNECTION_RESET
         }
 
         private final Action action;
         private final int statusCode;
+        private final int errorCode;
         private final long delayMs;
         private final Fault triggeredFault;
 
-        private FaultResult(Action action, int statusCode, long delayMs, Fault triggeredFault) {
+        private FaultResult(Action action, int statusCode, int errorCode, long delayMs, Fault triggeredFault) {
             this.action = action;
             this.statusCode = statusCode;
+            this.errorCode = errorCode;
             this.delayMs = delayMs;
             this.triggeredFault = triggeredFault;
         }
 
         public static FaultResult noFault() {
-            return new FaultResult(Action.NO_FAULT, 0, 0, null);
+            return new FaultResult(Action.NO_FAULT, 0, 0, 0, null);
         }
 
         public static FaultResult httpError(int statusCode, Fault fault) {
-            return new FaultResult(Action.HTTP_ERROR, statusCode, 0, fault);
+            return new FaultResult(Action.HTTP_ERROR, statusCode, 0, 0, fault);
         }
 
         public static FaultResult delay(long delayMs, Fault fault) {
-            return new FaultResult(Action.DELAY, 0, delayMs, fault);
+            return new FaultResult(Action.DELAY, 0, 0, delayMs, fault);
         }
 
         public static FaultResult connectionReset(Fault fault) {
-            return new FaultResult(Action.CONNECTION_RESET, 0, 0, fault);
+            return new FaultResult(Action.CONNECTION_RESET, 0, 0, 0, fault);
         }
 
         public static FaultResult readTimeout(Fault fault) {
-            return new FaultResult(Action.READ_TIMEOUT, 0, 0, fault);
+            return new FaultResult(Action.READ_TIMEOUT, 0, 0, 0, fault);
+        }
+
+        public static FaultResult kafkaError(int errorCode, Fault fault) {
+            return new FaultResult(Action.KAFKA_ERROR, 0, errorCode, 0, fault);
+        }
+
+        public static FaultResult kafkaThrottle(long delayMs, Fault fault) {
+            return new FaultResult(Action.KAFKA_THROTTLE, 0, 0, delayMs, fault);
+        }
+
+        public static FaultResult kafkaDelay(long delayMs, Fault fault) {
+            return new FaultResult(Action.KAFKA_DELAY, 0, 0, delayMs, fault);
+        }
+
+        public static FaultResult kafkaConnectionReset(Fault fault) {
+            return new FaultResult(Action.KAFKA_CONNECTION_RESET, 0, 0, 0, fault);
         }
 
         public Action getAction() { return action; }
@@ -169,10 +224,21 @@ public final class FaultInjector {
 
         public boolean isReadTimeout() { return action == Action.READ_TIMEOUT; }
 
+        public boolean isKafkaError() { return action == Action.KAFKA_ERROR; }
+
+        public boolean isKafkaThrottle() { return action == Action.KAFKA_THROTTLE; }
+
+        public boolean isKafkaDelay() { return action == Action.KAFKA_DELAY; }
+
+        public boolean isKafkaConnectionReset() { return action == Action.KAFKA_CONNECTION_RESET; }
+
         /** The HTTP status code to return (only valid when {@link #isHttpError()} is true). */
         public int getStatusCode() { return statusCode; }
 
-        /** The delay in milliseconds (only valid when {@link #isDelay()} is true). */
+        /** The Kafka error code to return (only valid when {@link #isKafkaError()} is true). */
+        public int getErrorCode() { return errorCode; }
+
+        /** The delay in milliseconds (only valid when {@link #isDelay()} or {@link #isKafkaDelay()} or {@link #isKafkaThrottle()} is true). */
         public long getDelayMs() { return delayMs; }
 
         /** The fault that was triggered, or null if no fault was hit. */

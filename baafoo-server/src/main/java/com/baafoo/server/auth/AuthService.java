@@ -50,6 +50,7 @@ public class AuthService {
 
     public enum Resource {
         RULE("rule"), SCENE("scene"), ENVIRONMENT("environment"),
+        MQ_RELATIONSHIP("mq-relationship"),
         RECORDING("recording"), USER("user");
 
         private final String value;
@@ -361,6 +362,7 @@ public class AuthService {
         if (sub.startsWith("rules")) return "rule";
         if (sub.startsWith("scenes")) return "scene";
         if (sub.startsWith("environments")) return "environment";
+        if (sub.startsWith("mq-relationships")) return "mq-relationship";
         if (sub.startsWith("recordings")) return "recording";
         if (sub.startsWith("users")) return "user";
         if (sub.startsWith("agents")) return "rule";

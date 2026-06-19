@@ -30,6 +30,7 @@ public class DdlBuilder {
             createEnvironmentsTable(stmt);
             createSceneSetsTable(stmt);
             createRuleSetsTable(stmt);
+            createMqRelationshipsTable(stmt);
             createRecordingsTable(stmt);
             addColumnIfMissing(stmt, "recordings", "agent_ip", "VARCHAR(45)");
             addColumnIfMissing(stmt, "recordings", "direction", "VARCHAR(20)");
@@ -140,6 +141,25 @@ public class DdlBuilder {
         );
     }
 
+    private void createMqRelationshipsTable(Statement stmt) throws SQLException {
+        stmt.executeUpdate(
+            "CREATE TABLE IF NOT EXISTS mq_relationships (" +
+            "  id VARCHAR(36) PRIMARY KEY," +
+            "  name VARCHAR(255)," +
+            "  from_protocol VARCHAR(50)," +
+            "  from_topic VARCHAR(255)," +
+            "  to_protocol VARCHAR(50)," +
+            "  to_topic VARCHAR(255)," +
+            "  key_template TEXT," +
+            "  value_template TEXT," +
+            "  delay_ms BIGINT DEFAULT 0," +
+            "  enabled BOOLEAN DEFAULT TRUE," +
+            "  created_at BIGINT," +
+            "  updated_at BIGINT" +
+            ")"
+        );
+    }
+
     private void createRecordingsTable(Statement stmt) throws SQLException {
         stmt.executeUpdate(
             "CREATE TABLE IF NOT EXISTS recordings (" +
@@ -235,6 +255,8 @@ public class DdlBuilder {
         // Other indexes
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_agents_environment ON agents(environment)");
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_rule_history_rule_id ON rule_history(rule_id)");
+        stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_mq_relationships_from ON mq_relationships(from_protocol, from_topic)");
+        stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_mq_relationships_to ON mq_relationships(to_protocol, to_topic)");
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)");
         stmt.executeUpdate("CREATE INDEX IF NOT EXISTS idx_users_api_key ON users(api_key)");
     }

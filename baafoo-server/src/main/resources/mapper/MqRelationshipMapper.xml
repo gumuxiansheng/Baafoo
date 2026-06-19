@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.baafoo.server.storage.mapper.MqRelationshipMapper">
+
+    <resultMap id="mqRelationshipResultMap" type="com.baafoo.core.model.MqRelationship">
+        <id property="id" column="id"/>
+        <result property="name" column="name"/>
+        <result property="fromProtocol" column="from_protocol"/>
+        <result property="fromTopic" column="from_topic"/>
+        <result property="toProtocol" column="to_protocol"/>
+        <result property="toTopic" column="to_topic"/>
+        <result property="keyTemplate" column="key_template"/>
+        <result property="valueTemplate" column="value_template"/>
+        <result property="delayMs" column="delay_ms"/>
+        <result property="enabled" column="enabled"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <select id="listMqRelationships" resultMap="mqRelationshipResultMap">
+        SELECT * FROM mq_relationships
+    </select>
+
+    <select id="listMqRelationshipsByFrom" resultMap="mqRelationshipResultMap">
+        SELECT * FROM mq_relationships
+        WHERE from_protocol = #{fromProtocol} AND from_topic = #{fromTopic} AND enabled = TRUE
+    </select>
+
+    <select id="getMqRelationship" resultMap="mqRelationshipResultMap">
+        SELECT * FROM mq_relationships WHERE id = #{id}
+    </select>
+
+    <insert id="createMqRelationship">
+        INSERT INTO mq_relationships (id, name, from_protocol, from_topic, to_protocol, to_topic,
+            key_template, value_template, delay_ms, enabled, created_at, updated_at)
+        VALUES (#{id}, #{name}, #{fromProtocol}, #{fromTopic}, #{toProtocol}, #{toTopic},
+            #{keyTemplate}, #{valueTemplate}, #{delayMs}, #{enabled}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="updateMqRelationship">
+        UPDATE mq_relationships SET
+            name = #{name},
+            from_protocol = #{fromProtocol},
+            from_topic = #{fromTopic},
+            to_protocol = #{toProtocol},
+            to_topic = #{toTopic},
+            key_template = #{keyTemplate},
+            value_template = #{valueTemplate},
+            delay_ms = #{delayMs},
+            enabled = #{enabled},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteMqRelationship">
+        DELETE FROM mq_relationships WHERE id = #{id}
+    </delete>
+
+</mapper>
