@@ -197,6 +197,28 @@ public final class KafkaFlexibleCodec {
         writeUnsignedVarint(buf, zigzag);
     }
 
+    // ===== Tag buffer (KIP-482 flexible versions) =====
+
+    /**
+     * Skip a tag buffer (used in flexible request/response headers and bodies).
+     * A tag buffer is: uvarint(numTags) + for each tag: uvarint(tagId) + uvarint(len) + len bytes.
+     */
+    public static void skipTagBuffer(ByteBuf buf) {
+        int numTags = readUnsignedVarint(buf);
+        for (int i = 0; i < numTags; i++) {
+            readUnsignedVarint(buf); // tagId
+            int len = readUnsignedVarint(buf);
+            buf.skipBytes(len);
+        }
+    }
+
+    /**
+     * Write an empty tag buffer (0 tags).
+     */
+    public static void writeEmptyTagBuffer(ByteBuf buf) {
+        buf.writeByte(0);
+    }
+
     // ===== UUID (KIP-516, Fetch v10+ topic_id) =====
 
     /**

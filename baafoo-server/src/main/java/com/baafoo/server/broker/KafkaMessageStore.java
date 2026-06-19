@@ -20,11 +20,20 @@ public class KafkaMessageStore {
 
     /**
      * Append a produced message and return its offset.
+     * The rawBatch parameter is the full RecordBatch (baseOffset + batchLength + batchData)
+     * as received from the producer, which can be replayed verbatim on fetch.
      */
-    public long append(String topic, int partition, byte[] key, byte[] value) {
+    public long append(String topic, int partition, byte[] key, byte[] value, byte[] rawBatch) {
         TopicPartition tp = new TopicPartition(topic, partition);
         PartitionLog log = logs.computeIfAbsent(tp, k -> new PartitionLog());
-        return log.append(key, value);
+        return log.append(key, value, rawBatch);
+    }
+
+    /**
+     * Append a produced message and return its offset (without raw batch).
+     */
+    public long append(String topic, int partition, byte[] key, byte[] value) {
+        return append(topic, partition, key, value, null);
     }
 
     /**
@@ -104,9 +113,9 @@ public class KafkaMessageStore {
         final List<StoredMessage> messages = Collections.synchronizedList(new ArrayList<StoredMessage>());
         final AtomicLong nextOffset = new AtomicLong(0);
 
-        long append(byte[] key, byte[] value) {
+        long append(byte[] key, byte[] value, byte[] rawBatch) {
             long offset = nextOffset.getAndIncrement();
-            messages.add(new StoredMessage(offset, key, value));
+            messages.add(new StoredMessage(offset, key, value, rawBatch));
             return offset;
         }
 
@@ -136,7 +145,7 @@ public class KafkaMessageStore {
                     byte[] key = preset.key != null ? preset.key.getBytes(StandardCharsets.UTF_8) : null;
                     byte[] value = preset.value != null ? preset.value.getBytes(StandardCharsets.UTF_8) : null;
                     long offset = nextOffset.getAndIncrement();
-                    messages.add(new StoredMessage(offset, key, value));
+                    messages.add(new StoredMessage(offset, key, value, null));
                 }
             }
         }
@@ -145,15 +154,18 @@ public class KafkaMessageStore {
     /**
      * A stored message with offset, key, and value.
      */
-    static final class StoredMessage {
-        final long offset;
-        final byte[] key;
-        final byte[] value;
+    public static final class StoredMessage {
+        public final long offset;
+        public final byte[] key;
+        public final byte[] value;
+        /** Full RecordBatch (baseOffset + batchLength + batchData) from the producer, or null. */
+        public final byte[] rawBatch;
 
-        StoredMessage(long offset, byte[] key, byte[] value) {
+        public StoredMessage(long offset, byte[] key, byte[] value, byte[] rawBatch) {
             this.offset = offset;
             this.key = key;
             this.value = value;
+            this.rawBatch = rawBatch;
         }
     }
 

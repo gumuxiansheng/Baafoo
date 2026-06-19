@@ -11,21 +11,35 @@ package com.baafoo.server.broker.codec;
  * <p>Kafka introduced <em>flexible versions</em> (KIP-482) starting with
  * ApiVersions v3. When a client negotiates ApiVersions v3+, it switches
  * all subsequent requests to Request Header v2 (compact strings, unsigned
- * varint lengths). Baafoo caps ApiVersions at v2 to prevent this switch,
- * allowing us to use the simpler int16-prefixed string format throughout.
+ * varint lengths). Baafoo now supports ApiVersions v3 and the flexible
+ * wire format for APIs at or above their flexible threshold.
  *
- * <p>Within the non-flexible range, we raise the caps to cover as many
- * client versions as possible:
+ * <p>APIs with flexible codec support are raised to their flexible version:
  * <ul>
- *   <li>Produce v8 — covers Kafka 2.4+ clients (non-flexible max)</li>
- *   <li>Fetch v11 — covers Kafka 2.8+ clients (non-flexible max)</li>
- *   <li>Metadata v8 — covers Kafka 2.4+ clients (non-flexible max)</li>
- *   <li>ApiVersions v2 — the KIP-511 gate (kept at v2)</li>
+ *   <li>Produce v9 — flexible (Kafka 3.0+)</li>
+ *   <li>Fetch v12 — flexible (Kafka 3.0+)</li>
+ *   <li>Metadata v9 — flexible (Kafka 3.0+)</li>
+ *   <li>ApiVersions v3 — flexible (KIP-511 gate, now supported)</li>
  * </ul>
  *
- * <p>This covers Java kafka-clients 2.x, librdkafka 1.x, and most
- * non-Java clients. Kafka 3.x+ clients that require flexible versions
- * will negotiate down to these caps.
+ * <p>APIs without flexible codec support are capped below their flexible threshold:
+ * <ul>
+ *   <li>ListOffsets v5 — non-flexible max (flexible at v6)</li>
+ *   <li>OffsetCommit v7 — non-flexible max (flexible at v8)</li>
+ *   <li>OffsetFetch v5 — non-flexible max (flexible at v6)</li>
+ *   <li>FindCoordinator v2 — non-flexible max (flexible at v3)</li>
+ *   <li>JoinGroup v5 — non-flexible max (flexible at v6)</li>
+ *   <li>Heartbeat v3 — non-flexible max (flexible at v4)</li>
+ *   <li>LeaveGroup v3 — non-flexible max (flexible at v4)</li>
+ *   <li>SyncGroup v3 — non-flexible max (flexible at v4)</li>
+ *   <li>DescribeGroups v4 — non-flexible max (flexible at v5)</li>
+ *   <li>ListGroups v2 — non-flexible max (flexible at v3)</li>
+ *   <li>InitProducerId v1 — non-flexible max (flexible at v2)</li>
+ *   <li>DescribeConfigs v3 — non-flexible max (flexible at v4)</li>
+ * </ul>
+ *
+ * <p>This covers Java kafka-clients 2.x, 3.x, librdkafka 1.x, and most
+ * non-Java clients including Kafka 3.x+ that require flexible versions.
  *
  * @see <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-482">KIP-482</a>
  * @see <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-511">KIP-511</a>
@@ -37,8 +51,15 @@ public final class KafkaProtocolVersions {
 
     // ===== API keys (Kafka protocol) =====
 
+    /** Kafka error code: no error. */
+    public static final short NONE = 0;
+
+    /** Kafka error code: unsupported version. */
+    public static final short UNSUPPORTED_VERSION = 35;
+
     public static final short API_PRODUCE = 0;
     public static final short API_FETCH = 1;
+    public static final short API_LIST_OFFSETS = 2;
     public static final short API_METADATA = 3;
     public static final short API_OFFSET_COMMIT = 8;
     public static final short API_OFFSET_FETCH = 9;
@@ -55,6 +76,8 @@ public final class KafkaProtocolVersions {
 
     // ===== Flexible-version thresholds (KIP-482) =====
 
+    /** ListOffsets becomes flexible at v6. */
+    public static final short LIST_OFFSETS_FLEXIBLE_VERSION = 6;
     /** Produce becomes flexible at v9. */
     public static final short PRODUCE_FLEXIBLE_VERSION = 9;
     /** Fetch becomes flexible at v12. */
@@ -63,32 +86,54 @@ public final class KafkaProtocolVersions {
     public static final short METADATA_FLEXIBLE_VERSION = 9;
     /** ApiVersions becomes flexible at v3 — the KIP-511 gate. */
     public static final short API_VERSIONS_FLEXIBLE_VERSION = 3;
+    /** OffsetCommit becomes flexible at v8. */
+    public static final short OFFSET_COMMIT_FLEXIBLE_VERSION = 8;
+    /** OffsetFetch becomes flexible at v6. */
+    public static final short OFFSET_FETCH_FLEXIBLE_VERSION = 6;
+    /** FindCoordinator becomes flexible at v3. */
+    public static final short FIND_COORDINATOR_FLEXIBLE_VERSION = 3;
+    /** JoinGroup becomes flexible at v6. */
+    public static final short JOIN_GROUP_FLEXIBLE_VERSION = 6;
+    /** Heartbeat becomes flexible at v4. */
+    public static final short HEARTBEAT_FLEXIBLE_VERSION = 4;
+    /** LeaveGroup becomes flexible at v4. */
+    public static final short LEAVE_GROUP_FLEXIBLE_VERSION = 4;
+    /** SyncGroup becomes flexible at v4. */
+    public static final short SYNC_GROUP_FLEXIBLE_VERSION = 4;
+    /** DescribeGroups becomes flexible at v5. */
+    public static final short DESCRIBE_GROUPS_FLEXIBLE_VERSION = 5;
+    /** ListGroups becomes flexible at v3. */
+    public static final short LIST_GROUPS_FLEXIBLE_VERSION = 3;
+    /** InitProducerId becomes flexible at v2. */
+    public static final short INIT_PRODUCER_ID_FLEXIBLE_VERSION = 2;
+    /** DescribeConfigs becomes flexible at v4. */
+    public static final short DESCRIBE_CONFIGS_FLEXIBLE_VERSION = 4;
 
     // ===== Supported version ranges =====
 
     /**
      * Supported API version table: {apiKey, minVersion, maxVersion}.
      *
-     * <p>Caps are set just below the flexible-version threshold for each API.
-     * This lets Baafoo handle the non-flexible wire format while still
-     * supporting modern Kafka clients (2.x+).
+     * <p>APIs with flexible codec support are raised to their flexible version.
+     * APIs without flexible codec support are capped below the flexible threshold.
      */
     public static final int[][] SUPPORTED_APIS = {
-            {API_PRODUCE,           0, 8},   // v3→v8: covers Kafka 0.11-2.4+
-            {API_FETCH,             0, 11},  // v7→v11: covers Kafka 2.4-2.8+
-            {API_METADATA,          0, 8},   // unchanged (v8 = non-flexible max)
-            {API_OFFSET_COMMIT,     0, 8},
-            {API_OFFSET_FETCH,      0, 8},
-            {API_FIND_COORDINATOR,  0, 4},
-            {API_JOIN_GROUP,        0, 7},
-            {API_HEARTBEAT,         0, 4},
-            {API_LEAVE_GROUP,       0, 4},
-            {API_SYNC_GROUP,        0, 5},
-            {API_DESCRIBE_GROUPS,   0, 5},
-            {API_LIST_GROUPS,       0, 4},
-            {API_API_VERSIONS,      0, 2},   // KIP-511 gate: cap at v2
-            {API_INIT_PRODUCER_ID,  0, 1},
-            {API_DESCRIBE_CONFIGS,  0, 4}
+            {API_PRODUCE,           0, 9},   // flexible at v9
+            {API_FETCH,             0, 12},  // flexible at v12
+            {API_LIST_OFFSETS,      0, 5},   // flexible at v6, cap v5 (keep non-flex)
+            {API_METADATA,          0, 9},   // flexible at v9
+            {API_OFFSET_COMMIT,     0, 7},   // flexible at v8, cap v7 (keep non-flex)
+            {API_OFFSET_FETCH,      0, 5},   // flexible at v6, cap v5 (keep non-flex)
+            {API_FIND_COORDINATOR,  0, 2},   // flexible at v3, cap v2 (keep non-flex)
+            {API_JOIN_GROUP,        0, 5},   // flexible at v6, cap v5 (keep non-flex)
+            {API_HEARTBEAT,         0, 3},   // flexible at v4, cap v3 (keep non-flex)
+            {API_LEAVE_GROUP,       0, 3},   // flexible at v4, cap v3 (keep non-flex)
+            {API_SYNC_GROUP,        0, 3},   // flexible at v4, cap v3 (keep non-flex)
+            {API_DESCRIBE_GROUPS,   0, 4},   // flexible at v5, cap v4 (keep non-flex)
+            {API_LIST_GROUPS,       0, 2},   // flexible at v3, cap v2 (keep non-flex)
+            {API_API_VERSIONS,      0, 3},   // flexible at v3 — NOW SUPPORTED
+            {API_INIT_PRODUCER_ID,  0, 1},   // flexible at v2, cap v1 (keep non-flex)
+            {API_DESCRIBE_CONFIGS,  0, 3}    // flexible at v4, cap v3 (keep non-flex)
     };
 
     /**
@@ -96,10 +141,22 @@ public final class KafkaProtocolVersions {
      */
     public static boolean isFlexible(short apiKey, short apiVersion) {
         switch (apiKey) {
-            case API_PRODUCE:      return apiVersion >= PRODUCE_FLEXIBLE_VERSION;
-            case API_FETCH:        return apiVersion >= FETCH_FLEXIBLE_VERSION;
-            case API_METADATA:     return apiVersion >= METADATA_FLEXIBLE_VERSION;
-            case API_API_VERSIONS: return apiVersion >= API_VERSIONS_FLEXIBLE_VERSION;
+            case API_LIST_OFFSETS:      return apiVersion >= LIST_OFFSETS_FLEXIBLE_VERSION;
+            case API_PRODUCE:           return apiVersion >= PRODUCE_FLEXIBLE_VERSION;
+            case API_FETCH:             return apiVersion >= FETCH_FLEXIBLE_VERSION;
+            case API_METADATA:          return apiVersion >= METADATA_FLEXIBLE_VERSION;
+            case API_API_VERSIONS:      return apiVersion >= API_VERSIONS_FLEXIBLE_VERSION;
+            case API_OFFSET_COMMIT:     return apiVersion >= OFFSET_COMMIT_FLEXIBLE_VERSION;
+            case API_OFFSET_FETCH:      return apiVersion >= OFFSET_FETCH_FLEXIBLE_VERSION;
+            case API_FIND_COORDINATOR:  return apiVersion >= FIND_COORDINATOR_FLEXIBLE_VERSION;
+            case API_JOIN_GROUP:        return apiVersion >= JOIN_GROUP_FLEXIBLE_VERSION;
+            case API_HEARTBEAT:         return apiVersion >= HEARTBEAT_FLEXIBLE_VERSION;
+            case API_LEAVE_GROUP:       return apiVersion >= LEAVE_GROUP_FLEXIBLE_VERSION;
+            case API_SYNC_GROUP:        return apiVersion >= SYNC_GROUP_FLEXIBLE_VERSION;
+            case API_DESCRIBE_GROUPS:   return apiVersion >= DESCRIBE_GROUPS_FLEXIBLE_VERSION;
+            case API_LIST_GROUPS:       return apiVersion >= LIST_GROUPS_FLEXIBLE_VERSION;
+            case API_INIT_PRODUCER_ID:  return apiVersion >= INIT_PRODUCER_ID_FLEXIBLE_VERSION;
+            case API_DESCRIBE_CONFIGS:  return apiVersion >= DESCRIBE_CONFIGS_FLEXIBLE_VERSION;
             default: return false;
         }
     }
