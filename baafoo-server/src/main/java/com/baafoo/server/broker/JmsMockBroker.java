@@ -1,7 +1,6 @@
 package com.baafoo.server.broker;
 
 import com.baafoo.core.model.MatchCondition;
-import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.model.Rule;
 import com.baafoo.server.storage.StorageService;
@@ -24,7 +23,6 @@ import javax.jms.Destination;
 import javax.jms.MessageProducer;
 import javax.jms.Session;
 import javax.jms.TextMessage;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -80,8 +78,6 @@ public class JmsMockBroker {
         config.setPersistenceEnabled(false);
         config.setSecurityEnabled(false);
         config.setIDCacheSize(2048);
-        config.setIncomingInterceptorClassNames(java.util.Collections.emptyList());
-        config.setOutgoingInterceptorClassNames(java.util.Collections.emptyList());
 
         // TCP acceptor for external clients (OpenWire protocol)
         config.addAcceptorConfiguration(TCP_ACCEPTOR, "tcp://0.0.0.0:" + port);
@@ -105,6 +101,12 @@ public class JmsMockBroker {
 
         server = ActiveMQServers.newActiveMQServer(config);
         server.start();
+
+        // Register the recording plugin to capture runtime JMS producer messages
+        // from all protocols (OpenWire + Core) with proper environment resolution.
+        if (storage != null) {
+            server.registerBrokerPlugin(new JmsRecordingPlugin(storage));
+        }
 
         // Create the DLQ queue
         server.createQueue(SimpleString.toSimpleString(DLQ_ADDRESS), RoutingType.ANYCAST,
@@ -233,31 +235,15 @@ public class JmsMockBroker {
                 createQueue(destName);
             }
 
-            // Load preset messages from responses
+            // Load preset messages from responses.
+            // Preset messages are rule configuration, not runtime traffic, so they
+            // are NOT added to recordings. Runtime JMS producer traffic is captured
+            // by JmsRecordingPlugin and will have proper environmentId/agentId.
             for (ResponseEntry response : rule.getResponses()) {
                 String body = response.getBody();
                 if (body != null && !body.isEmpty()) {
                     sendPresetMessage(destName, body, response.getDelayMs());
                     loaded++;
-                    // Record the preset message when storage is available
-                    if (storage != null) {
-                        try {
-                            RecordingEntry rec = new RecordingEntry();
-                            rec.setRuleId(rule.getId());
-                            rec.setProtocol("jms");
-                            rec.setPath(destName);
-                            rec.setRequestBody(body);
-                            rec.setResponseStatusCode(0);
-                            rec.setRequestHeaders(Collections.emptyMap());
-                            rec.setResponseHeaders(Collections.emptyMap());
-                            rec.setEnvironmentId(null);
-                            rec.setAgentId(null);
-                            rec.setAgentIp(null);
-                            storage.addRecording(rec);
-                        } catch (Exception e) {
-                            log.warn("Failed to record JMS preset message for rule {}: {}", rule.getId(), e.getMessage());
-                        }
-                    }
                 }
             }
         }

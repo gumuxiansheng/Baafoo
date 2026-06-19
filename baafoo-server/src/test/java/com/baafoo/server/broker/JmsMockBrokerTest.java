@@ -1,12 +1,17 @@
 package com.baafoo.server.broker;
 
+import com.baafoo.core.model.Environment;
+import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.MatchCondition;
+import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.model.Rule;
+import com.baafoo.server.storage.StorageService;
 import org.apache.activemq.ActiveMQConnectionFactory;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
 
 import javax.jms.*;
 import java.util.ArrayList;
@@ -18,6 +23,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 /**
  * Integration tests for {@link JmsMockBroker}.
@@ -39,10 +46,16 @@ public class JmsMockBrokerTest {
 
     private JmsMockBroker broker;
     private Connection connection;
+    private StorageService storage;
 
     @Before
     public void setUp() throws Exception {
-        broker = new JmsMockBroker(TEST_PORT, 3);
+        storage = mock(StorageService.class);
+        when(storage.listRules()).thenReturn(Collections.<Rule>emptyList());
+        when(storage.listAgents()).thenReturn(Collections.<StorageService.AgentRegistration>emptyList());
+        when(storage.listEnvironments()).thenReturn(Collections.<Environment>emptyList());
+
+        broker = new JmsMockBroker(TEST_PORT, 3, storage);
         broker.start();
         ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory("tcp://127.0.0.1:" + TEST_PORT);
         connection = cf.createConnection();
@@ -388,5 +401,58 @@ public class JmsMockBrokerTest {
         assertEquals("after-reload", msg.getText());
 
         session.close();
+    }
+
+    // ---- Recording ----
+
+    @Test
+    public void testPresetMessagesAreNotRecorded() throws Exception {
+        broker.createQueue("presetQueue");
+        broker.sendPresetMessage("presetQueue", "preset-body", 0);
+
+        // Preset messages are delivered via in-VM connection, so the broker plugin
+        // cannot resolve them to an agent/environment and must not create recordings.
+        verify(storage, never()).addRecording(any(RecordingEntry.class));
+    }
+
+    @Test
+    public void testRuntimeProducerMessageRecorded() throws Exception {
+        // Configure an agent/environment in RECORD_AND_STUB mode so runtime producer
+        // traffic from 127.0.0.1 is captured.
+        Environment env = new Environment();
+        env.setName("record-env");
+        env.setMode(EnvironmentMode.RECORD_AND_STUB);
+
+        StorageService.AgentRegistration agent = new StorageService.AgentRegistration();
+        agent.agentId = "jms-agent";
+        agent.environment = "record-env";
+        agent.agentIp = "127.0.0.1";
+        agent.lastHeartbeat = System.currentTimeMillis();
+
+        when(storage.listEnvironments()).thenReturn(Arrays.asList(env));
+        when(storage.listAgents()).thenReturn(Arrays.asList(agent));
+
+        broker.createQueue("recordQueue");
+
+        Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+        Queue queue = session.createQueue("recordQueue");
+        MessageProducer producer = session.createProducer(queue);
+        connection.start();
+
+        TextMessage message = session.createTextMessage("runtime-jms-body");
+        producer.send(message);
+        producer.close();
+        session.close();
+
+        ArgumentCaptor<RecordingEntry> captor = ArgumentCaptor.forClass(RecordingEntry.class);
+        verify(storage, timeout(3000).atLeast(1)).addRecording(captor.capture());
+
+        RecordingEntry rec = captor.getValue();
+        assertEquals("jms", rec.getProtocol());
+        assertEquals("recordQueue", rec.getPath());
+        assertEquals("runtime-jms-body", rec.getRequestBody());
+        assertEquals("record-env", rec.getEnvironmentId());
+        assertEquals("jms-agent", rec.getAgentId());
+        assertEquals("127.0.0.1", rec.getAgentIp());
     }
 }

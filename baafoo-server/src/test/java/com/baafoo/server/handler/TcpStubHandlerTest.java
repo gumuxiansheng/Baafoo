@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 import static org.junit.Assert.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 public class TcpStubHandlerTest {
@@ -29,9 +30,13 @@ public class TcpStubHandlerTest {
     }
 
     private void setupAgentAndEnv(String envName) {
+        setupAgentAndEnv(envName, EnvironmentMode.STUB);
+    }
+
+    private void setupAgentAndEnv(String envName, EnvironmentMode mode) {
         Environment env = new Environment();
         env.setName(envName);
-        env.setMode(EnvironmentMode.STUB);
+        env.setMode(mode);
 
         StorageService.AgentRegistration agentReg = new StorageService.AgentRegistration();
         agentReg.agentId = "test-agent";
@@ -681,5 +686,107 @@ public class TcpStubHandlerTest {
         byte[] outBytes = new byte[out.readableBytes()];
         out.readBytes(outBytes);
         assertEquals("fallback-response", new String(outBytes, StandardCharsets.UTF_8));
+    }
+
+    // --- Recording ---
+
+    @Test
+    public void testRecordsSingleRoundInRecordMode() {
+        Rule rule = new Rule();
+        rule.setId("r-record");
+        rule.setProtocol("tcp");
+        rule.setEnabled(true);
+        rule.setEnvironments(Arrays.asList("record-env"));
+        rule.setTcpPrefixHex("68656c6c6f"); // "hello"
+
+        ResponseEntry resp = new ResponseEntry();
+        resp.setBody("recorded-response");
+        rule.setResponses(Arrays.asList(resp));
+
+        setupAgentAndEnv("record-env", EnvironmentMode.RECORD_AND_STUB);
+        when(storage.listRules()).thenReturn(Arrays.asList(rule));
+
+        EmbeddedChannel channel = createChannel();
+        channel.writeInbound(Unpooled.copiedBuffer("hello world", StandardCharsets.UTF_8));
+
+        org.mockito.ArgumentCaptor<RecordingEntry> captor =
+                org.mockito.ArgumentCaptor.forClass(RecordingEntry.class);
+        verify(storage).addRecording(captor.capture());
+
+        RecordingEntry rec = captor.getValue();
+        assertEquals("tcp", rec.getProtocol());
+        assertEquals("record-env", rec.getEnvironmentId());
+        assertEquals("test-agent", rec.getAgentId());
+        assertEquals("127.0.0.1", rec.getAgentIp());
+        assertEquals("hello world", rec.getRequestBody());
+    }
+
+    @Test
+    public void testRecordsMultiRoundInRecordMode() {
+        Rule rule = new Rule();
+        rule.setId("r-record-multi");
+        rule.setProtocol("tcp");
+        rule.setEnabled(true);
+        rule.setEnvironments(Arrays.asList("record-env"));
+        rule.setTcpLoop(true);
+
+        TcpRound round1 = new TcpRound();
+        round1.setName("auth");
+        round1.setPattern(".*61757468.*"); // hex of "auth"
+        ResponseEntry resp1 = new ResponseEntry();
+        resp1.setBody("auth-ok");
+        round1.setResponse(resp1);
+
+        TcpRound round2 = new TcpRound();
+        round2.setName("data");
+        round2.setPattern(".*64617461.*"); // hex of "data"
+        ResponseEntry resp2 = new ResponseEntry();
+        resp2.setBody("data-ok");
+        round2.setResponse(resp2);
+
+        rule.setTcpRounds(Arrays.asList(round1, round2));
+
+        setupAgentAndEnv("record-env", EnvironmentMode.RECORD);
+        when(storage.listRules()).thenReturn(Arrays.asList(rule));
+
+        EmbeddedChannel channel = createChannel();
+        channel.writeInbound(Unpooled.copiedBuffer("auth-request", StandardCharsets.UTF_8));
+        channel.readOutbound();
+        channel.writeInbound(Unpooled.copiedBuffer("data-request", StandardCharsets.UTF_8));
+        channel.readOutbound();
+
+        org.mockito.ArgumentCaptor<RecordingEntry> captor =
+                org.mockito.ArgumentCaptor.forClass(RecordingEntry.class);
+        verify(storage, times(2)).addRecording(captor.capture());
+
+        List<RecordingEntry> recordings = captor.getAllValues();
+        assertEquals("auth-request", recordings.get(0).getRequestBody());
+        assertEquals("data-request", recordings.get(1).getRequestBody());
+        for (RecordingEntry rec : recordings) {
+            assertEquals("tcp", rec.getProtocol());
+            assertEquals("record-env", rec.getEnvironmentId());
+        }
+    }
+
+    @Test
+    public void testDoesNotRecordInStubMode() {
+        Rule rule = new Rule();
+        rule.setId("r-no-record");
+        rule.setProtocol("tcp");
+        rule.setEnabled(true);
+        rule.setEnvironments(Arrays.asList("stub-env"));
+        rule.setTcpPrefixHex("68656c6c6f");
+
+        ResponseEntry resp = new ResponseEntry();
+        resp.setBody("stub-response");
+        rule.setResponses(Arrays.asList(resp));
+
+        setupAgentAndEnv("stub-env", EnvironmentMode.STUB);
+        when(storage.listRules()).thenReturn(Arrays.asList(rule));
+
+        EmbeddedChannel channel = createChannel();
+        channel.writeInbound(Unpooled.copiedBuffer("hello world", StandardCharsets.UTF_8));
+
+        verify(storage, never()).addRecording(any(RecordingEntry.class));
     }
 }

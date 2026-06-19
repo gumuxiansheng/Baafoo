@@ -145,6 +145,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                         Collections.<String, String>emptyMap(), payload);
                 rec.setAgentId(agentId);
                 rec.setAgentIp(agentIp);
+                rec.setEnvironmentId(agentEnvironment);
                 storage.addRecording(rec);
             }
 
@@ -368,12 +369,12 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                                 String payload) {
         EnvironmentMode currentMode = agentResolver.resolveEnvironmentMode(agentEnvironment);
         if (currentMode == EnvironmentMode.RECORD || currentMode == EnvironmentMode.RECORD_AND_STUB) {
-            MatchEngine.MatchResult tempResult = new MatchEngine.MatchResult(rule, 0);
             RecordingEntry rec = RecordingHelper.buildFromStub(
-                    tempResult, "tcp", "127.0.0.1", 0, null, null,
+                    rule, entry, "tcp", "127.0.0.1", 0, null, null,
                     Collections.<String, String>emptyMap(), payload);
             rec.setAgentId(agentId);
             rec.setAgentIp(agentIp);
+            rec.setEnvironmentId(agentEnvironment);
             storage.addRecording(rec);
         }
     }

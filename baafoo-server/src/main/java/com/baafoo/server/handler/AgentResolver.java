@@ -55,15 +55,24 @@ public class AgentResolver {
      * </ul></p>
      */
     public AgentInfo resolveAll(ChannelHandlerContext ctx) {
-        AgentInfo info = new AgentInfo();
-        List<StorageService.AgentRegistration> agents = storage.listAgents();
-        long onlineThreshold = System.currentTimeMillis() - 90000;
-
-        // Extract channel IP for environment matching
         String channelIp = null;
         if (ctx != null) {
             channelIp = resolveAgentIpFromChannel(ctx);
         }
+        return resolveByIp(channelIp);
+    }
+
+    /**
+     * Resolve agent info from a remote IP string.
+     *
+     * <p>Used by protocol handlers that do not have a Netty {@link ChannelHandlerContext}
+     * but still need to associate traffic with an agent/environment (e.g. JMS broker
+     * interceptors).</p>
+     */
+    public AgentInfo resolveByIp(String channelIp) {
+        AgentInfo info = new AgentInfo();
+        List<StorageService.AgentRegistration> agents = storage.listAgents();
+        long onlineThreshold = System.currentTimeMillis() - 90000;
 
         // Collect all agents that match by IP.
         // When multiple agents share the same IP:

@@ -2,6 +2,7 @@ package com.baafoo.server.handler;
 
 import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.ResponseEntry;
+import com.baafoo.core.model.Rule;
 import com.baafoo.core.util.MatchEngine;
 
 import java.util.HashMap;
@@ -20,9 +21,15 @@ public final class RecordingHelper {
     public static RecordingEntry buildFromStub(MatchEngine.MatchResult result, String protocol,
                                                 String host, int port, String method, String path,
                                                 Map<String, String> headers, String body) {
-        ResponseEntry entry = result.getResponse();
+        return buildFromStub(result.getRule(), result.getResponse(), protocol, host, port,
+                method, path, headers, body);
+    }
+
+    public static RecordingEntry buildFromStub(Rule rule, ResponseEntry entry, String protocol,
+                                                String host, int port, String method, String path,
+                                                Map<String, String> headers, String body) {
         RecordingEntry rec = new RecordingEntry();
-        rec.setRuleId(result.getRule().getId());
+        rec.setRuleId(rule != null ? rule.getId() : null);
         rec.setProtocol(protocol);
         rec.setHost(host);
         rec.setPort(port);
@@ -30,9 +37,11 @@ public final class RecordingHelper {
         rec.setPath(path);
         rec.setRequestHeaders(headers);
         rec.setRequestBody(body);
-        rec.setResponseStatusCode(entry.getStatusCode());
-        rec.setResponseHeaders(entry.getHeaders() != null ? entry.getHeaders() : new HashMap<String, String>());
-        rec.setResponseBody(entry.getBody());
+        if (entry != null) {
+            rec.setResponseStatusCode(entry.getStatusCode());
+            rec.setResponseHeaders(entry.getHeaders() != null ? entry.getHeaders() : new HashMap<String, String>());
+            rec.setResponseBody(entry.getBody());
+        }
         rec.setResponseTimeMs(0);
         return rec;
     }

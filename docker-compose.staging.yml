@@ -209,7 +209,7 @@ services:
         curl -sf -X POST http://server:8084/__baafoo__/api/environments \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: staging-admin-key" \
-          -d "{\"name\":\"staging-b\",\"mode\":\"stub\",\"description\":\"Staging环境B - Spring Boot测试\"}" && echo "  OK" || echo "  已存在" &&
+          -d "{\"name\":\"staging-b\",\"mode\":\"record-and-stub\",\"description\":\"Staging环境B - Spring Boot测试\"}" && echo "  OK" || echo "  已存在" &&
         echo "" &&
         echo "[3/6] 创建 staging-a HTTP挡板规则..." &&
         curl -sf -X POST http://server:8084/__baafoo__/api/rules \
