@@ -166,7 +166,7 @@ final class PulsarProtobufCodec {
 
     // ---- Sub-message field numbers (Pulsar 2.10.x → 3.x lightproto) ----
     // Connect: client_version=1, auth_method=2, auth_data=3, protocol_version=4, auth_method_name=5
-    //   (Pulsar 3.x: optional feature_flags added at field 6 — skipped via skipField)
+    //   (Pulsar 3.x: optional feature_flags added at field 10 — skipped via skipField)
     // Connected: server_version=1, protocol_version=2, max_message_size=3
     //   (Pulsar 3.x: optional feature_flags added at field 4 — skipped via skipField)
     // LookupTopic: topic=1, requestId=2, authoritative=3
@@ -181,7 +181,7 @@ final class PulsarProtobufCodec {
     // SendReceipt: producerId=1, sequenceId=2, messageId=3, highestSequenceId=4
     //   MessageIdData: ledgerId=1, entryId=2, partition=3, batch_index=4
     // Subscribe: topic=1, subscription=2, subType=3, consumerId=4, requestId=5, consumerName=6
-    //   (Pulsar 3.x: optional consumerEpoch added at field 18 — skipped via skipField)
+    //   (Pulsar 3.x: optional consumerEpoch added at field 19 — skipped via skipField)
     //   SubType enum: Exclusive=0, Shared=1, Failover=2
     // Success: requestId=1, schema=2
     // GetTopicsOfNamespace: requestId=1, namespace=2, mode=3
@@ -581,10 +581,13 @@ final class PulsarProtobufCodec {
         writeStringField(out, 1, serverVersion);
         // protocol_version (field 2, varint)
         writeVarintField(out, 2, protocolVersion);
-        // max_message_size (field 3, varint) — included for Pulsar 3.x compatibility.
-        // Pulsar 2.10.x clients treat this as optional; Pulsar 3.x clients use it
-        // to size their send buffers. 0 means "no limit" (broker default).
-        writeVarintField(out, 3, 0);
+        // max_message_size (field 3, varint) — MUST be set explicitly.
+        // Pulsar ClientCnx.maxMessageSize is a STATIC field. If any previous
+        // connection set it to 0, all subsequent connections inherit 0.
+        // Setting it explicitly to 5 MB (the Pulsar default) ensures the
+        // client's message-size check uses a sane value regardless of
+        // connection ordering or static-state pollution.
+        writeVarintField(out, 3, 5 * 1024 * 1024); // 5 MB
         return out.toByteArray();
     }
 
@@ -616,9 +619,16 @@ final class PulsarProtobufCodec {
         writeVarintField64(out, 1, requestId);
         // producer_name (field 2, string)
         writeStringField(out, 2, producerName);
-        // schema_version (field 4, bytes) — must be present (even if empty) to avoid
-        // IllegalStateException in Pulsar 2.10.x lightproto ClientCnx.handleProducerSuccess
-        writeBytesField(out, 4, new byte[0]);
+        // last_sequence_id (field 3, int64) — omitted (default 0 is fine for mock)
+        // schema_version (field 4, bytes) — MUST be present.
+        // Pulsar 2.10.x ClientCnx.handleProducerSuccess() calls
+        // success.getSchemaVersion() without checking hasSchemaVersion().
+        // Lightproto throws IllegalStateException for unset fields.
+        // Use a 1-byte dummy version {0x00} so the field is present.
+        writeBytesField(out, 4, new byte[]{0x00});
+        // topic_epoch (field 5, int64) — optional, omit
+        // producer_ready (field 6, bool) — required for protocolVersion >= 13 (Pulsar 2.6+)
+        writeBoolField(out, 6, true);
         return out.toByteArray();
     }
 
@@ -856,5 +866,10 @@ final class PulsarProtobufCodec {
         writeVarint(out, (fieldNumber << 3) | 2); // wire type 2 = length-delimited
         writeVarint(out, value.length);
         out.write(value, 0, value.length);
+    }
+
+    private static void writeBoolField(ByteArrayOutputStream out, int fieldNumber, boolean value) {
+        writeVarint(out, (fieldNumber << 3) | 0); // wire type 0 = varint
+        out.write(value ? 1 : 0);
     }
 }

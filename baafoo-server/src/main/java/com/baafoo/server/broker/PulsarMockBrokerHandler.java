@@ -162,12 +162,12 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
         // Negotiate protocol version: cap at our supported max (v20 for Pulsar 3.x).
         // If the client requests a higher version, we respond with our max and log
         // a warning — the client should downgrade gracefully.
-        int clientVersion = cmd.protocolVersion > 0 ? cmd.protocolVersion : 12;
-        int negotiatedVersion = Math.min(clientVersion, PulsarProtobufCodec.MAX_SUPPORTED_PROTOCOL_VERSION);
-        if (clientVersion > PulsarProtobufCodec.MAX_SUPPORTED_PROTOCOL_VERSION) {
+        int clientProtocolVersion = cmd.protocolVersion > 0 ? cmd.protocolVersion : 12;
+        int negotiatedVersion = Math.min(clientProtocolVersion, PulsarProtobufCodec.MAX_SUPPORTED_PROTOCOL_VERSION);
+        if (clientProtocolVersion > PulsarProtobufCodec.MAX_SUPPORTED_PROTOCOL_VERSION) {
             log.warn("Pulsar client requested protocolVersion={} but Baafoo supports max {}. "
                     + "Negotiating down to {}. Client version: {}",
-                    clientVersion, PulsarProtobufCodec.MAX_SUPPORTED_PROTOCOL_VERSION,
+                    clientProtocolVersion, PulsarProtobufCodec.MAX_SUPPORTED_PROTOCOL_VERSION,
                     negotiatedVersion, cmd.clientVersion);
         }
         this.protocolVersion = negotiatedVersion;
@@ -755,7 +755,6 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
     }
 
     private void logResponse(String label, ByteBuf buf) {
-        if (!log.isDebugEnabled()) return;
         int readerIndex = buf.readerIndex();
         byte[] bytes = new byte[Math.min(buf.readableBytes(), 64)];
         buf.getBytes(readerIndex, bytes);
