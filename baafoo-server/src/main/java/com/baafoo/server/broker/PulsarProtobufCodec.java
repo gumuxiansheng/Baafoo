@@ -64,7 +64,14 @@ import java.util.List;
  *   AckResponse                            = 38;
  * </pre>
  *
- * <h3>Pulsar command Type enum values (Pulsar 2.10.x lightproto)</h3>
+ * <h3>Pulsar 3.x (protocolVersion 20+) additions</h3>
+ * <p>The core command field numbers above are stable across Pulsar 2.10.x → 3.x.
+ * Pulsar 3.x introduces new command types (TcClientConnectRequest/Response) and
+ * new optional fields in some sub-messages. Because protobuf unknown-field
+ * semantics are applied via {@link #skipField}, new fields from Pulsar 3.x
+ * clients are silently skipped without breaking decoding.</p>
+ *
+ * <h3>Pulsar command Type enum values (Pulsar 2.10.x → 3.x lightproto)</h3>
  * <pre>
  *   CONNECT = 2;  CONNECTED = 3;
  *   SUBSCRIBE = 4;  PRODUCER = 5;
@@ -84,11 +91,17 @@ import java.util.List;
  *   GET_TOPICS_OF_NAMESPACE = 32;
  *   GET_TOPICS_OF_NAMESPACE_RESPONSE = 33;
  *   AUTH_CHALLENGE = 36;  AUTH_RESPONSE = 37;
+ *   // Pulsar 3.x additions (protocolVersion 20+):
+ *   TC_CLIENT_CONNECT_REQUEST = 65;
+ *   TC_CLIENT_CONNECT_RESPONSE = 66;
  * </pre>
  */
 final class PulsarProtobufCodec {
 
-    // ---- PulsarBaseCommand Type enum (Pulsar 2.10.x lightproto) ----
+    /** Maximum protocol version this codec supports (Pulsar 3.x = v20). */
+    static final int MAX_SUPPORTED_PROTOCOL_VERSION = 20;
+
+    // ---- PulsarBaseCommand Type enum (Pulsar 2.10.x → 3.x lightproto) ----
     static final int TYPE_CONNECT = 2;
     static final int TYPE_CONNECTED = 3;
     static final int TYPE_SUBSCRIBE = 4;
@@ -117,6 +130,9 @@ final class PulsarProtobufCodec {
     static final int TYPE_GET_TOPICS_OF_NAMESPACE_RESPONSE = 33;
     static final int TYPE_AUTH_CHALLENGE = 36;
     static final int TYPE_AUTH_RESPONSE = 37;
+    // Pulsar 3.x (protocolVersion 20+) new command types
+    static final int TYPE_TC_CLIENT_CONNECT_REQUEST = 65;
+    static final int TYPE_TC_CLIENT_CONNECT_RESPONSE = 66;
     // Legacy aliases for handler compatibility
     static final int TYPE_CLOSE = TYPE_CLOSE_PRODUCER;
 
@@ -148,26 +164,40 @@ final class PulsarProtobufCodec {
     static final int FIELD_GET_TOPICS_OF_NAMESPACE_RESPONSE = 33;
     static final int FIELD_AUTH_CHALLENGE = 36;
 
-    // ---- Sub-message field numbers (Pulsar 2.10.x lightproto, verified from bytecode) ----
+    // ---- Sub-message field numbers (Pulsar 2.10.x → 3.x lightproto) ----
     // Connect: client_version=1, auth_method=2, auth_data=3, protocol_version=4, auth_method_name=5
+    //   (Pulsar 3.x: optional feature_flags added at field 6 — skipped via skipField)
     // Connected: server_version=1, protocol_version=2, max_message_size=3
+    //   (Pulsar 3.x: optional feature_flags added at field 4 — skipped via skipField)
     // LookupTopic: topic=1, requestId=2, authoritative=3
     // LookupTopicResponse: brokerServiceUrl=1, brokerServiceUrlTls=2, response=3, requestId=4, authoritative=5
     //   LookupType enum: Redirect=0, Connect=1, Failed=2
     // PartitionMetadataRequest: topic=1, requestId=2
     // PartitionMetadataResponse: partitions=1, requestId=2, response=3, error=4, message=5
     // Producer: topic=1, producerId=2, requestId=3, producerName=4
+    //   (Pulsar 3.x: optional schema, epoch, userProvidedProducerName added at fields 5-7 — skipped)
     // ProducerSuccess: requestId=1, producerName=2, lastSequenceId=3, schemaVersion=4, topicEpoch=5, producerReady=6
     // Send: producerId=1, sequenceId=2, numMessages=3
     // SendReceipt: producerId=1, sequenceId=2, messageId=3, highestSequenceId=4
     //   MessageIdData: ledgerId=1, entryId=2, partition=3, batch_index=4
     // Subscribe: topic=1, subscription=2, subType=3, consumerId=4, requestId=5, consumerName=6
+    //   (Pulsar 3.x: optional consumerEpoch added at field 18 — skipped via skipField)
     //   SubType enum: Exclusive=0, Shared=1, Failover=2
     // Success: requestId=1, schema=2
     // GetTopicsOfNamespace: requestId=1, namespace=2, mode=3
     // GetTopicsOfNamespaceResponse: requestId=1, topics=2
     // Ping: (empty message, field 18 in BaseCommand)
     // Pong: (empty message, field 19 in BaseCommand)
+    //
+    // MessageMetadata (Pulsar 2.10.x → 3.x):
+    //   producer_name=1, sequence_id=2, publish_time=3, properties=4,
+    //   replicated_from=5, compression=6, uncompressed_size=7,
+    //   num_messages_in_batch=8, num_chunks=9, total_chunk_msg_size=10,
+    //   chunk_id=11, uuid=12, event_time=13, encryption_keys=14,
+    //   schema_version=15, partition_key=16, deliver_at_time=17,
+    //   marker_type=18, txnid_least_bits=19, txnid_most_bits=20,
+    //   highest_sequence_id=21, ordering_key=22,
+    //   (Pulsar 3.x: broker_entry_metadata at field ~25+ — skipped via skipField)
 
     // ---- LookupType enum ----
     static final int LOOKUP_TYPE_REDIRECT = 0;
@@ -454,6 +484,9 @@ final class PulsarProtobufCodec {
 
     /**
      * Encode a CONNECTED response.
+     *
+     * @param serverVersion   the server version string (field 1)
+     * @param protocolVersion the negotiated protocol version (field 2)
      */
     static ByteBuf encodeConnected(String serverVersion, int protocolVersion) {
         byte[] connectedMsg = encodeConnectedMessage(serverVersion, protocolVersion);
@@ -548,6 +581,10 @@ final class PulsarProtobufCodec {
         writeStringField(out, 1, serverVersion);
         // protocol_version (field 2, varint)
         writeVarintField(out, 2, protocolVersion);
+        // max_message_size (field 3, varint) — included for Pulsar 3.x compatibility.
+        // Pulsar 2.10.x clients treat this as optional; Pulsar 3.x clients use it
+        // to size their send buffers. 0 means "no limit" (broker default).
+        writeVarintField(out, 3, 0);
         return out.toByteArray();
     }
 

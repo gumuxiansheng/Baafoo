@@ -86,6 +86,91 @@ public class PulsarMockBrokerTest {
         assertEquals("Should be CONNECTED type", PulsarProtobufCodec.TYPE_CONNECTED, cmd.type);
     }
 
+    // ----------------------------------------------------------------------
+    // Pulsar 3.x (protocolVersion 20) compatibility tests (Phase 2)
+    // ----------------------------------------------------------------------
+
+    /**
+     * Pulsar 3.x client connects with protocolVersion=20.
+     * The CONNECTED response must echo v20 and include max_message_size (field 3).
+     */
+    @Test
+    public void testConnectWithProtocolVersion20() throws Exception {
+        ByteBuf connectFrame = buildConnectFrame("Pulsar-Java-v3.0", 20);
+        ByteBuf rawResponse = sendFrameCaptureRaw(connectFrame);
+        assertNotNull(rawResponse);
+
+        // Parse the raw response to verify type and Connected sub-message fields
+        int[] connectedFields = parseConnectedSubMessage(rawResponse);
+        assertEquals("CONNECTED protocolVersion should be 20", 20, connectedFields[0]);
+        assertEquals("CONNECTED max_message_size should be present (field 3)",
+                0, connectedFields[1]);
+    }
+
+    /**
+     * Client requests protocolVersion above our supported max (v20).
+     * The broker must cap the negotiated version at v20 and respond accordingly.
+     */
+    @Test
+    public void testConnectWithProtocolVersionAbove20Capped() throws Exception {
+        ByteBuf connectFrame = buildConnectFrame("Pulsar-Java-v3.2", 21);
+        ByteBuf rawResponse = sendFrameCaptureRaw(connectFrame);
+        assertNotNull(rawResponse);
+
+        int[] connectedFields = parseConnectedSubMessage(rawResponse);
+        assertEquals("CONNECTED protocolVersion should be capped at 20",
+                PulsarProtobufCodec.MAX_SUPPORTED_PROTOCOL_VERSION, connectedFields[0]);
+    }
+
+    /**
+     * Pulsar 2.10.x client (protocolVersion=19) must still work after the v20 upgrade.
+     * The CONNECTED response should echo v19 (no capping needed since 19 < 20).
+     */
+    @Test
+    public void testConnectWithProtocolVersion19Legacy() throws Exception {
+        ByteBuf connectFrame = buildConnectFrame("Pulsar-Java-v2.10", 19);
+        ByteBuf rawResponse = sendFrameCaptureRaw(connectFrame);
+        assertNotNull(rawResponse);
+
+        int[] connectedFields = parseConnectedSubMessage(rawResponse);
+        assertEquals("CONNECTED protocolVersion should be 19 (legacy, uncapped)",
+                19, connectedFields[0]);
+    }
+
+    /**
+     * Full Pulsar 3.x flow: CONNECT(v20) → PRODUCER → SEND → SEND_RECEIPT.
+     * Verifies that the upgraded codec handles the complete producer path
+     * with protocolVersion 20. All frames on one connection so the per-channel
+     * producer map is shared.
+     */
+    @Test
+    public void testPulsar3xProducerFlow() throws Exception {
+        byte[] payload = "pulsar3x-message".getBytes(StandardCharsets.UTF_8);
+        ByteBuf lastResponse = sendFramesSameConnection(
+                buildConnectFrame("Pulsar-Java-v3.0", 20),
+                buildProducerFrame(1, 1, "persistent://public/default/v3-topic"),
+                buildSendFrame(1, 0, payload));
+        assertNotNull(lastResponse);
+
+        PulsarCommand sendCmd = parseResponseFrame(lastResponse);
+        assertEquals("Last response should be SEND_RECEIPT",
+                PulsarProtobufCodec.TYPE_SEND_RECEIPT, sendCmd.type);
+    }
+
+    /**
+     * Pulsar 3.x clients may send unknown fields (e.g. feature_flags in Connect).
+     * The codec must skip them gracefully without breaking the handshake.
+     */
+    @Test
+    public void testConnectWithUnknownFieldsSkipped() throws Exception {
+        ByteBuf connectFrame = buildConnectFrameWithExtraField("Pulsar-Java-v3.0", 20);
+        ByteBuf response = sendFrame(connectFrame);
+        assertNotNull(response);
+
+        PulsarCommand cmd = parseResponseFrame(response);
+        assertEquals("CONNECTED despite unknown fields", PulsarProtobufCodec.TYPE_CONNECTED, cmd.type);
+    }
+
     @Test
     public void testLookupReturnsSelf() throws Exception {
         // First connect
@@ -530,6 +615,155 @@ public class PulsarMockBrokerTest {
         try { cmdOut.write(connectBytes); } catch (java.io.IOException e) { throw new RuntimeException(e); }
 
         return wrapInFrame(cmdOut.toByteArray(), new byte[0]);
+    }
+
+    /**
+     * Build a CONNECT frame with an extra unknown field (field 6, simulating
+     * Pulsar 3.x feature_flags). Tests that the codec skips unknown fields.
+     */
+    private ByteBuf buildConnectFrameWithExtraField(String clientVersion, int protocolVersion) {
+        ByteArrayOutputStream cmdOut = new ByteArrayOutputStream();
+        PulsarProtobufCodec.writeVarint(cmdOut, (1 << 3) | 0);
+        PulsarProtobufCodec.writeVarint(cmdOut, PulsarProtobufCodec.TYPE_CONNECT);
+
+        ByteArrayOutputStream connectOut = new ByteArrayOutputStream();
+        writeProtobufString(connectOut, 1, clientVersion);
+        PulsarProtobufCodec.writeVarint(connectOut, (2 << 3) | 0);
+        PulsarProtobufCodec.writeVarint(connectOut, 0);
+        writeProtobufBytes(connectOut, 3, new byte[0]);
+        PulsarProtobufCodec.writeVarint(connectOut, (4 << 3) | 0);
+        PulsarProtobufCodec.writeVarint(connectOut, protocolVersion);
+        // Extra unknown field (field 6, varint) — simulates Pulsar 3.x feature_flags
+        PulsarProtobufCodec.writeVarint(connectOut, (6 << 3) | 0);
+        PulsarProtobufCodec.writeVarint(connectOut, 1);
+
+        byte[] connectBytes = connectOut.toByteArray();
+        PulsarProtobufCodec.writeVarint(cmdOut, (2 << 3) | 2);
+        PulsarProtobufCodec.writeVarint(cmdOut, connectBytes.length);
+        try { cmdOut.write(connectBytes); } catch (java.io.IOException e) { throw new RuntimeException(e); }
+
+        return wrapInFrame(cmdOut.toByteArray(), new byte[0]);
+    }
+
+    /**
+     * Parse the Connected sub-message from a raw CONNECTED response frame.
+     * The raw frame (after LengthFieldBasedFrameDecoder) starts with commandSize,
+     * not totalSize (which was stripped by the decoder).
+     *
+     * @return int[] {protocolVersion, max_message_size}
+     */
+    private int[] parseConnectedSubMessage(ByteBuf response) {
+        // Reset reader index to re-read the frame
+        response.readerIndex(0);
+        // Raw frame from LengthFieldBasedFrameDecoder: [commandSize][commandBytes][payload]
+        // (totalSize was already stripped by the decoder)
+        int commandSize = response.readInt();
+        byte[] commandBytes = new byte[commandSize];
+        response.readBytes(commandBytes);
+
+        // Parse the BaseCommand to find the Connected sub-message (field 3)
+        int[] pos = {0};
+        byte[] connectedData = null;
+        while (pos[0] < commandBytes.length) {
+            int tag = PulsarProtobufCodec.readVarint(commandBytes, pos);
+            int fieldNumber = tag >>> 3;
+            int wireType = tag & 0x7;
+            if (fieldNumber == 3 && wireType == 2) {
+                // Connected sub-message
+                int len = PulsarProtobufCodec.readVarint(commandBytes, pos);
+                connectedData = new byte[len];
+                System.arraycopy(commandBytes, pos[0], connectedData, 0, len);
+                pos[0] += len;
+                break;
+            } else {
+                // Skip other fields
+                switch (wireType) {
+                    case 0: PulsarProtobufCodec.readVarint(commandBytes, pos); break;
+                    case 2:
+                        int len = PulsarProtobufCodec.readVarint(commandBytes, pos);
+                        pos[0] += len;
+                        break;
+                    default: pos[0] += 8; break;
+                }
+            }
+        }
+
+        // Parse Connected sub-message: server_version=1, protocol_version=2, max_message_size=3
+        int protocolVersion = 0;
+        int maxMessageSize = -1;
+        if (connectedData != null) {
+            int[] cpos = {0};
+            while (cpos[0] < connectedData.length) {
+                int tag = PulsarProtobufCodec.readVarint(connectedData, cpos);
+                int fieldNumber = tag >>> 3;
+                int wireType = tag & 0x7;
+                switch (fieldNumber) {
+                    case 2: // protocol_version
+                        protocolVersion = PulsarProtobufCodec.readVarint(connectedData, cpos);
+                        break;
+                    case 3: // max_message_size
+                        maxMessageSize = PulsarProtobufCodec.readVarint(connectedData, cpos);
+                        break;
+                    default:
+                        switch (wireType) {
+                            case 0: PulsarProtobufCodec.readVarint(connectedData, cpos); break;
+                            case 2:
+                                int len = PulsarProtobufCodec.readVarint(connectedData, cpos);
+                                cpos[0] += len;
+                                break;
+                            default: cpos[0] += 8; break;
+                        }
+                        break;
+                }
+            }
+        }
+        return new int[] {protocolVersion, maxMessageSize};
+    }
+
+    /**
+     * Send a Pulsar frame and capture the RAW response bytes (before PulsarFrameDecoder
+     * decodes them). Needed because {@link #encodePulsarFrame} only re-encodes the type
+     * field, losing sub-message data required for CONNECTED field verification.
+     */
+    private ByteBuf sendFrameCaptureRaw(ByteBuf frame) throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<ByteBuf> responseRef = new AtomicReference<>();
+        AtomicReference<Throwable> errorRef = new AtomicReference<>();
+
+        Bootstrap b = new Bootstrap();
+        b.group(workerGroup)
+                .channel(NioSocketChannel.class)
+                .handler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel ch) {
+                        // Use LengthFieldBasedFrameDecoder to get raw bytes, not PulsarFrameDecoder
+                        ch.pipeline().addLast(new io.netty.handler.codec.LengthFieldBasedFrameDecoder(
+                                100 * 1024 * 1024, 0, 4, 0, 4));
+                        ch.pipeline().addLast(new SimpleChannelInboundHandler<ByteBuf>() {
+                            @Override
+                            protected void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) {
+                                responseRef.set(Unpooled.copiedBuffer(msg));
+                                latch.countDown();
+                                ctx.close();
+                            }
+
+                            @Override
+                            public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+                                errorRef.set(cause);
+                                latch.countDown();
+                                ctx.close();
+                            }
+                        });
+                    }
+                });
+
+        Channel ch = b.connect("127.0.0.1", TEST_PORT).sync().channel();
+        ch.writeAndFlush(frame);
+
+        boolean received = latch.await(10, TimeUnit.SECONDS);
+        assertTrue("Should receive response within timeout", received);
+        assertNull("Should not have error", errorRef.get());
+        return responseRef.get();
     }
 
     private ByteBuf buildLookupFrame(String topic, int requestId) {

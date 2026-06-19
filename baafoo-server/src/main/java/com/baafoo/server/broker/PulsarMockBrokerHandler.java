@@ -66,6 +66,14 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
     /** Tracks whether the CONNECT handshake has completed. */
     private volatile boolean handshakeComplete;
 
+    /**
+     * Negotiated Pulsar protocol version for this connection.
+     * Stored from the client's CONNECT request and capped at
+     * {@link PulsarProtobufCodec#MAX_SUPPORTED_PROTOCOL_VERSION}.
+     * Used for version-gated behaviour in future command handling.
+     */
+    private volatile int protocolVersion;
+
     PulsarMockBrokerHandler(PulsarMessageStore messageStore, StorageService storage,
                             String brokerHost, int brokerPort, String advertisedHost) {
         this.messageStore = messageStore;
@@ -79,6 +87,14 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
         log.debug("Pulsar client connected: {}", ctx.channel().remoteAddress());
+    }
+
+    /**
+     * Returns the negotiated Pulsar protocol version for this connection.
+     * Valid only after the CONNECT handshake completes; returns 0 before.
+     */
+    int getProtocolVersion() {
+        return protocolVersion;
     }
 
     @Override
@@ -124,6 +140,12 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
                     log.debug("Client closing producer/consumer");
                     ctx.close();
                     break;
+                case PulsarProtobufCodec.TYPE_TC_CLIENT_CONNECT_REQUEST:
+                    // Pulsar 3.x (protocolVersion 20+) transaction-coordinator client connect.
+                    // Not supported by the mock broker — log and ignore. The client will
+                    // fall back to non-transactional operation.
+                    log.debug("Received TC_CLIENT_CONNECT_REQUEST (Pulsar 3.x), not supported — ignoring");
+                    break;
                 default:
                     log.warn("Unhandled Pulsar command type: {}", cmd.type);
                     break;
@@ -137,12 +159,25 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
     private void handleConnect(ChannelHandlerContext ctx, PulsarCommand cmd) {
         log.info("Pulsar CONNECT: clientVersion={}, protocolVersion={}", cmd.clientVersion, cmd.protocolVersion);
 
-        ByteBuf response = PulsarProtobufCodec.encodeConnected("Baafoo-Pulsar-Mock/1.0", cmd.protocolVersion > 0 ? cmd.protocolVersion : 12);
+        // Negotiate protocol version: cap at our supported max (v20 for Pulsar 3.x).
+        // If the client requests a higher version, we respond with our max and log
+        // a warning — the client should downgrade gracefully.
+        int clientVersion = cmd.protocolVersion > 0 ? cmd.protocolVersion : 12;
+        int negotiatedVersion = Math.min(clientVersion, PulsarProtobufCodec.MAX_SUPPORTED_PROTOCOL_VERSION);
+        if (clientVersion > PulsarProtobufCodec.MAX_SUPPORTED_PROTOCOL_VERSION) {
+            log.warn("Pulsar client requested protocolVersion={} but Baafoo supports max {}. "
+                    + "Negotiating down to {}. Client version: {}",
+                    clientVersion, PulsarProtobufCodec.MAX_SUPPORTED_PROTOCOL_VERSION,
+                    negotiatedVersion, cmd.clientVersion);
+        }
+        this.protocolVersion = negotiatedVersion;
+
+        ByteBuf response = PulsarProtobufCodec.encodeConnected("Baafoo-Pulsar-Mock/1.0", negotiatedVersion);
         logResponse("CONNECTED", response);
         ctx.writeAndFlush(response);
 
         handshakeComplete = true;
-        log.debug("Sent CONNECTED response");
+        log.debug("Sent CONNECTED response (negotiated protocolVersion={})", negotiatedVersion);
     }
 
     private void handleLookup(ChannelHandlerContext ctx, PulsarCommand cmd) {
