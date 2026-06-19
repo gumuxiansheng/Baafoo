@@ -5,6 +5,8 @@ import com.baafoo.core.model.MatchCondition;
 import com.baafoo.core.model.MqRelationship;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.model.Rule;
+import com.baafoo.server.broker.codec.KafkaCodecUtils;
+import com.baafoo.server.broker.codec.KafkaFlexibleCodec;
 import com.baafoo.server.storage.StorageService;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
@@ -307,27 +309,38 @@ public class KafkaMockBrokerTest {
     }
 
     /**
-     * A compact-string (Request Header v2) clientId must not crash the decoder,
-     * even though we advertise API_VERSIONS v2. Validates the resilient fallback.
+     * A flexible-version request (ApiVersions v3) uses Request Header v2
+     * (compact string + tag buffer). The decoder must correctly parse it
+     * using isFlexible() routing.
      */
     @Test
     public void testCompactStringClientIdDoesNotCrash() throws Exception {
         ByteBuf buf = Unpooled.buffer();
-        buf.writeShort(3);  // API key: Metadata
-        buf.writeShort(4);  // API version
+        buf.writeShort(18); // API key: ApiVersions
+        buf.writeShort(3);  // API version: v3 (flexible)
         buf.writeInt(99);   // correlation ID
         // compact-string clientId "c": length 2 (= 1 + 1), then byte 'c'
         buf.writeByte(2);
         buf.writeByte('c');
-        // Metadata body: array of topics (compact in v2, but metadata v4 still uses
-        // int32-prefixed array + non-compact topic strings)
-        buf.writeInt(1);
-        writeNullableString(buf, "compact-topic");
+        // empty tag buffer (1 byte: 0x00)
+        buf.writeByte(0);
+        // ApiVersions v3 request body: compact string for client software name + version + tag buffer
+        // client software name (compact not-nullable string): "test"
+        buf.writeByte(5); // length = 4 + 1 = 5
+        buf.writeBytes("test".getBytes());
+        // client software version (compact not-nullable string): "1.0"
+        buf.writeByte(4); // length = 3 + 1 = 4
+        buf.writeBytes("1.0".getBytes());
+        // empty tag buffer
+        buf.writeByte(0);
 
         ByteBuf resp = sendRequest(frameRequest(buf));
-        assertNotNull("Should not crash on compact clientId", resp);
+        assertNotNull("Should not crash on flexible header", resp);
         int correlationId = resp.readInt();
-        assertEquals("Correlation id echoed despite compact header", 99, correlationId);
+        assertEquals("Correlation id echoed despite flexible header", 99, correlationId);
+        // v3 response: error_code (i16)
+        short errorCode = resp.readShort();
+        assertEquals("ApiVersions v3 should succeed", 0, errorCode);
     }
 
     // helper: consume & assert a successful produce response (single topic/partition)
@@ -362,14 +375,17 @@ public class KafkaMockBrokerTest {
         short errorCode = response.readShort();
         assertEquals("FindCoordinator error code should be 0", 0, errorCode);
 
+        // error_message (v1+)
+        readNullableString(response);
+
+        int nodeId = response.readInt();
+        assertEquals("Node ID should be 0", 0, nodeId);
+
         String host = readNullableString(response);
         assertNotNull("Host should not be null", host);
 
         int port = response.readInt();
         assertEquals("Port should match", TEST_PORT, port);
-
-        int nodeId = response.readInt();
-        assertEquals("Node ID should be 0", 0, nodeId);
     }
 
     @Test
@@ -602,10 +618,10 @@ public class KafkaMockBrokerTest {
                 default: break;
             }
         }
-        assertEquals("Produce max should be v8", 8, produceMax);
-        assertEquals("Fetch max should be v11", 11, fetchMax);
-        assertEquals("Metadata max should be v8", 8, metadataMax);
-        assertEquals("ApiVersions max should stay v2 (KIP-511 gate)", 2, apiVersionsMax);
+        assertEquals("Produce max should be v9 (flexible)", 9, produceMax);
+        assertEquals("Fetch max should be v12 (flexible)", 12, fetchMax);
+        assertEquals("Metadata max should be v9 (flexible)", 9, metadataMax);
+        assertEquals("ApiVersions max should be v3 (flexible, KIP-511)", 3, apiVersionsMax);
     }
 
     /**
@@ -726,6 +742,152 @@ public class KafkaMockBrokerTest {
         // preferred_read_replica (v11+)
         int preferredReadReplica = response.readInt();
         assertEquals("preferred_read_replica should be -1", -1, preferredReadReplica);
+    }
+
+    // ----------------------------------------------------------------------
+    // Flexible version tests (Phase 2: Produce v9 / Fetch v12 / ApiVersions v3)
+    // ----------------------------------------------------------------------
+
+    /**
+     * ApiVersions v3 (flexible) must return a response using compact array
+     * format (uvarint length) with per-entry tag buffers.
+     */
+    @Test
+    public void testApiVersionsV3FlexibleResponse() throws Exception {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeShort(18); // API key: ApiVersions
+        buf.writeShort(3);  // API version: v3 (flexible)
+        buf.writeInt(42);   // correlation ID
+        // compact-string clientId "test"
+        buf.writeByte(5); // length = 4 + 1 = 5
+        buf.writeBytes("test".getBytes());
+        // empty tag buffer
+        buf.writeByte(0);
+        // ApiVersions v3 body: client software name + version + tag buffer
+        buf.writeByte(5); // "test" compact string
+        buf.writeBytes("test".getBytes());
+        buf.writeByte(4); // "1.0" compact string
+        buf.writeBytes("1.0".getBytes());
+        buf.writeByte(0); // empty tag buffer
+
+        ByteBuf response = sendRequest(frameRequest(buf));
+        assertNotNull(response);
+        int correlationId = response.readInt();
+        assertEquals(42, correlationId);
+
+        // v3 flexible body: error_code (i16)
+        short errorCode = response.readShort();
+        assertEquals(0, errorCode);
+
+        // compact array length (uvarint where N = count + 1)
+        int compactLen = KafkaFlexibleCodec.readUnsignedVarint(response);
+        int apiCount = compactLen - 1;
+        assertTrue("Should have multiple API entries", apiCount > 0);
+
+        // Read first few entries to verify format
+        boolean foundProduce = false, foundApiVersions = false;
+        for (int i = 0; i < apiCount; i++) {
+            short apiKey = response.readShort();
+            response.readShort(); // minVersion
+            short maxVer = response.readShort();
+            // per-entry tag buffer
+            KafkaFlexibleCodec.skipTagBuffer(response);
+            if (apiKey == 0) { foundProduce = true; assertEquals("Produce max should be v9", 9, maxVer); }
+            if (apiKey == 18) { foundApiVersions = true; assertEquals("ApiVersions max should be v3", 3, maxVer); }
+        }
+        assertTrue("Should find Produce API", foundProduce);
+        assertTrue("Should find ApiVersions API", foundApiVersions);
+
+        // throttle_time_ms
+        response.readInt();
+        // top-level tag buffer
+        KafkaFlexibleCodec.skipTagBuffer(response);
+    }
+
+    /**
+     * Produce v9 (flexible) must be accepted and return a response using
+     * compact arrays, compact strings, and tag buffers.
+     */
+    @Test
+    public void testProduceV9Flexible() throws Exception {
+        ByteBuf response = sendRequest(buildProduceRequestV9("produce-v9-topic", 0, "k", "v9-payload"));
+        assertNotNull(response);
+        response.readInt(); // correlationId
+        // Flexible Produce v9 response: compact array of topics
+        int topicCount = KafkaFlexibleCodec.readCompactArrayLength(response);
+        assertEquals(1, topicCount);
+        String topic = KafkaFlexibleCodec.readCompactStringNotNullable(response);
+        assertEquals("produce-v9-topic", topic);
+        int partitionCount = KafkaFlexibleCodec.readCompactArrayLength(response);
+        assertEquals(1, partitionCount);
+        response.readInt(); // partition_index
+        short errorCode = response.readShort();
+        assertEquals(0, errorCode);
+        long offset = response.readLong(); // base_offset
+        assertTrue("Offset should be >= 0", offset >= 0);
+        response.readLong(); // log_append_time_ms
+        response.readLong(); // log_start_offset
+        // RecordErrors compact array
+        KafkaFlexibleCodec.readCompactArrayLength(response);
+        // ErrorMessage compact string
+        KafkaFlexibleCodec.readCompactString(response);
+        // per-partition tag buffer
+        KafkaFlexibleCodec.skipTagBuffer(response);
+        // per-topic tag buffer
+        KafkaFlexibleCodec.skipTagBuffer(response);
+        // throttle_time_ms
+        response.readInt();
+        // top-level tag buffer
+        KafkaFlexibleCodec.skipTagBuffer(response);
+    }
+
+    /**
+     * Fetch v12 (flexible) must be accepted and return a response using
+     * compact arrays, compact strings, and tag buffers.
+     */
+    @Test
+    public void testFetchV12Flexible() throws Exception {
+        // First produce some data
+        sendRequest(buildProduceRequestV9("fetch-v12-topic", 0, null, "v12-data"));
+
+        ByteBuf response = sendRequest(buildFetchRequestV12("fetch-v12-topic", 0, 0));
+        assertNotNull(response);
+        response.readInt(); // correlationId
+        response.readInt(); // throttle_time_ms
+        response.readShort(); // error_code
+        response.readInt(); // session_id
+
+        // Topics compact array
+        int topicCount = KafkaFlexibleCodec.readCompactArrayLength(response);
+        assertEquals(1, topicCount);
+        String topic = KafkaFlexibleCodec.readCompactStringNotNullable(response);
+        assertEquals("fetch-v12-topic", topic);
+        // topic_id (null UUID)
+        byte[] uuid = new byte[16];
+        response.readBytes(uuid);
+        // Partitions compact array
+        int partitionCount = KafkaFlexibleCodec.readCompactArrayLength(response);
+        assertEquals(1, partitionCount);
+        response.readInt(); // partition_index
+        response.readShort(); // error_code
+        long highWatermark = response.readLong();
+        assertTrue("High watermark should be > 0", highWatermark > 0);
+        response.readLong(); // last_stable_offset
+        response.readLong(); // log_start_offset
+        // aborted_transactions: compact nullable array (null = uvarint 0)
+        KafkaFlexibleCodec.readCompactArrayLength(response);
+        response.readInt(); // preferred_read_replica (-1)
+        // record data (int32 length prefix still used for record sets)
+        int recordLen = response.readInt();
+        if (recordLen > 0) {
+            response.skipBytes(recordLen);
+        }
+        // per-partition tag buffer
+        KafkaFlexibleCodec.skipTagBuffer(response);
+        // per-topic tag buffer
+        KafkaFlexibleCodec.skipTagBuffer(response);
+        // top-level tag buffer
+        KafkaFlexibleCodec.skipTagBuffer(response);
     }
 
     // --- Helper methods for building Kafka protocol requests ---
@@ -981,6 +1143,164 @@ public class KafkaMockBrokerTest {
         // rack_id (v11+) — request level, after forgotten_topics
         writeNullableString(buf, null);
         return frameRequest(buf);
+    }
+
+    /**
+     * Build a Produce request at v9 (flexible). Uses Request Header v2
+     * (compact clientId + tag buffer), compact nullable string for
+     * transactional_id, compact arrays, compact bytes for record data,
+     * and tag buffers.
+     */
+    private ByteBuf buildProduceRequestV9(String topic, int partition, String key, String value) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeShort(0);  // API key: Produce
+        buf.writeShort(9);  // API version: v9 (flexible)
+        buf.writeInt(1);    // correlation ID
+        // compact clientId "test"
+        buf.writeByte(5);
+        buf.writeBytes("test".getBytes());
+        // empty tag buffer
+        buf.writeByte(0);
+
+        // Body
+        // transactional_id: compact nullable string (null = uvarint 0)
+        KafkaFlexibleCodec.writeUnsignedVarint(buf, 0);
+        buf.writeShort((short) -1); // acks
+        buf.writeInt(30000); // timeoutMs
+
+        // Topics: compact array (1 element = uvarint 2)
+        KafkaFlexibleCodec.writeCompactArrayLength(buf, 1);
+        // topic name: compact not-nullable string
+        KafkaFlexibleCodec.writeCompactStringNotNullable(buf, topic);
+        // Partitions: compact array (1 element)
+        KafkaFlexibleCodec.writeCompactArrayLength(buf, 1);
+        buf.writeInt(partition); // partition index
+
+        // Build record batch
+        byte[] keyBytes = key != null ? key.getBytes(StandardCharsets.UTF_8) : null;
+        byte[] valueBytes = value != null ? value.getBytes(StandardCharsets.UTF_8) : null;
+
+        // Build the record
+        ByteBuf record = Unpooled.buffer();
+        record.writeByte(0); // attributes
+        KafkaCodecUtils.writeVarint(record, 0); // timestampDelta
+        KafkaCodecUtils.writeVarint(record, 0); // offsetDelta
+        if (keyBytes != null) {
+            KafkaCodecUtils.writeVarint(record, keyBytes.length);
+            record.writeBytes(keyBytes);
+        } else {
+            KafkaCodecUtils.writeVarint(record, -1);
+        }
+        if (valueBytes != null) {
+            KafkaCodecUtils.writeVarint(record, valueBytes.length);
+            record.writeBytes(valueBytes);
+        } else {
+            KafkaCodecUtils.writeVarint(record, -1);
+        }
+        KafkaCodecUtils.writeVarint(record, 0); // headers count
+
+        int recordLen = record.readableBytes();
+
+        ByteBuf contentBuf = Unpooled.buffer();
+        contentBuf.writeShort(0); // attributes
+        contentBuf.writeInt(0); // lastOffsetDelta
+        long now = System.currentTimeMillis();
+        contentBuf.writeLong(now); // baseTimestamp
+        contentBuf.writeLong(now); // maxTimestamp
+        contentBuf.writeLong(0); // producerId
+        contentBuf.writeShort(0); // producerEpoch
+        contentBuf.writeInt(0); // baseSequence
+        contentBuf.writeInt(1); // recordsCount
+        KafkaCodecUtils.writeVarint(contentBuf, recordLen);
+        contentBuf.writeBytes(record);
+        record.release();
+
+        byte[] contentBytes = new byte[contentBuf.readableBytes()];
+        contentBuf.readBytes(contentBytes);
+        contentBuf.release();
+
+        int crc = KafkaCodecUtils.computeCrc32c(contentBytes, 0, contentBytes.length);
+        int batchLength = 4 + 1 + 4 + contentBytes.length;
+
+        ByteBuf batchBuf = Unpooled.buffer();
+        batchBuf.writeLong(0); // baseOffset
+        batchBuf.writeInt(batchLength); // batchLength
+        batchBuf.writeInt(0); // partitionLeaderEpoch
+        batchBuf.writeByte(2); // magic
+        batchBuf.writeInt(crc); // CRC32C
+        batchBuf.writeBytes(contentBytes);
+
+        // In flexible Produce v9, record data uses compact bytes (uvarint length + data)
+        KafkaFlexibleCodec.writeCompactBytes(buf, toArray(batchBuf));
+        batchBuf.release();
+
+        // per-partition tag buffer
+        KafkaFlexibleCodec.writeEmptyTagBuffer(buf);
+        // per-topic tag buffer
+        KafkaFlexibleCodec.writeEmptyTagBuffer(buf);
+        // top-level tag buffer
+        KafkaFlexibleCodec.writeEmptyTagBuffer(buf);
+
+        return frameRequest(buf);
+    }
+
+    /**
+     * Build a Fetch request at v12 (flexible). Uses Request Header v2
+     * (compact clientId + tag buffer), compact arrays, compact strings,
+     * and tag buffers.
+     */
+    private ByteBuf buildFetchRequestV12(String topic, int partition, long offset) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeShort(1);  // API key: Fetch
+        buf.writeShort(12); // API version: v12 (flexible)
+        buf.writeInt(2);    // correlation ID
+        // compact clientId "test"
+        buf.writeByte(5);
+        buf.writeBytes("test".getBytes());
+        // empty tag buffer
+        buf.writeByte(0);
+
+        // Body
+        buf.writeInt(-1);   // replica_id
+        buf.writeInt(500);  // max_wait_ms
+        buf.writeInt(1);    // min_bytes
+        buf.writeInt(1024 * 1024); // max_bytes
+        buf.writeByte(0);   // isolation_level
+        buf.writeInt(0);    // session_id
+        buf.writeInt(0);    // session_epoch
+
+        // Topics: compact array (1 element)
+        KafkaFlexibleCodec.writeCompactArrayLength(buf, 1);
+        KafkaFlexibleCodec.writeCompactStringNotNullable(buf, topic);
+        // Partitions: compact array (1 element)
+        KafkaFlexibleCodec.writeCompactArrayLength(buf, 1);
+        buf.writeInt(partition); // partition_index
+        buf.writeInt(-1);        // current_leader_epoch
+        buf.writeLong(offset);   // fetch_offset
+        buf.writeInt(-1);        // last_fetched_epoch
+        buf.writeLong(0L);       // log_start_offset
+        buf.writeInt(1024 * 1024); // partition_max_bytes
+        // per-partition tag buffer
+        KafkaFlexibleCodec.writeEmptyTagBuffer(buf);
+        // per-topic tag buffer
+        KafkaFlexibleCodec.writeEmptyTagBuffer(buf);
+
+        // forgotten_topics_data: compact array (0 elements = uvarint 1)
+        KafkaFlexibleCodec.writeCompactArrayLength(buf, 0);
+
+        // rack_id: compact nullable string (null)
+        KafkaFlexibleCodec.writeCompactString(buf, null);
+
+        // top-level tag buffer
+        KafkaFlexibleCodec.writeEmptyTagBuffer(buf);
+
+        return frameRequest(buf);
+    }
+
+    private static byte[] toArray(ByteBuf buf) {
+        byte[] arr = new byte[buf.readableBytes()];
+        buf.getBytes(buf.readerIndex(), arr);
+        return arr;
     }
 
     private ByteBuf buildFindCoordinatorRequest(String groupId) {
