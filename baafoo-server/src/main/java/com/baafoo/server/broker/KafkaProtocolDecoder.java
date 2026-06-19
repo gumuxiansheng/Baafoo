@@ -122,14 +122,35 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
     protected void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) {
         // The LengthFieldBasedFrameDecoder already stripped the 4-byte size prefix
         // Read the request header.
+        int startPos = msg.readerIndex();
         short apiKey = msg.readShort();
         short apiVersion = msg.readShort();
         int correlationId = msg.readInt();
 
+        // Debug: log raw bytes for protocol version negotiation troubleshooting
+        int remainingBytes = msg.readableBytes();
+        int peekLen = Math.min(remainingBytes, 16);
+        byte[] peekBytes = new byte[peekLen];
+        msg.getBytes(msg.readerIndex(), peekBytes);
+        StringBuilder hexSb = new StringBuilder();
+        for (byte b : peekBytes) {
+            hexSb.append(String.format("%02x ", b & 0xFF));
+        }
+        log.info("Kafka raw header: apiKey={}, apiVersion={}, correlationId={}, ridx={}, widx={}, nextBytes=[{}]",
+                apiKey, apiVersion, correlationId, msg.readerIndex(), msg.writerIndex(), hexSb.toString().trim());
+
         // Request Header v1 (non-flexible): int16-prefixed nullable string for clientId
         // Request Header v2 (flexible, KIP-482): compact string + tag buffer
+        //
+        // SPECIAL CASE: ApiVersions (apiKey=18) ALWAYS uses Request Header v0
+        // (non-flexible, int16 string) regardless of apiVersion. This is because
+        // the broker must parse the header before knowing which version the
+        // client is negotiating (KIP-511). Other APIs use the header version
+        // matching their flexible threshold.
         String clientId;
-        if (KafkaProtocolVersions.isFlexible(apiKey, apiVersion)) {
+        boolean headerIsFlexible = (apiKey != API_VERSIONS)
+                && KafkaProtocolVersions.isFlexible(apiKey, apiVersion);
+        if (headerIsFlexible) {
             clientId = KafkaFlexibleCodec.readCompactString(msg);
             KafkaFlexibleCodec.skipTagBuffer(msg); // header tag buffer
         } else {
@@ -201,6 +222,20 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         }
 
         if (response != null) {
+            // Debug: log response size for troubleshooting
+            log.info("Kafka response: apiKey={}, apiVersion={}, correlationId={}, responseBytes={}",
+                    apiKey, apiVersion, correlationId, response.readableBytes());
+            if (apiKey == API_VERSIONS) {
+                // Hex dump for ApiVersions response troubleshooting
+                byte[] dumpBytes = new byte[Math.min(response.readableBytes(), 64)];
+                response.getBytes(response.readerIndex(), dumpBytes);
+                StringBuilder hexResp = new StringBuilder();
+                for (byte b : dumpBytes) {
+                    hexResp.append(String.format("%02x ", b & 0xFF));
+                }
+                log.info("ApiVersions v{} response hex (first {} bytes): [{}]",
+                        apiVersion, dumpBytes.length, hexResp.toString().trim());
+            }
             ctx.writeAndFlush(response);
         }
     }
@@ -598,14 +633,16 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
     private ByteBuf handleApiVersions(short apiVersion, int correlationId) {
         ByteBuf buf = Unpooled.buffer();
-        // Response header is ALWAYS v0 (correlation_id only) — even for v3+ body.
-        // This lets clients parse the response before they know the server version.
+        // ApiVersions response header is ALWAYS v0 (correlation_id only) —
+        // even for v3+. This is a special case in the Kafka protocol because
+        // the client must parse the response before knowing the server version.
+        // (Both request and response headers for ApiVersions are always v0.)
         buf.writeInt(correlationId);
 
         int[][] supportedApis = com.baafoo.server.broker.codec.KafkaProtocolVersions.SUPPORTED_APIS;
 
         if (apiVersion >= 3) {
-            // Flexible (v3+) body format
+            // Flexible (v3+) body format — but header is still v0
             buf.writeShort(NONE); // error_code
             // Compact array of api versions
             KafkaFlexibleCodec.writeCompactArrayLength(buf, supportedApis.length);
