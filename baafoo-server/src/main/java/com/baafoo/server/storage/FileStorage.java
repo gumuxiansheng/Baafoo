@@ -402,7 +402,13 @@ public class FileStorage {
     }
 
     public long getRecordingTotalSizeBytes() {
-        return recordings.size() * 2048L;
+        // Sum actual body byte lengths instead of a fixed 2KB-per-recording estimate.
+        long total = 0;
+        for (RecordingEntry r : recordings) {
+            if (r.getResponseBody() != null) total += r.getResponseBody().length();
+            if (r.getRequestBody() != null) total += r.getRequestBody().length();
+        }
+        return total;
     }
 
     // --- Agent Management ---

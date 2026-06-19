@@ -267,5 +267,47 @@ public class TemplateEngine {
          */
         public int getRequestCount() { return requestCount; }
         public void setRequestCount(int requestCount) { this.requestCount = requestCount; }
+
+        /**
+         * Create a new Builder for constructing a RequestContext with only the
+         * fields that matter (avoiding null/emptyMap placeholder noise).
+         */
+        public static Builder builder() {
+            return new Builder();
+        }
+
+        /** Fluent builder for {@link RequestContext}. */
+        public static class Builder {
+            private String method;
+            private String path;
+            private String host;
+            private Map<String, String> headers;
+            private Map<String, String> queryParams;
+            private String body;
+            private String environment;
+            private int requestCount;
+
+            public Builder method(String method) { this.method = method; return this; }
+            public Builder path(String path) { this.path = path; return this; }
+            public Builder host(String host) { this.host = host; return this; }
+            public Builder headers(Map<String, String> headers) { this.headers = headers; return this; }
+            public Builder queryParams(Map<String, String> queryParams) { this.queryParams = queryParams; return this; }
+            public Builder body(String body) { this.body = body; return this; }
+            public Builder environment(String environment) { this.environment = environment; return this; }
+            public Builder requestCount(int requestCount) { this.requestCount = requestCount; return this; }
+
+            public RequestContext build() {
+                RequestContext ctx = new RequestContext();
+                ctx.method = method;
+                ctx.path = path;
+                ctx.host = host;
+                ctx.headers = headers;
+                ctx.queryParams = queryParams;
+                ctx.body = body;
+                ctx.environment = environment;
+                ctx.requestCount = requestCount;
+                return ctx;
+            }
+        }
     }
 }

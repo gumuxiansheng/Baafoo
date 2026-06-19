@@ -1,5 +1,6 @@
 package com.baafoo.server.broker;
 
+import com.baafoo.core.model.Environment;
 import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.Rule;
@@ -10,6 +11,7 @@ import io.netty.channel.ChannelHandlerContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -48,16 +50,45 @@ class MqMatchHelper {
 
     /**
      * Resolve agent/environment info for the given channel.
+     *
+     * <p>MQ fallback: when no agent could be resolved by IP (common for
+     * direct-to-broker connections without a registered agent, or in unit
+     * tests), fall back to the single configured environment if there is
+     * exactly one. This lets MQ rules match even without agent registration.</p>
      */
     AgentResolver.AgentInfo resolveAgent(ChannelHandlerContext ctx) {
-        return agentResolver.resolveAll(ctx);
+        AgentResolver.AgentInfo info = agentResolver.resolveAll(ctx);
+        if (info.environment == null) {
+            List<Environment> envs = storage.listEnvironments();
+            if (envs != null && envs.size() == 1) {
+                info.environment = envs.get(0).getName();
+            }
+        }
+        return info;
     }
 
     /**
-     * Filter rules to the agent's environment. Delegates to {@link AgentResolver}
-     * so brokers don't need their own AgentResolver instance.
+     * Filter rules to the agent's environment.
+     *
+     * <p>MQ fallback: when no environment could be determined (no registered
+     * agents and no single environment to fall back to), still allow global
+     * rules (rules with no environment association) to match. This is safe
+     * because MQ brokers have no real downstream — global rules are the only
+     * way to stub MQ traffic without agent registration.</p>
      */
     List<Rule> filterRulesByEnvironment(List<Rule> rules, String environment) {
+        if (environment == null) {
+            List<Rule> filtered = new ArrayList<Rule>();
+            if (rules == null) return filtered;
+            for (Rule rule : rules) {
+                if (!rule.isEnabled()) continue;
+                List<String> envs = rule.getEnvironments();
+                if (envs == null || envs.isEmpty()) {
+                    filtered.add(rule);
+                }
+            }
+            return filtered;
+        }
         return agentResolver.filterRulesByEnvironment(rules, environment);
     }
 
@@ -75,12 +106,12 @@ class MqMatchHelper {
         if (rules == null) {
             return MatchEngine.MatchResult.NO_MATCH;
         }
-        // Pass topic through BOTH the serviceName and path slots:
+        // Pass topic through the explicit topic slot AND the serviceName slot:
         //  - serviceName slot lets a rule that stored topic in rule.serviceName match
-        //  - path slot lets a rule with a topic/path condition match
-        // host/port are null/0 — MQ brokers have no concept of a downstream host:port.
+        //  - topic slot lets a rule with a "topic" condition match (explicit, no path aliasing)
+        // host/port/path are null/0 — MQ brokers have no concept of a downstream host:port/path.
         return matchEngine.match(
-                rules, protocol, null, 0, topic, null, topic,
+                rules, protocol, null, 0, topic, null, null, topic,
                 Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(),
                 body);
     }
@@ -130,9 +161,19 @@ class MqMatchHelper {
 
     /**
      * Resolve the environment mode for the agent on the given channel.
+     *
+     * <p>MQ brokers have no real downstream to passthrough to — the broker
+     * itself IS the downstream. When no environment can be determined
+     * (no agents registered, no single environment to fall back to),
+     * default to STUB so matched rules still apply their stub responses
+     * instead of silently passing through the original payload.</p>
      */
     EnvironmentMode resolveMode(ChannelHandlerContext ctx) {
         AgentResolver.AgentInfo info = resolveAgent(ctx);
-        return agentResolver.resolveEnvironmentMode(info.environment);
+        EnvironmentMode mode = agentResolver.resolveEnvironmentMode(info.environment);
+        if (mode == EnvironmentMode.PASSTHROUGH && info.environment == null) {
+            return EnvironmentMode.STUB;
+        }
+        return mode;
     }
 }

@@ -31,6 +31,25 @@ public class StubResponseRenderer {
     private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER =
             new com.fasterxml.jackson.databind.ObjectMapper();
 
+    /** Configured CORS origins; null/empty means fall back to "*". */
+    private static volatile java.util.List<String> corsOrigins;
+
+    /**
+     * Set the CORS allowed origins from {@link com.baafoo.core.config.ServerConfig#getCorsOrigins()}.
+     * Called once during server startup so stub responses respect the configured CORS policy.
+     */
+    public static void setCorsOrigins(java.util.List<String> origins) {
+        corsOrigins = origins;
+    }
+
+    /** Resolve the Access-Control-Allow-Origin header value from config (or "*" fallback). */
+    private static String resolveCorsOrigin() {
+        if (corsOrigins != null && !corsOrigins.isEmpty()) {
+            return corsOrigins.size() == 1 ? corsOrigins.get(0) : String.join(", ", corsOrigins);
+        }
+        return "*";
+    }
+
     public static void sendStubResponse(ChannelHandlerContext ctx, ResponseEntry entry, String ruleId,
                                          String method, String path, String host,
                                          Map<String, String> headers, Map<String, String> queryParams,
@@ -118,8 +137,8 @@ public class StubResponseRenderer {
                 }
             }
 
-            // CORS for Web Console
-            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+            // CORS for Web Console — respects ServerConfig.corsOrigins when set
+            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, resolveCorsOrigin());
 
             log.debug("Stub response: {} {} body={}bytes", statusCode,
                     entry.getName(), responseBody.length());

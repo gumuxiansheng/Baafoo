@@ -41,6 +41,9 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
     /** Attribute key for tracking which rule a connection is bound to (multi-round) */
     private static final AttributeKey<String> ATTR_RULE_ID = AttributeKey.valueOf("tcpRuleId");
 
+    /** Attribute key for caching the bound Rule object (avoids N+1 lookups in multi-round) */
+    private static final AttributeKey<Rule> ATTR_RULE = AttributeKey.valueOf("tcpRule");
+
     /** Attribute key for tracking current round index in multi-round interaction */
     private static final AttributeKey<Integer> ATTR_ROUND_INDEX = AttributeKey.valueOf("tcpRoundIndex");
 
@@ -99,6 +102,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                 if (matchTcpRound(firstRound, data, hexPayload, payload)) {
                     // Bind this connection to the rule and set round index
                     ctx.channel().attr(ATTR_RULE_ID).set(rule.getId());
+                    ctx.channel().attr(ATTR_RULE).set(rule);
                     ctx.channel().attr(ATTR_ROUND_INDEX).set(0);
 
                     ResponseEntry response = firstRound.getResponse() != null
@@ -157,8 +161,12 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
     private void handleMultiRoundRequest(ChannelHandlerContext ctx, String ruleId,
                                           byte[] data, String hexPayload, String payload,
                                           String agentEnvironment, String agentId, String agentIp) {
-        // Find the bound rule
-        Rule rule = findRuleById(ruleId);
+        // Use the cached Rule object from the channel attribute to avoid an N+1
+        // storage lookup on every round of a multi-round TCP interaction.
+        Rule rule = ctx.channel().attr(ATTR_RULE).get();
+        if (rule == null) {
+            rule = findRuleById(ruleId);
+        }
         if (rule == null) {
             log.warn("Bound rule {} not found, closing connection", ruleId);
             ctx.close();

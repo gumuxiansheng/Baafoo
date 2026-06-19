@@ -212,11 +212,13 @@ public class AgentResolver {
      */
     private StorageService.AgentRegistration findAgentByGatewaySubnet(
             List<StorageService.AgentRegistration> agents, String channelIp, long onlineThreshold) {
-        // Only apply this heuristic for IPs ending in .1 (typical Docker gateway)
+        // Only apply this heuristic for IPs ending in the configured gateway octet
+        // (default "1" — typical Docker gateway). Override via -Dbaafoo.gateway.octet=...
+        String gatewayOctet = System.getProperty("baafoo.gateway.octet", "1");
         int lastDot = channelIp.lastIndexOf('.');
         if (lastDot < 0) return null;
         String lastOctet = channelIp.substring(lastDot + 1);
-        if (!"1".equals(lastOctet)) return null;
+        if (!gatewayOctet.equals(lastOctet)) return null;
 
         String subnet = channelIp.substring(0, lastDot); // e.g. "172.19.0"
         StorageService.AgentRegistration best = null;

@@ -46,6 +46,22 @@ public class MatchEngine {
                               String serviceName, String method, String path,
                               Map<String, String> headers, Map<String, String> queryParams,
                               String body) {
+        return match(rules, protocol, host, port, serviceName, method, path,
+                null, headers, queryParams, body);
+    }
+
+    /**
+     * Match request against a list of rules, with an explicit {@code topic} parameter
+     * for MQ protocols (Kafka/Pulsar/JMS). The {@code topic} is used by conditions of
+     * type {@code "topic"}; for HTTP rules, pass {@code null} and the topic condition
+     * falls back to matching against {@code path}.
+     *
+     * @param topic the MQ topic/destination name (null for non-MQ requests)
+     */
+    public MatchResult match(List<Rule> rules, String protocol, String host, int port,
+                              String serviceName, String method, String path, String topic,
+                              Map<String, String> headers, Map<String, String> queryParams,
+                              String body) {
 
         if (rules == null || rules.isEmpty()) {
             return MatchResult.NO_MATCH;
@@ -67,7 +83,7 @@ public class MatchEngine {
             }
 
             // Match all conditions (AND logic)
-            int[] matchResult = matchConditions(rule, method, path, headers, queryParams, body);
+            int[] matchResult = matchConditions(rule, method, path, topic, headers, queryParams, body);
             if (matchResult != null) {
                 log.debug("Rule matched: {} (name={})", rule.getId(), rule.getName());
                 // Use the count captured at increment time to avoid TOCTOU race
@@ -118,7 +134,7 @@ public class MatchEngine {
      *         Using the captured count avoids a TOCTOU race between
      *         incrementAndGet() and a separate get() call.
      */
-    private int[] matchConditions(Rule rule, String method, String path,
+    private int[] matchConditions(Rule rule, String method, String path, String topic,
                                  Map<String, String> headers, Map<String, String> queryParams,
                                  String body) {
 
@@ -128,7 +144,7 @@ public class MatchEngine {
         // requestCount at rule level uses the pre-increment count (0 on first request).
         if (conditions != null && !conditions.isEmpty()) {
             for (MatchCondition cond : conditions) {
-                if (!matchSingleCondition(cond, method, path, headers, queryParams, body, 0)) {
+                if (!matchSingleCondition(cond, method, path, topic, headers, queryParams, body, 0)) {
                     return null;
                 }
             }
@@ -142,7 +158,7 @@ public class MatchEngine {
 
         // Select response entry, evaluating requestCount conditions with the
         // incremented count.
-        int responseIdx = selectResponseEntry(rule, method, path, headers, queryParams, body, count);
+        int responseIdx = selectResponseEntry(rule, method, path, topic, headers, queryParams, body, count);
 
         // Auto-reset counter if requestCountReset threshold is reached.
         // This happens AFTER the response is selected, so the current request
@@ -164,7 +180,7 @@ public class MatchEngine {
      *
      * @param count the current request count (1-based) for requestCount conditions
      */
-    private int selectResponseEntry(Rule rule, String method, String path,
+    private int selectResponseEntry(Rule rule, String method, String path, String topic,
                                      Map<String, String> headers, Map<String, String> queryParams,
                                      String body, int count) {
 
@@ -180,7 +196,7 @@ public class MatchEngine {
                 // No condition = default response
                 return i;
             }
-            if (matchSingleCondition(entryCond, method, path, headers, queryParams, body, count)) {
+            if (matchSingleCondition(entryCond, method, path, topic, headers, queryParams, body, count)) {
                 return i;
             }
         }
@@ -189,7 +205,7 @@ public class MatchEngine {
         return 0;
     }
 
-    private boolean matchSingleCondition(MatchCondition cond, String method, String path,
+    private boolean matchSingleCondition(MatchCondition cond, String method, String path, String topic,
                                           Map<String, String> headers, Map<String, String> queryParams,
                                           String body, int requestCount) {
 
@@ -209,21 +225,25 @@ public class MatchEngine {
                     return applyOperator(path, operator, cond.getValue(), cond.isCaseSensitive());
 
                 case "topic":
-                    // topic 是 path 的别名 —— MQ (Kafka/Pulsar/JMS) 规则用 topic 条件
-                    // 匹配 topic/destination 名。broker 端把 topic 传入 path 形参槽位。
-                    return applyOperator(path, operator, cond.getValue(), cond.isCaseSensitive());
+                    // MQ (Kafka/Pulsar/JMS) topic/destination matching.
+                    // Uses the explicit topic parameter; falls back to path for
+                    // backward compatibility when topic is not provided.
+                    return applyOperator(topic != null ? topic : path, operator, cond.getValue(), cond.isCaseSensitive());
 
                 case "header":
                     if (headers == null) return false;
+                    // "exists" checks key presence (containsKey), not value non-null.
+                    // A header present with an empty value still satisfies "exists".
+                    if ("exists".equals(operator)) return headers.containsKey(cond.getKey());
                     String headerVal = headers.get(cond.getKey());
-                    if (headerVal == null && "exists".equals(operator)) return false;
                     if (headerVal == null) return false;
                     return applyOperator(headerVal, operator, cond.getValue(), cond.isCaseSensitive());
 
                 case "query":
                     if (queryParams == null) return false;
+                    // "exists" checks key presence (containsKey), not value non-null.
+                    if ("exists".equals(operator)) return queryParams.containsKey(cond.getKey());
                     String queryVal = queryParams.get(cond.getKey());
-                    if (queryVal == null && "exists".equals(operator)) return false;
                     if (queryVal == null) return false;
                     return applyOperator(queryVal, operator, cond.getValue(), cond.isCaseSensitive());
 
@@ -443,7 +463,8 @@ public class MatchEngine {
     }
 
     private boolean applyOperator(String actual, String operator, String expected, boolean caseSensitive) {
-        if (actual == null) return "exists".equals(operator) ? false : false;
+        // null actual: no operator can match (exists is handled by callers via containsKey).
+        if (actual == null) return false;
 
         switch (operator) {
             case "equals":

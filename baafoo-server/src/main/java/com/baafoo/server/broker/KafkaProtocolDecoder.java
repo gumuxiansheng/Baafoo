@@ -655,13 +655,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
     /** Number of bytes the unsigned-zigzag varint encoding of {@code value} occupies. */
     private int varintEncodedSize(int value) {
-        int zigzag = (value << 1) ^ (value >> 31);
-        int bytes = 1;
-        while ((zigzag & ~0x7F) != 0) {
-            bytes++;
-            zigzag >>>= 7;
-        }
-        return bytes;
+        return com.baafoo.core.util.VarintCodec.zigzagVarintSize(value);
     }
 
     // --- ApiVersions (API key 18) ---
@@ -675,12 +669,13 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         // clients switching to Request Header v2 (compact strings), which this decoder's
         // int16 readNullableString cannot parse. See channelRead0 for the fallback path.
         //   PRODUCE  flexible at v9  -> cap v3 (well within range, matches v0-v8 body shape)
-        //   FETCH    flexible at v12 -> cap v10 (v11+ uses compact message format + tagged fields)
+        //   FETCH    flexible at v12 -> cap v7 (handleFetch only fully parses v0-v7;
+        //             v8+ adds current_leader_epoch / rack_id fields we don't read)
         //   METADATA flexible at v9  -> cap v8
         //   API_VERSIONS flexible at v3 -> cap v2 (the gate that triggers KIP-511 header switch)
         int[][] supportedApis = {
                 {PRODUCE, 0, 3},
-                {FETCH, 0, 10},
+                {FETCH, 0, 7},
                 {METADATA, 0, 8},
                 {OFFSET_COMMIT, 0, 8},
                 {OFFSET_FETCH, 0, 8},
@@ -742,17 +737,15 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         ByteBuf buf = Unpooled.buffer();
         buf.writeInt(correlationId);
 
-        // v0-v1: topics array with partition results
         // v2+: throttle_time_ms first
         if (apiVersion >= 2) {
             buf.writeInt(0); // throttle_time_ms
         }
 
-        // Topics array
-        buf.writeInt(0); // no topics in response for simplicity
-        // Actually for v0-v1 we need topic results
-        // Let's return an empty topics array
-        buf.writeInt(0);
+        // Topics array — empty (no partition results).
+        // v0-v1 expect a topics array (int32 count + entries); returning 0 entries
+        // is a valid empty response that satisfies the protocol frame.
+        buf.writeInt(0); // topics array length = 0
 
         return frameResponse(buf);
     }
@@ -1020,7 +1013,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
     private void writeVarint(ByteBuf buf, int value) {
         // Unsigned varint encoding (zigzag + varint)
-        int zigzag = (value << 1) ^ (value >> 31);
+        int zigzag = com.baafoo.core.util.VarintCodec.zigzagEncode(value);
         while ((zigzag & ~0x7F) != 0) {
             buf.writeByte((byte) ((zigzag & 0x7F) | 0x80));
             zigzag >>>= 7;
@@ -1035,7 +1028,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
     private int readVarint(ByteBuf buf) {
         int raw = readUnsignedVarint(buf);
         // un-zigzag
-        return (raw >>> 1) ^ -(raw & 1);
+        return com.baafoo.core.util.VarintCodec.zigzagDecode(raw);
     }
 
     /**

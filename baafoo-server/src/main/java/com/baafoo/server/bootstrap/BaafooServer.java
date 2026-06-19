@@ -97,6 +97,9 @@ public class BaafooServer {
         // Initialize default admin user if auth is enabled
         ensureDefaultAdmin();
 
+        // Propagate CORS origins to the static stub response renderer
+        com.baafoo.server.handler.StubResponseRenderer.setCorsOrigins(config.getCorsOrigins());
+
         // Start HTTP management server (API + Web console)
         startManagementServer();
 
@@ -144,7 +147,7 @@ public class BaafooServer {
                         p.addLast(new HttpServerCodec());
                         p.addLast(new HttpObjectAggregator(10 * 1024 * 1024));
                         p.addLast(new AuthFilter(authService));
-                        p.addLast(new ManagementApiHandler(storage, authService));
+                        p.addLast(new ManagementApiHandler(storage, authService, config));
                         p.addLast(new StaticFileHandler(config.getWebConsolePath()));
                     }
                 });

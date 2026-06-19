@@ -94,8 +94,12 @@ public class RecordingCleanupTask {
         long totalSizeBytes = storage.getRecordingTotalSizeBytes();
         if (totalSizeBytes > maxSizeBytes) {
             long excessBytes = totalSizeBytes - maxSizeBytes;
-            // Estimate how many recordings to delete (2KB average per recording)
-            long estimatedDeleteCount = (excessBytes / 2048) + 100; // +100 buffer
+            // Estimate how many recordings to delete based on average body size.
+            // Falls back to 2KB if count is zero (avoids division by zero).
+            long count = storage.getRecordingCount();
+            long avgBytes = count > 0 ? totalSizeBytes / count : 2048;
+            if (avgBytes < 1) avgBytes = 1;
+            long estimatedDeleteCount = (excessBytes / avgBytes) + 100; // +100 buffer
             int deletedBySize = deleteOldestRecordings((int) Math.min(estimatedDeleteCount, 10000));
             if (deletedBySize > 0) {
                 log.info("Recording cleanup: deleted {} oldest recordings to reduce size below {} MB (was ~{} MB)",

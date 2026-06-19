@@ -393,27 +393,11 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
     }
 
     private static int readVarint(byte[] data, int offset) {
-        int value = 0;
-        int shift = 0;
-        int idx = offset;
-        int b;
-        do {
-            if (idx >= data.length) return -1;
-            b = data[idx++] & 0xFF;
-            value |= (b & 0x7F) << shift;
-            shift += 7;
-        } while ((b & 0x80) != 0);
-        return value;
+        return com.baafoo.core.util.VarintCodec.readVarint(data, offset);
     }
 
     private static int varintSize(int value) {
-        int size = 0;
-        int v = value;
-        do {
-            size++;
-            v >>>= 7;
-        } while (v != 0);
-        return size;
+        return com.baafoo.core.util.VarintCodec.varintSize(value);
     }
 
     /**
@@ -544,30 +528,12 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
 
     /** Read a varint at the current position, updating pos[0]. */
     private static int readVarintAt(byte[] data, int[] pos) {
-        int value = 0;
-        int shift = 0;
-        int b;
-        do {
-            if (pos[0] >= data.length) return -1;
-            b = data[pos[0]++] & 0xFF;
-            value |= (b & 0x7F) << shift;
-            shift += 7;
-        } while ((b & 0x80) != 0);
-        return value;
+        return com.baafoo.core.util.VarintCodec.readVarint(data, pos);
     }
 
     /** Read a varint64 value at the current position (unsigned). */
     private static long readVarint64From(byte[] data, int[] pos) {
-        long value = 0;
-        int shift = 0;
-        int b;
-        do {
-            if (pos[0] >= data.length) return 0;
-            b = data[pos[0]++] & 0xFF;
-            value |= ((long) (b & 0x7F)) << shift;
-            shift += 7;
-        } while ((b & 0x80) != 0);
-        return value;
+        return com.baafoo.core.util.VarintCodec.readVarint64(data, pos);
     }
 
     /** Skip a single protobuf field based on wire type. */

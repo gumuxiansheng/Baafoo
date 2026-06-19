@@ -366,19 +366,53 @@ public class PulsarMockBrokerTest {
         return result;
     }
 
-    /** Strip the magic + varint-metadataSize + metadata to get the body from a stored payload. */
+    /**
+     * Strip the magic + metadata framing to get the body from a stored payload.
+     * Handles both formats:
+     *   - 0x0E only: [0x0E][varint metaSize][metadata][body]
+     *   - 0x0E01 (full magic with CRC32C): [0x0E][0x01][4-byte CRC32C][4-byte BE metaSize][metadata][body]
+     */
     private static byte[] stripPulsarMetadata(byte[] payload) {
         if (payload == null || payload.length < 2) return new byte[0];
-        int idx = (payload[0] == (byte) 0x0E) ? 1 : 0;
-        int metaSize = 0, shift = 0, b;
-        do {
-            b = payload[idx++] & 0xFF;
-            metaSize |= (b & 0x7F) << shift;
-            shift += 7;
-        } while ((b & 0x80) != 0);
-        int bodyLen = payload.length - idx - metaSize;
+        int idx;
+        int metaSize;
+        if (payload[0] == (byte) 0x0E && payload.length >= 2 && payload[1] == 0x01) {
+            // Full 0x0E01 magic — CRC32C is present.
+            // Format: [0x0E01][4-byte CRC32C][4-byte big-endian metadataSize][metadata][body]
+            idx = 2 + 4; // skip magic(2) + CRC32C(4)
+            if (idx + 4 > payload.length) return new byte[0];
+            metaSize = ((payload[idx] & 0xFF) << 24)
+                     | ((payload[idx + 1] & 0xFF) << 16)
+                     | ((payload[idx + 2] & 0xFF) << 8)
+                     | (payload[idx + 3] & 0xFF);
+            idx += 4; // skip metadataSize field
+        } else if (payload[0] == (byte) 0x0E) {
+            // 0x0E only (no CRC32C) — old format
+            // Format: [0x0E][varint metaSize][metadata][body]
+            idx = 1;
+            metaSize = 0;
+            int shift = 0, b;
+            do {
+                b = payload[idx++] & 0xFF;
+                metaSize |= (b & 0x7F) << shift;
+                shift += 7;
+            } while ((b & 0x80) != 0);
+        } else {
+            // No magic byte — try raw [varint metaSize][metadata][body]
+            idx = 0;
+            metaSize = 0;
+            int shift = 0, b;
+            do {
+                b = payload[idx++] & 0xFF;
+                metaSize |= (b & 0x7F) << shift;
+                shift += 7;
+            } while ((b & 0x80) != 0);
+        }
+        int bodyStart = idx + metaSize;
+        if (bodyStart > payload.length) return new byte[0];
+        int bodyLen = payload.length - bodyStart;
         byte[] body = new byte[bodyLen];
-        System.arraycopy(payload, idx + metaSize, body, 0, bodyLen);
+        System.arraycopy(payload, bodyStart, body, 0, bodyLen);
         return body;
     }
 

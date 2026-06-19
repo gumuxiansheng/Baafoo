@@ -95,13 +95,8 @@ class RuleApiHandler implements ResourceHandler {
                 Rule update = ctx.mapper.readValue(body, Rule.class);
                 Rule existing = ctx.storage.getRule(id);
                 if (existing == null) return ApiResponse.notFound("Rule not found");
-                List<String> inheritedEnvs = ApiUtils.getInheritedEnvironments(ctx.storage, id);
-                List<String> requestedEnvs = update.getEnvironments() != null ? update.getEnvironments() : new ArrayList<String>();
-                List<String> mergedEnvs = new ArrayList<String>(requestedEnvs);
-                for (String inherited : inheritedEnvs) {
-                    if (!mergedEnvs.contains(inherited)) mergedEnvs.add(inherited);
-                }
-                update.setEnvironments(mergedEnvs);
+                // Inherited-environment merging is now handled in
+                // JdbcStorageService.updateRule so all update paths stay consistent.
                 Rule updated = ctx.storage.updateRule(id, update);
                 return updated != null ? ApiResponse.ok(updated) : ApiResponse.notFound("Rule not found");
             }

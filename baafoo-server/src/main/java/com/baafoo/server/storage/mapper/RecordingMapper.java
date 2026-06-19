@@ -39,5 +39,8 @@ public interface RecordingMapper {
 
     long countAllRecordings();
 
+    /** Sum of LENGTH(response_body) + LENGTH(request_body) across all recordings. */
+    long sumAllRecordingBodyBytes();
+
     List<RecordingEntry> listOldestRecordings(@Param("limit") int limit);
 }

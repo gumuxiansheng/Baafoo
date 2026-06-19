@@ -1,6 +1,7 @@
 package com.baafoo.server.api;
 
 import com.baafoo.core.api.ApiResponse;
+import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.util.ChaosManager;
 import com.baafoo.server.auth.AuthService;
 import com.baafoo.server.storage.StorageService;
@@ -27,17 +28,29 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
     private final ObjectMapper mapper;
     private final List<ResourceHandler> handlers;
     private final ChaosManager chaosManager;
+    private final ServerConfig config;
 
     public ManagementApiHandler(StorageService storage, AuthService authService) {
-        this(storage, authService, new ChaosManager());
+        this(storage, authService, new ChaosManager(), null);
     }
 
     public ManagementApiHandler(StorageService storage, AuthService authService,
                                  ChaosManager chaosManager) {
+        this(storage, authService, chaosManager, null);
+    }
+
+    public ManagementApiHandler(StorageService storage, AuthService authService,
+                                 ServerConfig config) {
+        this(storage, authService, new ChaosManager(), config);
+    }
+
+    public ManagementApiHandler(StorageService storage, AuthService authService,
+                                 ChaosManager chaosManager, ServerConfig config) {
         this.storage = storage;
         this.authService = authService;
         this.mapper = new ObjectMapper();
         this.chaosManager = chaosManager != null ? chaosManager : new ChaosManager();
+        this.config = config;
         this.handlers = Arrays.asList(
                 new AuthApiHandler(),
                 new UserApiHandler(),
@@ -135,7 +148,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
                     Unpooled.copiedBuffer(json, StandardCharsets.UTF_8));
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json; charset=UTF-8");
             response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
-            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+            applyCorsHeaders(response);
             response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, PUT, DELETE, OPTIONS");
             response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "Content-Type, Authorization, X-Api-Key");
 
@@ -146,13 +159,27 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         }
     }
 
+    /**
+     * Apply the Access-Control-Allow-Origin header from the configured corsOrigins.
+     * Falls back to "*" when no config is available or CORS is not explicitly configured.
+     */
+    private void applyCorsHeaders(FullHttpResponse response) {
+        String origin = "*";
+        if (config != null && config.getCorsOrigins() != null && !config.getCorsOrigins().isEmpty()) {
+            // Join multiple origins or use the first; "*" is replaced by the configured list.
+            List<String> origins = config.getCorsOrigins();
+            origin = origins.size() == 1 ? origins.get(0) : String.join(", ", origins);
+        }
+        response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+    }
+
     private void sendRawJson(ChannelHandlerContext ctx, int statusCode, RawJsonResponse raw) {
         FullHttpResponse response = new DefaultFullHttpResponse(
                 HttpVersion.HTTP_1_1, HttpResponseStatus.valueOf(statusCode),
                 Unpooled.copiedBuffer(raw.getJson(), StandardCharsets.UTF_8));
         response.headers().set(HttpHeaderNames.CONTENT_TYPE, raw.getContentType() + "; charset=UTF-8");
         response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
-        response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+        applyCorsHeaders(response);
         response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, PUT, DELETE, OPTIONS");
         response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "Content-Type, Authorization, X-Api-Key");
         response.headers().set("Content-Disposition", "attachment; filename=\"baafoo-export.har\"");

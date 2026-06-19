@@ -276,19 +276,23 @@ public final class RouteManager {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static void syncRoutesToBootstrapCL(ConcurrentHashMap<String, GlobalRouteState.HostPort> newRoutes) {
-        ConcurrentHashMap bootRoutes = BaafooAgent.getBootstrapRoutes();
+        Class<?> bootGRS = BaafooAgent.getBootstrapGRSClass();
         java.lang.reflect.Constructor<?> bootCtor = BaafooAgent.getBootstrapHostPortCtor();
-        if (bootRoutes == null || bootCtor == null) return;
+        if (bootGRS == null || bootCtor == null) return;
         try {
-            // Build new map first, then clear+putAll to minimize the empty-window
+            // Build the new map first, then atomically swap the ROUTES field reference
+            // (mirroring the App-CL atomic swap in rebuildRouteTable). This avoids the
+            // clear+putAll window where concurrent readers see an empty route table.
             ConcurrentHashMap newBootRoutes = new ConcurrentHashMap();
             for (Map.Entry<String, GlobalRouteState.HostPort> entry : newRoutes.entrySet()) {
                 Object bootHostPort = bootCtor.newInstance(entry.getValue().host, entry.getValue().port);
                 newBootRoutes.put(entry.getKey(), bootHostPort);
             }
-            bootRoutes.clear();
-            bootRoutes.putAll(newBootRoutes);
-            log.info("Synced {} routes to Bootstrap CL GlobalRouteState.ROUTES", bootRoutes.size());
+            java.lang.reflect.Field routesField = bootGRS.getField("ROUTES");
+            routesField.set(null, newBootRoutes);
+            // Update the cached reference used by subsequent syncs
+            BaafooAgent.updateBootstrapRoutes(newBootRoutes);
+            log.info("Synced {} routes to Bootstrap CL GlobalRouteState.ROUTES (atomic swap)", newBootRoutes.size());
         } catch (Exception e) {
             log.error("Failed to sync routes to Bootstrap CL: {}", e.getMessage());
         }

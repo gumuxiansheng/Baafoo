@@ -81,7 +81,6 @@ public class PassthroughProxy {
         if (insecureSslContext == null) {
             synchronized (this) {
                 if (insecureSslContext == null) {
-                    log.warn("SSL certificate verification is DISABLED - only use in test environments");
                     insecureSslContext = SslContextBuilder.forClient()
                             .trustManager(InsecureTrustManagerFactory.INSTANCE)
                             .build();
@@ -114,6 +113,9 @@ public class PassthroughProxy {
                 protected void initChannel(Channel ch) throws Exception {
                     ChannelPipeline p = ch.pipeline();
                     if (isHttps) {
+                        if (sslVerifyDisabled) {
+                            log.warn("SSL certificate verification is DISABLED for {}:{} - only use in test environments", host, targetPort);
+                        }
                         p.addLast(new SslHandler(getSslContext().newEngine(ch.alloc(), host, targetPort)));
                     }
                     p.addLast(new HttpClientCodec());

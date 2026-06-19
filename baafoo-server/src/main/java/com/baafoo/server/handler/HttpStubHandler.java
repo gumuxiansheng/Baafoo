@@ -182,7 +182,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     // channel is not held open indefinitely.
                     log.info("Fault injected: READ_TIMEOUT for rule {} {} {} (no response, auto-close in {}s)",
                             result.getRule().getId(), method, path, READ_TIMEOUT_FALLBACK_SECONDS);
-                    ctx.executor().schedule(ctx::close,
+                    ctx.executor().schedule((Runnable) ctx::close,
                             READ_TIMEOUT_FALLBACK_SECONDS, TimeUnit.SECONDS);
                 } else {
                     long faultDelayMs = faultResult.isDelay() ? faultResult.getDelayMs() : 0;

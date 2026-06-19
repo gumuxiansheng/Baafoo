@@ -35,6 +35,11 @@ public class BaafooAgent {
     private static volatile RecordingBuffer recordingBuffer;
     private static volatile boolean initialized = false;
 
+    /** The Instrumentation instance, retained so shutdown can remove transformers. */
+    private static volatile Instrumentation instrumentation;
+    /** The ByteBuddy class file transformer installed by installTransforms. */
+    private static volatile java.lang.instrument.ClassFileTransformer classFileTransformer;
+
     private static volatile ConcurrentHashMap<String, GlobalRouteState.HostPort> bootstrapRoutes;
 
     private static volatile Class<?> bootstrapGRSClass;
@@ -78,6 +83,7 @@ public class BaafooAgent {
             // which must be on the Bootstrap CL search path before ByteBuddy tries
             // to inline the advice into target classes like InetAddress.
             setupBootstrapClassPath(inst);
+            instrumentation = inst;
 
             // Register SLF4J-backed log handlers so that Bootstrap CL advice code
             // (inlined into java.net.Socket, InetAddress, etc.) can log through
@@ -190,6 +196,17 @@ public class BaafooAgent {
             }
             if (pluginManager != null) {
                 pluginManager.shutdown();
+            }
+            // Remove the installed class file transformer so that a hot-restart
+            // of the agent doesn't stack a second transformer on top of the first.
+            if (instrumentation != null && classFileTransformer != null) {
+                try {
+                    instrumentation.removeTransformer(classFileTransformer);
+                    log.info("Removed class file transformer");
+                } catch (Exception e) {
+                    log.warn("Failed to remove class file transformer: {}", e.getMessage());
+                }
+                classFileTransformer = null;
             }
         } catch (Exception e) {
             log.error("Error during shutdown: {}", e.getMessage());
@@ -322,7 +339,7 @@ public class BaafooAgent {
                                 .on(isConstructor())));
         registry.register("org.apache.activemq.ActiveMQConnectionFactory", "JmsConnectionFactoryAdvice", "jms");
 
-        agentBuilder.installOn(inst);
+        classFileTransformer = agentBuilder.installOn(inst);
         log.info("Bytecode transforms installed: {} transforms registered", registry.getCount());
     }
 
@@ -355,6 +372,15 @@ public class BaafooAgent {
 
     public static ConcurrentHashMap<String, GlobalRouteState.HostPort> getBootstrapRoutes() {
         return bootstrapRoutes;
+    }
+
+    /**
+     * Update the cached reference to the Bootstrap CL's ROUTES map after an atomic swap.
+     * Called by {@link RouteManager#syncRoutesToBootstrapCL} so that subsequent accessors
+     * see the new map instance.
+     */
+    public static void updateBootstrapRoutes(ConcurrentHashMap<String, GlobalRouteState.HostPort> newRoutes) {
+        bootstrapRoutes = newRoutes;
     }
 
     private static String getVersion() {
@@ -439,17 +465,23 @@ public class BaafooAgent {
 
             Object bootRoutesObj = bootGRS.getField("ROUTES").get(null);
             if (bootRoutesObj instanceof ConcurrentHashMap) {
-                ConcurrentHashMap<String, GlobalRouteState.HostPort> bootRoutes = (ConcurrentHashMap<String, GlobalRouteState.HostPort>) bootRoutesObj;
                 Class<?> bootHostPortClass = Class.forName("com.baafoo.agent.GlobalRouteState$HostPort", false, bootGRS.getClassLoader());
                 java.lang.reflect.Constructor<?> ctor = bootHostPortClass.getConstructor(String.class, int.class);
-                ((ConcurrentHashMap) bootRoutes).clear();
+                // Build a new map and atomically swap the ROUTES field reference,
+                // avoiding the clear+putAll window where concurrent readers see an empty table.
+                // NOTE: bootHostPort instances are from the Bootstrap CL HostPort class, which is
+                // a *different* class from the App CL GlobalRouteState.HostPort. We use a raw
+                // ConcurrentHashMap to avoid a ClassCastException across class-loader boundaries.
+                @SuppressWarnings({"unchecked", "rawtypes"})
+                ConcurrentHashMap newBootRoutes = new ConcurrentHashMap();
                 for (Map.Entry<String, GlobalRouteState.HostPort> entry : GlobalRouteState.ROUTES.entrySet()) {
                     Object bootHostPort = ctor.newInstance(entry.getValue().host, entry.getValue().port);
-                    ((ConcurrentHashMap) bootRoutes).put(entry.getKey(), bootHostPort);
+                    newBootRoutes.put(entry.getKey(), bootHostPort);
                 }
-                bootstrapRoutes = bootRoutes;
+                bootGRS.getField("ROUTES").set(null, newBootRoutes);
+                bootstrapRoutes = newBootRoutes;
                 bootstrapHostPortCtor = ctor;
-                log.info("Synced {} routes to Bootstrap CL GlobalRouteState.ROUTES", bootRoutes.size());
+                log.info("Synced {} routes to Bootstrap CL GlobalRouteState.ROUTES (atomic swap)", newBootRoutes.size());
             }
 
             bootGRS.getField("CURRENT_MODE").setInt(null, GlobalRouteState.CURRENT_MODE);

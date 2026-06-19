@@ -230,6 +230,7 @@ public class JdbcStorageService implements StorageService {
     public Rule updateRule(String id, Rule update) {
         try (SqlSession session = openSession()) {
             RuleMapper rm = session.getMapper(RuleMapper.class);
+            SceneMapper sm = session.getMapper(SceneMapper.class);
             Rule existing = rm.getRule(id);
             if (existing == null) return null;
 
@@ -245,8 +246,16 @@ public class JdbcStorageService implements StorageService {
             existing.setEnabled(update.isEnabled());
             existing.setPriority(update.getPriority());
             if (update.getTags() != null) existing.setTags(update.getTags());
-            if (update.getEnvironments() != null && !update.getEnvironments().isEmpty())
-                existing.setEnvironments(update.getEnvironments());
+            if (update.getEnvironments() != null && !update.getEnvironments().isEmpty()) {
+                // Merge inherited environments from active scenes so that direct
+                // storage updates (not just the API handler) preserve inheritance.
+                List<String> requested = update.getEnvironments();
+                List<String> merged = new ArrayList<>(requested);
+                for (String inherited : getInheritedEnvironments(sm, id)) {
+                    if (!merged.contains(inherited)) merged.add(inherited);
+                }
+                existing.setEnvironments(merged);
+            }
             existing.setVersion(existing.getVersion() + 1);
             existing.setUpdatedAt(System.currentTimeMillis());
 
@@ -260,6 +269,27 @@ public class JdbcStorageService implements StorageService {
             log.error("Failed to update rule {}: {}", id, e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Compute the set of environments inherited by {@code ruleId} from active scenes
+     * that include this rule in their itemIds. Moved here from ApiUtils so that all
+     * update paths (API handler, scene sync, etc.) consistently preserve inheritance.
+     */
+    private List<String> getInheritedEnvironments(SceneMapper sm, String ruleId) {
+        List<String> inherited = new ArrayList<>();
+        for (com.baafoo.core.model.SceneSet scene : sm.listScenes()) {
+            if (!scene.isActive()) continue;
+            List<String> items = scene.getItemIds();
+            if (items == null || !items.contains(ruleId)) continue;
+            List<String> envs = scene.getEnvironments();
+            if (envs != null) {
+                for (String env : envs) {
+                    if (!inherited.contains(env)) inherited.add(env);
+                }
+            }
+        }
+        return inherited;
     }
 
     private void saveVersion(RuleMapper rm, String ruleId, Rule previous) {
@@ -546,9 +576,12 @@ public class JdbcStorageService implements StorageService {
 
             rule.setEnvironments(ruleEnvs);
             rm.updateRule(rule);
-            invalidateRulesCache();
-            invalidateEnvironmentsCache();
         }
+        // Invalidate caches once after the loop, not on every iteration —
+        // otherwise concurrent requests see an empty cache N times and all
+        // penetrate to the database.
+        invalidateRulesCache();
+        invalidateEnvironmentsCache();
     }
 
     private boolean isEnvironmentInheritedFromOtherScene(SceneMapper sm, String ruleId, String envName, String excludeSceneId) {
@@ -725,10 +758,14 @@ public class JdbcStorageService implements StorageService {
 
     @Override
     public long getRecordingTotalSizeBytes() {
-        // Estimate size based on recording count * average size
-        // Each recording is roughly 2KB on average (headers, body, metadata)
-        long count = getRecordingCount();
-        return count * 2048;
+        // Aggregate the actual body bytes (request + response) from the database
+        // instead of estimating with a fixed 2KB-per-recording heuristic.
+        try (SqlSession session = openSession()) {
+            return session.getMapper(RecordingMapper.class).sumAllRecordingBodyBytes();
+        } catch (Exception e) {
+            log.error("Failed to sum recording body bytes: {}", e.getMessage());
+            return 0;
+        }
     }
 
     // --- Agent Management ---

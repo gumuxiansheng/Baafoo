@@ -136,6 +136,12 @@
         SELECT COUNT(*) FROM recordings
     </select>
 
+    <select id="sumAllRecordingBodyBytes" resultType="long">
+        SELECT COALESCE(SUM(
+            COALESCE(LENGTH(response_body), 0) + COALESCE(LENGTH(request_body), 0)
+        ), 0) FROM recordings
+    </select>
+
     <select id="listOldestRecordings" resultMap="recordingResultMap">
         SELECT * FROM recordings ORDER BY recorded_at ASC LIMIT #{limit}
     </select>
