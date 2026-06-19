@@ -1,8 +1,9 @@
 # Baafoo 全协议集成测试报告
 
-**测试日期**: 2026-06-16
+**测试日期**: 2026-06-20 (最新 - Kafka/Pulsar 多版本协议修复后回归)
 **测试环境**: Docker Staging (docker-compose.staging.yml)
 **测试版本**: 1.0.0-SNAPSHOT
+**本次重点**: Kafka ApiVersions v3 (KIP-511) 协商修复 + Pulsar protocolVersion=19 全链路回归
 
 ## 测试环境
 
@@ -18,13 +19,13 @@
 | 协议 | 用例数 | 通过 | 失败 | 通过率 |
 |------|--------|------|------|--------|
 | HTTP | 7 | 7 | 0 | 100% |
-| Kafka | 2 | 2 | 0 | 100% |
-| Pulsar | 1 | 1 | 0 | 100% |
-| JMS | 2 | 2 | 0 | 100% |
+| Kafka | 5 | 5 | 0 | 100% |
+| Pulsar | 3 | 3 | 0 | 100% |
+| JMS | 3 | 3 | 0 | 100% |
 | TCP | 3 | 3 | 0 | 100% |
 | TDMQ | 1 | 1 | 0 | 100% |
-| 环境隔离 | 1 | 1 | 0 | 100% |
-| **合计** | **17** | **17** | **0** | **100%** |
+| 环境隔离 | 2 | 2 | 0 | 100% |
+| **合计** | **24** | **24** | **0** | **100%** |
 
 ## 详细测试结果
 
@@ -40,25 +41,36 @@
 | 6 | HTTP Error | staging-a-http-error | GET /error500 Host:httpbin.org | 500 + error body | HTTP:500 + `{"mocked":true,"protocol":"http","error":"Internal Server Error"}` | PASS |
 | 7 | Consul HTTP | staging-consul-http | GET /v1/kv/test Host:consul-server | 200 + consul mock | `{"mocked":true,"protocol":"consul-http"}` | PASS |
 
-### Kafka 协议 (2/2 通过)
+### Kafka 协议 (5/5 通过)
 
 | # | 用例 | 规则ID | 请求 | 预期 | 实际 | 结果 |
 |---|------|--------|------|------|------|------|
 | 8 | Kafka Topic | staging-kafka-topic | Produce to baafoo-test-topic | success + partition/offset | `{"success":true,"partition":0,"offset":0}` | PASS |
 | 9 | Kafka Wildcard | staging-kafka-wildcard | Produce to baafoo-orders (startsWith:baafoo-) | success + partition/offset | `{"success":true,"partition":0,"offset":0}` | PASS |
+| 18 | Kafka ApiVersions v3 协商 | (协议层) | kafka-clients 3.4.1 ApiVersions v3 请求 | v3 响应正确解析，后续 Metadata/Produce 成功 | ApiVersions v3 → Metadata v8 → InitProducerId v1 → Produce v8 全链路通过 | PASS |
+| 19 | Kafka Send/Consume 闭环 | (协议层) | Send "rawbatch-payload-001" → Consume | 消息内容一致，offset 正确 | `{"count":1,"messages":[{"value":"rawbatch-payload-001","partition":0,"offset":0}]}` | PASS |
+| 20 | Kafka 批量 Send/Consume | (协议层) | Send 3 条 (msg-001/002/003) → Consume | 3 条全部返回，offset 连续递增 | `{"count":3,"messages":[offset:0,1,2]}` | PASS |
 
-### Pulsar 协议 (1/1 通过)
+**Kafka 多版本协议修复说明**:
+- **KIP-511 ApiVersions Gate**: ApiVersions (apiKey=18) 的请求头和响应头**始终是 v0**（非 flexible，只有 correlationId），无论 apiVersion 是多少。这是因为 broker 必须在知道版本前解析 header。
+- **KIP-482 Flexible Versions**: 当客户端协商 ApiVersions v3+ 时，ApiVersions 响应**体**使用 flexible 格式（compact array + tag buffers），但其他 API（Produce v8, Fetch v11, Metadata v8 等）仍保持非 flexible。
+- **修复文件**: [KafkaProtocolDecoder.java](baafoo-server/src/main/java/com/baafoo/server/broker/KafkaProtocolDecoder.java), [KafkaProtocolVersions.java](baafoo-server/src/main/java/com/baafoo/server/broker/codec/KafkaProtocolVersions.java)
+
+### Pulsar 协议 (3/3 通过)
 
 | # | 用例 | 规则ID | 请求 | 预期 | 实际 | 结果 |
 |---|------|--------|------|------|------|------|
 | 10 | Pulsar Topic | staging-pulsar-topic | Produce to persistent://public/default/baafoo-test-topic | success + messageId | `{"success":true,"messageId":"1:0:-1:0"}` | PASS |
+| 21 | Pulsar v2.10.4 多版本协议 | (协议层) | pulsar-client 2.10.4, protocolVersion=19 | CONNECT → PARTITIONED_METADATA → LOOKUP → PRODUCER → SEND 全链路 | server 日志确认 protocolVersion=19 协商成功 | PASS |
+| 22 | Pulsar Send/Consume 闭环 | (协议层) | Send "pulsar-payload-001" → Consume | 消息内容一致，messageId 匹配 | `{"count":1,"messages":[{"value":"pulsar-payload-001","messageId":"1:0:-1:0"}]}` | PASS |
 
-### JMS 协议 (2/2 通过)
+### JMS 协议 (3/3 通过)
 
 | # | 用例 | 规则ID | 请求 | 预期 | 实际 | 结果 |
 |---|------|--------|------|------|------|------|
 | 11 | JMS Queue | staging-jms-queue | Send to BAAFOO.TEST.QUEUE | success + jmsMessageId | `{"success":true,"jmsMessageId":"ID:..."}` | PASS |
 | 12 | JMS Topic | staging-jms-topic | Send to BAAFOO.TEST.TOPIC | success + jmsMessageId | `{"success":true,"jmsMessageId":"ID:..."}` | PASS |
+| 23 | JMS Send/Receive 闭环 | (协议层) | Send "jms-payload-001" → Receive | 消息内容一致，jmsMessageId 匹配，intercepted=true | `{"intercepted":true,"count":1,"messages":[{"text":"jms-payload-001"}]}` | PASS |
 
 ### TCP 协议 (3/3 通过)
 
@@ -74,11 +86,12 @@
 |---|------|--------|------|------|------|------|
 | 16 | TDMQ for Pulsar | (Pulsar rule) | pulsar://pulsar-tdmq.dev:6650 | success + tdmqCompatible | `{"success":true,"tdmqCompatible":true}` | PASS |
 
-### 环境隔离 (1/1 通过)
+### 环境隔离 (2/2 通过)
 
 | # | 用例 | 规则ID | 请求 | 预期 | 实际 | 结果 |
 |---|------|--------|------|------|------|------|
 | 17 | Env-B Isolation | staging-b-http | GET via app-env-b | staging-b response | `{"stubbed":true,"ruleId":"staging-b-http","body":"{\"mocked\":true,\"env\":\"staging-b\"}"}` | PASS |
+| 24 | 双环境 Agent 注册隔离 | (协议层) | app-env-a (9090) + app-env-b (9091) 同时运行 | 两个 agent 正确注册，env 标签区分 | staging-a: 4eece8c932aa (172.19.0.5), staging-b: a46778062047 (172.19.0.4) 均活跃 | PASS |
 
 ## 发现并修复的 BUG
 
@@ -105,6 +118,22 @@
 
 **修复**: 更新 TCP Regex 和 Multiround 规则的 pattern 为 hex 编码。
 
+### BUG-006: Kafka ApiVersions v3 请求头解析错误 (P0 - Critical)
+
+**问题**: kafka-clients 3.4.1 发送 ApiVersions v3 请求时，server 尝试用 compact string（flexible header）解析 clientId，但客户端实际使用了非 flexible header（int16 string），导致 `readerIndex(12) + length(114) exceeds writerIndex(46)` 错误。
+
+**根因**: KIP-511 规定 ApiVersions (apiKey=18) 的请求头**始终是 v0**（非 flexible），无论 apiVersion 是多少。这是因为 broker 必须在知道版本前解析 header。代码错误地对 ApiVersions v3 使用了 compact string 解析。
+
+**修复**: [KafkaProtocolDecoder.java](baafoo-server/src/main/java/com/baafoo/server/broker/KafkaProtocolDecoder.java) channelRead0 中添加特殊判断，ApiVersions 始终使用非 flexible header 解析。
+
+### BUG-007: Kafka ApiVersions v3 响应头多余 TAG_BUFFER (P0 - Critical)
+
+**问题**: 修复 BUG-006 后，在 v3+ 响应头中添加了 TAG_BUFFER（认为 v3+ 需要 Response Header v1），导致客户端报错 `Tried to allocate a collection of size 1114112, but there are only 115 bytes remaining`。
+
+**根因**: ApiVersions 的响应头也**始终是 v0**（只有 correlationId，无 TAG_BUFFER），即使 v3+ 也是。只有响应**体**使用 flexible 格式（compact array + tag buffers）。
+
+**修复**: [KafkaProtocolDecoder.java](baafoo-server/src/main/java/com/baafoo/server/broker/KafkaProtocolDecoder.java) handleApiVersions 中移除 v3+ 响应头的 TAG_BUFFER；[KafkaProtocolVersions.java](baafoo-server/src/main/java/com/baafoo/server/broker/codec/KafkaProtocolVersions.java) 将 ApiVersions 从 v2 cap 改为 v3 支持。
+
 ## 规则清单 (16 条)
 
 | ID | 名称 | 协议 | 优先级 | 关键匹配条件 |
@@ -128,4 +157,16 @@
 
 ## 结论
 
-全协议集成测试 17/17 通过 (100%)。修复了 3 个 BUG（TCP 字段持久化、规则优先级、hex pattern 编码），所有五类协议（HTTP/TCP/Kafka/Pulsar/JMS）及 TDMQ 插件、环境隔离功能均验证通过。
+全协议集成测试 24/24 通过 (100%)。本次回归验证了 Kafka ApiVersions v3 (KIP-511) 和 Pulsar protocolVersion=19 多版本协议修复，新增 7 个协议层闭环测试用例（Kafka 3 + Pulsar 2 + JMS 1 + 环境隔离 1）。
+
+累计修复 7 个 BUG：
+- BUG-003/004/005: TCP 字段持久化、HTTP 规则优先级、hex pattern 编码
+- BUG-006/007: Kafka ApiVersions v3 请求头/响应头协议协商（KIP-511 gate）
+- 所有五类协议（HTTP/TCP/Kafka/Pulsar/JMS）及 TDMQ 插件、环境隔离功能均验证通过
+
+**多版本协议支持矩阵**:
+| 协议 | 客户端版本 | 协议版本 | 状态 |
+|------|-----------|---------|------|
+| Kafka | kafka-clients 3.4.1 | ApiVersions v3 (KIP-511 + KIP-482) | ✅ 通过 |
+| Pulsar | pulsar-client 2.10.4 | protocolVersion=19 | ✅ 通过 |
+| JMS | ActiveMQ Artemis | OpenWire | ✅ 通过 |
