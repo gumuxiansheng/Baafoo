@@ -558,19 +558,20 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
     private ByteBuf handleFetch(ChannelHandlerContext ctx, ByteBuf msg, short apiVersion, int correlationId) {
         // Request varies by version
-        // v0: replica_id + max_wait_ms + min_bytes + topics
+        // v0:  replica_id + max_wait_ms + min_bytes + topics
         // v3+: isolation_level added
+        // v4+: max_bytes added (moved position of isolation_level)
+        // v5+: log_start_offset per partition (INT64)
         // v7+: session_id + session_epoch added
+        // v8+: current_leader_epoch (INT32) + rack_id (NULLABLE_STRING) per partition
+        // v10+: topic_id (UUID, 16 bytes) per topic
+        // v11+: forgotten_topics_data array
         if (apiVersion >= 7) {
-            msg.readInt(); // replica_id (or forgotten_topics in newer)
+            msg.readInt(); // replica_id
             msg.readInt(); // max_wait_ms
             msg.readInt(); // min_bytes
-            if (apiVersion >= 4) {
-                msg.readInt(); // max_bytes
-            }
-            if (apiVersion >= 5) {
-                msg.readByte(); // isolation_level
-            }
+            msg.readInt(); // max_bytes
+            msg.readByte(); // isolation_level
             msg.readInt(); // session_id
             msg.readInt(); // session_epoch
         } else {
@@ -595,14 +596,29 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
         for (int t = 0; t < topicCount; t++) {
             String topic = readNullableString(msg);
+            // v10+: topic_id (UUID, 16 bytes) per topic — read and ignore (we route by name)
+            if (apiVersion >= 10) {
+                msg.skipBytes(16);
+            }
             int partitionCount = msg.readInt();
             List<FetchPartitionResult> partitionResults = new ArrayList<FetchPartitionResult>();
 
             for (int p = 0; p < partitionCount; p++) {
                 int partition = msg.readInt();
                 long fetchOffset = msg.readLong();
-                msg.readInt(); // log_start_offset (v5+)
+                // v5+: log_start_offset is INT64 (was incorrectly read as INT32 before)
+                if (apiVersion >= 5) {
+                    msg.readLong(); // log_start_offset
+                }
                 int partitionMaxBytes = msg.readInt();
+                // v8+: current_leader_epoch (INT32) per partition
+                if (apiVersion >= 8) {
+                    msg.readInt(); // current_leader_epoch
+                }
+                // v8+: rack_id (NULLABLE_STRING) per partition
+                if (apiVersion >= 8) {
+                    readNullableString(msg); // rack_id
+                }
 
                 // Fetch messages from store
                 List<KafkaMessageStore.StoredMessage> messages =
@@ -632,6 +648,18 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             results.add(new FetchTopicResult(topic, partitionResults));
         }
 
+        // v11+: forgotten_topics_data array — read and ignore (we don't track sessions)
+        if (apiVersion >= 11) {
+            int forgottenCount = msg.readInt();
+            for (int f = 0; f < forgottenCount; f++) {
+                msg.skipBytes(16); // topic_id (UUID)
+                int forgottenPartitionCount = msg.readInt();
+                for (int fp = 0; fp < forgottenPartitionCount; fp++) {
+                    msg.readInt(); // partition
+                }
+            }
+        }
+
         // Build response
         ByteBuf buf = Unpooled.buffer();
         buf.writeInt(correlationId);
@@ -655,6 +683,10 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         buf.writeInt(results.size());
         for (FetchTopicResult topicResult : results) {
             writeNullableString(buf, topicResult.topic);
+            // v10+: topic_id (UUID) — write as null UUID (all zeros) since we route by name
+            if (apiVersion >= 10) {
+                buf.writeZero(16);
+            }
             buf.writeInt(topicResult.partitions.size());
 
             for (FetchPartitionResult partResult : topicResult.partitions) {
@@ -795,31 +827,16 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         buf.writeInt(correlationId);
         buf.writeShort(NONE); // error_code
 
-        // Supported API versions — capped below flexible-version thresholds to avoid
-        // clients switching to Request Header v2 (compact strings), which this decoder's
-        // int16 readNullableString cannot parse. See channelRead0 for the fallback path.
-        //   PRODUCE  flexible at v9  -> cap v3 (well within range, matches v0-v8 body shape)
-        //   FETCH    flexible at v12 -> cap v7 (handleFetch only fully parses v0-v7;
-        //             v8+ adds current_leader_epoch / rack_id fields we don't read)
+        // Supported API versions — centralized in KafkaProtocolVersions.
+        // Caps are set just below the KIP-482 flexible-version thresholds so
+        // clients never switch to Request Header v2 (compact strings). This
+        // lets us use int16-prefixed strings throughout while still supporting
+        // modern Kafka clients (2.x+).
+        //   PRODUCE  flexible at v9  -> cap v8 (non-flexible max)
+        //   FETCH    flexible at v12 -> cap v11 (non-flexible max)
         //   METADATA flexible at v9  -> cap v8
-        //   API_VERSIONS flexible at v3 -> cap v2 (the gate that triggers KIP-511 header switch)
-        int[][] supportedApis = {
-                {PRODUCE, 0, 3},
-                {FETCH, 0, 7},
-                {METADATA, 0, 8},
-                {OFFSET_COMMIT, 0, 8},
-                {OFFSET_FETCH, 0, 8},
-                {FIND_COORDINATOR, 0, 4},
-                {JOIN_GROUP, 0, 7},
-                {HEARTBEAT, 0, 4},
-                {LEAVE_GROUP, 0, 4},
-                {SYNC_GROUP, 0, 5},
-                {DESCRIBE_GROUPS, 0, 5},
-                {LIST_GROUPS, 0, 4},
-                {API_VERSIONS, 0, 2},
-                {INIT_PRODUCER_ID, 0, 1},
-                {DESCRIBE_CONFIGS, 0, 4}
-        };
+        //   API_VERSIONS flexible at v3 -> cap v2 (KIP-511 gate)
+        int[][] supportedApis = com.baafoo.server.broker.codec.KafkaProtocolVersions.SUPPORTED_APIS;
 
         buf.writeInt(supportedApis.length);
         for (int[] api : supportedApis) {

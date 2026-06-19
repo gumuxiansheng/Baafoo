@@ -572,6 +572,161 @@ public class KafkaMockBrokerTest {
                 messageStore.fetch("target-topic", 0, 0, 1024).isEmpty());
     }
 
+    // ----------------------------------------------------------------------
+    // Protocol version upgrade tests (Phase 1: Produce v8 / Fetch v11)
+    // ----------------------------------------------------------------------
+
+    /**
+     * ApiVersions response must advertise the upgraded caps:
+     * Produce v8, Fetch v11, Metadata v8, ApiVersions v2 (KIP-511 gate).
+     */
+    @Test
+    public void testApiVersionsReturnsUpgradedCaps() throws Exception {
+        ByteBuf response = sendRequest(buildApiVersionsRequest(1));
+        assertNotNull(response);
+        response.readInt(); // correlationId
+        short errorCode = response.readShort();
+        assertEquals("ApiVersions error code should be 0", 0, errorCode);
+
+        int apiCount = response.readInt();
+        short produceMax = -1, fetchMax = -1, metadataMax = -1, apiVersionsMax = -1;
+        for (int i = 0; i < apiCount; i++) {
+            short apiKey = response.readShort();
+            response.readShort(); // minVersion
+            short maxVer = response.readShort();
+            switch (apiKey) {
+                case 0:  produceMax = maxVer; break;
+                case 1:  fetchMax = maxVer; break;
+                case 3:  metadataMax = maxVer; break;
+                case 18: apiVersionsMax = maxVer; break;
+                default: break;
+            }
+        }
+        assertEquals("Produce max should be v8", 8, produceMax);
+        assertEquals("Fetch max should be v11", 11, fetchMax);
+        assertEquals("Metadata max should be v8", 8, metadataMax);
+        assertEquals("ApiVersions max should stay v2 (KIP-511 gate)", 2, apiVersionsMax);
+    }
+
+    /**
+     * Produce v8 request (non-flexible max) must be accepted and return
+     * a response with log_append_time (v2+) and log_start_offset (v5+).
+     */
+    @Test
+    public void testProduceV8() throws Exception {
+        ByteBuf response = sendRequest(buildProduceRequestV8("produce-v8-topic", 0, "k", "v8-payload"));
+        assertNotNull(response);
+        response.readInt(); // correlationId
+
+        int topicCount = response.readInt();
+        assertEquals(1, topicCount);
+        String topic = readNullableString(response);
+        assertEquals("produce-v8-topic", topic);
+
+        int partitionCount = response.readInt();
+        assertEquals(1, partitionCount);
+        response.readInt(); // partition index
+        short errorCode = response.readShort();
+        assertEquals("Produce v8 error code should be 0", 0, errorCode);
+        long offset = response.readLong(); // base_offset
+        assertTrue("Offset should be >= 0", offset >= 0);
+        response.readLong(); // log_append_time_ms (v2+)
+        response.readLong(); // log_start_offset (v5+)
+        response.readInt();  // throttle_time_ms (v1+)
+    }
+
+    /**
+     * Fetch v8 adds current_leader_epoch (INT32) and rack_id (NULLABLE_STRING)
+     * per partition. The handler must parse them without leaving leftover bytes.
+     */
+    @Test
+    public void testFetchV8() throws Exception {
+        // Seed a message first
+        sendRequest(buildProduceRequestV8("fetch-v8-topic", 0, null, "v8-data"));
+
+        ByteBuf response = sendRequest(buildFetchRequestV8("fetch-v8-topic", 0, 0));
+        assertNotNull(response);
+        response.readInt(); // correlationId
+        response.readInt(); // throttle_time_ms (v1+)
+        response.readShort(); // error_code (v7+)
+        response.readInt();  // session_id (v7+)
+
+        int topicCount = response.readInt();
+        assertEquals(1, topicCount);
+        String topic = readNullableString(response);
+        assertEquals("fetch-v8-topic", topic);
+        // v8 < v10, so no topic_id UUID in response
+        int partitionCount = response.readInt();
+        assertEquals(1, partitionCount);
+
+        response.readShort(); // error_code
+        response.readInt();   // partition
+        long highWatermark = response.readLong();
+        assertTrue("High watermark should be > 0", highWatermark > 0);
+    }
+
+    /**
+     * Fetch v10 adds topic_id (16-byte UUID) per topic in both request and response.
+     */
+    @Test
+    public void testFetchV10() throws Exception {
+        sendRequest(buildProduceRequestV8("fetch-v10-topic", 0, null, "v10-data"));
+
+        ByteBuf response = sendRequest(buildFetchRequestV10("fetch-v10-topic", 0, 0));
+        assertNotNull(response);
+        response.readInt(); // correlationId
+        response.readInt(); // throttle_time_ms
+        response.readShort(); // error_code
+        response.readInt();  // session_id
+
+        int topicCount = response.readInt();
+        assertEquals(1, topicCount);
+        readNullableString(response); // topic name
+        // v10+: topic_id (16 bytes) in response
+        response.skipBytes(16);
+        int partitionCount = response.readInt();
+        assertEquals(1, partitionCount);
+
+        response.readShort(); // error_code
+        response.readInt();   // partition
+        long highWatermark = response.readLong();
+        assertTrue("High watermark should be > 0", highWatermark > 0);
+    }
+
+    /**
+     * Fetch v11 adds forgotten_topics_data array in request and preferred_read_replica
+     * in response. The handler must parse the forgotten_topics without error.
+     */
+    @Test
+    public void testFetchV11() throws Exception {
+        sendRequest(buildProduceRequestV8("fetch-v11-topic", 0, null, "v11-data"));
+
+        ByteBuf response = sendRequest(buildFetchRequestV11("fetch-v11-topic", 0, 0));
+        assertNotNull(response);
+        response.readInt(); // correlationId
+        response.readInt(); // throttle_time_ms
+        response.readShort(); // error_code
+        response.readInt();  // session_id
+
+        int topicCount = response.readInt();
+        assertEquals(1, topicCount);
+        readNullableString(response); // topic name
+        response.skipBytes(16); // topic_id (v10+)
+        int partitionCount = response.readInt();
+        assertEquals(1, partitionCount);
+
+        response.readShort(); // error_code
+        response.readInt();   // partition
+        long highWatermark = response.readLong();
+        assertTrue("High watermark should be > 0", highWatermark > 0);
+        response.readLong(); // last_stable_offset (v4+)
+        response.readLong(); // log_start_offset (v5+)
+        response.readInt();  // aborted_transactions count (v4+)
+        // preferred_read_replica (v11+)
+        int preferredReadReplica = response.readInt();
+        assertEquals("preferred_read_replica should be -1", -1, preferredReadReplica);
+    }
+
     // --- Helper methods for building Kafka protocol requests ---
 
     private ByteBuf buildApiVersionsRequest(int correlationId) {
@@ -690,8 +845,8 @@ public class KafkaMockBrokerTest {
         buf.writeInt(-1);   // replica_id
         buf.writeInt(500);  // max_wait_ms
         buf.writeInt(1);    // min_bytes
-        buf.writeInt(1024 * 1024); // max_bytes
-        buf.writeByte(0);   // isolation_level
+        buf.writeInt(1024 * 1024); // max_bytes (v3+)
+        buf.writeByte(0);   // isolation_level (v4+)
         // Topics array
         buf.writeInt(1);
         writeNullableString(buf, topic);
@@ -699,8 +854,120 @@ public class KafkaMockBrokerTest {
         buf.writeInt(1);
         buf.writeInt(partition);
         buf.writeLong(offset); // fetch_offset
-        buf.writeInt(0);       // log_start_offset
+        // v4 has no log_start_offset (added in v5 as INT64)
         buf.writeInt(1024 * 1024); // partition_max_bytes
+        return frameRequest(buf);
+    }
+
+    /**
+     * Build a Produce request at v8 (non-flexible max). Wire format is identical
+     * to v3; only the version number changes.
+     */
+    private ByteBuf buildProduceRequestV8(String topic, int partition, String key, String value) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeShort(0);  // API key: Produce
+        buf.writeShort(8);  // API version (upgraded cap)
+        buf.writeInt(1);    // correlation ID
+        writeNullableString(buf, "test-client");
+        writeNullableString(buf, null); // transactional_id (v3+)
+        buf.writeShort(-1); // acks
+        buf.writeInt(30000); // timeout_ms
+        buf.writeInt(1);    // topics array count
+        writeNullableString(buf, topic);
+        buf.writeInt(1);    // partitions array count
+        buf.writeInt(partition);
+        ByteBuf recordBatch = buildRecordBatch(key, value);
+        buf.writeBytes(recordBatch);
+        recordBatch.release();
+        return frameRequest(buf);
+    }
+
+    /**
+     * Build a Fetch request at v8. Adds session_id/session_epoch (v7+) and
+     * current_leader_epoch (INT32) + rack_id (NULLABLE_STRING) per partition (v8+).
+     */
+    private ByteBuf buildFetchRequestV8(String topic, int partition, long offset) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeShort(1);  // API key: Fetch
+        buf.writeShort(8);  // API version
+        buf.writeInt(2);    // correlation ID
+        writeNullableString(buf, "test-client");
+        buf.writeInt(-1);   // replica_id
+        buf.writeInt(500);  // max_wait_ms
+        buf.writeInt(1);    // min_bytes
+        buf.writeInt(1024 * 1024); // max_bytes
+        buf.writeByte(0);   // isolation_level
+        buf.writeInt(0);    // session_id (v7+)
+        buf.writeInt(0);    // session_epoch (v7+)
+        buf.writeInt(1);    // topics array count
+        writeNullableString(buf, topic);
+        buf.writeInt(1);    // partitions array count
+        buf.writeInt(partition);
+        buf.writeLong(offset); // fetch_offset
+        buf.writeLong(0L);     // log_start_offset (v5+, INT64)
+        buf.writeInt(1024 * 1024); // partition_max_bytes
+        buf.writeInt(0);    // current_leader_epoch (v8+)
+        writeNullableString(buf, null); // rack_id (v8+)
+        return frameRequest(buf);
+    }
+
+    /**
+     * Build a Fetch request at v10. Adds topic_id (16-byte UUID) per topic.
+     */
+    private ByteBuf buildFetchRequestV10(String topic, int partition, long offset) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeShort(1);  // API key: Fetch
+        buf.writeShort(10); // API version
+        buf.writeInt(2);    // correlation ID
+        writeNullableString(buf, "test-client");
+        buf.writeInt(-1);   // replica_id
+        buf.writeInt(500);  // max_wait_ms
+        buf.writeInt(1);    // min_bytes
+        buf.writeInt(1024 * 1024); // max_bytes
+        buf.writeByte(0);   // isolation_level
+        buf.writeInt(0);    // session_id
+        buf.writeInt(0);    // session_epoch
+        buf.writeInt(1);    // topics array count
+        writeNullableString(buf, topic);
+        buf.writeZero(16);  // topic_id (v10+, 16-byte UUID — all zeros = null)
+        buf.writeInt(1);    // partitions array count
+        buf.writeInt(partition);
+        buf.writeLong(offset); // fetch_offset
+        buf.writeLong(0L);     // log_start_offset (v5+)
+        buf.writeInt(1024 * 1024); // partition_max_bytes
+        buf.writeInt(0);    // current_leader_epoch (v8+)
+        writeNullableString(buf, null); // rack_id (v8+)
+        return frameRequest(buf);
+    }
+
+    /**
+     * Build a Fetch request at v11. Adds forgotten_topics_data array.
+     */
+    private ByteBuf buildFetchRequestV11(String topic, int partition, long offset) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeShort(1);  // API key: Fetch
+        buf.writeShort(11); // API version
+        buf.writeInt(2);    // correlation ID
+        writeNullableString(buf, "test-client");
+        buf.writeInt(-1);   // replica_id
+        buf.writeInt(500);  // max_wait_ms
+        buf.writeInt(1);    // min_bytes
+        buf.writeInt(1024 * 1024); // max_bytes
+        buf.writeByte(0);   // isolation_level
+        buf.writeInt(0);    // session_id
+        buf.writeInt(0);    // session_epoch
+        buf.writeInt(1);    // topics array count
+        writeNullableString(buf, topic);
+        buf.writeZero(16);  // topic_id (v10+)
+        buf.writeInt(1);    // partitions array count
+        buf.writeInt(partition);
+        buf.writeLong(offset); // fetch_offset
+        buf.writeLong(0L);     // log_start_offset (v5+)
+        buf.writeInt(1024 * 1024); // partition_max_bytes
+        buf.writeInt(0);    // current_leader_epoch (v8+)
+        writeNullableString(buf, null); // rack_id (v8+)
+        // forgotten_topics_data (v11+) — empty array
+        buf.writeInt(0);
         return frameRequest(buf);
     }
 
