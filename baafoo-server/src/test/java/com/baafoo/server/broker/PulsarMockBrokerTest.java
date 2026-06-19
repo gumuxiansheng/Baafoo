@@ -104,7 +104,7 @@ public class PulsarMockBrokerTest {
         int[] connectedFields = parseConnectedSubMessage(rawResponse);
         assertEquals("CONNECTED protocolVersion should be 20", 20, connectedFields[0]);
         assertEquals("CONNECTED max_message_size should be present (field 3)",
-                0, connectedFields[1]);
+                5 * 1024 * 1024, connectedFields[1]);
     }
 
     /**

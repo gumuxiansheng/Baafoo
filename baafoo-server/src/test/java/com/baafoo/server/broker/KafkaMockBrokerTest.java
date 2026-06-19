@@ -666,7 +666,9 @@ public class KafkaMockBrokerTest {
     }
 
     /**
-     * Fetch v10 adds topic_id (16-byte UUID) per topic in both request and response.
+     * Fetch v10 adds ZStd compression support only — no structural changes from v9.
+     * The request includes CurrentLeaderEpoch (v9+) per partition.
+     * TopicId is v13+ in both request and response, so it is NOT present here.
      */
     @Test
     public void testFetchV10() throws Exception {
@@ -682,8 +684,7 @@ public class KafkaMockBrokerTest {
         int topicCount = response.readInt();
         assertEquals(1, topicCount);
         readNullableString(response); // topic name
-        // v10+: topic_id (16 bytes) in response
-        response.skipBytes(16);
+        // TopicId is v13+ in response — NOT present at v10
         int partitionCount = response.readInt();
         assertEquals(1, partitionCount);
 
@@ -694,8 +695,8 @@ public class KafkaMockBrokerTest {
     }
 
     /**
-     * Fetch v11 adds forgotten_topics_data array in request and preferred_read_replica
-     * in response. The handler must parse the forgotten_topics without error.
+     * Fetch v11 adds RackId at request level and PreferredReadReplica in response.
+     * TopicId is v13+ in both request and response, so it is NOT present here.
      */
     @Test
     public void testFetchV11() throws Exception {
@@ -711,7 +712,7 @@ public class KafkaMockBrokerTest {
         int topicCount = response.readInt();
         assertEquals(1, topicCount);
         readNullableString(response); // topic name
-        response.skipBytes(16); // topic_id (v10+)
+        // TopicId is v13+ in response — NOT present at v11
         int partitionCount = response.readInt();
         assertEquals(1, partitionCount);
 
@@ -883,8 +884,9 @@ public class KafkaMockBrokerTest {
     }
 
     /**
-     * Build a Fetch request at v8. Adds session_id/session_epoch (v7+) and
-     * current_leader_epoch (INT32) + rack_id (NULLABLE_STRING) per partition (v8+).
+     * Build a Fetch request at v8. Per the Kafka protocol spec (FetchRequest.json),
+     * v8 is the same as v7 — no structural changes. CurrentLeaderEpoch was added
+     * in v9, RackId in v11, TopicId in v13.
      */
     private ByteBuf buildFetchRequestV8(String topic, int partition, long offset) {
         ByteBuf buf = Unpooled.buffer();
@@ -895,24 +897,28 @@ public class KafkaMockBrokerTest {
         buf.writeInt(-1);   // replica_id
         buf.writeInt(500);  // max_wait_ms
         buf.writeInt(1);    // min_bytes
-        buf.writeInt(1024 * 1024); // max_bytes
-        buf.writeByte(0);   // isolation_level
+        buf.writeInt(1024 * 1024); // max_bytes (v3+)
+        buf.writeByte(0);   // isolation_level (v4+)
         buf.writeInt(0);    // session_id (v7+)
         buf.writeInt(0);    // session_epoch (v7+)
-        buf.writeInt(1);    // topics array count
+        // Topics array
+        buf.writeInt(1);
         writeNullableString(buf, topic);
-        buf.writeInt(1);    // partitions array count
-        buf.writeInt(partition);
-        buf.writeLong(offset); // fetch_offset
-        buf.writeLong(0L);     // log_start_offset (v5+, INT64)
-        buf.writeInt(1024 * 1024); // partition_max_bytes
-        buf.writeInt(0);    // current_leader_epoch (v8+)
-        writeNullableString(buf, null); // rack_id (v8+)
+        // Partitions array
+        buf.writeInt(1);
+        buf.writeInt(partition);       // partition_index
+        buf.writeLong(offset);         // fetch_offset
+        buf.writeLong(0L);             // log_start_offset (v5+, INT64)
+        buf.writeInt(1024 * 1024);     // partition_max_bytes
+        // forgotten_topics_data (v7+) — empty array
+        buf.writeInt(0);
         return frameRequest(buf);
     }
 
     /**
-     * Build a Fetch request at v10. Adds topic_id (16-byte UUID) per topic.
+     * Build a Fetch request at v10. Per the Kafka protocol spec (FetchRequest.json),
+     * v10 only adds ZStd compression support — no structural changes from v9.
+     * CurrentLeaderEpoch (v9+) is present per partition. TopicId is v13+ (not here).
      */
     private ByteBuf buildFetchRequestV10(String topic, int partition, long offset) {
         ByteBuf buf = Unpooled.buffer();
@@ -923,25 +929,29 @@ public class KafkaMockBrokerTest {
         buf.writeInt(-1);   // replica_id
         buf.writeInt(500);  // max_wait_ms
         buf.writeInt(1);    // min_bytes
-        buf.writeInt(1024 * 1024); // max_bytes
-        buf.writeByte(0);   // isolation_level
-        buf.writeInt(0);    // session_id
-        buf.writeInt(0);    // session_epoch
-        buf.writeInt(1);    // topics array count
+        buf.writeInt(1024 * 1024); // max_bytes (v3+)
+        buf.writeByte(0);   // isolation_level (v4+)
+        buf.writeInt(0);    // session_id (v7+)
+        buf.writeInt(0);    // session_epoch (v7+)
+        // Topics array
+        buf.writeInt(1);
         writeNullableString(buf, topic);
-        buf.writeZero(16);  // topic_id (v10+, 16-byte UUID — all zeros = null)
-        buf.writeInt(1);    // partitions array count
-        buf.writeInt(partition);
-        buf.writeLong(offset); // fetch_offset
-        buf.writeLong(0L);     // log_start_offset (v5+)
-        buf.writeInt(1024 * 1024); // partition_max_bytes
-        buf.writeInt(0);    // current_leader_epoch (v8+)
-        writeNullableString(buf, null); // rack_id (v8+)
+        // Partitions array
+        buf.writeInt(1);
+        buf.writeInt(partition);       // partition_index
+        buf.writeInt(-1);              // current_leader_epoch (v9+, default -1)
+        buf.writeLong(offset);         // fetch_offset
+        buf.writeLong(0L);             // log_start_offset (v5+, INT64)
+        buf.writeInt(1024 * 1024);     // partition_max_bytes
+        // forgotten_topics_data (v7+) — empty array
+        buf.writeInt(0);
         return frameRequest(buf);
     }
 
     /**
-     * Build a Fetch request at v11. Adds forgotten_topics_data array.
+     * Build a Fetch request at v11. Per the Kafka protocol spec (FetchRequest.json),
+     * v11 adds RackId (NULLABLE_STRING) at the request level, after forgotten_topics.
+     * CurrentLeaderEpoch (v9+) is present per partition. TopicId is v13+ (not here).
      */
     private ByteBuf buildFetchRequestV11(String topic, int partition, long offset) {
         ByteBuf buf = Unpooled.buffer();
@@ -952,22 +962,24 @@ public class KafkaMockBrokerTest {
         buf.writeInt(-1);   // replica_id
         buf.writeInt(500);  // max_wait_ms
         buf.writeInt(1);    // min_bytes
-        buf.writeInt(1024 * 1024); // max_bytes
-        buf.writeByte(0);   // isolation_level
-        buf.writeInt(0);    // session_id
-        buf.writeInt(0);    // session_epoch
-        buf.writeInt(1);    // topics array count
+        buf.writeInt(1024 * 1024); // max_bytes (v3+)
+        buf.writeByte(0);   // isolation_level (v4+)
+        buf.writeInt(0);    // session_id (v7+)
+        buf.writeInt(0);    // session_epoch (v7+)
+        // Topics array
+        buf.writeInt(1);
         writeNullableString(buf, topic);
-        buf.writeZero(16);  // topic_id (v10+)
-        buf.writeInt(1);    // partitions array count
-        buf.writeInt(partition);
-        buf.writeLong(offset); // fetch_offset
-        buf.writeLong(0L);     // log_start_offset (v5+)
-        buf.writeInt(1024 * 1024); // partition_max_bytes
-        buf.writeInt(0);    // current_leader_epoch (v8+)
-        writeNullableString(buf, null); // rack_id (v8+)
-        // forgotten_topics_data (v11+) — empty array
+        // Partitions array
+        buf.writeInt(1);
+        buf.writeInt(partition);       // partition_index
+        buf.writeInt(-1);              // current_leader_epoch (v9+, default -1)
+        buf.writeLong(offset);         // fetch_offset
+        buf.writeLong(0L);             // log_start_offset (v5+, INT64)
+        buf.writeInt(1024 * 1024);     // partition_max_bytes
+        // forgotten_topics_data (v7+) — empty array
         buf.writeInt(0);
+        // rack_id (v11+) — request level, after forgotten_topics
+        writeNullableString(buf, null);
         return frameRequest(buf);
     }
 
