@@ -95,6 +95,37 @@ public class BaafooAgent {
             // Also sync handlers to the Bootstrap CL copy of GlobalRouteState
             syncLogHandlersToBootstrapCL(adviceLogger);
 
+            // Set up the PLUGIN_CONSULT_FN bridge function.
+            // This allows Bootstrap CL advice (SocketConnectAdvice/NioSocketConnectAdvice)
+            // to consult the PluginManager SPI without directly referencing App CL classes.
+            // Input: Object[] { String host, Integer port }
+            // Output: Object[] { String targetHost, Integer targetPort } or null
+            GlobalRouteState.PLUGIN_CONSULT_FN = (java.util.function.Function<Object[], Object[]>) args -> {
+                if (args == null || args.length < 2) return null;
+                try {
+                    String host = (String) args[0];
+                    int port = (Integer) args[1];
+                    PluginManager pm = pluginManager;
+                    if (pm == null) return null;
+                    com.baafoo.plugin.AgentPlugin plugin = pm.getPlugin(com.baafoo.plugin.InterceptTarget.SOCKET);
+                    if (plugin == null) {
+                        plugin = pm.getPlugin(com.baafoo.plugin.InterceptTarget.NIO_SOCKET);
+                    }
+                    if (plugin == null) return null;
+                    com.baafoo.plugin.PluginContext ctx = new com.baafoo.plugin.PluginContext();
+                    ctx.setProtocol("tcp");
+                    ctx.setHost(host);
+                    ctx.setPort(port);
+                    com.baafoo.plugin.InterceptResult result = plugin.intercept(ctx);
+                    if (result != null && result.isRedirect()) {
+                        return new Object[]{result.getRedirectHost(), result.getRedirectPort()};
+                    }
+                } catch (Throwable t) {
+                    log.debug("[Baafoo] Plugin consult (Socket/NIO) skipped: {}", t.getMessage());
+                }
+                return null;
+            };
+
             // Set up recording infrastructure
             initRecording(config);
 
@@ -609,12 +640,14 @@ public class BaafooAgent {
             java.lang.reflect.Field iswField = bootGRS.getField("INPUT_STREAM_WRAPPER");
             java.lang.reflect.Field oswField = bootGRS.getField("OUTPUT_STREAM_WRAPPER");
             java.lang.reflect.Field nioField = bootGRS.getField("NIO_RECORDING_HANDLER");
+            java.lang.reflect.Field pluginConsultField = bootGRS.getField("PLUGIN_CONSULT_FN");
 
             iswField.set(null, GlobalRouteState.INPUT_STREAM_WRAPPER);
             oswField.set(null, GlobalRouteState.OUTPUT_STREAM_WRAPPER);
             nioField.set(null, GlobalRouteState.NIO_RECORDING_HANDLER);
+            pluginConsultField.set(null, GlobalRouteState.PLUGIN_CONSULT_FN);
 
-            log.info("Synced recording stream wrappers and NIO handler to Bootstrap CL GlobalRouteState");
+            log.info("Synced recording stream wrappers, NIO handler, and plugin consult bridge to Bootstrap CL GlobalRouteState");
         } catch (Exception e) {
             log.warn("Failed to sync recording wrappers to Bootstrap CL GlobalRouteState: {}. " +
                     "Stream recording will not work.", e.getMessage());

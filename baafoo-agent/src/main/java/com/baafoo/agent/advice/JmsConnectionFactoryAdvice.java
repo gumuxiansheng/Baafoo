@@ -1,7 +1,13 @@
 package com.baafoo.agent.advice;
 
+import com.baafoo.agent.BaafooAgent;
 import com.baafoo.agent.GlobalRouteState;
+import com.baafoo.agent.plugin.PluginManager;
 import com.baafoo.core.model.EnvironmentMode;
+import com.baafoo.plugin.AgentPlugin;
+import com.baafoo.plugin.InterceptResult;
+import com.baafoo.plugin.InterceptTarget;
+import com.baafoo.plugin.PluginContext;
 import net.bytebuddy.asm.Advice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,7 +21,9 @@ import org.slf4j.LoggerFactory;
  * reliably propagate in ByteBuddy.</p>
  *
  * <p>On exit, we call {@code setBrokerURL} on the constructed object to override
- * whatever URL was set during construction.</p>
+ * whatever URL was set during construction. Before rewriting, it consults the
+ * registered JMS plugin (if any) via the {@link PluginManager} SPI. A plugin may
+ * return an {@link InterceptResult#redirect} to override the default stub target.</p>
  *
  * <p><b>CRITICAL</b>: This advice is inlined into ActiveMQConnectionFactory by ByteBuddy.
  * Do NOT reference any private fields from this class in the advice
@@ -44,13 +52,44 @@ public class JmsConnectionFactoryAdvice {
 
             String stubHost = GlobalRouteState.SERVER_HOST;
             int stubPort = GlobalRouteState.JMS_PORT;
+
+            // Read the original broker URL for plugin context
+            String originalUrl = null;
+            try {
+                originalUrl = (String) self.getClass().getMethod("getBrokerURL").invoke(self);
+            } catch (Exception ignored) {
+                // getBrokerURL not available — proceed with null
+            }
+
+            // Consult the JMS plugin — it may override the target.
+            // Wrapped in its own try so any plugin failure fails closed (uses default).
+            try {
+                PluginManager pm = BaafooAgent.getPluginManager();
+                if (pm != null) {
+                    AgentPlugin plugin = pm.getPlugin(InterceptTarget.JMS);
+                    if (plugin != null) {
+                        PluginContext ctx = new PluginContext();
+                        ctx.setProtocol("jms");
+                        ctx.setHost(extractHost(originalUrl));
+                        ctx.setPort(extractPort(originalUrl));
+                        InterceptResult result = plugin.intercept(ctx);
+                        if (result != null && result.isRedirect()) {
+                            stubHost = result.getRedirectHost();
+                            stubPort = result.getRedirectPort();
+                            log.info("[Baafoo] JMS plugin redirected to {}:{}", stubHost, stubPort);
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                log.debug("[Baafoo] JMS plugin consult skipped: {}", t.getMessage());
+            }
+
             String newBrokerUrl = "tcp://" + stubHost + ":" + stubPort;
 
             // Use reflection to call setBrokerURL — avoids compile-time dependency
             // on ActiveMQConnectionFactory in the advice class
             try {
                 java.lang.reflect.Method setBrokerURL = self.getClass().getMethod("setBrokerURL", String.class);
-                String originalUrl = (String) self.getClass().getMethod("getBrokerURL").invoke(self);
                 setBrokerURL.invoke(self, newBrokerUrl);
                 log.info("[Baafoo] JMS brokerURL replaced: {} -> {}", originalUrl, newBrokerUrl);
             } catch (NoSuchMethodException e) {
@@ -59,6 +98,36 @@ public class JmsConnectionFactoryAdvice {
 
         } catch (Exception e) {
             log.error("[Baafoo] JmsConnectionFactoryAdvice error: {}", e.getMessage());
+        }
+    }
+
+    /** Extract the host from a {@code tcp://host:port} broker URL. */
+    static String extractHost(String brokerUrl) {
+        if (brokerUrl == null) return null;
+        String s = brokerUrl;
+        int schemeEnd = s.indexOf("://");
+        if (schemeEnd >= 0) s = s.substring(schemeEnd + 3);
+        int colon = s.indexOf(':');
+        int slash = s.indexOf('/');
+        int end = colon >= 0 ? colon : (slash >= 0 ? slash : s.length());
+        return s.substring(0, end);
+    }
+
+    /** Extract the port from a {@code tcp://host:port} broker URL; -1 if absent. */
+    static int extractPort(String brokerUrl) {
+        if (brokerUrl == null) return -1;
+        String s = brokerUrl;
+        int schemeEnd = s.indexOf("://");
+        if (schemeEnd >= 0) s = s.substring(schemeEnd + 3);
+        int colon = s.indexOf(':');
+        if (colon < 0) return -1;
+        String rest = s.substring(colon + 1);
+        int slash = rest.indexOf('/');
+        String portStr = slash >= 0 ? rest.substring(0, slash) : rest;
+        try {
+            return Integer.parseInt(portStr);
+        } catch (NumberFormatException e) {
+            return -1;
         }
     }
 }

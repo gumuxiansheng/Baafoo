@@ -14,14 +14,12 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Manages the lifecycle of Baafoo agent plugins via the AgentPlugin SPI.
  *
- * <p>NOTE: The plugin system is implemented but not yet activated in the
- * current agent bootstrap flow. It is reserved for future extensibility
- * when third-party protocol interceptors are needed beyond the built-in
- * set (Socket, NIO, Kafka, Pulsar, Consul).</p>
- *
- * @deprecated Not yet activated. Reserved for future third-party plugin support.
+ * <p>The plugin system is activated in the agent bootstrap flow. All protocol
+ * Advice classes (Socket, NIO, Kafka, Pulsar, JMS) consult the PluginManager
+ * before falling back to the built-in routing logic. A plugin may return an
+ * {@link com.baafoo.plugin.InterceptResult#redirect} to override the default
+ * stub target.</p>
  */
-@Deprecated
 public class PluginManager {
 
     private static final Logger log = LoggerFactory.getLogger(PluginManager.class);
@@ -69,13 +67,24 @@ public class PluginManager {
         switch (protocol.toLowerCase()) {
             case "http":
             case "tcp":
+            case "socket":
                 return InterceptTarget.SOCKET;
+            case "nio-socket":
+            case "nio":
+                return InterceptTarget.NIO_SOCKET;
             case "kafka":
                 return InterceptTarget.KAFKA;
             case "pulsar":
                 return InterceptTarget.PULSAR;
             case "jms":
                 return InterceptTarget.JMS;
+            case "consul-dns":
+                return InterceptTarget.CONSUL_DNS;
+            case "consul-api":
+            case "consul":
+                return InterceptTarget.CONSUL_API;
+            case "feign":
+                return InterceptTarget.FEIGN;
             default:
                 return null;
         }

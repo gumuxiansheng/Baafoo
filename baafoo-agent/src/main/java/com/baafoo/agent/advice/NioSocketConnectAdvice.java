@@ -115,6 +115,23 @@ public final class NioSocketConnectAdvice {
                 }
             }
 
+            // Plugin SPI fallback: if no route matched, consult the plugin bridge.
+            // This allows third-party Socket/NIO plugins to override the redirect target.
+            if (routeValue == null) {
+                java.util.function.Function<Object[], Object[]> consultFn = GlobalRouteState.PLUGIN_CONSULT_FN;
+                if (consultFn != null) {
+                    try {
+                        Object[] pluginResult = consultFn.apply(new Object[]{host, Integer.valueOf(port)});
+                        if (pluginResult != null && pluginResult.length >= 2) {
+                            routeValue = new String[]{(String) pluginResult[0], String.valueOf(pluginResult[1])};
+                            GlobalRouteState.logInfo("[Baafoo] NIO Socket plugin redirected: " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
+                        }
+                    } catch (Throwable t) {
+                        GlobalRouteState.logDebug("[Baafoo] NIO Socket plugin consult skipped: " + t.getMessage());
+                    }
+                }
+            }
+
             if (routeValue != null) {
                 GlobalRouteState.logInfo("[Baafoo] NIO Socket redirect: " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
                 remote = new InetSocketAddress(routeValue[0], Integer.parseInt(routeValue[1]));
