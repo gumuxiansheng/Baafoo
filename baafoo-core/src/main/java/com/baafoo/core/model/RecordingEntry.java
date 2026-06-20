@@ -66,7 +66,13 @@ public class RecordingEntry {
     /** Tags for filtering */
     private Map<String, String> tags;
 
-    /** Direction of recorded data: "request" or "response" (for TCP byte recording) */
+    /**
+     * Direction of recorded data.
+     * <ul>
+     *   <li>TCP byte recording: {@code "request"} or {@code "response"}</li>
+     *   <li>MQ (Kafka/Pulsar/JMS) recording: {@code "produce"} or {@code "consume"}</li>
+     * </ul>
+     */
     private String direction;
 
     /** Session ID grouping request/response pairs for the same connection */

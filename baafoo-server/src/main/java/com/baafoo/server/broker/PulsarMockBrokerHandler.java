@@ -276,7 +276,7 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
                         && m.getResponse() != null && m.getResponse().getBody() != null) {
                     respBody = m.getResponse().getBody();
                 }
-                matchHelper.record(m.getRule().getId(), "pulsar", topic, bodyStr, respBody, agentInfo);
+                matchHelper.record(m.getRule().getId(), "pulsar", topic, bodyStr, respBody, agentInfo, "produce");
             }
             // STUB / RECORD_AND_STUB: rebuild the payload with the rule's response body so
             // consumers decode a stub message instead of the producer's original body.
@@ -288,13 +288,13 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
             }
         } else {
             if (shouldRecord) {
-                matchHelper.record(null, "pulsar", topic, bodyStr, null, agentInfo);
+                matchHelper.record(null, "pulsar", topic, bodyStr, null, agentInfo, "produce");
             }
         }
 
         // Store the (possibly stubbed) message.
         StoredMessage stored = messageStore.storeMessage(topic, producerName, cmd.sequenceId, storedPayload);
-        log.info("Pulsar SEND: producerId={}, topic={}, sequenceId={}, payloadSize={}, matched={}",
+        log.info("Pulsar SEND (direction=produce): producerId={}, topic={}, sequenceId={}, payloadSize={}, matched={}",
                 producerId, topic, cmd.sequenceId, payload.length, m.isMatched());
 
         // Send receipt — use producerId (field 1) and sequenceId (field 2)
@@ -644,7 +644,7 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
         String consumerKey = topic + ":" + subscription;
         consumerIds.put(consumerKey, consumerId);
 
-        log.info("Pulsar SUBSCRIBE: topic={}, subscription={}, consumerId={}, subType={}",
+        log.info("Pulsar SUBSCRIBE (direction=consume): topic={}, subscription={}, consumerId={}, subType={}",
                 topic, subscription, consumerId, cmd.subType);
 
         // Register the subscription and get any existing messages
@@ -734,7 +734,7 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
                                     topic, "baafoo-stub-producer", 0, stubPayload);
                             if (mode == EnvironmentMode.RECORD_AND_STUB) {
                                 // Consumer receives stub: requestBody = null, responseBody = stub body
-                                matchHelper.record(m.getRule().getId(), "pulsar", topic, null, resp.getBody(), agentInfo);
+                                matchHelper.record(m.getRule().getId(), "pulsar", topic, null, resp.getBody(), agentInfo, "consume");
                             }
                             log.info("Pulsar Subscribe stub: topic={}, matched rule={}, stubBodySize={}",
                                     topic, m.getRule().getId(), stubBody.length);

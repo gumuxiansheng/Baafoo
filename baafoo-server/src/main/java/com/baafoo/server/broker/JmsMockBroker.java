@@ -102,10 +102,12 @@ public class JmsMockBroker {
         server = ActiveMQServers.newActiveMQServer(config);
         server.start();
 
-        // Register the recording plugin to capture runtime JMS producer messages
+        // Register the recording plugin to capture runtime JMS messages
         // from all protocols (OpenWire + Core) with proper environment resolution.
+        // Both producer sends (afterSend) and consumer deliveries (afterDeliver)
+        // are recorded, tagged with direction="produce"/"consume".
         if (storage != null) {
-            server.registerBrokerPlugin(new JmsRecordingPlugin(storage));
+            server.registerBrokerPlugin(new JmsRecordingPlugin(storage, server));
         }
 
         // Create the DLQ queue

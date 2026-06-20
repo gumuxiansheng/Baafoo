@@ -136,8 +136,9 @@ class MqMatchHelper {
      * @param requestBody  the decoded request payload (e.g. producer's message body)
      * @param responseBody the decoded response payload (e.g. stub response body), may be null
      * @param info         pre-resolved agent info (avoid re-resolving per message)
+     * @param direction    "produce" for producer sends, "consume" for consumer fetches/stubs
      */
-    void record(String ruleId, String protocol, String topic, String requestBody, String responseBody, AgentResolver.AgentInfo info) {
+    void record(String ruleId, String protocol, String topic, String requestBody, String responseBody, AgentResolver.AgentInfo info, String direction) {
         try {
             RecordingEntry rec = new RecordingEntry();
             rec.setRuleId(ruleId);
@@ -148,6 +149,7 @@ class MqMatchHelper {
             rec.setResponseStatusCode(0);
             rec.setRequestHeaders(Collections.<String, String>emptyMap());
             rec.setResponseHeaders(Collections.<String, String>emptyMap());
+            rec.setDirection(direction);
             if (info != null) {
                 rec.setEnvironmentId(info.environment);
                 rec.setAgentId(info.agentId);
@@ -155,7 +157,7 @@ class MqMatchHelper {
             }
             storage.addRecording(rec);
         } catch (Exception e) {
-            log.warn("Failed to record MQ message ({}:{}): {}", protocol, topic, e.getMessage());
+            log.warn("Failed to record MQ message ({}:{}, direction={}): {}", protocol, topic, direction, e.getMessage());
         }
     }
 

@@ -335,7 +335,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         } else {
             request = KafkaProduceCodec.parseRequest(msg, apiVersion);
         }
-        log.info("Produce request: apiVersion={}, acks={}, timeoutMs={}", apiVersion, request.getAcks(), request.getTimeoutMs());
+        log.info("Produce request (direction=produce): apiVersion={}, acks={}, timeoutMs={}", apiVersion, request.getAcks(), request.getTimeoutMs());
 
         // Resolve agent + environment + rules ONCE per produce request.
         AgentResolver.AgentInfo agentInfo = matchHelper.resolveAgent(ctx);
@@ -423,7 +423,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                                 && m.getResponse() != null && m.getResponse().getBody() != null) {
                             respBody = m.getResponse().getBody();
                         }
-                        matchHelper.record(m.getRule().getId(), "kafka", topic, bodyStr, respBody, agentInfo);
+                        matchHelper.record(m.getRule().getId(), "kafka", topic, bodyStr, respBody, agentInfo, "produce");
                     }
                     // In STUB / RECORD_AND_STUB, replace the value with the stub body so
                     // consumers fetch the stub instead of the producer's original payload.
@@ -441,7 +441,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 } else {
                     // Unmatched — store the original record with raw batch (passthrough behaviour).
                     if (shouldRecord) {
-                        matchHelper.record(null, "kafka", topic, bodyStr, null, agentInfo);
+                        matchHelper.record(null, "kafka", topic, bodyStr, null, agentInfo, "produce");
                     }
                     lastOffset = messageStore.append(topic, partition, rec.key, rec.value, rawBatch);
                     deriveMqRelationships(ctx, relationships, topic, partition, rec, agentInfo.environment);
@@ -459,7 +459,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                     byte[] stubValue = resp.getBody().getBytes(StandardCharsets.UTF_8);
                     offset = messageStore.append(topic, partition, null, stubValue);
                     if (shouldRecord) {
-                        matchHelper.record(m.getRule().getId(), "kafka", topic, null, resp.getBody(), agentInfo);
+                        matchHelper.record(m.getRule().getId(), "kafka", topic, null, resp.getBody(), agentInfo, "produce");
                     }
                     deriveMqRelationships(ctx, relationships, topic, partition,
                             new ParsedRecord(null, stubValue), agentInfo.environment);
@@ -470,7 +470,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 }
             } else {
                 if (shouldRecord && m.isMatched()) {
-                    matchHelper.record(m.getRule().getId(), "kafka", topic, null, null, agentInfo);
+                    matchHelper.record(m.getRule().getId(), "kafka", topic, null, null, agentInfo, "produce");
                 }
                 offset = messageStore.append(topic, partition, null, batchData);
                 deriveMqRelationships(ctx, relationships, topic, partition,
@@ -572,7 +572,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         } else {
             request = KafkaFetchCodec.parseRequest(msg, apiVersion);
         }
-        log.info("Fetch request: apiVersion={}, topics={}", apiVersion, request.getTopics().size());
+        log.info("Fetch request (direction=consume): apiVersion={}, topics={}", apiVersion, request.getTopics().size());
 
         // Resolve agent + environment + rules for consume-side stub
         AgentResolver.AgentInfo agentInfo = matchHelper.resolveAgent(ctx);
@@ -607,7 +607,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                             messages = messageStore.fetch(topic.getTopic(), partitionId, offset, maxBytes);
                             if (mode == EnvironmentMode.RECORD_AND_STUB) {
                                 // Consumer Fetch stub: requestBody = null, responseBody = stub body
-                                matchHelper.record(m.getRule().getId(), "kafka", topic.getTopic(), null, resp.getBody(), agentInfo);
+                                matchHelper.record(m.getRule().getId(), "kafka", topic.getTopic(), null, resp.getBody(), agentInfo, "consume");
                             }
                             log.info("Kafka Fetch stub: topic={}, partition={}, matched rule={}, stubBodySize={}",
                                     topic.getTopic(), partitionId, m.getRule().getId(), stubValue.length);
