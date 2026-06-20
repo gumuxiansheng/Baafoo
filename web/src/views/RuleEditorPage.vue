@@ -111,16 +111,26 @@
           <el-row :gutter="10">
             <el-col :span="4">
               <el-select v-model="cond.type" size="small" @change="onConditionTypeChange(cond)">
-                <el-option label="Method" value="method" />
-                <el-option label="Path" value="path" />
-                <el-option label="Header" value="header" />
-                <el-option label="Query" value="query" />
-                <el-option label="Body" value="body" />
-                <el-option label="Body包含" value="bodyContains" />
-                <el-option label="JSONPath" value="bodyJsonPath" />
-                <el-option label="请求次数" value="requestCount" />
-                <el-option label="GraphQL OpName" value="graphqlOperationName" />
-                <el-option label="GraphQL OpType" value="graphqlOperationType" />
+                <template v-if="isMqProtocol">
+                  <el-option label="Topic" value="topic" v-if="form.protocol === 'kafka' || form.protocol === 'pulsar'" />
+                  <el-option label="消息Key" value="key" v-if="form.protocol === 'kafka'" />
+                  <el-option label="Destination" value="destination" v-if="form.protocol === 'jms'" />
+                  <el-option label="消息内容" value="body" />
+                  <el-option label="消息包含" value="bodyContains" />
+                  <el-option label="请求次数" value="requestCount" />
+                </template>
+                <template v-else>
+                  <el-option label="Method" value="method" />
+                  <el-option label="Path" value="path" />
+                  <el-option label="Header" value="header" />
+                  <el-option label="Query" value="query" />
+                  <el-option label="Body" value="body" />
+                  <el-option label="Body包含" value="bodyContains" />
+                  <el-option label="JSONPath" value="bodyJsonPath" />
+                  <el-option label="请求次数" value="requestCount" />
+                  <el-option label="GraphQL OpName" value="graphqlOperationName" />
+                  <el-option label="GraphQL OpType" value="graphqlOperationType" />
+                </template>
               </el-select>
             </el-col>
             <el-col :span="3">
@@ -217,16 +227,26 @@
               <el-row :gutter="10">
                 <el-col :span="4">
                   <el-select v-model="resp.condition.type" size="small" @change="onConditionTypeChange(resp.condition)">
-                    <el-option label="Method" value="method" />
-                    <el-option label="Path" value="path" />
-                    <el-option label="Header" value="header" />
-                    <el-option label="Query" value="query" />
-                    <el-option label="Body" value="body" />
-                    <el-option label="Body包含" value="bodyContains" />
-                    <el-option label="JSONPath" value="bodyJsonPath" />
-                    <el-option label="请求次数" value="requestCount" />
-                    <el-option label="GraphQL OpName" value="graphqlOperationName" />
-                    <el-option label="GraphQL OpType" value="graphqlOperationType" />
+                    <template v-if="isMqProtocol">
+                      <el-option label="Topic" value="topic" v-if="form.protocol === 'kafka' || form.protocol === 'pulsar'" />
+                      <el-option label="消息Key" value="key" v-if="form.protocol === 'kafka'" />
+                      <el-option label="Destination" value="destination" v-if="form.protocol === 'jms'" />
+                      <el-option label="消息内容" value="body" />
+                      <el-option label="消息包含" value="bodyContains" />
+                      <el-option label="请求次数" value="requestCount" />
+                    </template>
+                    <template v-else>
+                      <el-option label="Method" value="method" />
+                      <el-option label="Path" value="path" />
+                      <el-option label="Header" value="header" />
+                      <el-option label="Query" value="query" />
+                      <el-option label="Body" value="body" />
+                      <el-option label="Body包含" value="bodyContains" />
+                      <el-option label="JSONPath" value="bodyJsonPath" />
+                      <el-option label="请求次数" value="requestCount" />
+                      <el-option label="GraphQL OpName" value="graphqlOperationName" />
+                      <el-option label="GraphQL OpType" value="graphqlOperationType" />
+                    </template>
                   </el-select>
                 </el-col>
                 <el-col :span="3">
@@ -398,6 +418,10 @@ export default {
       return pathCond && pathCond.value && pathCond.value.includes('/graphql')
     })
 
+    const isMqProtocol = computed(() => {
+      return ['kafka', 'pulsar', 'jms'].includes(form.protocol)
+    })
+
     const envTagType = (val) => {
       return inheritedEnvs.value.includes(val) ? 'warning' : ''
     }
@@ -507,6 +531,9 @@ export default {
         case 'body': return '请求体内容'
         case 'bodyContains': return '包含的文本'
         case 'bodyJsonPath': return '如: $.user.id'
+        case 'topic': return '如: baafoo-test-topic'
+        case 'key': return '如: message-key'
+        case 'destination': return '如: BAAFOO.TEST.QUEUE'
         case 'requestCount':
           if (cond.operator === 'range') return '如: 1,3 (第1到3次)'
           if (cond.operator === 'mod') return '如: 3,0 (每3次,余0触发)'
@@ -666,7 +693,7 @@ export default {
     return {
       isNew, rule, loading, saving, form, allEnvironments, inheritedEnvs, envTagType, templateVarHint, bodyPlaceholder,
       showFakerRef, fakerGroups, insertFakerVar,
-      isGraphqlPath, addGraphqlHelper,
+      isGraphqlPath, isMqProtocol, addGraphqlHelper,
       addCondition, removeCondition,
       addResponse, removeResponse, addResponseCondition,
       getResponseHeaders, addResponseHeader, removeResponseHeader,
