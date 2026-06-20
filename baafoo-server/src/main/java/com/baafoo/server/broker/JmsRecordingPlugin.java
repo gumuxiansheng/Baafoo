@@ -2,6 +2,8 @@ package com.baafoo.server.broker;
 
 import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.RecordingEntry;
+import com.baafoo.core.model.Rule;
+import com.baafoo.core.util.MatchEngine;
 import com.baafoo.server.handler.AgentResolver;
 import com.baafoo.server.storage.StorageService;
 import org.apache.activemq.artemis.api.core.Message;
@@ -17,6 +19,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -129,8 +132,17 @@ public class JmsRecordingPlugin implements ActiveMQServerPlugin {
                 return;
             }
 
+            // Match against rules — only record if a rule matches.
+            List<Rule> allRules = storage.listRules();
+            List<Rule> rules = resolver.filterRulesByEnvironment(allRules, info.environment);
+            MqMatchHelper matchHelper = new MqMatchHelper(storage);
+            MatchEngine.MatchResult m = matchHelper.match(rules, "jms", destination, body);
+            if (!m.isMatched()) {
+                return;
+            }
+
             RecordingEntry rec = new RecordingEntry();
-            rec.setRuleId(null);
+            rec.setRuleId(m.getRule().getId());
             rec.setProtocol("jms");
             rec.setPath(destination);
             rec.setRequestBody(body);
@@ -144,8 +156,8 @@ public class JmsRecordingPlugin implements ActiveMQServerPlugin {
                 rec.setAgentIp(info.agentIp);
             }
             storage.addRecording(rec);
-            log.info("Recorded JMS message: destination={}, direction={}, bodyLength={}, env={}, agentIp={}",
-                    destination, direction, body != null ? body.length() : 0, info.environment, info.agentIp);
+            log.info("Recorded JMS message: destination={}, direction={}, ruleId={}, bodyLength={}, env={}, agentIp={}",
+                    destination, direction, m.getRule().getId(), body != null ? body.length() : 0, info.environment, info.agentIp);
         } catch (Exception e) {
             log.warn("Failed to record JMS message (direction={}): {}", direction, e.getMessage(), e);
         }

@@ -287,9 +287,7 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
                 }
             }
         } else {
-            if (shouldRecord) {
-                matchHelper.record(null, "pulsar", topic, bodyStr, null, agentInfo, "produce");
-            }
+            // Unmatched — only matched requests should be recorded; skip recording.
         }
 
         // Store the (possibly stubbed) message.

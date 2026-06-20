@@ -440,9 +440,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                     }
                 } else {
                     // Unmatched — store the original record with raw batch (passthrough behaviour).
-                    if (shouldRecord) {
-                        matchHelper.record(null, "kafka", topic, bodyStr, null, agentInfo, "produce");
-                    }
+                    // Only matched requests should be recorded; skip recording for unmatched.
                     lastOffset = messageStore.append(topic, partition, rec.key, rec.value, rawBatch);
                     deriveMqRelationships(ctx, relationships, topic, partition, rec, agentInfo.environment);
                 }
