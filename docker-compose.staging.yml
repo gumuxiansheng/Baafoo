@@ -113,6 +113,7 @@ services:
       - JAVA_OPTS=-Xms128m -Xmx256m
     volumes:
       - ./deploy/staging/baafoo-agent-env-a.yml:/app/baafoo-agent.yml:ro
+      - ./plugins:/app/plugins:ro
     depends_on:
       server:
         condition: service_healthy
@@ -143,6 +144,7 @@ services:
       - JAVA_OPTS=-Xms128m -Xmx256m
     volumes:
       - ./deploy/staging/baafoo-agent-env-b.yml:/app/baafoo-agent.yml:ro
+      - ./plugins:/app/plugins:ro
     depends_on:
       server:
         condition: service_healthy
