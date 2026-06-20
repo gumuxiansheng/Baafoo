@@ -61,13 +61,18 @@
         </el-table-column>
         <el-table-column prop="agentId" label="Agent ID" width="120" show-overflow-tooltip />
         <el-table-column prop="agentIp" label="Agent IP" width="130" show-overflow-tooltip />
-        <el-table-column prop="protocol" label="协议" width="100">
+        <el-table-column prop="protocol" label="协议" width="70">
+          <template #default="{ row }"><el-tag size="small">{{ (row.protocol || '').toUpperCase() }}</el-tag></template>
+        </el-table-column>
+        <el-table-column prop="method" label="方法" width="80">
           <template #default="{ row }">
-            <el-tag size="small">{{ (row.protocol || '').toUpperCase() }}</el-tag>
-            <el-tag v-if="row.direction" size="small" :type="directionType(row.direction)" style="margin-left:4px">{{ directionLabel(row.direction) }}</el-tag>
+            <template v-if="isMqProtocol(row.protocol)">
+              <el-tag v-if="row.direction" size="small" :type="directionType(row.direction)">{{ directionLabel(row.direction) }}</el-tag>
+              <span v-else>{{ row.method }}</span>
+            </template>
+            <span v-else>{{ row.method }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="method" label="方法" width="70" />
         <el-table-column prop="path" label="路径" min-width="180" show-overflow-tooltip />
         <el-table-column prop="responseStatusCode" label="状态码" width="70" align="center" />
         <el-table-column prop="responseTimeMs" label="耗时(ms)" width="80" align="center" />
@@ -216,6 +221,11 @@ export default {
 
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
 
+    const isMqProtocol = (protocol) => {
+      const mqProtocols = ['kafka', 'pulsar', 'jms', 'tcp', 'udp', 'grpc', 'dubbo']
+      return mqProtocols.includes((protocol || '').toLowerCase())
+    }
+
     const directionLabel = (d) => {
       if (d === 'produce' || d === 'request') return '发送'
       if (d === 'consume' || d === 'response') return '接收'
@@ -232,7 +242,7 @@ export default {
       recordings, loading, detailVisible, currentRecording,
       currentPage, pageSize, total, searchParams,
       loadRecordings, onSearch, onReset, onPageChange, onSizeChange,
-      viewDetail, deleteItem, formatHeaders, formatTime, directionLabel, directionType, authStore
+      viewDetail, deleteItem, formatHeaders, formatTime, isMqProtocol, directionLabel, directionType, authStore
     }
   }
 }

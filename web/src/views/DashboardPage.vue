@@ -51,13 +51,15 @@
             <el-table-column prop="ruleName" label="规则" width="180" show-overflow-tooltip>
               <template #default="{ row }">{{ row.ruleName || (row.ruleId ? row.ruleId : '未匹配') }}</template>
             </el-table-column>
-            <el-table-column prop="protocol" label="协议" width="100">
+            <el-table-column prop="protocol" label="协议" width="80">
+              <template #default="{ row }"><el-tag size="small">{{ (row.protocol || '').toUpperCase() }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="method" label="方法" width="80">
               <template #default="{ row }">
-                <el-tag size="small">{{ (row.protocol || '').toUpperCase() }}</el-tag>
-                <el-tag v-if="row.direction" size="small" :type="row.direction === 'produce' || row.direction === 'request' ? 'warning' : 'success'" style="margin-left:4px">{{ row.direction === 'produce' || row.direction === 'request' ? '发送' : '接收' }}</el-tag>
+                <el-tag v-if="row.direction" size="small" :type="row.direction === 'produce' || row.direction === 'request' ? 'warning' : 'success'">{{ row.direction === 'produce' || row.direction === 'request' ? '发送' : '接收' }}</el-tag>
+                <span v-else>{{ row.method }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="method" label="方法" width="80" />
             <el-table-column prop="path" label="路径" min-width="200" />
             <el-table-column prop="responseStatusCode" label="状态码" width="80" />
             <el-table-column prop="recordedAt" label="时间" width="180">
