@@ -56,11 +56,16 @@
     <el-card shadow="never" style="margin-top: 16px" v-loading="loading">
       <el-table :data="recordings" stripe size="small" max-height="500" empty-text="暂无录制数据">
         <el-table-column prop="id" label="ID" width="120" show-overflow-tooltip />
-        <el-table-column prop="ruleId" label="规则" width="120" show-overflow-tooltip />
+        <el-table-column prop="ruleName" label="规则" width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.ruleName || (row.ruleId ? row.ruleId : '未匹配') }}</template>
+        </el-table-column>
         <el-table-column prop="agentId" label="Agent ID" width="120" show-overflow-tooltip />
         <el-table-column prop="agentIp" label="Agent IP" width="130" show-overflow-tooltip />
-        <el-table-column prop="protocol" label="协议" width="70">
-          <template #default="{ row }"><el-tag size="small">{{ (row.protocol || '').toUpperCase() }}</el-tag></template>
+        <el-table-column prop="protocol" label="协议" width="100">
+          <template #default="{ row }">
+            <el-tag size="small">{{ (row.protocol || '').toUpperCase() }}</el-tag>
+            <el-tag v-if="row.direction" size="small" :type="directionType(row.direction)" style="margin-left:4px">{{ directionLabel(row.direction) }}</el-tag>
+          </template>
         </el-table-column>
         <el-table-column prop="method" label="方法" width="70" />
         <el-table-column prop="path" label="路径" min-width="180" show-overflow-tooltip />
@@ -97,8 +102,9 @@
     <!-- Detail Dialog -->
     <el-dialog v-model="detailVisible" title="录制详情" width="700px">
       <div v-if="currentRecording">
-        <h4>请求</h4>
-        <div class="detail-meta" v-if="currentRecording.agentId || currentRecording.host">
+        <div class="detail-meta">
+          <span v-if="currentRecording.ruleName || currentRecording.ruleId">规则: {{ currentRecording.ruleName || currentRecording.ruleId }}</span>
+          <span v-if="currentRecording.direction">方向: {{ directionLabel(currentRecording.direction) }}</span>
           <span v-if="currentRecording.agentId">Agent: {{ currentRecording.agentId }}</span>
           <span v-if="currentRecording.agentIp">Agent IP: {{ currentRecording.agentIp }}</span>
           <span v-if="currentRecording.host">Target: {{ currentRecording.host }}<span v-if="currentRecording.port">:{{ currentRecording.port }}</span></span>
@@ -210,12 +216,23 @@ export default {
 
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
 
+    const directionLabel = (d) => {
+      if (d === 'produce' || d === 'request') return '发送'
+      if (d === 'consume' || d === 'response') return '接收'
+      return d
+    }
+    const directionType = (d) => {
+      if (d === 'produce' || d === 'request') return 'warning'
+      if (d === 'consume' || d === 'response') return 'success'
+      return 'info'
+    }
+
     onMounted(loadRecordings)
     return {
       recordings, loading, detailVisible, currentRecording,
       currentPage, pageSize, total, searchParams,
       loadRecordings, onSearch, onReset, onPageChange, onSizeChange,
-      viewDetail, deleteItem, formatHeaders, formatTime, authStore
+      viewDetail, deleteItem, formatHeaders, formatTime, directionLabel, directionType, authStore
     }
   }
 }

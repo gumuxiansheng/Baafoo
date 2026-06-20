@@ -43,6 +43,7 @@ public final class RecordingHelper {
             rec.setResponseBody(entry.getBody());
         }
         rec.setResponseTimeMs(0);
+        rec.setDirection("request");
         return rec;
     }
 
@@ -69,6 +70,7 @@ public final class RecordingHelper {
         recording.setResponseTimeMs(responseTimeMs);
         recording.setAgentId(agentId);
         recording.setAgentIp(agentIp);
+        recording.setDirection("request");
         return recording;
     }
 
@@ -93,6 +95,7 @@ public final class RecordingHelper {
         recording.setResponseTimeMs(elapsedMs);
         recording.setAgentId(agentId);
         recording.setAgentIp(agentIp);
+        recording.setDirection("request");
         return recording;
     }
 }

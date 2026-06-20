@@ -3,11 +3,16 @@
     <h2>请求日志</h2>
     <el-card shadow="never" style="margin-top: 16px" v-loading="loading">
       <el-table :data="logs" stripe size="small" max-height="500" empty-text="暂无日志记录">
-        <el-table-column prop="ruleId" label="规则ID" width="140" show-overflow-tooltip />
+        <el-table-column prop="ruleName" label="规则" width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.ruleName || (row.ruleId ? row.ruleId : '未匹配') }}</template>
+        </el-table-column>
         <el-table-column prop="agentId" label="Agent ID" width="140" show-overflow-tooltip />
         <el-table-column prop="agentIp" label="Agent IP" width="140" show-overflow-tooltip />
-        <el-table-column prop="protocol" label="协议" width="80">
-          <template #default="{ row }"><el-tag size="small">{{ (row.protocol || '').toUpperCase() }}</el-tag></template>
+        <el-table-column prop="protocol" label="协议" width="100">
+          <template #default="{ row }">
+            <el-tag size="small">{{ (row.protocol || '').toUpperCase() }}</el-tag>
+            <el-tag v-if="row.direction" size="small" :type="directionType(row.direction)" style="margin-left:4px">{{ directionLabel(row.direction) }}</el-tag>
+          </template>
         </el-table-column>
         <el-table-column prop="method" label="方法" width="80" />
         <el-table-column prop="path" label="路径" min-width="200" show-overflow-tooltip />
@@ -69,8 +74,19 @@ export default {
 
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
 
+    const directionLabel = (d) => {
+      if (d === 'produce' || d === 'request') return '发送'
+      if (d === 'consume' || d === 'response') return '接收'
+      return d
+    }
+    const directionType = (d) => {
+      if (d === 'produce' || d === 'request') return 'warning'
+      if (d === 'consume' || d === 'response') return 'success'
+      return 'info'
+    }
+
     onMounted(loadLogs)
-    return { logs, loading, currentPage, pageSize, total, onPageChange, onSizeChange, formatTime }
+    return { logs, loading, currentPage, pageSize, total, onPageChange, onSizeChange, formatTime, directionLabel, directionType }
   }
 }
 </script>

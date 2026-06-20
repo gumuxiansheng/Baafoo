@@ -15,6 +15,9 @@ public class RecordingEntry {
     /** Rule ID that triggered this recording */
     private String ruleId;
 
+    /** Rule name (transient — not stored in DB, populated by API layer) */
+    private String ruleName;
+
     /** Environment ID */
     private String environmentId;
 
@@ -97,6 +100,9 @@ public class RecordingEntry {
 
     public String getRuleId() { return ruleId; }
     public void setRuleId(String ruleId) { this.ruleId = ruleId; }
+
+    public String getRuleName() { return ruleName; }
+    public void setRuleName(String ruleName) { this.ruleName = ruleName; }
 
     public String getEnvironmentId() { return environmentId; }
     public void setEnvironmentId(String environmentId) { this.environmentId = environmentId; }

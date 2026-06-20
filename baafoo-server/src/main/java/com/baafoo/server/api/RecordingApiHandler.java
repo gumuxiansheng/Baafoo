@@ -3,8 +3,11 @@ package com.baafoo.server.api;
 import com.baafoo.core.api.ApiResponse;
 import com.baafoo.core.api.PaginatedResult;
 import com.baafoo.core.model.RecordingEntry;
+import com.baafoo.core.model.Rule;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 class RecordingApiHandler implements ResourceHandler {
     @Override
@@ -50,11 +53,14 @@ class RecordingApiHandler implements ResourceHandler {
 
                 PaginatedResult<RecordingEntry> result = ctx.storage.listRecordingsPaged(
                         ruleId, agentId, agentIp, protocol, reqMethod, reqPath, statusCode, keyword, page, size);
+                enrichRuleNames(result.getItems(), ctx.storage.listRules());
                 return ApiResponse.ok(result);
             } else {
                 // Legacy mode: limit-based (backward compatible)
                 int limit = ctx.queryParamInt("limit", 100);
-                return ApiResponse.ok(ctx.storage.listRecordings(ruleId, limit));
+                List<RecordingEntry> recordings = ctx.storage.listRecordings(ruleId, limit);
+                enrichRuleNames(recordings, ctx.storage.listRules());
+                return ApiResponse.ok(recordings);
             }
         }
 
@@ -66,5 +72,26 @@ class RecordingApiHandler implements ResourceHandler {
         }
 
         return null;
+    }
+
+    /**
+     * Populate the transient {@code ruleName} field on each recording entry
+     * by looking up the rule ID in the current rules list.
+     */
+    private void enrichRuleNames(List<RecordingEntry> recordings, List<Rule> rules) {
+        if (recordings == null || recordings.isEmpty() || rules == null || rules.isEmpty()) {
+            return;
+        }
+        Map<String, String> ruleNameMap = new HashMap<String, String>();
+        for (Rule rule : rules) {
+            if (rule.getId() != null && rule.getName() != null) {
+                ruleNameMap.put(rule.getId(), rule.getName());
+            }
+        }
+        for (RecordingEntry rec : recordings) {
+            if (rec.getRuleId() != null) {
+                rec.setRuleName(ruleNameMap.get(rec.getRuleId()));
+            }
+        }
     }
 }
