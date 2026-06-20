@@ -4,6 +4,7 @@ import com.baafoo.core.model.RecordingEntry;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
+import java.util.Map;
 
 public interface RecordingMapper {
 
@@ -43,4 +44,6 @@ public interface RecordingMapper {
     long sumAllRecordingBodyBytes();
 
     List<RecordingEntry> listOldestRecordings(@Param("limit") int limit);
+
+    List<Map<String, Object>> countRecordingsByDay(@Param("startTime") long startTime);
 }

@@ -110,7 +110,7 @@ export default {
 
       nextTick(() => {
         renderRulesChart(rulesRes.success ? rulesRes.data : [])
-        renderTrendChart()
+        renderTrendChart(statusRes.success && statusRes.data.requestTrend ? statusRes.data.requestTrend : [])
       })
     })
 
@@ -130,19 +130,40 @@ export default {
       })
     }
 
-    function renderTrendChart() {
+    function renderTrendChart(trendData) {
       if (!trendChart.value) return
       const chart = echarts.init(trendChart.value)
+
+      // Process trend data - fill in missing days with 0
+      const days = []
+      const counts = []
+      const now = new Date()
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(now)
+        date.setDate(date.getDate() - i)
+        date.setHours(0, 0, 0, 0)
+        const dayTimestamp = date.getTime()
+        days.push(date.toLocaleDateString('zh-CN', { weekday: 'short' }))
+
+        // Find count for this day
+        const dayData = trendData.find(d => {
+          const dDay = Math.floor(d.day / 86400000) * 86400000
+          return dDay === Math.floor(dayTimestamp / 86400000) * 86400000
+        })
+        counts.push(dayData ? dayData.count : 0)
+      }
+
       chart.setOption({
         tooltip: { trigger: 'axis' },
         grid: { left: 40, right: 20, top: 20, bottom: 30 },
-        xAxis: { type: 'category', data: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
-        yAxis: { type: 'value' },
+        xAxis: { type: 'category', data: days },
+        yAxis: { type: 'value', minInterval: 1 },
         series: [{
-          data: [0, 0, 0, 0, 0, 0, 0],
+          data: counts,
           type: 'line',
           smooth: true,
-          areaStyle: { opacity: 0.1 }
+          areaStyle: { opacity: 0.1 },
+          itemStyle: { color: '#667eea' }
         }]
       })
     }

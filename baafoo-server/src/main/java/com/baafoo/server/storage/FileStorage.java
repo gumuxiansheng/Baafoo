@@ -411,6 +411,24 @@ public class FileStorage {
         return total;
     }
 
+    public List<Map<String, Object>> getRecordingCountsByDay(long startTime) {
+        Map<Long, Long> dayCounts = new java.util.TreeMap<>();
+        for (RecordingEntry r : recordings) {
+            if (r.getRecordedAt() >= startTime) {
+                long day = r.getRecordedAt() / 86400000L * 86400000L;
+                dayCounts.merge(day, 1L, Long::sum);
+            }
+        }
+        List<Map<String, Object>> result = new java.util.ArrayList<>();
+        for (Map.Entry<Long, Long> entry : dayCounts.entrySet()) {
+            Map<String, Object> map = new java.util.HashMap<>();
+            map.put("day", entry.getKey());
+            map.put("count", entry.getValue());
+            result.add(map);
+        }
+        return result;
+    }
+
     // --- Agent Management ---
 
     public AgentRegistration registerAgent(String agentId, String environment, String hostname, String version, List<String> protocols, String agentIp) {

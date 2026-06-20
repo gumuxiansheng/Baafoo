@@ -3,6 +3,7 @@ package com.baafoo.server.storage;
 import com.baafoo.core.api.PaginatedResult;
 import com.baafoo.core.model.*;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Storage service interface.
@@ -113,6 +114,13 @@ public interface StorageService {
      * @return estimated total size in bytes
      */
     long getRecordingTotalSizeBytes();
+
+    /**
+     * Get recording counts grouped by day since the given start time.
+     * @param startTime start time in milliseconds
+     * @return list of maps with "day" (epoch millis) and "count" keys
+     */
+    List<Map<String, Object>> getRecordingCountsByDay(long startTime);
 
     // --- Agent Management ---
 

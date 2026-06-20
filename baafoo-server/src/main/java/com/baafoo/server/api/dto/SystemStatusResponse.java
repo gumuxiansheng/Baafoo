@@ -1,5 +1,8 @@
 package com.baafoo.server.api.dto;
 
+import java.util.List;
+import java.util.Map;
+
 public class SystemStatusResponse {
     public String version;
     public int rules;
@@ -9,6 +12,7 @@ public class SystemStatusResponse {
     public int scenes;
     public long uptime;
     public boolean authEnabled;
+    public List<Map<String, Object>> requestTrend;
 
     public SystemStatusResponse version(String v) { this.version = v; return this; }
     public SystemStatusResponse rules(int v) { this.rules = v; return this; }
@@ -18,4 +22,5 @@ public class SystemStatusResponse {
     public SystemStatusResponse scenes(int v) { this.scenes = v; return this; }
     public SystemStatusResponse uptime(long v) { this.uptime = v; return this; }
     public SystemStatusResponse authEnabled(boolean v) { this.authEnabled = v; return this; }
+    public SystemStatusResponse requestTrend(List<Map<String, Object>> v) { this.requestTrend = v; return this; }
 }

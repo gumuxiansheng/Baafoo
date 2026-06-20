@@ -847,6 +847,16 @@ public class JdbcStorageService implements StorageService {
         }
     }
 
+    @Override
+    public List<Map<String, Object>> getRecordingCountsByDay(long startTime) {
+        try (SqlSession session = openSession()) {
+            return session.getMapper(RecordingMapper.class).countRecordingsByDay(startTime);
+        } catch (Exception e) {
+            log.error("Failed to get recording counts by day: {}", e.getMessage());
+            return java.util.Collections.emptyList();
+        }
+    }
+
     // --- Agent Management ---
 
     @Override
