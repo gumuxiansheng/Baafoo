@@ -1,0 +1,19 @@
+{
+  "id": "user-crud-get",
+  "name": "Get User by ID",
+  "protocol": "http",
+  "conditions": [
+    {"type": "method", "value": "GET"},
+    {"type": "path", "operator": "regex", "value": "/api/users/\\d+"}
+  ],
+  "responses": [
+    {
+      "statusCode": 200,
+      "headers": {"Content-Type": "application/json"},
+      "body": "{\"id\":1,\"name\":\"Alice\",\"email\":\"alice@example.com\"}"
+    }
+  ],
+  "priority": 50,
+  "tags": ["user", "crud"],
+  "environments": ["dev"]
+}

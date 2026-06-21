@@ -4,6 +4,7 @@ import com.baafoo.core.api.ApiResponse;
 import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.util.ChaosManager;
 import com.baafoo.server.auth.AuthService;
+import com.baafoo.server.mcp.McpApiHandler;
 import com.baafoo.server.storage.StorageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.buffer.Unpooled;
@@ -62,7 +63,8 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
                 new RecordingApiHandler(),
                 new StatusApiHandler(),
                 new PluginApiHandler(),
-                new ChaosApiHandler(this.chaosManager)
+                new ChaosApiHandler(this.chaosManager),
+                new McpApiHandler()
         );
     }
 

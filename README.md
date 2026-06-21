@@ -656,6 +656,47 @@ curl -X DELETE http://localhost:8084/__baafoo__/api/recordings/{id}
 
 ---
 
+## MCP Server
+
+Baafoo 提供 [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) Server，允许 AI Agent 直接管理 Mock 规则、环境、场景集等。
+
+### 端点
+
+```
+POST http://<host>:8084/__baafoo__/api/mcp
+```
+
+### 认证
+
+与 Management API 相同：
+- `Authorization: Bearer <jwt-token>`
+- `X-Api-Key: <api-key>`
+
+### 支持的工具
+
+| 类别 | 工具数 | 说明 |
+|------|--------|------|
+| Rules | 6 | 列出/查看/创建/更新/删除/撤销 Mock 规则 |
+| Environments | 6 | 列出/查看/创建/更新/删除/关联规则到环境 |
+| Scenes | 5 | 列出/查看/创建/更新/删除场景集 |
+| Recordings | 3 | 列出/统计/删除录制 |
+| MQ Relationships | 3 | 列出/创建/删除消息队列关系映射 |
+| Agents | 2 | 列出/查看 Agent 状态 |
+| System | 2 | 系统状态/导出 OpenAPI |
+
+### 快速示例
+
+```bash
+curl -X POST http://localhost:8084/__baafoo__/api/mcp \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: <your-key>" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
+```
+
+### Agent Skill
+
+Agent Skill 包位于 `agent-skill/baafoo-mock-manager/`，包含脚本和知识文件，可集成到 AI Agent 工作流中。
+
 ## 许可证
 
 Private — Internal Use Only

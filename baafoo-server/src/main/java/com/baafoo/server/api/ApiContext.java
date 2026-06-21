@@ -4,7 +4,7 @@ import com.baafoo.server.auth.AuthService;
 import com.baafoo.server.storage.StorageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-class ApiContext {
+public class ApiContext {
     final StorageService storage;
     final AuthService authService;
     final ObjectMapper mapper;
@@ -35,4 +35,10 @@ class ApiContext {
                     ApiUtils.getRequiredRoleForAction(resource, action), auth.getRole());
         }
     }
+
+    public StorageService getStorage() { return storage; }
+    public AuthService getAuthService() { return authService; }
+    public AuthService.AuthResult getAuth() { return auth; }
+    public String getRemoteAddr() { return remoteAddr; }
+    public String getUri() { return uri; }
 }
