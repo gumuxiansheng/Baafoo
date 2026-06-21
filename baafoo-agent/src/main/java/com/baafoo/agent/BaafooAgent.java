@@ -74,7 +74,7 @@ public class BaafooAgent {
             controlChannel.setAgentIdCallback(id -> config.setAgentId(id));
             controlChannel.start();
 
-            pluginManager = new PluginManager();
+            pluginManager = new PluginManager(config.getPlugins());
 
             Runtime.getRuntime().addShutdownHook(new Thread(BaafooAgent::shutdown, "baafoo-shutdown"));
 
@@ -116,6 +116,8 @@ public class BaafooAgent {
                     ctx.setProtocol("tcp");
                     ctx.setHost(host);
                     ctx.setPort(port);
+                    // P1: inject per-plugin config into context
+                    ctx.setPluginConfig(pm.getPluginConfig(plugin.getName()));
                     com.baafoo.plugin.InterceptResult result = plugin.intercept(ctx);
                     if (result != null && result.isRedirect()) {
                         return new Object[]{result.getRedirectHost(), result.getRedirectPort()};
