@@ -24,6 +24,7 @@ public final class GlobalRouteState {
     public static final int MODE_PASSTHROUGH = 1;
     public static final int MODE_RECORD = 2;
     public static final int MODE_RECORD_AND_STUB = 3;
+    public static final int MODE_RECORD_ALL = 4;
 
     public static volatile String SERVER_HOST = "127.0.0.1";
 
@@ -252,7 +253,36 @@ public final class GlobalRouteState {
     }
 
     public static boolean isRecording() {
-        return CURRENT_MODE == MODE_RECORD || CURRENT_MODE == MODE_RECORD_AND_STUB;
+        return CURRENT_MODE == MODE_RECORD || CURRENT_MODE == MODE_RECORD_AND_STUB
+                || CURRENT_MODE == MODE_RECORD_ALL;
+    }
+
+    /**
+     * Infer a fallback stub port from the destination port when no route matches.
+     * Used in RECORD_ALL mode to redirect unmatched traffic to Baafoo for recording.
+     *
+     * @param port destination port in the original connection attempt
+     * @return stub port number (never -1)
+     */
+    public static int forceRedirectPort(int port) {
+        // HTTP ports → HTTP stub port
+        if (port == 80 || port == 443 || port == 8080 || port == 8443) {
+            return HTTP_PORT;
+        }
+        // Kafka ports
+        if (port == 9092 || port == 9093 || port == 9094) {
+            return KAFKA_PORT;
+        }
+        // Pulsar ports
+        if (port == 6650 || port == 6651) {
+            return PULSAR_PORT;
+        }
+        // JMS (ActiveMQ) port
+        if (port == 61616) {
+            return JMS_PORT;
+        }
+        // Everything else → TCP stub port
+        return TCP_PORT;
     }
 
     public static boolean isInternal(String host, int port) {

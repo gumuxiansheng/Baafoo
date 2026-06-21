@@ -73,19 +73,24 @@ public final class NioSocketFinishConnectAdvice {
                         routeValue = GlobalRouteState.lookup(originalDomain, port);
                     }
                 }
-                // RECORD_ALL: if no route matched, still record (fallback redirect
-                // was already applied in connect() advice; here we just register
-                // the session for stream-level recording).
+                // RECORD_ALL: if no route matched, register for stream-level recording.
+                // The connect() advice already decided whether to redirect or passthrough.
+                // For TCP ports: connect() did NOT redirect (passthrough to real target),
+                // so we need to register the recording session here.
+                // For HTTP/MQ ports: connect() redirected to stub port, so the session
+                // was already registered there — skip here.
                 if (GlobalRouteState.CURRENT_MODE == 4 && routeValue == null) {
                     int fallbackPort = GlobalRouteState.forceRedirectPort(port);
-                    if (fallbackPort != GlobalRouteState.HTTP_PORT
-                            && fallbackPort != GlobalRouteState.KAFKA_PORT
-                            && fallbackPort != GlobalRouteState.PULSAR_PORT
-                            && fallbackPort != GlobalRouteState.JMS_PORT) {
+                    if (fallbackPort == GlobalRouteState.TCP_PORT) {
+                        // Generic TCP passthrough: register for stream-level recording
                         String sessionId = java.util.UUID.randomUUID().toString();
                         GlobalRouteState.startRecording(channelId, sessionId, host, port);
-                        GlobalRouteState.logInfo("[Baafoo] NIO Socket recording (finishConnect, record-all): " + host + ":" + port + " (sessionId=" + sessionId + ")");
+                        GlobalRouteState.logInfo("[Baafoo] NIO Socket recording (finishConnect, record-all TCP passthrough): " + host + ":" + port + " (sessionId=" + sessionId + ")");
                     }
+                    // For HTTP/MQ: the connect() advice already redirected and registered
+                    // the session, so the early "Already registered" check above will skip.
+                    // If somehow not registered (e.g., finishConnect on a different channel),
+                    // the Server-side handler will handle recording.
                 } else if (routeValue != null) {
                     int targetPort = Integer.parseInt(routeValue[1]);
                     // Skip Socket-level recording for HTTP and MQ — they have

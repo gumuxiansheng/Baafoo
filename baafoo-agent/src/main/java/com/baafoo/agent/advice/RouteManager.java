@@ -57,7 +57,8 @@ public final class RouteManager {
 
     public static void setMode(EnvironmentMode mode) {
         currentMode = mode;
-        recording = (mode == EnvironmentMode.RECORD || mode == EnvironmentMode.RECORD_AND_STUB);
+        recording = (mode == EnvironmentMode.RECORD || mode == EnvironmentMode.RECORD_AND_STUB
+                || mode == EnvironmentMode.RECORD_ALL);
         log.info("Mode changed to: {} (recording={})", mode.getValue(), recording);
 
         int modeValue;
@@ -73,6 +74,9 @@ public final class RouteManager {
                 break;
             case RECORD_AND_STUB:
                 modeValue = GlobalRouteState.MODE_RECORD_AND_STUB;
+                break;
+            case RECORD_ALL:
+                modeValue = GlobalRouteState.MODE_RECORD_ALL;
                 break;
             default:
                 modeValue = GlobalRouteState.MODE_STUB;

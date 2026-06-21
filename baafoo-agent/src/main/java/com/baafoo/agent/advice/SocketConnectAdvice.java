@@ -47,7 +47,8 @@ public final class SocketConnectAdvice {
             // MQ ports (Kafka/Pulsar/JMS) are recorded at the application layer
             // by the Server, so skip Socket-level recording to avoid duplicates.
             if (GlobalRouteState.isInternal(host, port)) {
-                if ((GlobalRouteState.CURRENT_MODE == 2 || GlobalRouteState.CURRENT_MODE == 3)
+                if ((GlobalRouteState.CURRENT_MODE == 2 || GlobalRouteState.CURRENT_MODE == 3
+                        || GlobalRouteState.CURRENT_MODE == 4)
                         && port != GlobalRouteState.SERVER_PORT
                         && port != GlobalRouteState.HTTP_PORT
                         && port != GlobalRouteState.KAFKA_PORT
@@ -100,6 +101,69 @@ public final class SocketConnectAdvice {
                     }
                 }
                 // In pure RECORD mode, don't redirect — connection goes to real target
+                return;
+            }
+
+            // RECORD_ALL mode (4): redirect ALL traffic to stub ports for recording,
+            // regardless of whether a matching rule exists.
+            if (GlobalRouteState.CURRENT_MODE == 4) {
+                String[] routeValue = GlobalRouteState.lookup(host, port);
+
+                // DNS cache fallback
+                if (routeValue == null && !"127.0.0.1".equals(host) && !"localhost".equals(host)) {
+                    String originalDomain = (String) GlobalRouteState.DNS_CACHE.get(host);
+                    if (originalDomain != null) {
+                        routeValue = GlobalRouteState.lookup(originalDomain, port);
+                    }
+                }
+
+                // Plugin SPI fallback
+                if (routeValue == null) {
+                    java.util.function.Function<Object[], Object[]> consultFn = GlobalRouteState.PLUGIN_CONSULT_FN;
+                    if (consultFn != null) {
+                        try {
+                            Object[] pluginResult = consultFn.apply(new Object[]{host, Integer.valueOf(port)});
+                            if (pluginResult != null && pluginResult.length >= 2) {
+                                routeValue = new String[]{(String) pluginResult[0], String.valueOf(pluginResult[1])};
+                            }
+                        } catch (Throwable t) {
+                            GlobalRouteState.logDebug("[Baafoo] Socket plugin consult skipped: " + t.getMessage());
+                        }
+                    }
+                }
+
+                // Fallback: no route matched — use protocol inference to pick a stub port.
+                // For HTTP/Kafka/Pulsar/JMS ports: redirect to the corresponding stub port
+                // (Server-side handlers will passthrough+record).
+                // For generic TCP ports: do NOT redirect — connect directly to the real
+                // target and record at the stream level via RecordingInputStream/RecordingOutputStream.
+                // This avoids the need for a TCP relay on the Server side.
+                if (routeValue == null) {
+                    int fallbackPort = GlobalRouteState.forceRedirectPort(port);
+                    if (fallbackPort == GlobalRouteState.TCP_PORT) {
+                        // Generic TCP: passthrough + stream-level recording (no redirect)
+                        String sessionId = java.util.UUID.randomUUID().toString();
+                        GlobalRouteState.startRecording(System.identityHashCode(socket), sessionId, host, port);
+                        GlobalRouteState.logInfo("[Baafoo] RECORD_ALL TCP passthrough+record: " + host + ":" + port + " (sessionId=" + sessionId + ")");
+                        return; // Don't redirect — connection goes to real target
+                    }
+                    // HTTP/Kafka/Pulsar/JMS: redirect to stub port for Server-side handling
+                    routeValue = new String[]{GlobalRouteState.SERVER_HOST, String.valueOf(fallbackPort)};
+                    GlobalRouteState.logInfo("[Baafoo] RECORD_ALL fallback: " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
+                }
+
+                int targetPort = Integer.parseInt(routeValue[1]);
+                // Register for stream-level recording (TCP, non-HTTP/MQ)
+                if (targetPort != GlobalRouteState.HTTP_PORT
+                        && targetPort != GlobalRouteState.KAFKA_PORT
+                        && targetPort != GlobalRouteState.PULSAR_PORT
+                        && targetPort != GlobalRouteState.JMS_PORT) {
+                    String sessionId = java.util.UUID.randomUUID().toString();
+                    GlobalRouteState.startRecording(System.identityHashCode(socket), sessionId, host, port);
+                    GlobalRouteState.logInfo("[Baafoo] Socket recording (record-all): " + host + ":" + port + " (sessionId=" + sessionId + ")");
+                }
+                GlobalRouteState.logInfo("[Baafoo] Socket redirect (record-all): " + host + ":" + port + " -> " + routeValue[0] + ":" + targetPort);
+                endpoint = new InetSocketAddress(routeValue[0], targetPort);
                 return;
             }
 

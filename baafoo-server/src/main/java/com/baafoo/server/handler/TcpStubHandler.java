@@ -151,6 +151,33 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
             sendTcpResponse(ctx, entry, payload, true, agentEnvironment);
         } else {
+            // RECORD_ALL: record the unmatched TCP payload as raw hex data.
+            //
+            // NOTE: In the current design, RECORD_ALL TCP passthrough is handled at the
+            // Agent side — the Agent does NOT redirect unmatched generic TCP connections
+            // to the stub port. Instead it connects directly to the real target and records
+            // at the stream level (RecordingInputStream/OutputStream + SocketChannelRead/Write).
+            //
+            // This Server-side branch is a fallback for cases where traffic still arrives
+            // (e.g., matched route in RECORD_ALL mode, or protocol-specific stub ports).
+            // The connection is recorded and closed.
+            EnvironmentMode currentMode = agentResolver.resolveEnvironmentMode(agentEnvironment);
+            if (currentMode == EnvironmentMode.RECORD_ALL) {
+                RecordingEntry rec = new RecordingEntry();
+                rec.setProtocol("tcp");
+                rec.setHost("127.0.0.1");
+                rec.setPort(0);
+                rec.setDirection("request");
+                rec.setDataHex(hexPayload);
+                rec.setRequestBody(payload);
+                rec.setAgentId(agentId);
+                rec.setAgentIp(agentIp);
+                rec.setEnvironmentId(agentEnvironment);
+                rec.setUnmatched(true);
+                rec.setRecordedAt(System.currentTimeMillis());
+                storage.addRecording(rec);
+                log.info("RECORD_ALL — unmatched TCP recorded: {} bytes", data.length);
+            }
             log.debug("No TCP rule matched, closing connection");
             ctx.close();
         }

@@ -7,11 +7,12 @@ public class EnvironmentModeTest {
 
     @Test
     public void testValues() {
-        assertEquals(4, EnvironmentMode.values().length);
+        assertEquals(5, EnvironmentMode.values().length);
         assertEquals(EnvironmentMode.STUB, EnvironmentMode.valueOf("STUB"));
         assertEquals(EnvironmentMode.PASSTHROUGH, EnvironmentMode.valueOf("PASSTHROUGH"));
         assertEquals(EnvironmentMode.RECORD, EnvironmentMode.valueOf("RECORD"));
         assertEquals(EnvironmentMode.RECORD_AND_STUB, EnvironmentMode.valueOf("RECORD_AND_STUB"));
+        assertEquals(EnvironmentMode.RECORD_ALL, EnvironmentMode.valueOf("RECORD_ALL"));
     }
 
     @Test
@@ -20,6 +21,7 @@ public class EnvironmentModeTest {
         assertEquals("passthrough", EnvironmentMode.PASSTHROUGH.getValue());
         assertEquals("record", EnvironmentMode.RECORD.getValue());
         assertEquals("record-and-stub", EnvironmentMode.RECORD_AND_STUB.getValue());
+        assertEquals("record-all", EnvironmentMode.RECORD_ALL.getValue());
     }
 
     @Test
@@ -28,11 +30,13 @@ public class EnvironmentModeTest {
         assertEquals(EnvironmentMode.PASSTHROUGH, EnvironmentMode.fromValue("passthrough"));
         assertEquals(EnvironmentMode.RECORD, EnvironmentMode.fromValue("record"));
         assertEquals(EnvironmentMode.RECORD_AND_STUB, EnvironmentMode.fromValue("record-and-stub"));
+        assertEquals(EnvironmentMode.RECORD_ALL, EnvironmentMode.fromValue("record-all"));
     }
 
     @Test
     public void testFromValueWithHyphenNormalization() {
         assertEquals(EnvironmentMode.RECORD_AND_STUB, EnvironmentMode.fromValue("record_and_stub"));
+        assertEquals(EnvironmentMode.RECORD_ALL, EnvironmentMode.fromValue("record_all"));
     }
 
     @Test
@@ -55,5 +59,6 @@ public class EnvironmentModeTest {
     public void testFromValueByName() {
         assertEquals(EnvironmentMode.RECORD, EnvironmentMode.fromValue("RECORD"));
         assertEquals(EnvironmentMode.RECORD_AND_STUB, EnvironmentMode.fromValue("RECORD_AND_STUB"));
+        assertEquals(EnvironmentMode.RECORD_ALL, EnvironmentMode.fromValue("RECORD_ALL"));
     }
 }

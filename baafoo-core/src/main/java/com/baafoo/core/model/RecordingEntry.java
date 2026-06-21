@@ -87,6 +87,9 @@ public class RecordingEntry {
     /** Duration in milliseconds (for TCP recording, time between request and response) */
     private long durationMs;
 
+    /** Whether this recording was captured without a matching rule (RECORD_ALL mode) */
+    private boolean unmatched;
+
     public RecordingEntry() {
         this.requestHeaders = Collections.emptyMap();
         this.responseHeaders = Collections.emptyMap();
@@ -166,6 +169,9 @@ public class RecordingEntry {
 
     public long getDurationMs() { return durationMs; }
     public void setDurationMs(long durationMs) { this.durationMs = durationMs; }
+
+    public boolean isUnmatched() { return unmatched; }
+    public void setUnmatched(boolean unmatched) { this.unmatched = unmatched; }
 
     @Override
     public String toString() {

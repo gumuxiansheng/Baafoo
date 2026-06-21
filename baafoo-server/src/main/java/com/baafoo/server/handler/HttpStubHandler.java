@@ -148,7 +148,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                 handlePassthroughAndRecord(ctx, method, host, port, path, queryParams, headers, body,
                         result, agentEnvironment, agentId, agentIp);
             } else {
-                if (currentMode == EnvironmentMode.RECORD_AND_STUB) {
+                if (currentMode == EnvironmentMode.RECORD_AND_STUB || currentMode == EnvironmentMode.RECORD_ALL) {
                     RecordingEntry rec = RecordingHelper.buildFromStub(result, "http", host, port, method, path, headers, body);
                     rec.setAgentId(agentId);
                     rec.setAgentIp(agentIp);
@@ -196,6 +196,16 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                 }
             }
         } else {
+            // No rule matched.
+            // RECORD_ALL mode: passthrough + record the unmatched request/response.
+            EnvironmentMode currentMode = agentResolver.resolveEnvironmentMode(agentEnvironment);
+            if (currentMode == EnvironmentMode.RECORD_ALL) {
+                log.info("RECORD_ALL — unmatched passthrough+record: {} {}", method, path);
+                handlePassthroughAndRecordUnmatched(ctx, method, host, port, path, queryParams,
+                        headers, body, agentEnvironment, agentId, agentIp);
+                return;
+            }
+
             String unmatchedDefault = config.getUnmatchedDefault();
             if ("404".equalsIgnoreCase(unmatchedDefault)) {
                 log.info("No Baafoo rule matched: {} {} — returning 404", method, path);
@@ -259,6 +269,68 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                                     agentEnvironment, "http", host, port, method, path, headers, requestBody,
                                     result.statusCode, result.responseHeaders, responseBodyStr,
                                     result.responseTimeMs, agentId, agentIp);
+                            storage.addRecording(recording);
+                        }
+
+                        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+                    });
+                });
+    }
+
+    /**
+     * RECORD_ALL mode: passthrough unmatched requests AND record the response.
+     * Unlike {@link #handlePassthroughAndRecord}, this does not require a matched rule.
+     * The recording is marked with {@code unmatched=true} for later filtering.
+     */
+    private void handlePassthroughAndRecordUnmatched(ChannelHandlerContext ctx, String method, String host, int port,
+                                                      String path, Map<String, String> queryParams,
+                                                      Map<String, String> headers, String requestBody,
+                                                      String agentEnvironment, String agentId, String agentIp) {
+        if (passthroughProxy == null) {
+            StubResponseRenderer.sendError(ctx, HttpResponseStatus.BAD_GATEWAY, "Passthrough not available");
+            return;
+        }
+        long startTime = System.currentTimeMillis();
+
+        passthroughProxy.forward(method, host, port, path, queryParams, headers, requestBody)
+                .whenComplete((result, error) -> {
+                    ctx.executor().execute(() -> {
+                        if (error != null) {
+                            log.error("RECORD_ALL passthrough error: {}", error.getMessage());
+                            if (agentEnvironment != null) {
+                                RecordingEntry recording = RecordingHelper.buildError(
+                                        null, agentEnvironment, "http", host, port, method, path,
+                                        headers, requestBody, error.getMessage(),
+                                        System.currentTimeMillis() - startTime, agentId, agentIp);
+                                recording.setUnmatched(true);
+                                storage.addRecording(recording);
+                            }
+                            StubResponseRenderer.sendError(ctx, HttpResponseStatus.BAD_GATEWAY,
+                                    "Passthrough failed: " + error.getMessage());
+                            return;
+                        }
+
+                        FullHttpResponse response = new DefaultFullHttpResponse(
+                                HttpVersion.HTTP_1_1, HttpResponseStatus.valueOf(result.statusCode),
+                                Unpooled.copiedBuffer(result.responseBody));
+                        for (Map.Entry<String, String> entry : result.responseHeaders.entrySet()) {
+                            if (!PassthroughProxy.HOP_BY_HOP_HEADERS.contains(entry.getKey().toLowerCase())) {
+                                response.headers().set(entry.getKey(), entry.getValue());
+                            }
+                        }
+                        response.headers().set(HttpHeaderNames.CONTENT_LENGTH, result.responseBody.length);
+                        response.headers().set("X-Baafoo-Stub", "record-all");
+
+                        // Record the unmatched passthrough response
+                        if (agentEnvironment != null) {
+                            java.nio.charset.Charset recordCharset = StubResponseRenderer.parseCharsetFromContentType(
+                                    result.responseHeaders.get("Content-Type"));
+                            String responseBodyStr = new String(result.responseBody, recordCharset);
+                            RecordingEntry recording = RecordingHelper.buildFromPassthrough(
+                                    null, agentEnvironment, "http", host, port, method, path,
+                                    headers, requestBody, result.statusCode, result.responseHeaders,
+                                    responseBodyStr, result.responseTimeMs, agentId, agentIp);
+                            recording.setUnmatched(true);
                             storage.addRecording(recording);
                         }
 

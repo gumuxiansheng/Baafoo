@@ -15,7 +15,9 @@ public enum EnvironmentMode {
     /** Agent records real responses for later replay */
     RECORD("record"),
     /** Agent records real responses AND returns stubs */
-    RECORD_AND_STUB("record-and-stub");
+    RECORD_AND_STUB("record-and-stub"),
+    /** Agent records ALL traffic, regardless of rule match */
+    RECORD_ALL("record-all");
 
     private final String value;
 
