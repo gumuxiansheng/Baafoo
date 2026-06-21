@@ -114,10 +114,14 @@
                                     <pattern>com.baafoo.core</pattern>
                                     <shadedPattern>com.baafoo.agent.shaded.core</shadedPattern>
                                 </relocation>
-                                <relocation>
-                                    <pattern>com.baafoo.plugin</pattern>
-                                    <shadedPattern>com.baafoo.agent.shaded.plugin</shadedPattern>
-                                </relocation>
+                                <!--
+                                    NOTE: com.baafoo.plugin is intentionally NOT relocated.
+                                    The plugin API must keep its original package name so that
+                                    ServiceLoader can discover implementations via
+                                    META-INF/services/com.baafoo.plugin.AgentPlugin in external
+                                    plugin JARs. The plugin API has zero external dependencies,
+                                    so there is no classpath conflict risk.
+                                -->
                                 <relocation>
                                     <pattern>org.yaml.snakeyaml</pattern>
                                     <shadedPattern>com.baafoo.agent.shaded.snakeyaml</shadedPattern>
