@@ -454,14 +454,18 @@ public class MyPlugin implements AgentPlugin {
     public InterceptTarget getTarget() { return InterceptTarget.KAFKA; }
 
     @Override
+    public void configure(Map<String, Object> config) {
+        // 从 baafoo-agent.yml 读取插件级配置（可选）
+    }
+
+    @Override
     public void init() { /* 初始化 */ }
 
     @Override
     public InterceptResult intercept(PluginContext ctx) {
-        // STUB: 返回 Mock 响应
-        // PASSTHROUGH: 执行 ctx.originalCall()
-        // RECORD: 执行原始调用 + 录制
-        // RECORD_AND_STUB: 录制 + 返回 Mock
+        // redirect: 重定向到 Mock Broker（二进制协议）
+        // stub: 返回 Mock 响应（HTTP 协议）
+        // passthrough: 放行到真实目标
     }
 
     @Override
@@ -471,6 +475,38 @@ public class MyPlugin implements AgentPlugin {
 
 在 JAR 的 `META-INF/services/com.baafoo.plugin.AgentPlugin` 中注册实现类。  
 插件使用独立 ClassLoader（parent=null），与宿主应用依赖完全隔离。
+
+### 插件配置
+
+在 `baafoo-agent.yml` 中为每个插件指定独立配置：
+
+```yaml
+plugins:
+  enabled: true
+  directory: "./plugins"
+  configs:
+    my-plugin:
+      redirectPort: 9050
+      excludeTopics:
+        - "internal-health"
+```
+
+### 健康监控
+
+插件运行时会被自动监控。连续 5 次 `intercept()` 抛异常后自动禁用（UNHEALTHY）。可通过 Server REST API 查询状态：
+
+```bash
+# 查询所有 Agent 的插件状态
+curl http://localhost:8084/__baafoo__/api/plugins
+
+# 查询系统状态（含插件概览）
+curl http://localhost:8084/__baafoo__/api/status
+```
+
+### 详细文档
+
+完整的 API 参考、开发步骤、打包规范和示例，参见 [插件开发者指南](docs/plugin-developer-guide.md)。  
+示例插件：[kafka-redirect](baafoo-example-plugins/kafka-redirect/)。
 
 ---
 

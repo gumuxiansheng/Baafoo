@@ -8,8 +8,8 @@
 - ✅ P0：所有 Advice 已接入 SPI 委托路径（Socket/NIO 通过桥接函数）
 - ✅ P1：插件级配置系统已实现（PluginsConfig + pluginConfig 注入）
 - ✅ P2：PluginContext 协议特有字段已添加（tenant/namespace/destination 等）
-- ⬜ P3：健康检查和运行时管理 API
-- ⬜ P4：开发者文档、示例插件、Maven archetype
+- ✅ P3：健康监控 + 启用/禁用 + 心跳上报 + REST API（GET /api/plugins）
+- ✅ P4：开发者指南 + kafka-redirect 示例插件
 
 ---
 
