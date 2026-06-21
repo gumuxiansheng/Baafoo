@@ -3,7 +3,10 @@ package com.baafoo.agent.plugin;
 import com.baafoo.agent.loader.PluginClassLoader;
 import com.baafoo.core.config.AgentConfig;
 import com.baafoo.plugin.AgentPlugin;
+import com.baafoo.plugin.InterceptResult;
 import com.baafoo.plugin.InterceptTarget;
+import com.baafoo.plugin.PluginContext;
+import com.baafoo.plugin.PluginHealth;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,16 +23,30 @@ import java.util.concurrent.ConcurrentHashMap;
  * before falling back to the built-in routing logic. A plugin may return an
  * {@link com.baafoo.plugin.InterceptResult#redirect} to override the default
  * stub target.</p>
+ *
+ * <p>P3: Includes health monitoring (success/error tracking, auto-disable on
+ * consecutive failures) and runtime enable/disable via REST API.</p>
  */
 public class PluginManager {
 
     private static final Logger log = LoggerFactory.getLogger(PluginManager.class);
+
+    /** Consecutive error threshold before auto-disabling a plugin. */
+    private static final int UNHEALTHY_THRESHOLD = 5;
 
     /** Loaded plugins (target → plugin instance) */
     private final Map<InterceptTarget, AgentPlugin> plugins = new ConcurrentHashMap<InterceptTarget, AgentPlugin>();
 
     /** Per-plugin configuration from baafoo-agent.yml (pluginName → config map) */
     private final Map<String, Map<String, Object>> pluginConfigs;
+
+    /** P3: Health status per plugin target */
+    private final Map<InterceptTarget, PluginHealthStatus> healthStatuses =
+            new ConcurrentHashMap<InterceptTarget, PluginHealthStatus>();
+
+    /** P3: Manually disabled plugins */
+    private final Set<InterceptTarget> disabledPlugins =
+            Collections.newSetFromMap(new ConcurrentHashMap<InterceptTarget, Boolean>());
 
     /** Default plugins directory */
     private static final String DEFAULT_PLUGIN_DIR = "./plugins";
@@ -72,13 +89,19 @@ public class PluginManager {
         }
     }
 
+    // ==================== Plugin Lookup ====================
+
     /**
      * Get plugin for a specific intercept target.
+     * Returns null if plugin is disabled, unhealthy, or not loaded.
      *
      * @param target intercept target
-     * @return plugin instance, or null if not found
+     * @return plugin instance, or null if not available
      */
     public AgentPlugin getPlugin(InterceptTarget target) {
+        if (disabledPlugins.contains(target)) return null;
+        PluginHealthStatus status = healthStatuses.get(target);
+        if (status != null && status.health == PluginHealth.UNHEALTHY) return null;
         return plugins.get(target);
     }
 
@@ -87,8 +110,91 @@ public class PluginManager {
      */
     public AgentPlugin getPluginForProtocol(String protocol) {
         InterceptTarget target = resolveTarget(protocol);
-        return target != null ? plugins.get(target) : null;
+        return target != null ? getPlugin(target) : null;
     }
+
+    /**
+     * P3: Intercept with health monitoring. Wraps plugin.intercept() with
+     * timing and success/error tracking. Advice classes should prefer this
+     * method over calling plugin.intercept() directly.
+     *
+     * @param target intercept target
+     * @param ctx plugin context
+     * @return intercept result, or null if plugin unavailable
+     */
+    public InterceptResult interceptWithMonitor(InterceptTarget target, PluginContext ctx) {
+        AgentPlugin plugin = getPlugin(target);
+        if (plugin == null) return null;
+
+        PluginHealthStatus status = healthStatuses.get(target);
+        long start = System.currentTimeMillis();
+        try {
+            InterceptResult result = plugin.intercept(ctx);
+            long elapsed = System.currentTimeMillis() - start;
+            if (status != null) status.recordSuccess(elapsed);
+            return result;
+        } catch (Throwable t) {
+            long elapsed = System.currentTimeMillis() - start;
+            if (status != null) status.recordError(elapsed, t.getMessage());
+            throw t;
+        }
+    }
+
+    // ==================== P3: Enable / Disable ====================
+
+    /**
+     * Manually disable a plugin. Disabled plugins are excluded from
+     * getPlugin() results (equivalent to no plugin, falls back to default).
+     */
+    public void disablePlugin(InterceptTarget target) {
+        if (plugins.containsKey(target)) {
+            disabledPlugins.add(target);
+            PluginHealthStatus status = healthStatuses.get(target);
+            if (status != null) status.health = PluginHealth.DISABLED;
+            log.info("[Baafoo] Plugin disabled: target={}", target);
+        }
+    }
+
+    /**
+     * Re-enable a manually disabled plugin.
+     */
+    public void enablePlugin(InterceptTarget target) {
+        if (disabledPlugins.remove(target)) {
+            PluginHealthStatus status = healthStatuses.get(target);
+            if (status != null) status.health = PluginHealth.UNKNOWN;
+            log.info("[Baafoo] Plugin re-enabled: target={}", target);
+        }
+    }
+
+    /**
+     * Check whether a plugin target is manually disabled.
+     */
+    public boolean isDisabled(InterceptTarget target) {
+        return disabledPlugins.contains(target);
+    }
+
+    // ==================== P3: Health Status ====================
+
+    /**
+     * Get health status for a specific plugin target.
+     *
+     * @param target intercept target
+     * @return health status, or null if no plugin registered for target
+     */
+    public PluginHealthStatus getHealthStatus(InterceptTarget target) {
+        return healthStatuses.get(target);
+    }
+
+    /**
+     * Get health status for all loaded plugins.
+     *
+     * @return unmodifiable map of target → health status
+     */
+    public Map<InterceptTarget, PluginHealthStatus> getAllHealthStatuses() {
+        return Collections.unmodifiableMap(healthStatuses);
+    }
+
+    // ==================== Config ====================
 
     /**
      * Get per-plugin configuration for a plugin name.
@@ -113,6 +219,8 @@ public class PluginManager {
         if (plugin == null) return Collections.emptyMap();
         return getPluginConfig(plugin.getName());
     }
+
+    // ==================== Protocol Resolution ====================
 
     private InterceptTarget resolveTarget(String protocol) {
         if (protocol == null) return null;
@@ -141,6 +249,8 @@ public class PluginManager {
                 return null;
         }
     }
+
+    // ==================== Loading ====================
 
     /**
      * Load all plugins from the plugin directory.
@@ -190,10 +300,14 @@ public class PluginManager {
             plugin.configure(config);
             plugin.init();
             plugins.put(plugin.getTarget(), plugin);
+            // P3: Initialize health status
+            healthStatuses.put(plugin.getTarget(), new PluginHealthStatus(plugin.getName()));
             log.info("Plugin loaded: {} (target={}, config={})", plugin.getName(), plugin.getTarget(),
                     config.isEmpty() ? "none" : config.keySet());
         }
     }
+
+    // ==================== Shutdown ====================
 
     /**
      * Shutdown all plugins.
@@ -207,6 +321,103 @@ public class PluginManager {
             }
         }
         plugins.clear();
+        healthStatuses.clear();
+        disabledPlugins.clear();
         log.info("All plugins shut down");
+    }
+
+    // ==================== P3: Health Status Model ====================
+
+    /**
+     * Per-plugin health metrics and status.
+     * Thread-safe: all mutating methods use synchronized blocks.
+     */
+    public static class PluginHealthStatus {
+        private final String pluginName;
+        private final long loadedAt;
+
+        volatile PluginHealth health = PluginHealth.UNKNOWN;
+        private long successCount;
+        private long errorCount;
+        private long totalLatencyMs;
+        private int consecutiveErrors;
+        private String lastError;
+        private long lastErrorTime;
+        private long lastSuccessTime;
+
+        public PluginHealthStatus(String pluginName) {
+            this.pluginName = pluginName;
+            this.loadedAt = System.currentTimeMillis();
+        }
+
+        synchronized void recordSuccess(long latencyMs) {
+            successCount++;
+            totalLatencyMs += latencyMs;
+            consecutiveErrors = 0;
+            lastSuccessTime = System.currentTimeMillis();
+            if (health != PluginHealth.DISABLED) {
+                health = PluginHealth.HEALTHY;
+            }
+        }
+
+        synchronized void recordError(long latencyMs, String errorMsg) {
+            errorCount++;
+            totalLatencyMs += latencyMs;
+            consecutiveErrors++;
+            lastError = errorMsg;
+            lastErrorTime = System.currentTimeMillis();
+            if (health != PluginHealth.DISABLED) {
+                if (consecutiveErrors >= UNHEALTHY_THRESHOLD) {
+                    health = PluginHealth.UNHEALTHY;
+                    log.warn("[Baafoo] Plugin {} auto-disabled after {} consecutive errors",
+                            pluginName, consecutiveErrors);
+                } else if (consecutiveErrors > 0) {
+                    health = PluginHealth.DEGRADED;
+                }
+            }
+        }
+
+        // --- Getters ---
+
+        public String getPluginName() { return pluginName; }
+        public long getLoadedAt() { return loadedAt; }
+        public PluginHealth getHealth() { return health; }
+        public synchronized long getSuccessCount() { return successCount; }
+        public synchronized long getErrorCount() { return errorCount; }
+        public synchronized long getTotalLatencyMs() { return totalLatencyMs; }
+        public synchronized int getConsecutiveErrors() { return consecutiveErrors; }
+        public synchronized String getLastError() { return lastError; }
+        public synchronized long getLastErrorTime() { return lastErrorTime; }
+        public synchronized long getLastSuccessTime() { return lastSuccessTime; }
+
+        public synchronized long getAvgLatencyMs() {
+            long total = successCount + errorCount;
+            return total > 0 ? totalLatencyMs / total : 0;
+        }
+
+        /**
+         * Convert to a serializable map for heartbeat / REST API.
+         */
+        public Map<String, Object> toMap() {
+            Map<String, Object> m = new LinkedHashMap<String, Object>();
+            m.put("name", pluginName);
+            m.put("health", health.name());
+            m.put("loadedAt", loadedAt);
+            m.put("successCount", getSuccessCount());
+            m.put("errorCount", getErrorCount());
+            m.put("avgLatencyMs", getAvgLatencyMs());
+            m.put("consecutiveErrors", getConsecutiveErrors());
+            if (lastError != null) m.put("lastError", lastError);
+            if (lastErrorTime > 0) m.put("lastErrorTime", lastErrorTime);
+            if (lastSuccessTime > 0) m.put("lastSuccessTime", lastSuccessTime);
+            return m;
+        }
+
+        @Override
+        public String toString() {
+            return "PluginHealthStatus{name='" + pluginName + "', health=" + health +
+                    ", success=" + getSuccessCount() + ", error=" + getErrorCount() +
+                    ", avgLatency=" + getAvgLatencyMs() + "ms}";
+        }
     }
 }
