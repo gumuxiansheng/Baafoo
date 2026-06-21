@@ -56,3 +56,18 @@ connectionRetries: 3
 
 # Retry backoff base interval in milliseconds
 retryBackoffMs: 1000
+
+# Plugin system configuration
+plugins:
+  # Whether the plugin system is enabled (default: true)
+  enabled: true
+  # Plugin directory path (relative or absolute, default: ./plugins)
+  directory: "./plugins"
+  # Per-plugin configuration, keyed by plugin name (AgentPlugin.getName())
+  configs:
+    # Example: TDMQ plugin configuration
+    # tdmq:
+    #   brokerPort: 9005
+    # Example: Feign plugin configuration
+    # feign:
+    #   defaultStubStatus: 200

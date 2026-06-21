@@ -2,6 +2,7 @@ package com.baafoo.core.config;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Agent-side configuration.
@@ -58,6 +59,9 @@ public class AgentConfig {
 
     /** Retry backoff base interval in milliseconds */
     private long retryBackoffMs;
+
+    /** Plugin system configuration */
+    private PluginsConfig plugins = new PluginsConfig();
 
     public AgentConfig() {
         this.heartbeatIntervalSec = 30;
@@ -117,6 +121,9 @@ public class AgentConfig {
     public long getRetryBackoffMs() { return retryBackoffMs; }
     public void setRetryBackoffMs(long retryBackoffMs) { this.retryBackoffMs = retryBackoffMs; }
 
+    public PluginsConfig getPlugins() { return plugins; }
+    public void setPlugins(PluginsConfig plugins) { this.plugins = plugins; }
+
     @Override
     public String toString() {
         return "AgentConfig{" +
@@ -125,6 +132,48 @@ public class AgentConfig {
                 ", environment='" + environment + '\'' +
                 ", serverUrl='" + serverUrl + '\'' +
                 '}';
+    }
+
+    /**
+     * Plugin system configuration.
+     * Maps to the {@code plugins:} section in baafoo-agent.yml.
+     */
+    public static class PluginsConfig {
+        /** Whether the plugin system is enabled */
+        private boolean enabled = true;
+
+        /** Plugin directory path (relative or absolute) */
+        private String directory = "./plugins";
+
+        /** Per-plugin configuration, keyed by plugin name */
+        private Map<String, Map<String, Object>> configs = Collections.emptyMap();
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+        public String getDirectory() { return directory; }
+        public void setDirectory(String directory) { this.directory = directory; }
+
+        public Map<String, Map<String, Object>> getConfigs() { return configs; }
+        public void setConfigs(Map<String, Map<String, Object>> configs) { this.configs = configs; }
+
+        /**
+         * Get configuration for a specific plugin.
+         * @param pluginName the plugin name (from {@code AgentPlugin.getName()})
+         * @return plugin config map, or empty map if not configured
+         */
+        public Map<String, Object> getConfig(String pluginName) {
+            if (configs == null || pluginName == null) return Collections.emptyMap();
+            Map<String, Object> c = configs.get(pluginName);
+            return c != null ? c : Collections.emptyMap();
+        }
+
+        @Override
+        public String toString() {
+            return "PluginsConfig{enabled=" + enabled +
+                    ", directory='" + directory + '\'' +
+                    ", configs=" + configs + '}';
+        }
     }
 
     /**
