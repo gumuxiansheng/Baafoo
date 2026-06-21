@@ -79,6 +79,13 @@ public class PulsarClientAdvice {
                         ctx.setProtocol("pulsar");
                         ctx.setHost(extractHost(serviceUrl));
                         ctx.setPort(extractPort(serviceUrl));
+                        // P1: inject per-plugin config
+                        ctx.setPluginConfig(pm.getPluginConfig(plugin.getName()));
+                        // P2: extract tenant/namespace from serviceUrl path if present
+                        // e.g. pulsar://broker:6650/my-tenant/my-namespace
+                        String[] pathParts = extractPathSegments(serviceUrl);
+                        if (pathParts.length > 0) ctx.setTenant(pathParts[0]);
+                        if (pathParts.length > 1) ctx.setNamespace(pathParts[1]);
                         InterceptResult result = plugin.intercept(ctx);
                         if (result != null && result.isRedirect()) {
                             targetHost = result.getRedirectHost();
@@ -137,6 +144,31 @@ public class PulsarClientAdvice {
             return Integer.parseInt(portStr);
         } catch (NumberFormatException nfe) {
             return -1;
+        }
+    }
+
+    /**
+     * Extract path segments from a Pulsar service URL.
+     * e.g. {@code pulsar://broker:6650/my-tenant/my-namespace} returns {"my-tenant", "my-namespace"}.
+     * Returns empty array if no path or fewer than 2 segments.
+     */
+    public static String[] extractPathSegments(String serviceUrl) {
+        if (serviceUrl == null) return new String[0];
+        try {
+            URI uri = new URI(serviceUrl);
+            String path = uri.getPath();
+            if (path != null && path.startsWith("/")) path = path.substring(1);
+            if (path == null || path.isEmpty()) return new String[0];
+            return path.split("/");
+        } catch (URISyntaxException e) {
+            // Fall back to manual parsing
+            int schemeEnd = serviceUrl.indexOf("://");
+            String rest = schemeEnd >= 0 ? serviceUrl.substring(schemeEnd + 3) : serviceUrl;
+            int slash = rest.indexOf('/');
+            if (slash < 0) return new String[0];
+            String path = rest.substring(slash + 1);
+            if (path.isEmpty()) return new String[0];
+            return path.split("/");
         }
     }
 

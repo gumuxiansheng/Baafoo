@@ -72,6 +72,12 @@ public class JmsConnectionFactoryAdvice {
                         ctx.setProtocol("jms");
                         ctx.setHost(extractHost(originalUrl));
                         ctx.setPort(extractPort(originalUrl));
+                        // P1: inject per-plugin config
+                        ctx.setPluginConfig(pm.getPluginConfig(plugin.getName()));
+                        // P2: extract destination from brokerURL path if present
+                        // e.g. tcp://broker:61616/queue.orders?jms.useAsyncSend=true
+                        String dest = extractDestination(originalUrl);
+                        if (dest != null) ctx.setDestination(dest);
                         InterceptResult result = plugin.intercept(ctx);
                         if (result != null && result.isRedirect()) {
                             stubHost = result.getRedirectHost();
@@ -129,5 +135,24 @@ public class JmsConnectionFactoryAdvice {
         } catch (NumberFormatException e) {
             return -1;
         }
+    }
+
+    /**
+     * Extract destination name from broker URL path if present.
+     * e.g. {@code tcp://broker:61616/queue.orders} returns "queue.orders".
+     * Returns null if no path segment.
+     */
+    public static String extractDestination(String brokerUrl) {
+        if (brokerUrl == null) return null;
+        String s = brokerUrl;
+        int schemeEnd = s.indexOf("://");
+        if (schemeEnd >= 0) s = s.substring(schemeEnd + 3);
+        int slash = s.indexOf('/');
+        if (slash < 0) return null;
+        String path = s.substring(slash + 1);
+        // Strip query string
+        int query = path.indexOf('?');
+        if (query >= 0) path = path.substring(0, query);
+        return path.isEmpty() ? null : path;
     }
 }

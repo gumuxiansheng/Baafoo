@@ -70,4 +70,109 @@ public class PluginContextTest {
         assertTrue(ctx.toString().contains("host"));
         assertTrue(ctx.toString().contains("1234"));
     }
+
+    @Test
+    public void testPluginConfigDefault() {
+        PluginContext ctx = new PluginContext();
+        assertNotNull(ctx.getPluginConfig());
+        assertTrue(ctx.getPluginConfig().isEmpty());
+    }
+
+    @Test
+    public void testPluginConfigSetter() {
+        PluginContext ctx = new PluginContext();
+        Map<String, Object> config = new HashMap<String, Object>();
+        config.put("brokerPort", 9005);
+        config.put("enabled", true);
+        ctx.setPluginConfig(config);
+        assertEquals(9005, ctx.getPluginConfig().get("brokerPort"));
+        assertEquals(true, ctx.getPluginConfig().get("enabled"));
+    }
+
+    @Test
+    public void testProtocolSpecificFieldsDefault() {
+        PluginContext ctx = new PluginContext();
+        assertNull(ctx.getTopic());
+        assertNull(ctx.getPartition());
+        assertNull(ctx.getKey());
+        assertNull(ctx.getTenant());
+        assertNull(ctx.getNamespace());
+        assertNull(ctx.getDestination());
+        assertNull(ctx.getMessageType());
+        assertNull(ctx.getMethod());
+        assertNull(ctx.getPath());
+        assertNull(ctx.getQueryParams());
+    }
+
+    @Test
+    public void testProtocolSpecificFieldsKafka() {
+        PluginContext ctx = new PluginContext();
+        ctx.setProtocol("kafka");
+        ctx.setTopic("orders");
+        ctx.setPartition(3);
+        ctx.setKey("order-123");
+        assertEquals("orders", ctx.getTopic());
+        assertEquals(Integer.valueOf(3), ctx.getPartition());
+        assertEquals("order-123", ctx.getKey());
+    }
+
+    @Test
+    public void testProtocolSpecificFieldsPulsar() {
+        PluginContext ctx = new PluginContext();
+        ctx.setProtocol("pulsar");
+        ctx.setTenant("public");
+        ctx.setNamespace("default");
+        assertEquals("public", ctx.getTenant());
+        assertEquals("default", ctx.getNamespace());
+    }
+
+    @Test
+    public void testProtocolSpecificFieldsJms() {
+        PluginContext ctx = new PluginContext();
+        ctx.setProtocol("jms");
+        ctx.setDestination("queue.orders");
+        ctx.setMessageType("text");
+        assertEquals("queue.orders", ctx.getDestination());
+        assertEquals("text", ctx.getMessageType());
+    }
+
+    @Test
+    public void testProtocolSpecificFieldsHttp() {
+        PluginContext ctx = new PluginContext();
+        ctx.setProtocol("http");
+        ctx.setMethod("POST");
+        ctx.setPath("/api/orders");
+        Map<String, String> params = new HashMap<String, String>();
+        params.put("page", "1");
+        ctx.setQueryParams(params);
+        assertEquals("POST", ctx.getMethod());
+        assertEquals("/api/orders", ctx.getPath());
+        assertEquals("1", ctx.getQueryParams().get("page"));
+    }
+
+    @Test
+    public void testToStringWithProtocolFields() {
+        PluginContext ctx = new PluginContext();
+        ctx.setProtocol("kafka");
+        ctx.setHost("broker");
+        ctx.setPort(9092);
+        ctx.setTopic("events");
+        ctx.setPartition(0);
+        String s = ctx.toString();
+        assertTrue(s.contains("kafka"));
+        assertTrue(s.contains("events"));
+        assertTrue(s.contains("partition=0"));
+    }
+
+    @Test
+    public void testToStringOmitsNullProtocolFields() {
+        PluginContext ctx = new PluginContext();
+        ctx.setProtocol("http");
+        ctx.setHost("host");
+        ctx.setPort(80);
+        String s = ctx.toString();
+        assertFalse(s.contains("topic"));
+        assertFalse(s.contains("partition"));
+        assertFalse(s.contains("tenant"));
+    }
 }

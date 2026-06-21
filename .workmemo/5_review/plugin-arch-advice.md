@@ -4,6 +4,13 @@
 > 目标: Agent 核心稳定，协议实现外置为可加载插件，TDMQ 可独立迭代  
 > 结论: ✅ 可行，推荐"Advice 内联留 Core + 逻辑委托 Plugin"分层架构
 
+**实施状态 (2026-06-21)**：
+- ✅ P0：所有 Advice 已接入 SPI 委托路径（Socket/NIO 通过桥接函数）
+- ✅ P1：插件级配置系统已实现（PluginsConfig + pluginConfig 注入）
+- ✅ P2：PluginContext 协议特有字段已添加（tenant/namespace/destination 等）
+- ⬜ P3：健康检查和运行时管理 API
+- ⬜ P4：开发者文档、示例插件、Maven archetype
+
 ---
 
 ## 一、要解决的问题
@@ -86,52 +93,55 @@ baafoo/
         └── 依赖: tdmq-client（scope=compile，打包进 plugin jar）
 ```
 
-### 3.2 SPI 接口定义
+### 3.2 SPI 接口定义（已实现版本）
+
+> 注意：以下代码反映实际实现，与原始提案（§3.2 早期版本）有差异。
+> 实际包名为 `com.baafoo.plugin`（非 `com.baafoo.spi`），
+> PluginContext 为 POJO 类（非 interface），InterceptTarget 为 enum（非 record），
+> InterceptResult 为具体类（非 sealed interface）。
 
 ```java
 // === baafoo-plugin-api 模块 ===
-package com.baafoo.spi;
+package com.baafoo.plugin;
 
 public interface AgentPlugin {
-
-    /** 插件标识，如 "pulsar", "kafka", "tdmq-pulsar" */
-    String getId();
-
-    /** 协议类型 */
-    Protocol getProtocol();
-
-    /** 安装额外的 Byte Buddy Transformer（如拦截 PulsarClient.Builder） */
-    void installTransformers(Instrumentation inst, PluginContext ctx);
-
-    /** 连接拦截回调（由 Core 的 Advice 委托调用） */
-    InterceptResult onIntercept(InterceptTarget target);
-
-    /** 环境模式变更通知 */
-    void onModeChanged(Mode newMode);
+    String getName();                                    // 插件唯一标识
+    InterceptTarget getTarget();                         // 处理的拦截目标
+    default void configure(Map<String, Object> config) {} // P1: 插件级配置 (Java 8 default)
+    void init();                                         // 初始化
+    InterceptResult intercept(PluginContext ctx);         // 核心拦截处理
+    void destroy();                                      // 销毁
 }
 
-public interface PluginContext {
-    /** 获取当前环境的路由规则快照 */
-    RouteTable getRouteTable();
-    /** 获取 Server 连接配置 */
-    ServerConfig getServerConfig();
-    /** 注册额外的 ClassFileTransformer（需通过 Core 的 Advice 间接调用） */
-    void addTransformer(ClassFileTransformer transformer);
+public enum InterceptTarget {
+    SOCKET, NIO_SOCKET, KAFKA, PULSAR, JMS,
+    CONSUL_DNS, CONSUL_API, FEIGN
 }
 
-/** 拦截目标信息（跨 ClassLoader 传递，必须是简单 POJO） */
-public record InterceptTarget(
-    String serviceName,
-    String originalHost,
-    int originalPort,
-    Protocol protocol
-) {}
+public class PluginContext {
+    // 通用字段
+    String protocol, host; int port;
+    String serviceName; Map<String, String> headers; byte[] requestData;
+    Callable<InterceptResult> originalCall;
+    String ruleId, ruleName, responseName; int conditionIndex; boolean recording;
+    Map<String, Object> pluginConfig;  // P1: 插件级配置
 
-/** 拦截结果 */
-public sealed interface InterceptResult {
-    record Passthrough() implements InterceptResult {}
-    record Redirect(InetSocketAddress newAddress) implements InterceptResult {}
-    record Record(byte[] requestBytes) implements InterceptResult {}
+    // P2: 协议特有字段 (均为可选，默认 null)
+    String topic;              // Kafka/Pulsar/JMS/MQTT
+    Integer partition;         // Kafka
+    String key;                // Kafka
+    String tenant, namespace;  // Pulsar
+    String destination;        // JMS
+    String messageType;        // JMS
+    String method, path;       // HTTP/TCP
+    Map<String, String> queryParams; // HTTP
+}
+
+public class InterceptResult {
+    static InterceptResult stub(byte[] body, Map<String,String> headers, int status);
+    static InterceptResult passthrough();
+    static InterceptResult redirect(String host, int port);
+    static InterceptResult error(String message);
 }
 ```
 
@@ -366,6 +376,66 @@ Server 端插件化是标准 Java SPI + 工厂模式，无额外复杂度。
 | PluginManager.getPlugin() 在热路径上（每个连接都调用） | 🟡 中 | 用 ConcurrentHashMap 做 protocol→plugin 映射，O(1) 查找 |
 | 插件初始化失败（如 pulsar-client 版本不兼容） | 🟡 中 | 捕获异常，打印 WARN 日志，该协议降级为 passthrough，不影响其他协议 |
 | 多个插件注册了同一个 Transformer（协议冲突） | 🟢 低 | PluginManager 启动时检测 protocol 唯一性，冲突时拒绝加载 |
+
+---
+
+## 八点五、P1 插件级配置系统（已实现）
+
+### 配置链路
+
+```
+baafoo-agent.yml (plugins: 段)
+    → ConfigLoader (Jackson YAML 反序列化)
+    → AgentConfig.PluginsConfig (enabled, directory, configs Map)
+    → PluginManager 构造函数 (接受 PluginsConfig)
+    → plugin.configure(config) (init 之前调用)
+    → PluginContext.pluginConfig (每次 intercept 时注入)
+```
+
+### YAML 配置示例
+
+```yaml
+plugins:
+  enabled: true
+  directory: "./plugins"
+  configs:
+    tdmq:
+      brokerPort: 9005
+    feign:
+      defaultStubStatus: 200
+```
+
+### 生命周期变更
+
+原：`getName() → getTarget() → init() → intercept() × N → destroy()`
+新：`getName() → getTarget() → configure(config) → init() → intercept() × N → destroy()`
+
+`configure()` 是 Java 8 default method（空实现），已有插件无需修改即可兼容。
+
+---
+
+## 八点六、P2 协议特有字段（已实现）
+
+### PluginContext 新增字段
+
+| 字段 | 类型 | 适用协议 | Advice 提取点 |
+|------|------|----------|---------------|
+| `topic` | String | Kafka/Pulsar/JMS | 构造函数不可用（send/receive 时才有） |
+| `partition` | Integer | Kafka | 同上 |
+| `key` | String | Kafka | 同上 |
+| `tenant` | String | Pulsar | `PulsarClientAdvice.extractPathSegments()` |
+| `namespace` | String | Pulsar | 同上（从 serviceUrl 路径解析） |
+| `destination` | String | JMS | `JmsConnectionFactoryAdvice.extractDestination()` |
+| `messageType` | String | JMS | 构造函数不可用 |
+| `method` | String | HTTP | 预留（需 Socket 层 HTTP 解析） |
+| `path` | String | HTTP | 同上 |
+| `queryParams` | Map | HTTP | 同上 |
+
+所有字段默认为 null，不影响已有插件。Advice 尽力提取，不可用时留 null。
+
+### 提取限制说明
+
+Kafka Producer/Consumer Advice 拦截的是构造函数（`new KafkaProducer(props)`），此时还没有 topic/partition/key 信息（这些在 `ProducerRecord` 中指定，发生在 send() 调用时）。如果未来需要按 topic 路由，需要添加拦截 `KafkaProducer.send()` 的 Advice。
 
 ---
 

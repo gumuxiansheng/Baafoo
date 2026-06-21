@@ -1,5 +1,7 @@
 package com.baafoo.plugin;
 
+import java.util.Map;
+
 /**
  * SPI interface for Baafoo agent plugins.
  *
@@ -10,6 +12,7 @@ package com.baafoo.plugin;
  * <p>Lifecycle:</p>
  * <ol>
  *   <li>{@link #getName()} and {@link #getTarget()} are called to identify the plugin</li>
+ *   <li>{@link #configure(Map)} is called with per-plugin config from baafoo-agent.yml (may be empty)</li>
  *   <li>{@link #init()} is called after loading</li>
  *   <li>{@link #intercept(PluginContext)} is called for each intercepted call</li>
  *   <li>{@link #destroy()} is called on shutdown</li>
@@ -28,7 +31,15 @@ public interface AgentPlugin {
     InterceptTarget getTarget();
 
     /**
-     * Called once after plugin is loaded and instantiated.
+     * Called before {@link #init()} with per-plugin configuration from baafoo-agent.yml.
+     * <p>The default implementation is a no-op for backward compatibility.</p>
+     *
+     * @param config plugin-specific configuration map (never null, may be empty)
+     */
+    default void configure(Map<String, Object> config) {}
+
+    /**
+     * Called once after plugin is loaded, instantiated, and configured.
      */
     void init();
 
