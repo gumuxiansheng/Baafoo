@@ -31,12 +31,45 @@
         </el-table-column>
       </el-table>
 
-      <h3 style="margin-top: 24px">环境变量</h3>
+      <h3 style="margin-top: 24px">环境变量
+        <el-button size="small" text @click="showEditVariables" v-if="authStore.canWriteEnvironment" style="margin-left: 8px">
+          <el-icon><Edit /></el-icon> 编辑
+        </el-button>
+      </h3>
       <el-table :data="variableList" size="small" style="margin-top: 12px" empty-text="无变量">
         <el-table-column prop="key" label="变量名" />
         <el-table-column prop="value" label="值" />
       </el-table>
     </el-card>
+
+    <el-dialog v-model="editVariablesVisible" title="编辑环境变量" width="600px">
+      <el-table :data="editVariables" size="small" border>
+        <el-table-column label="变量名" min-width="200">
+          <template #default="{ row }">
+            <el-input v-model="row.key" placeholder="变量名" />
+          </template>
+        </el-table-column>
+        <el-table-column label="值" min-width="200">
+          <template #default="{ row }">
+            <el-input v-model="row.value" placeholder="值" />
+          </template>
+        </el-table-column>
+        <el-table-column width="60" align="center">
+          <template #default="{ $index }">
+            <el-button text type="danger" @click="removeVariable($index)">
+              <el-icon><Delete /></el-icon>
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-button size="small" type="primary" plain @click="addVariable" style="margin-top: 8px">
+        <el-icon><Plus /></el-icon> 新增变量
+      </el-button>
+      <template #footer>
+        <el-button @click="editVariablesVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveVariables" :loading="savingVariables">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -45,6 +78,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/store'
 import api from '@/api'
+import { ElMessage } from 'element-plus'
 
 export default {
   name: 'EnvironmentDetailPage',
@@ -54,6 +88,9 @@ export default {
     const env = ref(null)
     const loading = ref(true)
     const selectedMode = ref('')
+    const editVariablesVisible = ref(false)
+    const editVariables = ref([])
+    const savingVariables = ref(false)
 
     const variableList = computed(() => {
       if (!env.value || !env.value.variables) return []
@@ -84,8 +121,50 @@ export default {
       return map[mode] || mode
     }
 
+    function showEditVariables() {
+      if (env.value && env.value.variables) {
+        editVariables.value = Object.entries(env.value.variables).map(([key, value]) => ({ key, value }))
+      } else {
+        editVariables.value = []
+      }
+      editVariablesVisible.value = true
+    }
+
+    function addVariable() {
+      editVariables.value.push({ key: '', value: '' })
+    }
+
+    function removeVariable(index) {
+      editVariables.value.splice(index, 1)
+    }
+
+    async function saveVariables() {
+      const variables = {}
+      for (const item of editVariables.value) {
+        if (item.key.trim()) {
+          variables[item.key.trim()] = item.value
+        }
+      }
+      savingVariables.value = true
+      try {
+        const res = await api.updateEnvironment(route.params.id, { variables })
+        if (res.success) {
+          env.value.variables = variables
+          editVariablesVisible.value = false
+          ElMessage.success('环境变量保存成功')
+        } else {
+          ElMessage.error(res.message || '保存失败')
+        }
+      } catch (e) {
+        ElMessage.error('保存失败: ' + (e.message || '未知错误'))
+      } finally {
+        savingVariables.value = false
+      }
+    }
+
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
-    return { env, loading, selectedMode, variableList, switchMode, modeTagType, modeDisplayName, formatTime, authStore }
+    return { env, loading, selectedMode, variableList, switchMode, modeTagType, modeDisplayName, formatTime, authStore,
+             editVariablesVisible, editVariables, savingVariables, showEditVariables, addVariable, removeVariable, saveVariables }
   }
 }
 </script>
