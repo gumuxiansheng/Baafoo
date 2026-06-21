@@ -258,6 +258,103 @@ public class PluginSpiIntegrationTest {
         assertNull(GlobalRouteState.PLUGIN_CONSULT_FN);
     }
 
+    // ==================== P1: pluginConfig injection ====================
+
+    @Test
+    public void kafkaProducer_pluginConfig_injectedIntoContext() throws Exception {
+        CountingPlugin plugin = new CountingPlugin(InterceptTarget.KAFKA, "localhost", 9050);
+        PluginManager pm = installPlugin(plugin);
+
+        // Verify that PluginContext.pluginConfig is non-null (even if empty,
+        // since we're using a no-config PluginManager)
+        Properties props = new Properties();
+        props.setProperty("bootstrap.servers", "real-kafka:9092");
+        KafkaProducerAdvice.onConstructor(new Object[]{props});
+
+        assertTrue(plugin.invocationCount.get() > 0);
+        assertNotNull("pluginConfig must be non-null", plugin.lastPluginConfig);
+    }
+
+    @Test
+    public void jms_pluginConfig_injectedIntoContext() throws Exception {
+        CountingPlugin plugin = new CountingPlugin(InterceptTarget.JMS, "localhost", 9054);
+        PluginManager pm = installPlugin(plugin);
+
+        MockConnectionFactory cf = new MockConnectionFactory("tcp://real-jms:61616");
+        JmsConnectionFactoryAdvice.onConstructorExit(cf);
+
+        assertTrue(plugin.invocationCount.get() > 0);
+        assertNotNull("pluginConfig must be non-null", plugin.lastPluginConfig);
+    }
+
+    // ==================== P2: protocol-specific fields ====================
+
+    @Test
+    public void jms_destination_extractedFromBrokerUrl() throws Exception {
+        CountingPlugin plugin = new CountingPlugin(InterceptTarget.JMS, "localhost", 9054);
+        PluginManager pm = installPlugin(plugin);
+
+        // brokerURL with a destination path
+        MockConnectionFactory cf = new MockConnectionFactory("tcp://real-jms:61616/queue.orders?jms.useAsyncSend=true");
+        JmsConnectionFactoryAdvice.onConstructorExit(cf);
+
+        assertTrue(plugin.invocationCount.get() > 0);
+        assertEquals("queue.orders", plugin.lastDestination);
+    }
+
+    @Test
+    public void jms_destination_nullWhenNoPath() throws Exception {
+        CountingPlugin plugin = new CountingPlugin(InterceptTarget.JMS, "localhost", 9054);
+        PluginManager pm = installPlugin(plugin);
+
+        MockConnectionFactory cf = new MockConnectionFactory("tcp://real-jms:61616");
+        JmsConnectionFactoryAdvice.onConstructorExit(cf);
+
+        assertTrue(plugin.invocationCount.get() > 0);
+        assertNull("destination should be null when brokerURL has no path", plugin.lastDestination);
+    }
+
+    @Test
+    public void pulsarExtractPathSegments_withTenantNamespace() {
+        // Test the helper method directly
+        String[] segments = com.baafoo.agent.advice.PulsarClientAdvice.extractPathSegments(
+                "pulsar://broker:6650/my-tenant/my-namespace");
+        assertEquals(2, segments.length);
+        assertEquals("my-tenant", segments[0]);
+        assertEquals("my-namespace", segments[1]);
+    }
+
+    @Test
+    public void pulsarExtractPathSegments_noPath() {
+        String[] segments = com.baafoo.agent.advice.PulsarClientAdvice.extractPathSegments(
+                "pulsar://broker:6650");
+        assertEquals(0, segments.length);
+    }
+
+    @Test
+    public void pulsarExtractPathSegments_null() {
+        String[] segments = com.baafoo.agent.advice.PulsarClientAdvice.extractPathSegments(null);
+        assertEquals(0, segments.length);
+    }
+
+    @Test
+    public void jmsExtractDestination_withPath() {
+        String dest = com.baafoo.agent.advice.JmsConnectionFactoryAdvice.extractDestination(
+                "tcp://broker:61616/queue.orders?jms.useAsyncSend=true");
+        assertEquals("queue.orders", dest);
+    }
+
+    @Test
+    public void jmsExtractDestination_noPath() {
+        assertNull(com.baafoo.agent.advice.JmsConnectionFactoryAdvice.extractDestination(
+                "tcp://broker:61616"));
+    }
+
+    @Test
+    public void jmsExtractDestination_null() {
+        assertNull(com.baafoo.agent.advice.JmsConnectionFactoryAdvice.extractDestination(null));
+    }
+
     // ==================== Helpers ====================
 
     /** Install a plugin into a fresh PluginManager and inject it into BaafooAgent. */
@@ -353,6 +450,9 @@ public class PluginSpiIntegrationTest {
         volatile String lastProtocol;
         volatile String lastHost;
         volatile int lastPort;
+        volatile Map<String, Object> lastPluginConfig;
+        volatile String lastTenant;
+        volatile String lastDestination;
         private final InterceptTarget target;
         private final String redirectHost;
         private final int redirectPort;
@@ -371,6 +471,9 @@ public class PluginSpiIntegrationTest {
             lastProtocol = ctx.getProtocol();
             lastHost = ctx.getHost();
             lastPort = ctx.getPort();
+            lastPluginConfig = ctx.getPluginConfig();
+            lastTenant = ctx.getTenant();
+            lastDestination = ctx.getDestination();
             return InterceptResult.redirect(redirectHost, redirectPort);
         }
         @Override public void destroy() {}
