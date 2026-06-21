@@ -429,8 +429,16 @@ public class JmsMockBrokerTest {
         agent.agentIp = "127.0.0.1";
         agent.lastHeartbeat = System.currentTimeMillis();
 
+        // Provide a matching rule so the recording plugin's MatchEngine finds a hit
+        // and actually calls storage.addRecording().
+        Rule recordingRule = new Rule();
+        recordingRule.setId("jms-record-rule");
+        recordingRule.setProtocol("jms");
+        recordingRule.setEnabled(true);
+
         when(storage.listEnvironments()).thenReturn(Arrays.asList(env));
         when(storage.listAgents()).thenReturn(Arrays.asList(agent));
+        when(storage.listRules()).thenReturn(Arrays.asList(recordingRule));
 
         broker.createQueue("recordQueue");
 

@@ -7,21 +7,25 @@ package com.baafoo.server.broker.codec;
  * {@link com.baafoo.server.broker.KafkaProtocolDecoder} advertises in its
  * ApiVersions response.
  *
- * <h2>Version cap strategy (KIP-482 flexible versions)</h2>
- * <p>Kafka introduced <em>flexible versions</em> (KIP-482) starting with
- * ApiVersions v3. When a client negotiates ApiVersions v3+, it switches
- * all subsequent requests to Request Header v2 (compact strings, unsigned
- * varint lengths). Baafoo currently caps all APIs below their flexible
- * threshold so that clients use Request Header v0/v1 (int16-prefixed
- * strings) throughout. This avoids the need for dual-mode parsing in
- * every request handler.
+ * <h2>Version strategy (KIP-482 flexible versions)</h2>
+ * <p>Core APIs (Produce, Fetch, Metadata, ApiVersions) are raised to their
+ * flexible-version threshold so that clients negotiate the latest codec.
+ * The decoder handles both non-flexible and flexible request/response formats
+ * for these APIs via dedicated V9/V12 codecs.
  *
- * <p>All APIs are capped below their flexible threshold:
+ * <p>Other APIs are capped below their flexible threshold so that clients
+ * use Request Header v0/v1 (int16-prefixed strings) for those APIs.
+ *
+ * <p>Flexible-version core APIs:
  * <ul>
- *   <li>Produce v8 — non-flexible max (flexible at v9)</li>
- *   <li>Fetch v11 — non-flexible max (flexible at v12)</li>
- *   <li>Metadata v8 — non-flexible max (flexible at v9)</li>
- *   <li>ApiVersions v2 — non-flexible max (KIP-511 gate, flexible at v3)</li>
+ *   <li>Produce v9 — flexible (KIP-482 compact arrays)</li>
+ *   <li>Fetch v12 — flexible (KIP-482 compact arrays)</li>
+ *   <li>Metadata v9 — flexible (KIP-482 compact arrays)</li>
+ *   <li>ApiVersions v3 — flexible (KIP-511 gate)</li>
+ * </ul>
+ *
+ * <p>Non-flexible capped APIs:
+ * <ul>
  *   <li>ListOffsets v5 — non-flexible max (flexible at v6)</li>
  *   <li>OffsetCommit v7 — non-flexible max (flexible at v8)</li>
  *   <li>OffsetFetch v5 — non-flexible max (flexible at v6)</li>
@@ -35,9 +39,6 @@ package com.baafoo.server.broker.codec;
  *   <li>InitProducerId v1 — non-flexible max (flexible at v2)</li>
  *   <li>DescribeConfigs v3 — non-flexible max (flexible at v4)</li>
  * </ul>
- *
- * <p>This covers Java kafka-clients 2.x, 3.x, librdkafka 1.x, and most
- * non-Java clients including Kafka 3.x+ that require flexible versions.
  *
  * @see <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-482">KIP-482</a>
  * @see <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-511">KIP-511</a>
@@ -112,14 +113,15 @@ public final class KafkaProtocolVersions {
     /**
      * Supported API version table: {apiKey, minVersion, maxVersion}.
      *
-     * <p>APIs with flexible codec support are raised to their flexible version.
-     * APIs without flexible codec support are capped below the flexible threshold.
+     * <p>Core APIs (Produce, Fetch, Metadata, ApiVersions) are raised to their
+     * flexible-version threshold so that clients negotiate the latest codec.
+     * Other APIs are capped below the flexible threshold to keep non-flex parsing.
      */
     public static final int[][] SUPPORTED_APIS = {
-            {API_PRODUCE,           0, 8},   // flexible at v9, cap v8 (keep non-flex)
-            {API_FETCH,             0, 11},  // flexible at v12, cap v11 (keep non-flex)
+            {API_PRODUCE,           0, 9},   // flexible at v9
+            {API_FETCH,             0, 12},  // flexible at v12
             {API_LIST_OFFSETS,      0, 5},   // flexible at v6, cap v5 (keep non-flex)
-            {API_METADATA,          0, 8},   // flexible at v9, cap v8 (keep non-flex)
+            {API_METADATA,          0, 9},   // flexible at v9
             {API_OFFSET_COMMIT,     0, 7},   // flexible at v8, cap v7 (keep non-flex)
             {API_OFFSET_FETCH,      0, 5},   // flexible at v6, cap v5 (keep non-flex)
             {API_FIND_COORDINATOR,  0, 2},   // flexible at v3, cap v2 (keep non-flex)
@@ -129,7 +131,7 @@ public final class KafkaProtocolVersions {
             {API_SYNC_GROUP,        0, 3},   // flexible at v4, cap v3 (keep non-flex)
             {API_DESCRIBE_GROUPS,   0, 4},   // flexible at v5, cap v4 (keep non-flex)
             {API_LIST_GROUPS,       0, 2},   // flexible at v3, cap v2 (keep non-flex)
-            {API_API_VERSIONS,      0, 3},   // KIP-511 gate: v3 is flexible; server handles v3 request (non-flex header) + v3 response (flex body)
+            {API_API_VERSIONS,      0, 3},   // KIP-511 gate: v3 is flexible
             {API_INIT_PRODUCER_ID,  0, 1},   // flexible at v2, cap v1 (keep non-flex)
             {API_DESCRIBE_CONFIGS,  0, 3}    // flexible at v4, cap v3 (keep non-flex)
     };
