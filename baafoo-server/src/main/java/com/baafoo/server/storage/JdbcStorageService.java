@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * JDBC-based storage service that supports multiple database dialects (H2, PostgreSQL).
@@ -42,11 +43,11 @@ public class JdbcStorageService implements StorageService {
     private SqlSessionFactory sqlSessionFactory;
 
     // --- Local caches for high-frequency reads ---
-    private volatile List<Rule> rulesCache;
+    private final AtomicReference<List<Rule>> rulesCache = new AtomicReference<List<Rule>>();
     private volatile long rulesCacheTime;
-    private volatile List<Environment> environmentsCache;
+    private final AtomicReference<List<Environment>> environmentsCache = new AtomicReference<List<Environment>>();
     private volatile long environmentsCacheTime;
-    private volatile List<AgentRegistration> agentsCache;
+    private final AtomicReference<List<AgentRegistration>> agentsCache = new AtomicReference<List<AgentRegistration>>();
     private volatile long agentsCacheTime;
     private static final long CACHE_TTL_MS = 2000; // 2 seconds
     private static final long AGENTS_CACHE_TTL_MS = 5000; // 5 seconds (heartbeat frequent)
@@ -171,19 +172,20 @@ public class JdbcStorageService implements StorageService {
     }
 
     private void invalidateRulesCache() {
-        rulesCache = null;
+        rulesCache.set(null);
         rulesCacheTime = 0;
     }
 
     @Override
     public List<Rule> listRules() {
         long now = System.currentTimeMillis();
-        if (rulesCache != null && (now - rulesCacheTime) < CACHE_TTL_MS) {
-            return rulesCache;
+        List<Rule> cached = rulesCache.get();
+        if (cached != null && (now - rulesCacheTime) < CACHE_TTL_MS) {
+            return cached;
         }
         try (SqlSession session = openSession()) {
             List<Rule> result = session.getMapper(RuleMapper.class).listRules();
-            rulesCache = result;
+            rulesCache.set(result);
             rulesCacheTime = System.currentTimeMillis();
             return result;
         }
@@ -346,19 +348,20 @@ public class JdbcStorageService implements StorageService {
     // --- Environment CRUD ---
 
     private void invalidateEnvironmentsCache() {
-        environmentsCache = null;
+        environmentsCache.set(null);
         environmentsCacheTime = 0;
     }
 
     @Override
     public List<Environment> listEnvironments() {
         long now = System.currentTimeMillis();
-        if (environmentsCache != null && (now - environmentsCacheTime) < CACHE_TTL_MS) {
-            return environmentsCache;
+        List<Environment> cached = environmentsCache.get();
+        if (cached != null && (now - environmentsCacheTime) < CACHE_TTL_MS) {
+            return cached;
         }
         try (SqlSession session = openSession()) {
             List<Environment> result = session.getMapper(EnvironmentMapper.class).listEnvironments();
-            environmentsCache = result;
+            environmentsCache.set(result);
             environmentsCacheTime = System.currentTimeMillis();
             return result;
         }
@@ -894,7 +897,7 @@ public class JdbcStorageService implements StorageService {
     }
 
     private void invalidateAgentsCache() {
-        agentsCache = null;
+        agentsCache.set(null);
         agentsCacheTime = 0;
     }
 
@@ -911,12 +914,13 @@ public class JdbcStorageService implements StorageService {
     @Override
     public List<AgentRegistration> listAgents() {
         long now = System.currentTimeMillis();
-        if (agentsCache != null && (now - agentsCacheTime) < AGENTS_CACHE_TTL_MS) {
-            return agentsCache;
+        List<AgentRegistration> cached = agentsCache.get();
+        if (cached != null && (now - agentsCacheTime) < AGENTS_CACHE_TTL_MS) {
+            return cached;
         }
         try (SqlSession session = openSession()) {
             List<AgentRegistration> result = session.getMapper(AgentMapper.class).listAgents();
-            agentsCache = result;
+            agentsCache.set(result);
             agentsCacheTime = System.currentTimeMillis();
             return result;
         }

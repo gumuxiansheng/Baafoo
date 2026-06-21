@@ -24,8 +24,10 @@ public class ConsulHttpAdvice {
             if (target != null) {
                 server = target.host;
                 port = target.port;
+                GlobalRouteState.logDebug("[Baafoo] ConsulHttpAdvice: would redirect to " + target.host + ":" + target.port + " (note: String arg mutation may not propagate to caller)");
             }
         } catch (Throwable t) {
+            GlobalRouteState.logDebug("[Baafoo] ConsulHttpAdvice error: " + t.getMessage());
         }
     }
 }

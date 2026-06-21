@@ -136,20 +136,16 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         for (byte b : peekBytes) {
             hexSb.append(String.format("%02x ", b & 0xFF));
         }
-        log.info("Kafka raw header: apiKey={}, apiVersion={}, correlationId={}, ridx={}, widx={}, nextBytes=[{}]",
+        log.debug("Kafka raw header: apiKey={}, apiVersion={}, correlationId={}, ridx={}, widx={}, nextBytes=[{}]",
                 apiKey, apiVersion, correlationId, msg.readerIndex(), msg.writerIndex(), hexSb.toString().trim());
 
         // Request Header v1 (non-flexible): int16-prefixed nullable string for clientId
         // Request Header v2 (flexible, KIP-482): compact string + tag buffer
         //
-        // SPECIAL CASE: ApiVersions (apiKey=18) ALWAYS uses Request Header v0
-        // (non-flexible, int16 string) regardless of apiVersion. This is because
-        // the broker must parse the header before knowing which version the
-        // client is negotiating (KIP-511). Other APIs use the header version
-        // matching their flexible threshold.
+        // ApiVersions v3+ uses Request Header v2 (flexible) per KIP-511, same as
+        // other APIs at or above their flexible-version threshold.
         String clientId;
-        boolean headerIsFlexible = (apiKey != API_VERSIONS)
-                && KafkaProtocolVersions.isFlexible(apiKey, apiVersion);
+        boolean headerIsFlexible = KafkaProtocolVersions.isFlexible(apiKey, apiVersion);
         if (headerIsFlexible) {
             clientId = KafkaFlexibleCodec.readCompactString(msg);
             KafkaFlexibleCodec.skipTagBuffer(msg); // header tag buffer
@@ -157,7 +153,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             clientId = readNullableString(msg);
         }
 
-        log.info("Kafka request: apiKey={}, apiVersion={}, correlationId={}, clientId={}",
+        log.debug("Kafka request: apiKey={}, apiVersion={}, correlationId={}, clientId={}",
                 apiKey, apiVersion, correlationId, clientId);
 
         ByteBuf response;
@@ -223,7 +219,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
         if (response != null) {
             // Debug: log response size for troubleshooting
-            log.info("Kafka response: apiKey={}, apiVersion={}, correlationId={}, responseBytes={}",
+            log.debug("Kafka response: apiKey={}, apiVersion={}, correlationId={}, responseBytes={}",
                     apiKey, apiVersion, correlationId, response.readableBytes());
             if (apiKey == API_VERSIONS) {
                 // Hex dump for ApiVersions response troubleshooting

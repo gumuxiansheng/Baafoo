@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -38,8 +39,8 @@ public class RecordingBuffer {
     private final ScheduledExecutorService scheduler;
     private ScheduledFuture<?> flushTask;
 
-    /** Entries that failed to upload and are pending retry */
-    private final List<RecordingEntry> pendingRetry = new ArrayList<RecordingEntry>();
+    /** Entries that failed to upload and are pending retry (thread-safe) */
+    private final ConcurrentLinkedQueue<RecordingEntry> pendingRetry = new ConcurrentLinkedQueue<RecordingEntry>();
 
     public RecordingBuffer(int maxBufferSize, int flushIntervalSec) {
         this.maxBufferSize = maxBufferSize > 0 ? maxBufferSize : 100;
@@ -63,6 +64,19 @@ public class RecordingBuffer {
         if (buffer.size() >= maxBufferSize) {
             flush();
         }
+    }
+
+    /**
+     * Drain the buffer atomically: snapshot and clear under synchronization
+     * so no entries are lost between the two operations.
+     */
+    private List<RecordingEntry> drainBuffer() {
+        List<RecordingEntry> snapshot;
+        synchronized (this) {
+            snapshot = new ArrayList<RecordingEntry>(buffer);
+            buffer.clear();
+        }
+        return snapshot;
     }
 
     /**
@@ -91,12 +105,19 @@ public class RecordingBuffer {
     /**
      * Flush buffered entries to the server.
      * On upload failure, entries are retained for retry on the next flush.
+     * Thread-safe: atomically drain both pendingRetry (ConcurrentLinkedQueue poll)
+     * and buffer (synchronized snapshot+clear) into a single batch.
      */
     public void flush() {
-        List<RecordingEntry> batch = new ArrayList<RecordingEntry>(pendingRetry);
-        batch.addAll(buffer);
-        pendingRetry.clear();
-        buffer.clear();
+        List<RecordingEntry> batch = new ArrayList<RecordingEntry>();
+
+        // Drain pendingRetry (CAS via ConcurrentLinkedQueue poll — fine for concurrent flush callers)
+        RecordingEntry entry;
+        while ((entry = pendingRetry.poll()) != null) {
+            batch.add(entry);
+        }
+        // Drain buffer under synchronization — snapshot+clear is now atomic
+        batch.addAll(drainBuffer());
 
         if (batch.isEmpty()) {
             return;
@@ -105,7 +126,9 @@ public class RecordingBuffer {
         ControlChannel channel = BaafooAgent.getControlChannel();
         if (channel == null) {
             // No channel available; keep for retry
-            pendingRetry.addAll(batch);
+            for (RecordingEntry e : batch) {
+                pendingRetry.add(e);
+            }
             log.warn("ControlChannel not available, retaining {} entries for retry", batch.size());
             return;
         }
@@ -113,10 +136,12 @@ public class RecordingBuffer {
         try {
             channel.uploadRecordings(batch);
             log.debug("Flushed {} recording entries", batch.size());
-        } catch (Exception e) {
+        } catch (Exception ex) {
             // Upload failed; keep entries for retry
-            pendingRetry.addAll(batch);
-            log.warn("Recording upload failed, retaining {} entries for retry: {}", batch.size(), e.getMessage());
+            for (RecordingEntry retryEntry : batch) {
+                pendingRetry.add(retryEntry);
+            }
+            log.warn("Recording upload failed, retaining {} entries for retry: {}", batch.size(), ex.getMessage());
         }
     }
 

@@ -455,10 +455,9 @@ public class BaafooAgent {
             };
 
             java.util.jar.Manifest manifest = new java.util.jar.Manifest();
-            java.io.FileOutputStream fos = new java.io.FileOutputStream(tempJar);
-            java.util.jar.JarOutputStream jos = new java.util.jar.JarOutputStream(fos, manifest);
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(tempJar);
+                 java.util.jar.JarOutputStream jos = new java.util.jar.JarOutputStream(fos, manifest)) {
 
-            try {
                 ClassLoader cl = BaafooAgent.class.getClassLoader();
                 for (String resource : classResources) {
                     java.io.InputStream is = cl.getResourceAsStream(resource);
@@ -478,8 +477,6 @@ public class BaafooAgent {
                         log.warn("Bootstrap class resource not found: {}", resource);
                     }
                 }
-            } finally {
-                jos.close();
             }
 
             return tempJar;

@@ -217,7 +217,7 @@ public class StubResponseRenderer {
                     Unpooled.copiedBuffer(json, StandardCharsets.UTF_8));
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json; charset=UTF-8");
             response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
-            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, resolveCorsOrigin());
             response.headers().set("X-Baafoo-Stub", "true");
             response.headers().set("X-Baafoo-Rule-Id", ruleId);
             response.headers().set("X-Baafoo-Fault", faultType);
@@ -239,7 +239,7 @@ public class StubResponseRenderer {
                     Unpooled.copiedBuffer(json, StandardCharsets.UTF_8));
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json; charset=UTF-8");
             response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
-            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, resolveCorsOrigin());
             response.headers().set("X-Baafoo-Stub", "unmatched");
 
             ctx.writeAndFlush(response).addListener(

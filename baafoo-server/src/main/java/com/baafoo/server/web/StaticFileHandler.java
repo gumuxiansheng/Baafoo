@@ -132,13 +132,32 @@ public class StaticFileHandler extends SimpleChannelInboundHandler<FullHttpReque
     }
 
     private boolean serveStaticFile(ChannelHandlerContext ctx, String path) {
-        // Normalize and secure path
+        // Normalize and secure path — prevent path traversal
         String normalizedPath = path.replace("..", "").replace("//", "/");
         if (normalizedPath.startsWith("/")) {
             normalizedPath = normalizedPath.substring(1);
         }
 
+        // Defense-in-depth: reject any path that still contains traversal sequences
+        // after normalization (e.g., encoded variants like ..%2F)
+        if (normalizedPath.contains("..")) {
+            log.warn("Path traversal attempt blocked: {}", path);
+            return false;
+        }
+
         if (filesystemMode) {
+            // Canonicalize and verify the resolved file is still under webRoot
+            try {
+                File file = new File(webRoot, normalizedPath).getCanonicalFile();
+                File root = new File(webRoot).getCanonicalFile();
+                if (!file.getPath().startsWith(root.getPath())) {
+                    log.warn("Path traversal attempt blocked: {}", path);
+                    return false;
+                }
+            } catch (Exception e) {
+                log.debug("Path canonicalization failed for {}: {}", path, e.getMessage());
+                return false;
+            }
             return serveFromFilesystem(ctx, normalizedPath);
         } else {
             return serveFromClasspath(ctx, normalizedPath);

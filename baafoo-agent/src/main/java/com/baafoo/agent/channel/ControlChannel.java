@@ -305,10 +305,10 @@ public class ControlChannel {
         conn.setReadTimeout(5000);
         conn.setDoOutput(true);
 
-        OutputStream os = conn.getOutputStream();
-        os.write(json.getBytes("UTF-8"));
-        os.flush();
-        os.close();
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(json.getBytes("UTF-8"));
+            os.flush();
+        }
 
         return conn;
     }
@@ -320,14 +320,16 @@ public class ControlChannel {
 
         if (is == null) return "";
 
-        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-        byte[] buf = new byte[4096];
-        int n;
-        while ((n = is.read(buf)) != -1) {
-            baos.write(buf, 0, n);
+        try (java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream()) {
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = is.read(buf)) != -1) {
+                baos.write(buf, 0, n);
+            }
+            return baos.toString("UTF-8");
+        } finally {
+            is.close();
         }
-        is.close();
-        return baos.toString("UTF-8");
     }
 
     // --- Request/Response DTOs ---

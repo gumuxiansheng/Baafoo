@@ -34,6 +34,9 @@ public final class NioSocketFinishConnectAdvice {
             }
 
             // Try to get the remote address from the channel
+            if (!(channel instanceof java.nio.channels.SocketChannel)) {
+                return;
+            }
             java.nio.channels.SocketChannel sc = (java.nio.channels.SocketChannel) channel;
             java.net.SocketAddress remote = sc.getRemoteAddress();
             if (!(remote instanceof InetSocketAddress)) {
@@ -46,7 +49,8 @@ public final class NioSocketFinishConnectAdvice {
 
             // Same logic as connect() — skip MQ ports (recorded at application layer by Server)
             if (GlobalRouteState.isInternal(host, port)) {
-                if ((GlobalRouteState.CURRENT_MODE == 2 || GlobalRouteState.CURRENT_MODE == 3)
+                if ((GlobalRouteState.CURRENT_MODE == 2 || GlobalRouteState.CURRENT_MODE == 3
+                        || GlobalRouteState.CURRENT_MODE == 4)
                         && port != GlobalRouteState.SERVER_PORT
                         && port != GlobalRouteState.HTTP_PORT
                         && port != GlobalRouteState.KAFKA_PORT
@@ -60,7 +64,8 @@ public final class NioSocketFinishConnectAdvice {
             }
 
             // Check route for external connections
-            if (GlobalRouteState.CURRENT_MODE == 2 || GlobalRouteState.CURRENT_MODE == 3) {
+            if (GlobalRouteState.CURRENT_MODE == 2 || GlobalRouteState.CURRENT_MODE == 3
+                    || GlobalRouteState.CURRENT_MODE == 4) {
                 String[] routeValue = GlobalRouteState.lookup(host, port);
                 if (routeValue == null && !"127.0.0.1".equals(host) && !"localhost".equals(host)) {
                     String originalDomain = (String) GlobalRouteState.DNS_CACHE.get(host);
@@ -68,7 +73,20 @@ public final class NioSocketFinishConnectAdvice {
                         routeValue = GlobalRouteState.lookup(originalDomain, port);
                     }
                 }
-                if (routeValue != null) {
+                // RECORD_ALL: if no route matched, still record (fallback redirect
+                // was already applied in connect() advice; here we just register
+                // the session for stream-level recording).
+                if (GlobalRouteState.CURRENT_MODE == 4 && routeValue == null) {
+                    int fallbackPort = GlobalRouteState.forceRedirectPort(port);
+                    if (fallbackPort != GlobalRouteState.HTTP_PORT
+                            && fallbackPort != GlobalRouteState.KAFKA_PORT
+                            && fallbackPort != GlobalRouteState.PULSAR_PORT
+                            && fallbackPort != GlobalRouteState.JMS_PORT) {
+                        String sessionId = java.util.UUID.randomUUID().toString();
+                        GlobalRouteState.startRecording(channelId, sessionId, host, port);
+                        GlobalRouteState.logInfo("[Baafoo] NIO Socket recording (finishConnect, record-all): " + host + ":" + port + " (sessionId=" + sessionId + ")");
+                    }
+                } else if (routeValue != null) {
                     int targetPort = Integer.parseInt(routeValue[1]);
                     // Skip Socket-level recording for HTTP and MQ — they have
                     // their own protocol-level recorders (HTTP: HttpURLConnectionAdvice,

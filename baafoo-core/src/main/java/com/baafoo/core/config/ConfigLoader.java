@@ -7,9 +7,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
 
 public class ConfigLoader {
 
@@ -37,7 +37,7 @@ public class ConfigLoader {
             log.warn("Agent config file not found at {}, using defaults", filePath);
             return new AgentConfig();
         }
-        try (InputStream in = new FileInputStream(file)) {
+        try (InputStream in = Files.newInputStream(file.toPath())) {
             AgentConfig config = YAML_MAPPER.readValue(in, AgentConfig.class);
             log.info("Loaded agent config: {}", config);
             return config;
@@ -57,7 +57,7 @@ public class ConfigLoader {
             log.warn("Server config file not found at {}, using defaults", filePath);
             return new ServerConfig();
         }
-        try (InputStream in = new FileInputStream(file)) {
+        try (InputStream in = Files.newInputStream(file.toPath())) {
             ServerConfig config = YAML_MAPPER.readValue(in, ServerConfig.class);
             log.info("Loaded server config: {}", config);
             return config;

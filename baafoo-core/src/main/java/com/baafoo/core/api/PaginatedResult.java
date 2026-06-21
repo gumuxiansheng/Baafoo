@@ -31,7 +31,7 @@ public class PaginatedResult<T> {
         this.page = page;
         this.size = size;
         this.total = total;
-        this.totalPages = (int) Math.ceil((double) total / size);
+        this.totalPages = size > 0 ? (int) Math.ceil((double) total / size) : 0;
         this.items = items;
     }
 

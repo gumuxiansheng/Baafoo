@@ -293,7 +293,7 @@ public class FileStorage {
                 saveScenes();
                 return true;
             }
-            return scenes.remove(id) != null;
+            return false;
         } finally {
             lock.writeLock().unlock();
         }

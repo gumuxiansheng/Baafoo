@@ -105,10 +105,10 @@ public class BaafooServer {
 
         // Start protocol stub servers
         Integer httpPort = config.getPortForProtocol("http");
-        if (httpPort > 0) startHttpStubServer(httpPort);
+        if (httpPort != null && httpPort > 0) startHttpStubServer(httpPort);
 
         Integer tcpPort = config.getPortForProtocol("tcp");
-        if (tcpPort > 0) startTcpStubServer(tcpPort);
+        if (tcpPort != null && tcpPort > 0) startTcpStubServer(tcpPort);
 
         Integer kafkaPort = config.getPortForProtocol("kafka");
         Integer pulsarPort = config.getPortForProtocol("pulsar");
@@ -235,14 +235,16 @@ public class BaafooServer {
         if (!authService.isAuthEnabled()) return;
         User existing = storage.getUserByUsername("admin");
         if (existing == null) {
+            String tempPassword = generateTempPassword();
             User admin = new User();
             admin.setUsername("admin");
-            admin.setPasswordHash(authService.hashPassword("B@af00!Adm1n#2026"));
+            admin.setPasswordHash(authService.hashPassword(tempPassword));
             admin.setDisplayName("系统管理员");
             admin.setEmail("admin@baafoo.local");
             admin.setRole("admin");
             storage.createUser(admin);
-            log.info("Default admin user created (username: admin) — please change the password after first login");
+            writeAdminCredentials(tempPassword);
+            log.warn("Default admin user created (username: admin) — initial credentials written to credentials file, change the password after first login");
             return;
         }
         boolean needsFix = false;
@@ -250,21 +252,72 @@ public class BaafooServer {
             needsFix = true;
             log.info("Admin user has incorrect role '{}', fixing to 'admin'", existing.getRole());
         }
-        if (authService.verifyPassword("admin123", existing.getPasswordHash())) {
+        if (authService.verifyPassword("admin123", existing.getPasswordHash())
+                || authService.verifyPassword("B@af00!Adm1n#2026", existing.getPasswordHash())) {
             needsFix = true;
-            log.info("Admin user still has weak password, upgrading");
+            log.warn("Admin user still has default/weak password, upgrading to a randomly generated one");
         }
         if (needsFix) {
+            String tempPassword = generateTempPassword();
             storage.deleteUser("admin");
             User admin = new User();
             admin.setUsername("admin");
-            admin.setPasswordHash(authService.hashPassword("B@af00!Adm1n#2026"));
+            admin.setPasswordHash(authService.hashPassword(tempPassword));
             admin.setDisplayName("系统管理员");
             admin.setEmail("admin@baafoo.local");
             admin.setRole("admin");
             storage.createUser(admin);
-            log.info("Default admin user repaired — please change the password after first login");
+            writeAdminCredentials(tempPassword);
+            log.warn("Default admin user repaired (username: admin) — initial credentials written to credentials file, change the password after first login");
         }
+    }
+
+    private void writeAdminCredentials(String password) {
+        try {
+            String credsDir = config.getDataDir();
+            if (credsDir == null || credsDir.isEmpty()) {
+                credsDir = "data";
+            }
+            java.io.File dir = new java.io.File(credsDir);
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            java.io.File credsFile = new java.io.File(dir, ".admin-credentials");
+            String content = "Default admin credentials (ONE-TIME, change immediately after login):\n" +
+                    "  URL:   http://localhost:" + config.getHttpPort() + "/__baafoo__/\n" +
+                    "  User:  admin\n" +
+                    "  Pass:  " + password + "\n\n" +
+                    "This file will be regenerated on next server start if the admin user is deleted\n" +
+                    "or reset due to weak password detection. Delete this file after first login.\n";
+            java.nio.file.Path credsPath = credsFile.toPath();
+            java.nio.file.Files.write(credsPath, content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+            // Restrict file permissions on POSIX systems (owner read/write only)
+            try {
+                java.nio.file.attribute.PosixFilePermission[] perms = {
+                    java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                    java.nio.file.attribute.PosixFilePermission.OWNER_WRITE
+                };
+                java.nio.file.Files.setAttribute(credsPath, "posix:permissions",
+                        java.util.EnumSet.copyOf(java.util.Arrays.asList(perms)));
+            } catch (UnsupportedOperationException e) {
+                // Non-POSIX filesystem (e.g., FAT32, NTFS) — ignore
+            }
+
+            log.info("Admin credentials written to: {}", credsFile.getCanonicalPath());
+        } catch (Exception e) {
+            log.error("Failed to write admin credentials file: {}", e.getMessage());
+        }
+    }
+
+    private String generateTempPassword() {
+        String chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+        java.security.SecureRandom random = new java.security.SecureRandom();
+        StringBuilder sb = new StringBuilder(16);
+        for (int i = 0; i < 16; i++) {
+            sb.append(chars.charAt(random.nextInt(chars.length())));
+        }
+        return sb.toString();
     }
 
     private void stop() {
@@ -286,8 +339,13 @@ public class BaafooServer {
             pulsarBroker.stop();
         }
         storage.shutdown();
+        List<ChannelFuture> closeFutures = new ArrayList<ChannelFuture>();
         for (Channel ch : channels) {
-            ch.close();
+            closeFutures.add(ch.close());
+        }
+        // Wait for all channels to close before shutting down event loops
+        for (ChannelFuture f : closeFutures) {
+            try { f.sync(); } catch (Exception e) { /* ignore */ }
         }
         bossGroup.shutdownGracefully();
         workerGroup.shutdownGracefully();
