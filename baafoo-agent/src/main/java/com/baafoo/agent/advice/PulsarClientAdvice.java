@@ -152,7 +152,7 @@ public class PulsarClientAdvice {
      * e.g. {@code pulsar://broker:6650/my-tenant/my-namespace} returns {"my-tenant", "my-namespace"}.
      * Returns empty array if no path or fewer than 2 segments.
      */
-    static String[] extractPathSegments(String serviceUrl) {
+    public static String[] extractPathSegments(String serviceUrl) {
         if (serviceUrl == null) return new String[0];
         try {
             URI uri = new URI(serviceUrl);

@@ -142,7 +142,7 @@ public class JmsConnectionFactoryAdvice {
      * e.g. {@code tcp://broker:61616/queue.orders} returns "queue.orders".
      * Returns null if no path segment.
      */
-    static String extractDestination(String brokerUrl) {
+    public static String extractDestination(String brokerUrl) {
         if (brokerUrl == null) return null;
         String s = brokerUrl;
         int schemeEnd = s.indexOf("://");
