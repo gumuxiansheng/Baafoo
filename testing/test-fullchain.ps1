@@ -120,14 +120,14 @@ if (-not $SkipBuild) {
 
     # Build Feign plugin JAR (standalone module, not in main reactor)
     Write-Host "  Building Feign plugin JAR..."
-    & .\mvnw.cmd clean package -f "baafoo-test-plugin/feign/pom.xml" -DskipTests -q 2>&1 | Out-Null
+    & .\mvnw.cmd clean package -f "baafoo-example-plugins/feign/pom.xml" -DskipTests -q 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Warn "Feign plugin build failed, skipping plugin tests"
     } else {
         if (-not (Test-Path "plugins")) {
             New-Item -ItemType Directory -Path "plugins" -Force | Out-Null
         }
-        $feignJar = Get-ChildItem "baafoo-test-plugin/feign/target/baafoo-plugin-feign-*.jar" |
+        $feignJar = Get-ChildItem "baafoo-example-plugins/feign/target/baafoo-plugin-feign-*.jar" |
             Where-Object { $_.Name -notmatch "sources|javadoc|original" } |
             Select-Object -First 1
         if ($feignJar) {

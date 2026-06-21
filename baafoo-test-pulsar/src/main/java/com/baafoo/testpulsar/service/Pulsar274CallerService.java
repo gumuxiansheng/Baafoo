@@ -194,7 +194,7 @@ public class Pulsar274CallerService {
                 + "this module reproduces that exact wire protocol.");
         Map<String, Object> redirect = new LinkedHashMap<String, Object>();
         redirect.put("default", "pulsar://${baafoo.server-host}:9003 (PulsarMockBroker)");
-        redirect.put("tdmqPlugin", "pulsar://localhost:9005 (baafoo-plugin-tdmq)");
+        redirect.put("tdmqPlugin", "pulsar://localhost:9005 (tdmq plugin)");
         info.put("redirectTargets", redirect);
         return info;
     }

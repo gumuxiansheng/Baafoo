@@ -1,7 +1,7 @@
 # Baafoo 全量代码审查报告
 
 > **审查日期**: 2026-06-14
-> **审查范围**: 全量源码 — baafoo-core, baafoo-server, baafoo-agent, baafoo-plugin-api, baafoo-cli, baafoo-test-app, baafoo-test-spring, baafoo-test-plugin, web/ 前端, 构建配置
+> **审查范围**: 全量源码 — baafoo-core, baafoo-server, baafoo-agent, baafoo-plugin-api, baafoo-cli, baafoo-test-app, baafoo-test-spring, baafoo-example-plugins, web/ 前端, 构建配置
 > **总源文件数**: ~180 个 Java 文件 + ~20 个前端源文件 + 构建配置
 > **新发现总问题数**: **174 个** (Critical: 17, High: 32, Medium: 57, Low: 53)
 > **+ 第二轮补充**: 37 个新问题（Mapper XML: 17, 测试代码: 23, CI/CD: 14, 部分去重）

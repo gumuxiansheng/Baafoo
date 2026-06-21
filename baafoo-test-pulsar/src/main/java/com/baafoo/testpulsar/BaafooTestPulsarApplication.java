@@ -10,7 +10,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * <b>2.7.4</b> — the Pulsar line that Tencent TDMQ for Pulsar is based on. It
  * exists alongside {@code baafoo-test-spring} (which pins pulsar-client
  * 2.10.4) so the Agent's {@code PulsarClientAdvice} and the
- * {@code baafoo-plugin-tdmq} redirect can be validated against both wire
+ * {@code baafoo-example-plugins/tdmq} redirect can be validated against both wire
  * protocols.</p>
  */
 @SpringBootApplication

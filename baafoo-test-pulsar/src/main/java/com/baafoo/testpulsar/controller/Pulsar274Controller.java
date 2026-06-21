@@ -17,7 +17,7 @@ import java.util.Map;
  * {@code persistent://public/default/baafoo-test-topic}) so the Agent
  * {@code PulsarClientAdvice} rewrites both apps' connections to the same
  * {@code pulsar://&lt;host&gt;:9003} target, and so the
- * {@code baafoo-plugin-tdmq} redirect (-> 9005) is exercised identically.</p>
+ * {@code baafoo-example-plugins/tdmq} redirect (-> 9005) is exercised identically.</p>
  */
 @RestController
 @RequestMapping("/api/pulsar274")

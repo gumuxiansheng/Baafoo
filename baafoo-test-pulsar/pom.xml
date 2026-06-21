@@ -22,7 +22,7 @@
             Hard pin to Apache Pulsar 2.7.4 client — this is the whole point of this module.
             Tencent TDMQ for Pulsar is built on Pulsar 2.7.4, so this module reproduces the
             exact wire protocol a TDMQ client would emit, exercising the Agent's
-            PulsarClientAdvice redirect (-> 9003) and the baafoo-plugin-tdmq redirect (-> 9005).
+            PulsarClientAdvice redirect (-> 9003) and the tdmq plugin redirect (-> 9005).
             Contrast with baafoo-test-spring, which uses pulsar-client 2.10.4.
         -->
         <pulsar-client.version>2.7.4</pulsar-client.version>

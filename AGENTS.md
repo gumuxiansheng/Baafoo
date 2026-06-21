@@ -31,7 +31,7 @@ No lint/typecheck commands — just the Maven lifecycle. Jacoco coverage runs at
 | `baafoo-cli` | `BaafooCli#main` | `baafoo init` scaffolding tool |
 | `baafoo-test-app` | `BaafooTestApp` / `QuickTest` | interactive multi-protocol tester (no Spring) |
 | `baafoo-test-spring` | Spring Boot on port 9090 | Spring Boot multi-protocol tester |
-| `baafoo-test-plugin/feign` | `FeignPlugin` | demo plugin via SPI |
+| `baafoo-example-plugins/feign` | `FeignPlugin` | demo plugin via SPI |
 | `web/` | Vue 3 + Vite | `npm run dev` on port 3000 |
 
 ## Agent Shade Rules (Critical)
@@ -46,7 +46,7 @@ No lint/typecheck commands — just the Maven lifecycle. Jacoco coverage runs at
 - Register in `META-INF/services/com.baafoo.plugin.AgentPlugin`
 - Place JAR in `./plugins/` at runtime
 - Plugin uses a separate `PluginClassLoader` (parent=null) — full isolation from host app
-- For the Feign demo, see `baafoo-test-plugin/feign/`
+- For the Feign demo, see `baafoo-example-plugins/feign/`
 
 ## Runtime
 
