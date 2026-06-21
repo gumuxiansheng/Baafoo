@@ -1,6 +1,7 @@
 package com.baafoo.agent.plugin;
 
 import com.baafoo.agent.loader.PluginClassLoader;
+import com.baafoo.core.config.AgentConfig;
 import com.baafoo.plugin.AgentPlugin;
 import com.baafoo.plugin.InterceptTarget;
 import org.slf4j.Logger;
@@ -27,21 +28,48 @@ public class PluginManager {
     /** Loaded plugins (target → plugin instance) */
     private final Map<InterceptTarget, AgentPlugin> plugins = new ConcurrentHashMap<InterceptTarget, AgentPlugin>();
 
+    /** Per-plugin configuration from baafoo-agent.yml (pluginName → config map) */
+    private final Map<String, Map<String, Object>> pluginConfigs;
+
     /** Default plugins directory */
     private static final String DEFAULT_PLUGIN_DIR = "./plugins";
 
     /**
-     * Default constructor - loads plugins from default directory.
+     * Default constructor - loads plugins from default directory, no per-plugin config.
      */
     public PluginManager() {
-        this(DEFAULT_PLUGIN_DIR);
+        this(DEFAULT_PLUGIN_DIR, null);
     }
 
     /**
-     * Load plugins from specified directory.
+     * Load plugins from specified directory, no per-plugin config.
      */
     public PluginManager(String pluginDir) {
-        loadPlugins(pluginDir);
+        this(pluginDir, null);
+    }
+
+    /**
+     * Load plugins with PluginsConfig (from AgentConfig.getPlugins()).
+     *
+     * @param pluginsConfig plugin system configuration, or null for defaults
+     */
+    public PluginManager(AgentConfig.PluginsConfig pluginsConfig) {
+        this(pluginsConfig != null ? pluginsConfig.getDirectory() : DEFAULT_PLUGIN_DIR,
+             pluginsConfig);
+    }
+
+    /**
+     * Internal constructor: loads plugins from directory with optional config.
+     */
+    private PluginManager(String pluginDir, AgentConfig.PluginsConfig pluginsConfig) {
+        this.pluginConfigs = (pluginsConfig != null && pluginsConfig.getConfigs() != null)
+                ? pluginsConfig.getConfigs()
+                : Collections.<String, Map<String, Object>>emptyMap();
+        if (pluginsConfig == null || pluginsConfig.isEnabled()) {
+            loadPlugins(pluginDir);
+        } else {
+            log.info("Plugin system disabled by configuration, no plugins loaded");
+        }
     }
 
     /**
@@ -60,6 +88,30 @@ public class PluginManager {
     public AgentPlugin getPluginForProtocol(String protocol) {
         InterceptTarget target = resolveTarget(protocol);
         return target != null ? plugins.get(target) : null;
+    }
+
+    /**
+     * Get per-plugin configuration for a plugin name.
+     *
+     * @param pluginName plugin name (from {@code AgentPlugin.getName()})
+     * @return config map, or empty map if not configured
+     */
+    public Map<String, Object> getPluginConfig(String pluginName) {
+        if (pluginName == null) return Collections.emptyMap();
+        Map<String, Object> config = pluginConfigs.get(pluginName);
+        return config != null ? config : Collections.<String, Object>emptyMap();
+    }
+
+    /**
+     * Get per-plugin configuration for a plugin registered to the given target.
+     *
+     * @param target intercept target
+     * @return config map, or empty map if no plugin or no config
+     */
+    public Map<String, Object> getPluginConfig(InterceptTarget target) {
+        AgentPlugin plugin = plugins.get(target);
+        if (plugin == null) return Collections.emptyMap();
+        return getPluginConfig(plugin.getName());
     }
 
     private InterceptTarget resolveTarget(String protocol) {
@@ -133,9 +185,13 @@ public class PluginManager {
         // Use ServiceLoader to discover AgentPlugin implementations
         ServiceLoader<AgentPlugin> loader = ServiceLoader.load(AgentPlugin.class, classLoader);
         for (AgentPlugin plugin : loader) {
+            // Inject per-plugin config before init (P1: plugin-level configuration)
+            Map<String, Object> config = getPluginConfig(plugin.getName());
+            plugin.configure(config);
             plugin.init();
             plugins.put(plugin.getTarget(), plugin);
-            log.info("Plugin loaded: {} (target={})", plugin.getName(), plugin.getTarget());
+            log.info("Plugin loaded: {} (target={}, config={})", plugin.getName(), plugin.getTarget(),
+                    config.isEmpty() ? "none" : config.keySet());
         }
     }
 
