@@ -10,7 +10,7 @@
         <el-descriptions-item label="环境ID">{{ env.id }}</el-descriptions-item>
         <el-descriptions-item label="名称">{{ env.name }}</el-descriptions-item>
         <el-descriptions-item label="当前模式">
-          <el-tag :type="modeTagType(env.mode) || undefined" effect="dark">{{ env.mode }}</el-tag>
+          <el-tag :type="modeTagType(env.mode) || undefined" effect="dark">{{ modeDisplayName(env.mode) }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="创建时间">{{ formatTime(env.createdAt) }}</el-descriptions-item>
       </el-descriptions>
@@ -22,7 +22,7 @@
         <el-radio-button value="RECORD">Record</el-radio-button>
         <el-radio-button value="RECORD_AND_STUB">Record+Stub</el-radio-button>
       </el-radio-group>
-      <span v-else style="color: #909399; font-size: 14px; margin-top: 12px; display: inline-block">当前模式: {{ env ? env.mode : '' }}（无切换权限）</span>
+      <span v-else style="color: #909399; font-size: 14px; margin-top: 12px; display: inline-block">当前模式: {{ env ? modeDisplayName(env.mode) : '' }}（无切换权限）</span>
 
       <h3 style="margin-top: 24px">关联 Agents ({{ (env.agentIds || []).length }})</h3>
       <el-table :data="env.agentIds || []" size="small" style="margin-top: 12px" empty-text="暂无 Agent">
@@ -79,8 +79,13 @@ export default {
       return map[mode] || ''
     }
 
+    function modeDisplayName(mode) {
+      const map = { STUB: 'Stub', PASSTHROUGH: 'Passthrough', RECORD: 'Record', RECORD_AND_STUB: 'Record+Stub' }
+      return map[mode] || mode
+    }
+
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
-    return { env, loading, selectedMode, variableList, switchMode, modeTagType, formatTime, authStore }
+    return { env, loading, selectedMode, variableList, switchMode, modeTagType, modeDisplayName, formatTime, authStore }
   }
 }
 </script>
