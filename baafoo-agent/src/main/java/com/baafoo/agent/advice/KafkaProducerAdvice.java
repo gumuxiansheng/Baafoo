@@ -76,6 +76,10 @@ public class KafkaProducerAdvice {
                         ctx.setProtocol("kafka");
                         ctx.setHost(extractHost(originalServers));
                         ctx.setPort(extractPort(originalServers));
+                        // P1: inject per-plugin config
+                        ctx.setPluginConfig(pm.getPluginConfig(plugin.getName()));
+                        // P2: Kafka constructor has no topic/partition/key — those
+                        // are specified at send() time, not available here.
                         InterceptResult result = plugin.intercept(ctx);
                         if (result != null && result.isRedirect()) {
                             stubHost = result.getRedirectHost();

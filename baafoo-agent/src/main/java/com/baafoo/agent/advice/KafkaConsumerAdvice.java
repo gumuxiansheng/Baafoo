@@ -76,6 +76,8 @@ public class KafkaConsumerAdvice {
                         ctx.setProtocol("kafka");
                         ctx.setHost(extractHost(originalServers));
                         ctx.setPort(extractPort(originalServers));
+                        // P1: inject per-plugin config
+                        ctx.setPluginConfig(pm.getPluginConfig(plugin.getName()));
                         InterceptResult result = plugin.intercept(ctx);
                         if (result != null && result.isRedirect()) {
                             stubHost = result.getRedirectHost();
