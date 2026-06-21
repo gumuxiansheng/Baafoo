@@ -61,6 +61,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
                 new MqRelationshipApiHandler(),
                 new RecordingApiHandler(),
                 new StatusApiHandler(),
+                new PluginApiHandler(),
                 new ChaosApiHandler(this.chaosManager)
         );
     }

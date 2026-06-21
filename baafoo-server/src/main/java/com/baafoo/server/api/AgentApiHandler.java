@@ -53,6 +53,10 @@ class AgentApiHandler implements ResourceHandler {
             // Use server-observed source IP for the same reason as registration
             String agentIp = ctx.remoteAddr;
             ctx.storage.agentHeartbeat(agentId, agentIp);
+            // P3: Store plugin health statuses reported by agent
+            @SuppressWarnings("unchecked")
+            Map<String, Object> pluginStatuses = (Map<String, Object>) reqBody.get("pluginStatuses");
+            ctx.storage.updateAgentPluginStatuses(agentId, pluginStatuses);
             return ApiResponse.ok("OK", null);
         }
 

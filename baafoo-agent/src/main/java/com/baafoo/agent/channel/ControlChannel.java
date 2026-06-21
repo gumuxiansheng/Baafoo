@@ -16,7 +16,9 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -206,6 +208,9 @@ public class ControlChannel {
             req.timestamp = System.currentTimeMillis();
             req.agentIp = resolveLocalIp();
 
+            // P3: Include plugin health statuses in heartbeat
+            req.pluginStatuses = collectPluginStatuses();
+
             String json = mapper.writeValueAsString(req);
             HttpURLConnection conn = post(API_BASE + "/agent/heartbeat", json);
 
@@ -332,6 +337,29 @@ public class ControlChannel {
         }
     }
 
+    /**
+     * P3: Collect plugin health statuses from PluginManager.
+     * Returns a map of target name → status map for serialization in heartbeat.
+     */
+    private Map<String, Object> collectPluginStatuses() {
+        try {
+            com.baafoo.agent.plugin.PluginManager pm = com.baafoo.agent.BaafooAgent.getPluginManager();
+            if (pm == null) return Collections.emptyMap();
+            Map<com.baafoo.plugin.InterceptTarget, com.baafoo.agent.plugin.PluginManager.PluginHealthStatus> allStatuses =
+                    pm.getAllHealthStatuses();
+            if (allStatuses.isEmpty()) return Collections.emptyMap();
+
+            Map<String, Object> result = new LinkedHashMap<String, Object>();
+            for (Map.Entry<com.baafoo.plugin.InterceptTarget, com.baafoo.agent.plugin.PluginManager.PluginHealthStatus> entry : allStatuses.entrySet()) {
+                result.put(entry.getKey().name(), entry.getValue().toMap());
+            }
+            return result;
+        } catch (Exception e) {
+            log.debug("Failed to collect plugin statuses for heartbeat: {}", e.getMessage());
+            return Collections.emptyMap();
+        }
+    }
+
     // --- Request/Response DTOs ---
 
     public static class AgentRegisterRequest {
@@ -382,6 +410,8 @@ public class ControlChannel {
         public String agentId;
         public long timestamp;
         public String agentIp;
+        /** P3: Plugin health statuses (target → status map), reported to Server. */
+        public Map<String, Object> pluginStatuses;
     }
 
     public static class PollResponse {

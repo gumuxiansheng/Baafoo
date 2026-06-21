@@ -13,6 +13,8 @@ public class SystemStatusResponse {
     public long uptime;
     public boolean authEnabled;
     public List<Map<String, Object>> requestTrend;
+    /** P3: Plugin status summary across all agents. */
+    public Map<String, Object> plugins;
 
     public SystemStatusResponse version(String v) { this.version = v; return this; }
     public SystemStatusResponse rules(int v) { this.rules = v; return this; }
@@ -23,4 +25,5 @@ public class SystemStatusResponse {
     public SystemStatusResponse uptime(long v) { this.uptime = v; return this; }
     public SystemStatusResponse authEnabled(boolean v) { this.authEnabled = v; return this; }
     public SystemStatusResponse requestTrend(List<Map<String, Object>> v) { this.requestTrend = v; return this; }
+    public SystemStatusResponse plugins(Map<String, Object> v) { this.plugins = v; return this; }
 }

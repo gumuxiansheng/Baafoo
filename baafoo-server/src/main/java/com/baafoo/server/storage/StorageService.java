@@ -128,6 +128,12 @@ public interface StorageService {
 
     void agentHeartbeat(String agentId, String agentIp);
 
+    /**
+     * P3: Update plugin health statuses for an agent (in-memory, not persisted).
+     * Called from heartbeat handler when agent reports plugin statuses.
+     */
+    void updateAgentPluginStatuses(String agentId, Map<String, Object> pluginStatuses);
+
     List<AgentRegistration> listAgents();
 
     List<AgentRegistration> getAgentsForEnvironment(String envName);
@@ -171,7 +177,11 @@ public interface StorageService {
         public long registeredAt;
         public long lastHeartbeat;
 
+        /** P3: Plugin health statuses (in-memory only, refreshed via heartbeat). */
+        public Map<String, Object> pluginStatuses;
+
         public String getAgentId() { return agentId; }
         public long getLastHeartbeat() { return lastHeartbeat; }
+        public Map<String, Object> getPluginStatuses() { return pluginStatuses; }
     }
 }

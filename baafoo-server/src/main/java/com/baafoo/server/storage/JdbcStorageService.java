@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -51,6 +52,10 @@ public class JdbcStorageService implements StorageService {
     private volatile long agentsCacheTime;
     private static final long CACHE_TTL_MS = 2000; // 2 seconds
     private static final long AGENTS_CACHE_TTL_MS = 5000; // 5 seconds (heartbeat frequent)
+
+    /** P3: In-memory plugin health statuses per agent (refreshed via heartbeat, not persisted). */
+    private final ConcurrentHashMap<String, Map<String, Object>> agentPluginStatuses =
+            new ConcurrentHashMap<String, Map<String, Object>>();
 
     public JdbcStorageService(ServerConfig config) {
         this.config = config;
@@ -912,6 +917,16 @@ public class JdbcStorageService implements StorageService {
     }
 
     @Override
+    public void updateAgentPluginStatuses(String agentId, Map<String, Object> pluginStatuses) {
+        if (agentId == null) return;
+        if (pluginStatuses != null && !pluginStatuses.isEmpty()) {
+            agentPluginStatuses.put(agentId, pluginStatuses);
+        } else {
+            agentPluginStatuses.remove(agentId);
+        }
+    }
+
+    @Override
     public List<AgentRegistration> listAgents() {
         long now = System.currentTimeMillis();
         List<AgentRegistration> cached = agentsCache.get();
@@ -920,6 +935,10 @@ public class JdbcStorageService implements StorageService {
         }
         try (SqlSession session = openSession()) {
             List<AgentRegistration> result = session.getMapper(AgentMapper.class).listAgents();
+            // P3: Populate in-memory plugin statuses into AgentRegistration
+            for (AgentRegistration reg : result) {
+                reg.pluginStatuses = agentPluginStatuses.get(reg.agentId);
+            }
             agentsCache.set(result);
             agentsCacheTime = System.currentTimeMillis();
             return result;
