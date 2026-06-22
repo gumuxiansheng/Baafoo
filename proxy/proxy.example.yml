@@ -1,0 +1,28 @@
+# Baafoo Proxy 配置示例
+# 用法: baafoo-proxy --config proxy.yml
+
+proxy:
+  mappings:
+    - listen: "127.0.0.1:15001"
+      target: "order-service:8080"
+      protocol: http
+    - listen: "127.0.0.1:15002"
+      target: "kafka-broker:9092"
+      protocol: kafka
+    - listen: "127.0.0.1:15003"
+      target: "grpc-service:50051"
+      protocol: grpc
+    - listen: "127.0.0.1:15004"
+      target: "tcp-service:9000"
+      protocol: tcp
+
+server:
+  url: "http://baafoo-server:8084"
+  # apiKey: "dev-key-001"
+  # token: "eyJhbGciOi..."
+
+agent:
+  environment: "default"
+  appName: "baafoo-proxy"
+  heartbeatIntervalSec: 15
+  pollIntervalSec: 10

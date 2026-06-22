@@ -1,0 +1,33 @@
+# Baafoo Proxy Sidecar 部署示例
+# 用法: docker compose -f docker-compose.proxy.yml up -d
+
+services:
+  # Baafoo Proxy 作为 sidecar
+  baafoo-proxy:
+    build:
+      context: .
+      dockerfile: proxy/Dockerfile
+    ports:
+      - "15001:15001"
+      - "15002:15002"
+    volumes:
+      - ./proxy/proxy.example.yml:/etc/baafoo/proxy.yml:ro
+    networks:
+      - baafoo-net
+    restart: unless-stopped
+
+  # 示例应用 — 通过 proxy 访问下游服务
+  my-app:
+    image: my-app:latest
+    # 共享 proxy 的网络命名空间（sidecar 模式）
+    network_mode: "service:baafoo-proxy"
+    depends_on:
+      - baafoo-proxy
+    environment:
+      # 应用把下游地址改为 localhost:端口映射
+      - ORDER_SERVICE_URL=http://127.0.0.1:15001
+      - KAFKA_BROKERS=127.0.0.1:15002
+
+networks:
+  baafoo-net:
+    driver: bridge
