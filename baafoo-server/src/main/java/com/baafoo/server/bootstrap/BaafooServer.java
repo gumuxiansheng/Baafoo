@@ -232,7 +232,7 @@ public class BaafooServer {
     }
 
     private void ensureDefaultAdmin() {
-        if (!authService.isAuthEnabled()) return;
+        // Always create default admin user, regardless of auth state
         User existing = storage.getUserByUsername("admin");
         if (existing == null) {
             String tempPassword = generateTempPassword();

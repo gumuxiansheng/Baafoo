@@ -112,12 +112,12 @@ export default {
     }
 
     function modeTagType(mode) {
-      const map = { STUB: '', PASSTHROUGH: 'info', RECORD: 'warning', RECORD_AND_STUB: 'success' }
+      const map = { stub: '', passthrough: 'info', record: 'warning', 'record-and-stub': 'success' }
       return map[mode] || ''
     }
 
     function modeDisplayName(mode) {
-      const map = { STUB: 'Stub', PASSTHROUGH: 'Passthrough', RECORD: 'Record', RECORD_AND_STUB: 'Record+Stub' }
+      const map = { stub: 'Stub', passthrough: 'Passthrough', record: 'Record', 'record-and-stub': 'Record+Stub' }
       return map[mode] || mode
     }
 

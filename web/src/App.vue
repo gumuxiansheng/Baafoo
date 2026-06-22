@@ -117,14 +117,35 @@ export default {
 
     let timer = null
 
-    onMounted(async () => {
-      await authStore.fetchMe()
+    function startPolling() {
       statusStore.fetchStatus()
       timer = setInterval(() => statusStore.fetchStatus(), 30000)
+    }
+
+    function stopPolling() {
+      if (timer) {
+        clearInterval(timer)
+        timer = null
+      }
+    }
+
+    function onVisibilityChange() {
+      if (document.hidden) {
+        stopPolling()
+      } else {
+        startPolling()
+      }
+    }
+
+    onMounted(async () => {
+      await authStore.fetchMe()
+      startPolling()
+      document.addEventListener('visibilitychange', onVisibilityChange)
     })
 
     onUnmounted(() => {
-      if (timer) clearInterval(timer)
+      stopPolling()
+      document.removeEventListener('visibilitychange', onVisibilityChange)
     })
 
     return {

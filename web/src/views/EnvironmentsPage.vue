@@ -65,6 +65,20 @@
             <el-option label="Record+Stub" value="record-and-stub" />
           </el-select>
         </el-form-item>
+        <el-form-item label="环境变量">
+          <div style="width: 100%">
+            <div v-for="(v, idx) in form.variables" :key="idx" style="display: flex; gap: 8px; margin-bottom: 8px">
+              <el-input v-model="v.key" placeholder="变量名" style="flex: 1" />
+              <el-input v-model="v.value" placeholder="值" style="flex: 1" />
+              <el-button text type="danger" @click="removeCreateVariable(idx)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </div>
+            <el-button size="small" type="primary" plain @click="addCreateVariable">
+              <el-icon><Plus /></el-icon> 新增变量
+            </el-button>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -110,7 +124,7 @@ export default {
     const associateVisible = ref(false)
     const currentEnv = reactive({ id: '', name: '' })
     const selectedRuleIds = ref([])
-    const form = reactive({ name: '', mode: 'record-and-stub' })
+    const form = reactive({ name: '', mode: 'record-and-stub', variables: [] })
 
     async function loadEnvs() {
       loading.value = true
@@ -166,14 +180,31 @@ export default {
       return map[row.mode] || row.mode
     }
 
+    function addCreateVariable() {
+      form.variables.push({ key: '', value: '' })
+    }
+
+    function removeCreateVariable(index) {
+      form.variables.splice(index, 1)
+    }
+
     function showCreateDialog() {
       form.name = ''
       form.mode = 'record-and-stub'
+      form.variables = []
       dialogVisible.value = true
     }
 
     async function createEnv() {
-      const res = await api.createEnvironment({ name: form.name, mode: form.mode })
+      const variables = {}
+      for (const item of form.variables) {
+        if (item.key.trim()) {
+          variables[item.key.trim()] = item.value
+        }
+      }
+      const data = { name: form.name, mode: form.mode }
+      if (Object.keys(variables).length > 0) data.variables = variables
+      const res = await api.createEnvironment(data)
       if (res.success) {
         dialogVisible.value = false
         await loadEnvs()
@@ -197,7 +228,7 @@ export default {
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
 
     onMounted(() => { loadEnvs(); loadRules() })
-    return { environments, allRules, loading, saving, dialogVisible, associateVisible, currentEnv, selectedRuleIds, form, showCreateDialog, createEnv, changeMode, viewDetail, deleteEnv, modeTagType, modeLabel, formatTime, getRuleCountForEnv, showAssociateDialog, saveAssociation, authStore }
+    return { environments, allRules, loading, saving, dialogVisible, associateVisible, currentEnv, selectedRuleIds, form, showCreateDialog, createEnv, addCreateVariable, removeCreateVariable, changeMode, viewDetail, deleteEnv, modeTagType, modeLabel, formatTime, getRuleCountForEnv, showAssociateDialog, saveAssociation, authStore }
   }
 }
 </script>

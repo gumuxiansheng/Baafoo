@@ -66,7 +66,7 @@ database:
 
 # Authentication configuration — 测试环境关闭认证（Agent不支持API Key）
 auth:
-  enabled: false
+  enabled: true
   localBypass: false
   jwtSecret: "baafoo-staging-jwt-secret-change-in-production-2024"
   tokenExpiryHours: 8
