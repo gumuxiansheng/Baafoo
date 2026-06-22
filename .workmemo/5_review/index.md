@@ -6,6 +6,12 @@
 > **新发现总问题数**: **174 个** (Critical: 17, High: 32, Medium: 57, Low: 53)
 > **+ 第二轮补充**: 37 个新问题（Mapper XML: 17, 测试代码: 23, CI/CD: 14, 部分去重）
 
+**审查后修复进展**（2026-06-22）：
+- 插件系统经历了 P0-P4 完整重构（见 `plugin-arch-advice.md`），03-agent-review 中大量插件相关问题已解决
+- 20-code-review-fixes / 24-code-review-fixes 修复了部分 Critical/High 问题
+- 协议版本升级（Kafka/Pulsar/JMS 正式支持）解决了部分 broker 相关问题
+- 尚存问题待逐项复核
+
 ---
 
 ## 报告索引

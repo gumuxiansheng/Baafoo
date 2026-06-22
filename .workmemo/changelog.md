@@ -1,5 +1,49 @@
 # Baafoo 工作文档变更日志
 
+## 2026-06-22
+
+### .workmemo 文档梳理
+- 重写 `index.md`：从 10 个文件扩展到收录全部 60+ 文件，按活跃/过时/存档分类
+- 创建 `5_review/archive/` 子目录，归档 4 个早期审查报告（20260531/20260603 系列）
+- 给 6 个过时文档添加 📦 存档状态头
+- 修复 `6_dev-notes/` 编号冲突：`20-code-review-fixes.md` → `20a-code-review-fixes.md`
+- 更新 `5_review/index.md` 添加审查后修复进展说明
+
+### 插件系统 P0-P4 完成
+- `plugin-arch-advice.md` 更新至 P0-P4 全部完成状态
+- 新增 `plugin-improvement-tasks.md`（31 项任务清单）
+- 新增 `plugin-improvement-status-review.md`（逐项核查报告）
+- 新增 `plugin-analysis-report.md`（插件系统完整性审查 & MockForge 对比）
+- 新增 `docs/plugin-developer-guide.md`（开发者指南，含 ClassLoader 图、拦截模式表、扩展 Checklist）
+- 新增 `baafoo-example-plugins/` 统一目录（tdmq + feign + kafka-redirect）
+- 合并两份插件指南为权威版本
+
+### MCP Server 集成
+- 新增 `agent-skill/baafoo-mock-manager/` — QoderWork AI 技能包
+
+## 2026-06-20
+
+### MockForge 对比与迁移分析
+- 新增 `Baafoo_mockforge_深度对比与移植建议.md`
+- 新增 `P0移植完成度核验_20260619.md`
+- 新增 `Phase1_Phase2_Code_Review_20260619.md`
+- 新增 `协议版本升级需求分析_20260619.md`
+- 新增 `gRPC_WebSocket_MQTT_AMQP协议可行性分析_20260620.md`
+- 新增 `mockforge_AI_Baafoo迁移分析_20260620.md`
+- 新增 `mockforge_AI集成功能分析_20260620.md`
+- 新增 `mockforge_CLI功能分析与迁移评估_20260620.md`
+- 新增 `多语言SDK扩展可行性分析_20260620.md`
+
+### 全量代码审查
+- 新增 `index.md` + 00~10 编号审查报告（174+37 个问题）
+- 新增 `baafoo-feature-extension-prd-review.md`
+
+## 2026-06-19
+
+### 功能扩展开发笔记
+- 新增 `6_dev-notes/16-faker-increment.md` 至 `24-code-review-fixes.md`（共 9 篇）
+- 涵盖：Faker、GraphQL、有状态Mock、故障注入、Chaos工程、OpenAPI导入、Web控制台UI、代码审查修复
+
 ## 2026-06-18
 
 ### UI 测试与问题修复
