@@ -1,0 +1,11 @@
+{
+  "name": "@baafoo/sdk",
+  "version": "1.0.0",
+  "description": "Baafoo Thin SDK - Node.js implementation",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "test": "node test/client.test.js"
+  },
+  "license": "MIT"
+}
