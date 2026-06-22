@@ -64,4 +64,5 @@ __pycache__/
 # Go build output
 sdks/go/baafoo/baafoo.test
 proxy/baafoo-proxy
+proxy/proxy.exe
 proxy/proxy.test
