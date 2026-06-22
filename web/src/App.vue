@@ -116,8 +116,13 @@ export default {
     }
 
     let timer = null
+    let visibilityTimer = null
 
     function startPolling() {
+      if (timer) {
+        clearInterval(timer)
+        timer = null
+      }
       statusStore.fetchStatus()
       timer = setInterval(() => statusStore.fetchStatus(), 30000)
     }
@@ -130,11 +135,14 @@ export default {
     }
 
     function onVisibilityChange() {
-      if (document.hidden) {
-        stopPolling()
-      } else {
-        startPolling()
-      }
+      clearTimeout(visibilityTimer)
+      visibilityTimer = setTimeout(() => {
+        if (document.hidden) {
+          stopPolling()
+        } else {
+          startPolling()
+        }
+      }, 300)
     }
 
     onMounted(async () => {
@@ -145,6 +153,7 @@ export default {
 
     onUnmounted(() => {
       stopPolling()
+      clearTimeout(visibilityTimer)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     })
 
