@@ -42,8 +42,8 @@
 | 文档 | 状态 | 说明 |
 |------|------|------|
 | [5_review/plugin-arch-advice.md](5_review/plugin-arch-advice.md) | ✅ | **架构决策文档** — P0-P4 实施状态跟踪 |
-| [5_review/plugin-improvement-tasks.md](5_review/plugin-improvement-tasks.md) | ✅ | P0-P4 共 31 项任务清单 |
-| [5_review/plugin-improvement-status-review.md](5_review/plugin-improvement-status-review.md) | ✅ | 逐项实施状态核查 |
+| [5_review/plan-plugin-improvement-tasks.md](5_review/plan-plugin-improvement-tasks.md) | ✅ | P0-P4 共 31 项任务清单 |
+| [5_review/report-plugin-improvement-status.md](5_review/report-plugin-improvement-status.md) | ✅ | 逐项实施状态核查 |
 | [5_review/plugin-analysis-report.md](5_review/plugin-analysis-report.md) | 📦 | 插件系统完整性审查 & MockForge 对比（初始分析） |
 
 ---
@@ -71,17 +71,17 @@
 
 | 文档 | 状态 | 说明 |
 |------|------|------|
-| [5_review/archive/code-review-report-20260531.md](5_review/archive/code-review-report-20260531.md) | ⚠️ | 5-31 首轮审查（6 个模块），已被全量审查取代 |
-| [5_review/archive/code-smells-report-20260531.md](5_review/archive/code-smells-report-20260531.md) | ⚠️ | 5-31 代码坏味道（26 项） |
-| [5_review/archive/architecture-review-20260603.md](5_review/archive/architecture-review-20260603.md) | ⚠️ | 6-03 架构分析，插件系统已大幅重构 |
-| [5_review/archive/code-review-report-20260603.md](5_review/archive/code-review-report-20260603.md) | ⚠️ | 6-03 第二轮审查（7 个模块） |
+| [5_review/archive/review-code-20260531.md](5_review/archive/review-code-20260531.md) | ⚠️ | 5-31 首轮审查（6 个模块），已被全量审查取代 |
+| [5_review/archive/review-code-smells-20260531.md](5_review/archive/review-code-smells-20260531.md) | ⚠️ | 5-31 代码坏味道（26 项） |
+| [5_review/archive/review-architecture-20260603.md](5_review/archive/review-architecture-20260603.md) | ⚠️ | 6-03 架构分析，插件系统已大幅重构 |
+| [5_review/archive/review-code-20260603.md](5_review/archive/review-code-20260603.md) | ⚠️ | 6-03 第二轮审查（7 个模块） |
 
 ### 4c. 产品建议与 PRD 审查
 
 | 文档 | 状态 | 说明 |
 |------|------|------|
 | [5_review/product-advice.md](5_review/product-advice.md) | 📦 | 产品建议书（P0-P2 分级方向建议） |
-| [5_review/baafoo-feature-extension-prd-review.md](5_review/baafoo-feature-extension-prd-review.md) | 📦 | 功能扩展 PRD v1.0 审查意见 |
+| [5_review/review-feature-extension-prd.md](5_review/review-feature-extension-prd.md) | 📦 | 功能扩展 PRD v1.0 审查意见 |
 
 ---
 
@@ -89,9 +89,9 @@
 
 | 文档 | 状态 | 说明 |
 |------|------|------|
-| [5_review/Baafoo_mockforge_深度对比与移植建议.md](5_review/Baafoo_mockforge_深度对比与移植建议.md) | 📦 | P0 移植规划（P0 已 100% 完成） |
-| [5_review/P0移植完成度核验_20260619.md](5_review/P0移植完成度核验_20260619.md) | 📦 | P0 验收里程碑 |
-| [5_review/Phase1_Phase2_Code_Review_20260619.md](5_review/Phase1_Phase2_Code_Review_20260619.md) | 📦 | Kafka/Pulsar 协议升级专项审查 |
+| [5_review/analysis-mockforge-comparison.md](5_review/analysis-mockforge-comparison.md) | 📦 | P0 移植规划（P0 已 100% 完成） |
+| [5_review/report-p0-migration-verification-20260619.md](5_review/report-p0-migration-verification-20260619.md) | 📦 | P0 验收里程碑 |
+| [5_review/review-phase1-phase2-code-20260619.md](5_review/review-phase1-phase2-code-20260619.md) | 📦 | Kafka/Pulsar 协议升级专项审查 |
 
 ---
 
@@ -99,12 +99,12 @@
 
 | 文档 | 说明 |
 |------|------|
-| [5_review/协议版本升级需求分析_20260619.md](5_review/协议版本升级需求分析_20260619.md) | MQ 协议版本兼容性升级需求 |
-| [5_review/gRPC_WebSocket_MQTT_AMQP协议可行性分析_20260620.md](5_review/gRPC_WebSocket_MQTT_AMQP协议可行性分析_20260620.md) | 4 种新协议可行性研究 |
-| [5_review/mockforge_AI_Baafoo迁移分析_20260620.md](5_review/mockforge_AI_Baafoo迁移分析_20260620.md) | AI 功能移植方案 |
-| [5_review/mockforge_AI集成功能分析_20260620.md](5_review/mockforge_AI集成功能分析_20260620.md) | mockforge AI 模块源码分析 |
-| [5_review/mockforge_CLI功能分析与迁移评估_20260620.md](5_review/mockforge_CLI功能分析与迁移评估_20260620.md) | CLI 对比分析 |
-| [5_review/多语言SDK扩展可行性分析_20260620.md](5_review/多语言SDK扩展可行性分析_20260620.md) | 多语言 SDK 方案研究 |
+| [5_review/analysis-protocol-version-upgrade-20260619.md](5_review/analysis-protocol-version-upgrade-20260619.md) | MQ 协议版本兼容性升级需求 |
+| [5_review/analysis-new-protocols-feasibility-20260620.md](5_review/analysis-new-protocols-feasibility-20260620.md) | 4 种新协议可行性研究 |
+| [5_review/analysis-mockforge-ai-migration-20260620.md](5_review/analysis-mockforge-ai-migration-20260620.md) | AI 功能移植方案 |
+| [5_review/analysis-mockforge-ai-features-20260620.md](5_review/analysis-mockforge-ai-features-20260620.md) | mockforge AI 模块源码分析 |
+| [5_review/analysis-mockforge-cli-migration-20260620.md](5_review/analysis-mockforge-cli-migration-20260620.md) | CLI 对比分析 |
+| [5_review/analysis-multilang-sdk-feasibility-20260620.md](5_review/analysis-multilang-sdk-feasibility-20260620.md) | 多语言 SDK 方案研究 |
 
 ---
 

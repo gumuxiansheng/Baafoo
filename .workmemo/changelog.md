@@ -8,6 +8,7 @@
 - 给 6 个过时文档添加 📦 存档状态头
 - 修复 `6_dev-notes/` 编号冲突：`20-code-review-fixes.md` → `20a-code-review-fixes.md`
 - 更新 `5_review/index.md` 添加审查后修复进展说明
+- 统一文件命名：16 个文件添加类型前缀（`analysis-`/`report-`/`review-`/`plan-`），统一 kebab-case
 
 ### 插件系统 P0-P4 完成
 - `plugin-arch-advice.md` 更新至 P0-P4 全部完成状态

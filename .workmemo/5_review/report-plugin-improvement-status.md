@@ -2,7 +2,7 @@
 
 审查日期：2026-06-21
 
-对照 `plugin-improvement-tasks.md` 中的 31 项任务，逐项核查代码实现状态。
+对照 `plan-plugin-improvement-tasks.md` 中的 31 项任务，逐项核查代码实现状态。
 
 ---
 

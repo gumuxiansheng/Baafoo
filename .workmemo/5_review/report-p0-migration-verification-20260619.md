@@ -1,6 +1,6 @@
 # P0 移植完成度核验报告
 
-> 基准：`Baafoo_mockforge_深度对比与移植建议.md` §三 推荐移植优先级
+> 基准：`analysis-mockforge-comparison.md` §三 推荐移植优先级
 > 核验 commit：`a2524ac feat(p0): Kafka fault injection + MQ Relationship`
 > 测试：baafoo-server 134 tests, 0 failures
 
