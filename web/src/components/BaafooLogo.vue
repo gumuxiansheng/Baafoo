@@ -1,27 +1,17 @@
 <template>
-  <img
-    class="baafoo-logo"
-    :src="logoSrc"
-    alt="Baafoo"
-  />
+  <svg class="baafoo-logo" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="32" cy="32" r="30" fill="rgba(255,255,255,0.18)" stroke="rgba(255,255,255,0.2)" stroke-width="0.5" stroke-opacity="0.3"/>
+    <circle cx="32" cy="34" r="15" fill="white"/>
+    <path d="M24 25 Q21 14 17 10" stroke="#f59e0b" stroke-width="3" stroke-linecap="round" fill="none"/>
+    <path d="M40 25 Q43 14 47 10" stroke="#f59e0b" stroke-width="3" stroke-linecap="round" fill="none"/>
+    <circle cx="26" cy="32" r="3" fill="#303133"/>
+    <circle cx="38" cy="32" r="3" fill="#303133"/>
+  </svg>
 </template>
 
 <script>
-import logoSvg from '@/assets/baafoo-logo.svg'
-
 export default {
   name: 'BaafooLogo',
-  props: {
-    variant: {
-      type: String,
-      default: 'default',
-    },
-  },
-  computed: {
-    logoSrc() {
-      return logoSvg
-    },
-  },
 }
 </script>
 
@@ -29,5 +19,7 @@ export default {
 .baafoo-logo {
   display: inline-block;
   vertical-align: middle;
+  width: 32px;
+  height: 32px;
 }
 </style>
