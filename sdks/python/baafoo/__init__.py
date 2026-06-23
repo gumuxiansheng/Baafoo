@@ -6,6 +6,11 @@ Supports register, heartbeat, poll rules, and report recordings.
 
 from .client import Client, Options
 from .models import RecordingEntry, Rule, MatchCondition, ResponseEntry
+from .intercept import patch, unpatch
 
 __version__ = "1.0.0"
-__all__ = ["Client", "Options", "RecordingEntry", "Rule", "MatchCondition", "ResponseEntry"]
+__all__ = [
+    "Client", "Options", "RecordingEntry", "Rule",
+    "MatchCondition", "ResponseEntry",
+    "patch", "unpatch",
+]
