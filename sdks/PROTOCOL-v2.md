@@ -109,7 +109,7 @@ POST /agent/register
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `agentId` | string | 服务器确认的 Agent ID |
-| `mode` | string | 环境模式：`stub`/`record`/`record-and-stub`/`passthrough` |
+| `mode` | string | 环境模式：`stub`/`record`/`record-and-stub`/`passthrough`/`record-all` |
 | `pollIntervalSec` | int | 建议的轮询间隔（秒） |
 
 **说明**：服务器使用观察到的源 IP 覆盖 agent 自报的 IP，以应对 Docker NAT 场景。
@@ -355,12 +355,47 @@ GET /agents
 
 ## 4. 环境模式
 
-| 模式 | 说明 |
-|------|------|
-| `stub` | 仅挡板：匹配规则返回 mock，不匹配返回 404/passthrough |
-| `record` | 仅录制：所有请求透传到真实后端，同时录制 |
-| `record-and-stub` | 录制+挡板：匹配规则返回 mock，不匹配透传并录制 |
-| `passthrough` | 透传：所有请求直接转发到真实后端 |
+环境模式控制 SDK/Agent 的请求处理行为：
+
+| 模式 | 规则匹配时 | 未匹配规则时 | 录制范围 |
+|------|-----------|-------------|---------|
+| `stub` | 返回 mock 响应 | passthrough（不录制） | 无 |
+| `passthrough` | passthrough（不录制） | passthrough（不录制） | 无 |
+| `record` | passthrough + 录制 | passthrough（不录制） | 仅匹配规则 |
+| `record-and-stub` | 返回 mock + 录制 | passthrough（不录制） | 仅匹配规则 |
+| `record-all` | passthrough + 录制 | **passthrough + 录制** | **所有请求** |
+
+### 4.1 模式行为详解
+
+**STUB (`stub`)**
+- 匹配规则：返回预配置的 mock 响应
+- 未匹配规则：请求透传到真实后端，不录制
+- 典型用途：开发测试时使用模拟数据
+
+**PASSTHROUGH (`passthrough`)**
+- 所有请求直接转发到真实后端
+- 不进行任何录制或 mock
+- 典型用途：需要真实服务行为的场景
+
+**RECORD (`record`)**
+- 匹配规则：请求透传并录制响应
+- 未匹配规则：请求透传但**不录制**
+- 典型用途：为匹配规则的请求创建录制
+
+**RECORD_AND_STUB (`record-and-stub`)**
+- 匹配规则：返回 mock 响应并录制请求
+- 未匹配规则：请求透传但**不录制**
+- 典型用途：对比 mock 与真实行为
+
+**RECORD_ALL (`record-all`)**
+- **唯一录制所有请求的模式**，无论是否匹配规则
+- 匹配规则：请求透传并录制
+- 未匹配规则：请求透传并录制
+- 典型用途：首次流量采集、全面录制
+
+### 4.2 关键约束
+
+> **重要**：只有 `record-all` 模式会录制未匹配规则的请求。所有其他模式仅在请求匹配规则时才进行录制。
 
 ---
 
