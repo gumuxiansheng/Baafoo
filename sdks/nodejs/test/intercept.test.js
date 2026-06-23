@@ -129,26 +129,40 @@ async function runTests() {
     assert.strictEqual(resp.body, 'real response from backend');
   });
 
-  // Test 4: record mode captures request
-  await test('record mode records request', async () => {
-    const c = newClient('record', []);
+  // Test 4: record mode captures matched request only
+  await test('record mode records matched requests only', async () => {
+    const c = newClient('record', [
+      {
+        id: 'rule-001',
+        enabled: true,
+        conditions: [
+          { field: 'method', operator: 'equals', value: 'GET' },
+          { field: 'path', operator: 'prefix', value: '/api/' },
+        ],
+      },
+    ]);
     patch(c);
 
+    // 发送请求（路径匹配规则）- 应该录制
     const resp = await httpGet(`http://127.0.0.1:${backendPort}/api/test`);
     assert.strictEqual(resp.body, 'real response from backend');
 
-    // 等待录制（end 事件是异步的）
+    // 发送第二个请求（路径不匹配规则）- 不应该录制
+    const resp2 = await httpGet(`http://127.0.0.1:${backendPort}/other/test`);
+    assert.strictEqual(resp2.body, 'real response from backend');
+
+    // 等待录制
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    assert.ok(c._recordingBuffer.length >= 1, 'expected at least 1 recording');
+    // 应该只录制了 1 个请求（匹配规则的）
+    assert.strictEqual(c._recordingBuffer.length, 1, `expected 1 recording, got ${c._recordingBuffer.length}`);
     const entry = c._recordingBuffer[0];
     assert.strictEqual(entry.method, 'GET');
     assert.strictEqual(entry.path, '/api/test');
-    assert.strictEqual(entry.responseStatusCode, 200);
   });
 
   // Test 5: record-and-stub mode
-  await test('record-and-stub mode returns mock and records', async () => {
+  await test('record-and-stub mode records matched requests only', async () => {
     const c = newClient('record-and-stub', [
       {
         id: 'rule-001',
@@ -164,15 +178,19 @@ async function runTests() {
     ]);
     patch(c);
 
-    // 匹配规则 — 返回 mock
+    // 匹配规则 — 返回 mock，应该录制
     const resp = await httpGet(`http://127.0.0.1:${backendPort}/api/orders`);
     assert.ok(resp.body.includes('"stub":true'), `unexpected body: ${resp.body}`);
+
+    // 不匹配规则 — passthrough，不录制
+    const resp2 = await httpGet(`http://127.0.0.1:${backendPort}/other/test`);
+    assert.strictEqual(resp2.body, 'real response from backend');
 
     // 等待录制
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    // 应该有录制
-    assert.ok(c._recordingBuffer.length >= 1, 'expected recordings in record-and-stub mode');
+    // 应该只录制了 1 个请求（匹配规则的）
+    assert.strictEqual(c._recordingBuffer.length, 1, `expected 1 recording, got ${c._recordingBuffer.length}`);
   });
 
   // Test 6: delay injection

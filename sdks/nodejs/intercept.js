@@ -112,7 +112,60 @@ function _patchedRequest(...args) {
   const mode = _sdkInstance.mode;
   const rules = _sdkInstance.rules;
 
-  // record-all 模式：所有请求都 passthrough + 录制（不返回 mock）
+  // stub 模式：匹配规则返回 mock，未匹配 passthrough
+  if (mode === 'stub') {
+    for (const rule of rules) {
+      if (!rule.enabled) continue;
+      if (_matchRule(rule, method, path)) {
+        return _buildMockResponse(rule, options, callback, method, path, host, port);
+      }
+    }
+    // 未匹配规则：passthrough
+    return _originalHttpRequest.apply(http, args);
+  }
+
+  // record-and-stub 模式：匹配规则返回 mock + 录制，未匹配 passthrough（不录制）
+  if (mode === 'record-and-stub') {
+    for (const rule of rules) {
+      if (!rule.enabled) continue;
+      if (_matchRule(rule, method, path)) {
+        return _buildMockResponse(rule, options, callback, method, path, host, port);
+      }
+    }
+    // 未匹配规则：passthrough，不录制
+    return _originalHttpRequest.apply(http, args);
+  }
+
+  // record 模式：匹配规则 passthrough + 录制，未匹配 passthrough（不录制）
+  if (mode === 'record') {
+    let matched = false;
+    for (const rule of rules) {
+      if (!rule.enabled) continue;
+      if (_matchRule(rule, method, path)) {
+        matched = true;
+        break;
+      }
+    }
+    if (matched) {
+      const startTime = Date.now();
+      const wrappedCallback = (res) => {
+        const durationMs = Date.now() - startTime;
+        _recordResponse(_sdkInstance, method, path, host, port, res, durationMs, options);
+        if (callback) callback(res);
+      };
+      const newArgs = [...args];
+      if (newArgs.length > 0 && typeof newArgs[newArgs.length - 1] === 'function') {
+        newArgs[newArgs.length - 1] = wrappedCallback;
+      } else {
+        newArgs.push(wrappedCallback);
+      }
+      return _originalHttpRequest.apply(http, newArgs);
+    }
+    // 未匹配规则：passthrough，不录制
+    return _originalHttpRequest.apply(http, args);
+  }
+
+  // record-all 模式：所有请求都 passthrough + 录制（包含未匹配规则的请求）
   if (mode === 'record-all') {
     const startTime = Date.now();
     const wrappedCallback = (res) => {
@@ -129,48 +182,8 @@ function _patchedRequest(...args) {
     return _originalHttpRequest.apply(http, newArgs);
   }
 
-  // 在 stub/record-and-stub 模式下尝试匹配规则
-  let matchedRule = null;
-  if (mode === 'stub' || mode === 'record-and-stub') {
-    for (const rule of rules) {
-      if (!rule.enabled) continue;
-      if (_matchRule(rule, method, path)) {
-        matchedRule = rule;
-        break;
-      }
-    }
-  }
-
-  if (matchedRule) {
-    // 返回 mock 响应
-    return _buildMockResponse(matchedRule, options, callback, method, path, host, port);
-  }
-
-  // 未匹配规则：passthrough 或 record 模式
-  const startTime = Date.now();
-
-  // 包装 callback 以录制响应
-  const wrappedCallback = (res) => {
-    const durationMs = Date.now() - startTime;
-
-    if (mode === 'record' || mode === 'record-and-stub') {
-      _recordResponse(_sdkInstance, method, path, host, port, res, durationMs, options);
-    }
-
-    if (callback) {
-      callback(res);
-    }
-  };
-
-  // 使用原始的 request
-  const newArgs = [...args];
-  if (newArgs.length > 0 && typeof newArgs[newArgs.length - 1] === 'function') {
-    newArgs[newArgs.length - 1] = wrappedCallback;
-  } else {
-    newArgs.push(wrappedCallback);
-  }
-
-  return _originalHttpRequest.apply(http, newArgs);
+  // passthrough 模式：直接 passthrough，不录制
+  return _originalHttpRequest.apply(http, args);
 }
 
 /**

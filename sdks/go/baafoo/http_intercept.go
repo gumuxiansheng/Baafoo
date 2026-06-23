@@ -54,7 +54,39 @@ func (c *Client) RestoreHTTP() {
 func (rt *baafooRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	mode := rt.sdk.GetMode()
 
-	// record-all 模式：所有请求都 passthrough + 录制（不返回 mock）
+	// 在 stub/record-and-stub 模式下尝试匹配规则
+	if mode == ModeStub || mode == ModeRecordAndStub {
+		if rule := rt.sdk.MatchRequest(req.Method, req.URL.Path); rule != nil {
+			// 匹配到规则，返回 mock 响应
+			resp := rt.buildMockResponse(req, rule)
+			// record-and-stub 模式：录制匹配规则的 mock 请求
+			if mode == ModeRecordAndStub {
+				rt.recordRequest(req, resp, 0)
+			}
+			return resp, nil
+		}
+		// 未匹配规则：passthrough，不录制
+		return rt.transport.RoundTrip(req)
+	}
+
+	// record 模式：尝试匹配规则
+	if mode == ModeRecord {
+		if rule := rt.sdk.MatchRequest(req.Method, req.URL.Path); rule != nil {
+			// 匹配到规则：passthrough + 录制
+			startTime := time.Now()
+			resp, err := rt.transport.RoundTrip(req)
+			if err != nil {
+				return resp, err
+			}
+			duration := time.Since(startTime).Milliseconds()
+			rt.recordRequest(req, resp, duration)
+			return resp, nil
+		}
+		// 未匹配规则：passthrough，不录制
+		return rt.transport.RoundTrip(req)
+	}
+
+	// record-all 模式：所有请求都 passthrough + 录制（包含未匹配规则的请求）
 	if mode == ModeRecordAll {
 		startTime := time.Now()
 		resp, err := rt.transport.RoundTrip(req)
@@ -66,33 +98,8 @@ func (rt *baafooRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 		return resp, nil
 	}
 
-	// 在 stub/record-and-stub 模式下尝试匹配规则
-	if mode == ModeStub || mode == ModeRecordAndStub {
-		if rule := rt.sdk.MatchRequest(req.Method, req.URL.Path); rule != nil {
-			// 匹配到规则，返回 mock 响应
-			resp := rt.buildMockResponse(req, rule)
-			// 如果是录制模式，也录制请求
-			if mode == ModeRecordAndStub {
-				rt.recordRequest(req, resp, 0)
-			}
-			return resp, nil
-		}
-	}
-
-	// 未匹配规则：passthrough 或 record 模式
-	startTime := time.Now()
-	resp, err := rt.transport.RoundTrip(req)
-	if err != nil {
-		return resp, err
-	}
-
-	// 录制模式：记录请求和响应
-	if mode == ModeRecord || mode == ModeRecordAndStub {
-		duration := time.Since(startTime).Milliseconds()
-		rt.recordRequest(req, resp, duration)
-	}
-
-	return resp, nil
+	// passthrough 模式：直接 passthrough，不录制
+	return rt.transport.RoundTrip(req)
 }
 
 // buildMockResponse 根据规则构建 mock 响应

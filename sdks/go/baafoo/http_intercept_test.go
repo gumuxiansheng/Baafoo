@@ -103,7 +103,7 @@ func TestInterceptHTTPPassthrough(t *testing.T) {
 	}
 }
 
-// 测试 HTTP 拦截 - record 模式录制请求
+// 测试 HTTP 拦截 - record 模式：匹配规则时录制，未匹配时不录制
 func TestInterceptHTTPRecord(t *testing.T) {
 	server, h := newMockServer(t)
 
@@ -120,9 +120,18 @@ func TestInterceptHTTPRecord(t *testing.T) {
 	}
 	defer c.Close()
 
-	// Start 后覆盖模式为 record
+	// 设置匹配规则
+	c.rules.Store([]Rule{
+		{
+			ID:      "rule-001",
+			Enabled: true,
+			Conditions: []MatchCondition{
+				{Field: "method", Operator: "equals", Value: "GET"},
+				{Field: "path", Operator: "prefix", Value: "/api/"},
+			},
+		},
+	})
 	c.mode.Store(ModeRecord)
-	c.rules.Store([]Rule{})
 
 	c.InterceptHTTP()
 	defer c.RestoreHTTP()
@@ -135,18 +144,26 @@ func TestInterceptHTTPRecord(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	// 发送请求
+	// 发送请求（路径匹配规则）- 应该录制
 	resp, err := http.Get(backend.URL + "/api/test")
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
 	resp.Body.Close()
 
+	// 发送第二个请求（路径不匹配规则）- 不应该录制
+	resp2, err := http.Get(backend.URL + "/other/test")
+	if err != nil {
+		t.Fatalf("Request 2 failed: %v", err)
+	}
+	resp2.Body.Close()
+
 	// 关闭 SDK 以 flush 录制
 	c.Close()
 
-	if h.recordingCount == 0 {
-		t.Error("expected recordings to be uploaded")
+	// 应该只录制了 1 个请求（匹配规则的）
+	if h.recordingCount != 1 {
+		t.Errorf("expected 1 recording (matched rule only), got %d", h.recordingCount)
 	}
 }
 

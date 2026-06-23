@@ -120,19 +120,34 @@ class TestIntercept(unittest.TestCase):
             unpatch()
 
     def test_record_mode_records(self):
-        """测试 record 模式录制请求"""
+        """测试 record 模式：匹配规则时录制，未匹配时不录制"""
         c = self._new_client()
         c._mode = "record"
-        c._rules = []
+        # 设置匹配规则
+        c._rules = [
+            Rule(
+                id="rule-001",
+                enabled=True,
+                conditions=[
+                    MatchCondition(field="method", operator="equals", value="GET"),
+                    MatchCondition(field="path", operator="prefix", value="/api/"),
+                ],
+            ),
+        ]
         patch(c)
         try:
             import urllib.request
+            # 发送请求（路径匹配规则）- 应该录制
             resp = urllib.request.urlopen(f"http://127.0.0.1:{self.backend_port}/api/test")
             resp.read()
+
+            # 发送第二个请求（路径不匹配规则）- 不应该录制
+            resp2 = urllib.request.urlopen(f"http://127.0.0.1:{self.backend_port}/other/test")
+            resp2.read()
         finally:
             unpatch()
 
-        # 验证录制
+        # 验证录制 - 应该只录制了 1 个请求（匹配规则的）
         self.assertEqual(len(c._recording_buffer), 1)
         entry = c._recording_buffer[0]
         self.assertEqual(entry.method, "GET")
@@ -140,7 +155,7 @@ class TestIntercept(unittest.TestCase):
         self.assertEqual(entry.response_status_code, 200)
 
     def test_record_and_stub_mode(self):
-        """测试 record-and-stub 模式"""
+        """测试 record-and-stub 模式：匹配规则返回 mock + 录制，未匹配 passthrough（不录制）"""
         c = self._new_client()
         c._mode = "record-and-stub"
         c._rules = [
@@ -159,20 +174,20 @@ class TestIntercept(unittest.TestCase):
         patch(c)
         try:
             import urllib.request
-            # 匹配规则 — 返回 mock
+            # 匹配规则 — 返回 mock，应该录制
             resp = urllib.request.urlopen(f"http://127.0.0.1:{self.backend_port}/api/orders")
             body = resp.read().decode("utf-8")
             self.assertIn('"stub":true', body)
 
-            # 不匹配规则 — passthrough
+            # 不匹配规则 — passthrough，不录制
             resp2 = urllib.request.urlopen(f"http://127.0.0.1:{self.backend_port}/other")
             body2 = resp2.read().decode("utf-8")
             self.assertEqual(body2, "real response from backend")
         finally:
             unpatch()
 
-        # 验证录制（匹配规则的请求也应该被录制）
-        self.assertGreaterEqual(len(c._recording_buffer), 1)
+        # 验证录制 - 应该只录制了 1 个请求（匹配规则的）
+        self.assertEqual(len(c._recording_buffer), 1)
 
     def test_delay_injection(self):
         """测试延迟注入"""

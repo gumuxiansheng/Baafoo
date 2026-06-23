@@ -70,7 +70,46 @@ def _patched_urlopen(url, data=None, timeout=None, **kwargs):
     mode = _sdk_instance.mode
     rules = _sdk_instance.rules
 
-    # record-all 模式：所有请求都 passthrough + 录制（不返回 mock）
+    # stub 模式：匹配规则返回 mock，未匹配 passthrough
+    if mode == "stub":
+        for rule in rules:
+            if not rule.enabled:
+                continue
+            if _match_rule(rule, method, path):
+                return _build_mock_response(rule, method, path)
+        return _original_urlopen(url, data, timeout, **kwargs)
+
+    # record-and-stub 模式：匹配规则返回 mock + 录制，未匹配 passthrough
+    if mode == "record-and-stub":
+        for rule in rules:
+            if not rule.enabled:
+                continue
+            if _match_rule(rule, method, path):
+                resp = _build_mock_response(rule, method, path)
+                _record_request(_sdk_instance, method, path, host, port,
+                                data, resp, 0)
+                return resp
+        return _original_urlopen(url, data, timeout, **kwargs)
+
+    # record 模式：匹配规则 passthrough + 录制，未匹配 passthrough（不录制）
+    if mode == "record":
+        matched = False
+        for rule in rules:
+            if not rule.enabled:
+                continue
+            if _match_rule(rule, method, path):
+                matched = True
+                break
+        if matched:
+            start_time = time.time()
+            resp = _original_urlopen(url, data, timeout, **kwargs)
+            duration_ms = int((time.time() - start_time) * 1000)
+            _record_request(_sdk_instance, method, path, host, port,
+                            data, resp, duration_ms)
+            return resp
+        return _original_urlopen(url, data, timeout, **kwargs)
+
+    # record-all 模式：所有请求都 passthrough + 录制（包含未匹配规则的请求）
     if mode == "record-all":
         start_time = time.time()
         resp = _original_urlopen(url, data, timeout, **kwargs)
@@ -79,34 +118,8 @@ def _patched_urlopen(url, data=None, timeout=None, **kwargs):
                         data, resp, duration_ms)
         return resp
 
-    # 在 stub/record-and-stub 模式下尝试匹配规则
-    matched_rule = None
-    if mode in ("stub", "record-and-stub"):
-        for rule in rules:
-            if not rule.enabled:
-                continue
-            if _match_rule(rule, method, path):
-                matched_rule = rule
-                break
-
-    if matched_rule:
-        # 返回 mock 响应
-        resp = _build_mock_response(matched_rule, method, path)
-        if mode == "record-and-stub":
-            _record_request(_sdk_instance, method, path, host, port,
-                            data, resp, 0)
-        return resp
-
-    # 未匹配规则：passthrough 或 record 模式
-    start_time = time.time()
-    resp = _original_urlopen(url, data, timeout, **kwargs)
-    duration_ms = int((time.time() - start_time) * 1000)
-
-    if mode in ("record", "record-and-stub"):
-        _record_request(_sdk_instance, method, path, host, port,
-                        data, resp, duration_ms)
-
-    return resp
+    # passthrough 模式：直接 passthrough，不录制
+    return _original_urlopen(url, data, timeout, **kwargs)
 
 
 def _match_rule(rule, method, path):
