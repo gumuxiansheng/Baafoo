@@ -1,8 +1,8 @@
 """Baafoo Full SDK - Python HTTP interception via monkey-patching.
 
 Replaces urllib.request.urlopen and http.client.HTTPConnection to intercept
-all outbound HTTP requests. Supports stub, record, record-and-stub, and
-passthrough modes.
+all outbound HTTP requests. Supports stub, record, record-and-stub, passthrough,
+and record-all modes.
 """
 
 import io
@@ -69,6 +69,15 @@ def _patched_urlopen(url, data=None, timeout=None, **kwargs):
 
     mode = _sdk_instance.mode
     rules = _sdk_instance.rules
+
+    # record-all 模式：所有请求都 passthrough + 录制（不返回 mock）
+    if mode == "record-all":
+        start_time = time.time()
+        resp = _original_urlopen(url, data, timeout, **kwargs)
+        duration_ms = int((time.time() - start_time) * 1000)
+        _record_request(_sdk_instance, method, path, host, port,
+                        data, resp, duration_ms)
+        return resp
 
     # 在 stub/record-and-stub 模式下尝试匹配规则
     matched_rule = None

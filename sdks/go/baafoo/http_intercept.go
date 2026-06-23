@@ -54,6 +54,18 @@ func (c *Client) RestoreHTTP() {
 func (rt *baafooRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	mode := rt.sdk.GetMode()
 
+	// record-all 模式：所有请求都 passthrough + 录制（不返回 mock）
+	if mode == ModeRecordAll {
+		startTime := time.Now()
+		resp, err := rt.transport.RoundTrip(req)
+		if err != nil {
+			return resp, err
+		}
+		duration := time.Since(startTime).Milliseconds()
+		rt.recordRequest(req, resp, duration)
+		return resp, nil
+	}
+
 	// 在 stub/record-and-stub 模式下尝试匹配规则
 	if mode == ModeStub || mode == ModeRecordAndStub {
 		if rule := rt.sdk.MatchRequest(req.Method, req.URL.Path); rule != nil {

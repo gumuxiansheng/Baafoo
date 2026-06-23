@@ -27,6 +27,7 @@ const (
 	ModeRecord         Mode = "record"
 	ModeRecordAndStub  Mode = "record-and-stub"
 	ModePassthrough    Mode = "passthrough"
+	ModeRecordAll      Mode = "record-all" // 录制所有请求（包含未被规则匹配的）
 )
 
 // Options SDK 配置选项

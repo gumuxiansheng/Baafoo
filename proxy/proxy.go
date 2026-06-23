@@ -209,6 +209,12 @@ func (p *Proxy) handleTCP(ctx context.Context, clientConn net.Conn, m PortMappin
 
 // recordHTTP 录制 HTTP 请求/响应
 func (p *Proxy) recordHTTP(m PortMapping, sessionID string, reqBuf, respBuf []byte, durationMs int64) {
+	// 检查模式：只在 record/record-and-stub/record-all 模式下录制
+	mode := p.sdk.GetMode()
+	if mode != baafoo.ModeRecord && mode != baafoo.ModeRecordAndStub && mode != baafoo.ModeRecordAll {
+		return
+	}
+
 	if len(reqBuf) == 0 && len(respBuf) == 0 {
 		return
 	}
@@ -240,6 +246,12 @@ func (p *Proxy) recordHTTP(m PortMapping, sessionID string, reqBuf, respBuf []by
 
 // recordTCP 录制 TCP 请求/响应
 func (p *Proxy) recordTCP(m PortMapping, sessionID string, reqBuf, respBuf []byte, durationMs int64) {
+	// 检查模式：只在 record/record-and-stub/record-all 模式下录制
+	mode := p.sdk.GetMode()
+	if mode != baafoo.ModeRecord && mode != baafoo.ModeRecordAndStub && mode != baafoo.ModeRecordAll {
+		return
+	}
+
 	if len(reqBuf) == 0 && len(respBuf) == 0 {
 		return
 	}

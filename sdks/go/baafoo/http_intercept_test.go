@@ -305,3 +305,76 @@ func TestHTTPGet(t *testing.T) {
 		t.Errorf("expected 'convenience', got: %s", string(body))
 	}
 }
+
+// 测试 record-all 模式：所有请求都 passthrough + 录制（即使有规则匹配也不返回 mock）
+func TestInterceptHTTPRecordAll(t *testing.T) {
+	server, h := newMockServer(t)
+
+	c := New(Options{
+		ServerURL:            server.URL,
+		HeartbeatIntervalSec: 100,
+		PollIntervalSec:      100,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := c.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer c.Close()
+
+	// 设置规则（匹配 /api/ 路径）
+	c.rules.Store([]Rule{
+		{
+			ID:      "rule-001",
+			Enabled: true,
+			Conditions: []MatchCondition{
+				{Field: "method", Operator: "equals", Value: "GET"},
+				{Field: "path", Operator: "prefix", Value: "/api/"},
+			},
+			Responses: []ResponseEntry{
+				{StatusCode: 200, Body: `{"mock":true}`},
+			},
+		},
+	})
+	c.mode.Store(ModeRecordAll)
+
+	c.InterceptHTTP()
+	defer c.RestoreHTTP()
+
+	// 创建后端服务器
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(200)
+		w.Write([]byte("real response from backend"))
+	}))
+	defer backend.Close()
+
+	// 发送请求（路径匹配规则，但 record-all 模式不返回 mock）
+	resp, err := http.Get(backend.URL + "/api/test")
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// 应该返回真实响应（不是 mock）
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "real response from backend" {
+		t.Errorf("expected real response, got: %s", string(body))
+	}
+
+	// 发送第二个请求（不匹配规则）
+	resp2, err := http.Get(backend.URL + "/other/test")
+	if err != nil {
+		t.Fatalf("Request 2 failed: %v", err)
+	}
+	resp2.Body.Close()
+
+	// 关闭 SDK 以 flush 录制
+	c.Close()
+
+	// 应该录制了两个请求（匹配规则的和不匹配规则的）
+	if h.recordingCount < 2 {
+		t.Errorf("expected at least 2 recordings (matched + unmatched), got %d", h.recordingCount)
+	}
+}

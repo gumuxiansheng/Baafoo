@@ -232,6 +232,42 @@ class TestIntercept(unittest.TestCase):
         finally:
             unpatch()
 
+    def test_record_all_mode(self):
+        """测试 record-all 模式：所有请求都 passthrough + 录制（即使有规则匹配也不返回 mock）"""
+        c = self._new_client()
+        c._mode = "record-all"
+        # 设置规则（匹配 /api/ 路径）
+        c._rules = [
+            Rule(
+                id="rule-001",
+                enabled=True,
+                conditions=[
+                    MatchCondition(field="method", operator="equals", value="GET"),
+                    MatchCondition(field="path", operator="prefix", value="/api/"),
+                ],
+                responses=[
+                    ResponseEntry(status_code=200, body='{"mock":true}'),
+                ],
+            ),
+        ]
+        patch(c)
+        try:
+            import urllib.request
+            # 发送请求（路径匹配规则，但 record-all 模式不返回 mock）
+            resp = urllib.request.urlopen(f"http://127.0.0.1:{self.backend_port}/api/test")
+            body = resp.read().decode("utf-8")
+            # 应该返回真实响应（不是 mock）
+            self.assertEqual(body, "real response from backend")
+
+            # 发送第二个请求（不匹配规则）
+            resp2 = urllib.request.urlopen(f"http://127.0.0.1:{self.backend_port}/other/test")
+            resp2.read()
+        finally:
+            unpatch()
+
+        # 验证录制（应该录制了两个请求：匹配规则的和不匹配规则的）
+        self.assertGreaterEqual(len(c._recording_buffer), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -219,6 +219,38 @@ async function runTests() {
     assert.ok(resp.body.includes('"created":false'), `unexpected body: ${resp.body}`);
   });
 
+  // Test 8: record-all mode - all requests passthrough + record (even with rule match)
+  await test('record-all mode records all requests', async () => {
+    const c = newClient('record-all', [
+      {
+        id: 'rule-001',
+        enabled: true,
+        conditions: [
+          { field: 'method', operator: 'equals', value: 'GET' },
+          { field: 'path', operator: 'prefix', value: '/api/' },
+        ],
+        responses: [
+          { statusCode: 200, body: '{"mock":true}' },
+        ],
+      },
+    ]);
+    patch(c);
+
+    // 发送请求（路径匹配规则，但 record-all 模式不返回 mock）
+    const resp = await httpGet(`http://127.0.0.1:${backendPort}/api/test`);
+    // 应该返回真实响应（不是 mock）
+    assert.strictEqual(resp.body, 'real response from backend');
+
+    // 发送第二个请求（不匹配规则）
+    const resp2 = await httpGet(`http://127.0.0.1:${backendPort}/other/test`);
+
+    // 等待录制
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // 验证录制（应该录制了两个请求：匹配规则的和不匹配规则的）
+    assert.ok(c._recordingBuffer.length >= 2, `expected at least 2 recordings, got ${c._recordingBuffer.length}`);
+  });
+
   // 关闭服务器
   backend.close();
 

@@ -112,6 +112,23 @@ function _patchedRequest(...args) {
   const mode = _sdkInstance.mode;
   const rules = _sdkInstance.rules;
 
+  // record-all 模式：所有请求都 passthrough + 录制（不返回 mock）
+  if (mode === 'record-all') {
+    const startTime = Date.now();
+    const wrappedCallback = (res) => {
+      const durationMs = Date.now() - startTime;
+      _recordResponse(_sdkInstance, method, path, host, port, res, durationMs, options);
+      if (callback) callback(res);
+    };
+    const newArgs = [...args];
+    if (newArgs.length > 0 && typeof newArgs[newArgs.length - 1] === 'function') {
+      newArgs[newArgs.length - 1] = wrappedCallback;
+    } else {
+      newArgs.push(wrappedCallback);
+    }
+    return _originalHttpRequest.apply(http, newArgs);
+  }
+
   // 在 stub/record-and-stub 模式下尝试匹配规则
   let matchedRule = null;
   if (mode === 'stub' || mode === 'record-and-stub') {
