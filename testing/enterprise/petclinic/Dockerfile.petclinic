@@ -1,0 +1,45 @@
+# =============================================================================
+# Baafoo 企业级应用测试 - Spring Boot PetClinic
+# 验证 Agent 在经典 Spring Boot 企业应用中的兼容性
+#
+# 官方镜像: springcommunity/spring-petclinic-rest
+# 我们在官方镜像基础上注入 baafoo-agent.jar
+# =============================================================================
+
+FROM springcommunity/spring-petclinic-rest:latest
+
+LABEL maintainer="Baafoo"
+
+USER root
+
+# 安装 wget 用于健康检查
+RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
+
+# 创建应用目录
+WORKDIR /app
+
+# 复制 baafoo-agent.jar（从本地构建产物）
+COPY baafoo-agent/target/baafoo-agent-*.jar /app/baafoo-agent.jar
+
+# 复制 Agent 配置（由 docker-compose volume 覆盖）
+COPY testing/enterprise/common/baafoo-agent-enterprise.yml /app/baafoo-agent.yml
+
+# 创建数据目录
+RUN mkdir -p /home/petclinic/.baafoo/data && \
+    chown -R 1000:1000 /app /home/petclinic/.baafoo
+
+USER 1000
+
+EXPOSE 9966
+
+ENV JAVA_OPTS="" \
+    BAAFOO_SERVER_HOST="baafoo-server" \
+    BAAFOO_ENV="enterprise-petclinic" \
+    SERVER_PORT=9966
+
+# 以 Agent 模式启动 PetClinic
+ENTRYPOINT ["sh", "-c", \
+    "java ${JAVA_OPTS} \
+     -javaagent:/app/baafoo-agent.jar=config=/app/baafoo-agent.yml \
+     -jar /app.jar \
+     --server.port=${SERVER_PORT}"]

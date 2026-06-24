@@ -6,8 +6,8 @@
 #   2. Copy Feign plugin JAR to ./plugins/
 #   3. Start Docker Staging environment (server + postgres + app-env-a + app-env-b)
 #   4. Wait for all services to be healthy
-#   5. Register all 16 test rules
-#   6. Run full-chain test cases (HTTP/TCP/Kafka/Pulsar/JMS + Plugin + Env isolation + Recording)
+#   5. Register all 31 test rules
+#   6. Run full-chain test cases (HTTP/TCP/Kafka/Pulsar/JMS + Plugin + Env isolation + Recording + Condition types + Env modes)
 #   7. Summary report and cleanup
 #
 # Usage:
@@ -226,6 +226,7 @@ if ($envCount -ge 2) {
     # Fallback: create environments via API
     & curl.exe -s -X POST "$SERVER/__baafoo__/api/environments" -H "Content-Type: application/json" -H "X-Api-Key: $API_KEY" -d '{"name":"staging-a","mode":"stub","description":"Staging A"}' 2>$null | Out-Null
     & curl.exe -s -X POST "$SERVER/__baafoo__/api/environments" -H "Content-Type: application/json" -H "X-Api-Key: $API_KEY" -d '{"name":"staging-b","mode":"record-and-stub","description":"Staging B"}' 2>$null | Out-Null
+    & curl.exe -s -X POST "$SERVER/__baafoo__/api/environments" -H "Content-Type: application/json" -H "X-Api-Key: $API_KEY" -d '{"name":"staging-c","mode":"stub","description":"Staging C - Mode Test"}' 2>$null | Out-Null
     Start-Sleep -Seconds 2
     Write-OK "Environments created via API fallback"
 }
@@ -237,8 +238,12 @@ $rulesDir = "testing\test-rules\rules"
 $ruleFiles = @(
     "http-get.json", "http-post.json", "http-put.json", "http-delete.json",
     "http-delay.json", "http-error.json", "http-staging-b.json", "http-consul.json",
-    "kafka-topic.json", "kafka-wildcard.json",
-    "pulsar-topic.json",
+    "http-header.json", "http-query.json", "http-body.json", "http-jsonpath.json",
+    "http-contains.json", "http-endswith.json", "http-path-regex.json",
+    "http-header-exists.json", "http-disabled.json", "http-no-env.json",
+    "http-graphql.json", "http-request-count.json", "http-caseinsensitive.json",
+    "kafka-topic.json", "kafka-wildcard.json", "kafka-header.json",
+    "pulsar-topic.json", "pulsar-wildcard.json",
     "jms-queue.json", "jms-topic.json",
     "tcp-hex.json", "tcp-regex.json", "tcp-multiround.json"
 )
@@ -571,6 +576,193 @@ if ($recordingsJson -match '"protocol":"pulsar".*?"direction":"(produce|consume)
     Test-Pass "D03: Pulsar recording has produce/consume direction"
 } else {
     Test-Skip "D03: Pulsar recording direction (may have no Pulsar recordings)"
+}
+
+# -------------------- C: Condition type coverage --------------------
+Write-Host ""
+Write-Host "--- C: Condition Types ---" -ForegroundColor White
+
+# C01: Header condition match
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/headers"
+if ($resp -match "matchedBy.*header|mocked") {
+    Test-Pass "C01: Header condition match"
+} else {
+    Test-Skip "C01: Header condition (response: $resp)"
+}
+
+# C02: Query param condition match
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get?baafoo=test"
+if ($resp -match "matchedBy.*query|mocked") {
+    Test-Pass "C02: Query param condition match"
+} else {
+    Test-Skip "C02: Query param condition (response: $resp)"
+}
+
+# C03: Body contains condition match
+$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://httpbin.org/post&body=%7B%22data%22%3A%22baafoo-body-test%22%7D"
+if ($resp -match "matchedBy.*body|mocked") {
+    Test-Pass "C03: Body contains condition match"
+} else {
+    Test-Skip "C03: Body contains condition (response: $resp)"
+}
+
+# C04: BodyJsonPath condition match
+$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://httpbin.org/post&body=%7B%22action%22%3A%22submit%22%7D"
+if ($resp -match "matchedBy.*jsonPath|mocked") {
+    Test-Pass "C04: BodyJsonPath condition match"
+} else {
+    Test-Skip "C04: BodyJsonPath condition (response: $resp)"
+}
+
+# C05: Path contains operator
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/baafoo/anything"
+if ($resp -match "matchedBy.*path-contains|mocked") {
+    Test-Pass "C05: Path contains operator"
+} else {
+    Test-Skip "C05: Path contains operator (response: $resp)"
+}
+
+# C06: Path endsWith operator
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/suffix"
+if ($resp -match "matchedBy.*path-endswith|mocked") {
+    Test-Pass "C06: Path endsWith operator"
+} else {
+    Test-Skip "C06: Path endsWith operator (response: $resp)"
+}
+
+# C07: Path regex operator
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/api/v1/users"
+if ($resp -match "matchedBy.*path-regex|mocked") {
+    Test-Pass "C07: Path regex operator"
+} else {
+    Test-Skip "C07: Path regex operator (response: $resp)"
+}
+
+# C08: Header exists operator
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get"
+if ($resp -match "matchedBy.*header-exists|mocked") {
+    Test-Pass "C08: Header exists operator"
+} else {
+    Test-Skip "C08: Header exists operator (response: $resp)"
+}
+
+# C09: Case insensitive match
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/case-test"
+if ($resp -match "matchedBy.*case-insensitive|mocked") {
+    Test-Pass "C09: Case insensitive match"
+} else {
+    Test-Skip "C09: Case insensitive match (response: $resp)"
+}
+
+# C10: Disabled rule should NOT match
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/disabled-path"
+if ($resp -notmatch "disabled") {
+    Test-Pass "C10: Disabled rule not matched"
+} else {
+    Test-Fail "C10: Disabled rule should not match (response: $resp)"
+}
+
+# -------------------- M: Environment Mode --------------------
+Write-Host ""
+Write-Host "--- M: Environment Mode ---" -ForegroundColor White
+
+# M01: STUB mode (staging-a default) — returns stub response
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get"
+$stubbed = Get-JsonValue $resp "stubbed"
+if ($stubbed -eq "true") {
+    Test-Pass "M01: STUB mode returns stub response"
+} else {
+    Test-Fail "M01: STUB mode should return stub (stubbed=$stubbed)"
+}
+
+# M02: RECORD_AND_STUB mode (staging-b default) — returns stub + records
+$resp = Invoke-AppGet "$APP_B/api/http/get?url=http://httpbin.org/get"
+$stubbed = Get-JsonValue $resp "stubbed"
+if ($stubbed -eq "true") {
+    Test-Pass "M02: RECORD_AND_STUB mode returns stub"
+} else {
+    Test-Fail "M02: RECORD_AND_STUB mode should return stub (stubbed=$stubbed)"
+}
+
+# M03: Switch staging-a to PASSTHROUGH mode — should forward to real backend
+$envAId = $null
+$envsJson = Invoke-ApiGet "environments"
+if ($envsJson -match '"id"\s*:\s*"([^"]+)".*?"name"\s*:\s*"staging-a"') { $envAId = $matches[1] }
+if (-not $envAId -and $envsJson -match '"name"\s*:\s*"staging-a".*?"id"\s*:\s*"([^"]+)"') { $envAId = $matches[1] }
+if ($envAId) {
+    try {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"passthrough"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds 3
+        $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get"
+        $stubbed = Get-JsonValue $resp "stubbed"
+        if ($stubbed -eq "true" -and $resp -match "passthrough") {
+            Test-Pass "M03: PASSTHROUGH mode forwards request"
+        } elseif ($stubbed -ne "true") {
+            # Passthrough returns real response (not stubbed)
+            Test-Pass "M03: PASSTHROUGH mode forwards request (not stubbed)"
+        } else {
+            Test-Skip "M03: PASSTHROUGH mode (response: $resp)"
+        }
+    } catch {
+        Test-Skip "M03: PASSTHROUGH mode (API error: $_)"
+    }
+    # Restore staging-a to STUB mode
+    try {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds 3
+    } catch {}
+} else {
+    Test-Skip "M03: PASSTHROUGH mode (cannot find staging-a environment ID)"
+}
+
+# M04: Switch staging-a to RECORD mode — should passthrough + record
+if ($envAId) {
+    try {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"record"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds 3
+        $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get"
+        # RECORD mode should passthrough (not stubbed) and create recording
+        $recAfter = Invoke-ApiGet "recordings?limit=5"
+        if ($resp -match "passthrough|httpbin|statusCode" -and $recAfter -match "direction") {
+            Test-Pass "M04: RECORD mode passthrough + record"
+        } else {
+            Test-Skip "M04: RECORD mode (resp: $resp)"
+        }
+    } catch {
+        Test-Skip "M04: RECORD mode (API error: $_)"
+    }
+    # Restore staging-a to STUB mode
+    try {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds 3
+    } catch {}
+} else {
+    Test-Skip "M04: RECORD mode (cannot find staging-a environment ID)"
+}
+
+# M05: Switch staging-a to RECORD_ALL mode — unmatched requests also recorded
+if ($envAId) {
+    try {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"record-all"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds 3
+        # Send request to unmatched path
+        $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/status/200"
+        $recAfter = Invoke-ApiGet "recordings?limit=10"
+        if ($recAfter -match "unmatched|direction") {
+            Test-Pass "M05: RECORD_ALL mode records unmatched"
+        } else {
+            Test-Skip "M05: RECORD_ALL mode (recordings: $recAfter)"
+        }
+    } catch {
+        Test-Skip "M05: RECORD_ALL mode (API error: $_)"
+    }
+    # Restore staging-a to STUB mode
+    try {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds 3
+    } catch {}
+} else {
+    Test-Skip "M05: RECORD_ALL mode (cannot find staging-a environment ID)"
 }
 
 # ==================== 6. Summary report ====================

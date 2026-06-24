@@ -1,0 +1,138 @@
+# =============================================================================
+# Baafoo 企业级应用测试 - Apache Kafka
+# 验证 Agent 在真实 Kafka 环境下的拦截能力和兼容性
+#
+# 用法:
+#   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml up --build
+#   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -v
+# =============================================================================
+
+services:
+  # =========================================================================
+  # Kafka Broker（真实 Kafka，用于 passthrough 模式对比测试）
+  # =========================================================================
+  kafka:
+    image: bitnami/kafka:3.6.1
+    container_name: baafoo-enterprise-kafka
+    networks:
+      - baafoo-enterprise-net
+    ports:
+      - "19092:9092"
+      - "19093:9093"
+    environment:
+      - KAFKA_CFG_NODE_ID=0
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:19094
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:19094
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_CFG_NUM_PARTITIONS=3
+      - KAFKA_CFG_DEFAULT_REPLICATION_FACTOR=1
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    restart: unless-stopped
+
+  # =========================================================================
+  # Kafka 客户端测试应用（挂载 Baafoo Agent）
+  # 复用 baafoo-test-spring，包含 Kafka Producer/Consumer 测试接口
+  # =========================================================================
+  kafka-test-app:
+    build:
+      context: ../../..
+      dockerfile: baafoo-test-spring/Dockerfile
+    container_name: baafoo-enterprise-kafka-test-app
+    networks:
+      - baafoo-enterprise-net
+    ports:
+      - "18090:9090"
+    environment:
+      - BAAFOO_SERVER_HOST=baafoo-server
+      - BAAFOO_ENV=enterprise-kafka
+      - SERVER_PORT=9090
+      - JAVA_OPTS=-Xms128m -Xmx256m
+    volumes:
+      - ./baafoo-agent-kafka.yml:/app/baafoo-agent.yml:ro
+    depends_on:
+      baafoo-server:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9090/api/stub-demo/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # =========================================================================
+  # 测试初始化容器 - 创建测试环境和规则
+  # =========================================================================
+  kafka-test-init:
+    image: curlimages/curl:latest
+    container_name: baafoo-enterprise-kafka-init
+    networks:
+      - baafoo-enterprise-net
+    depends_on:
+      baafoo-server:
+        condition: service_healthy
+      kafka-test-app:
+        condition: service_healthy
+    entrypoint: >
+      sh -c '
+        echo "============================================"
+        echo "  Kafka 企业级测试环境初始化"
+        echo "============================================"
+        echo ""
+
+        echo "[1/5] 创建 enterprise-kafka 环境..."
+        curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
+          -H "Content-Type: application/json" \
+          -H "X-Api-Key: enterprise-admin-key" \
+          -d "{\"name\":\"enterprise-kafka\",\"mode\":\"stub\",\"description\":\"Kafka企业级测试环境\"}" && echo "  OK" || echo "  已存在"
+        echo ""
+
+        echo "[2/5] 创建 Kafka Topic 精确匹配规则..."
+        curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
+          -H "Content-Type: application/json" \
+          -H "X-Api-Key: enterprise-admin-key" \
+          -d "{\"id\":\"kafka-enterprise-topic-exact\",\"name\":\"Kafka企业级-Topic精确匹配\",\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"equals\",\"value\":\"enterprise-test-topic\"}],\"responses\":[{\"name\":\"Mock响应\",\"value\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-enterprise-kafka\\\",\\\"timestamp\\\":\\\"{{now}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  已存在"
+        echo ""
+
+        echo "[3/5] 创建 Kafka Topic 通配符匹配规则..."
+        curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
+          -H "Content-Type: application/json" \
+          -H "X-Api-Key: enterprise-admin-key" \
+          -d "{\"id\":\"kafka-enterprise-topic-wildcard\",\"name\":\"Kafka企业级-Topic通配符匹配\",\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"startsWith\",\"value\":\"enterprise-\"}],\"responses\":[{\"name\":\"Mock响应(通配符)\",\"value\":\"{\\\"mocked\\\":true,\\\"wildcard\\\":true,\\\"topic\\\":\\\"{{topic}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":50,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  已存在"
+        echo ""
+
+        echo "[4/5] 验证测试应用健康状态..."
+        curl -sf http://kafka-test-app:9090/api/stub-demo/health && echo "  OK" || echo "  不可达"
+        echo ""
+
+        echo "[5/5] 在真实 Kafka 创建测试 Topic..."
+        echo "  等待 Kafka 自动创建 Topic..."
+        echo ""
+
+        echo "============================================"
+        echo "  Kafka 企业级测试环境就绪"
+        echo "============================================"
+        echo ""
+        echo "  Baafoo控制台: http://localhost:18084"
+        echo "  测试应用:      http://localhost:18090"
+        echo "  Kafka:         localhost:19092 (外部)"
+        echo "                 kafka:9092 (容器内)"
+        echo "  API Key:       enterprise-admin-key"
+        echo ""
+        echo "  测试接口:"
+        echo "    POST /api/stub-demo/kafka/send - 发送Kafka消息"
+        echo "    POST /api/stub-demo/kafka/consume - 消费Kafka消息"
+        echo "============================================"
+      '

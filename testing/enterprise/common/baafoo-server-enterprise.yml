@@ -1,0 +1,46 @@
+httpPort: 8084
+
+protocolPorts:
+  http: 9000
+  tcp: 9001
+  kafka: 9002
+  pulsar: 9003
+  jms: 9004
+
+dataDir: "~/.baafoo/data"
+rulesDir: "~/.baafoo/data/rules"
+recordingsDir: "~/.baafoo/data/recordings"
+
+recordingRetentionDays: 30
+maxRulesPerPage: 100
+
+corsEnabled: true
+corsOrigins: []
+
+webConsolePath: ""
+
+requestLogging: true
+
+agentHeartbeatTimeoutSec: 60
+maxAgentsPerEnvironment: 50
+
+unmatchedDefault: passthrough
+passthroughSslVerifyDisabled: true
+
+messagingAdvertisedHost: localhost
+
+database:
+  type: h2
+  url: "jdbc:h2:file:~/.baafoo/data/baafoo;DB_CLOSE_DELAY=-1"
+  username: "sa"
+  password: ""
+
+auth:
+  enabled: true
+  localBypass: false
+  jwtSecret: "baafoo-enterprise-jwt-secret-change-in-production-2024"
+  tokenExpiryHours: 8
+  apiKeys:
+    enterprise-admin-key: admin
+    enterprise-dev-key: developer
+    enterprise-test-key: tester
