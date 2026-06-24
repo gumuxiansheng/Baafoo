@@ -303,6 +303,26 @@ public class MatchEngine {
                     if ("exists".equals(operator)) return true;
                     return applyOperator(opType, operator, cond.getValue(), cond.isCaseSensitive());
 
+                case "grpcService":
+                    // gRPC service name matching. Extracts service name from gRPC path
+                    // format "/package.Service/Method" → "package.Service".
+                    // value = expected service name.
+                    if (path == null) return false;
+                    String grpcService = extractGrpcService(path);
+                    if (grpcService == null) return false;
+                    if ("exists".equals(operator)) return true;
+                    return applyOperator(grpcService, operator, cond.getValue(), cond.isCaseSensitive());
+
+                case "grpcMethod":
+                    // gRPC method name matching. Extracts method name from gRPC path
+                    // format "/package.Service/Method" → "Method".
+                    // value = expected method name.
+                    if (path == null) return false;
+                    String grpcMethod = extractGrpcMethod(path);
+                    if (grpcMethod == null) return false;
+                    if ("exists".equals(operator)) return true;
+                    return applyOperator(grpcMethod, operator, cond.getValue(), cond.isCaseSensitive());
+
                 case "requestCount":
                     // Stateful Mock (PRD §3 R-S2 AC-13): match based on the
                     // per-rule request counter. The count is 1-based (first
@@ -322,6 +342,50 @@ public class MatchEngine {
             log.warn("Error matching condition {}: {}", cond.getType(), e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Extract the gRPC service name from a gRPC HTTP/2 path.
+     *
+     * <p>gRPC path format: {@code /package.Service/Method}
+     * <ul>
+     *   <li>{@code /helloworld.Greeter/SayHello} → "helloworld.Greeter"</li>
+     *   <li>{@code /Greeter/SayHello} → "Greeter"</li>
+     * </ul>
+     *
+     * @param path the HTTP path from the gRPC request
+     * @return the service name, or null if the path is not a valid gRPC path
+     */
+    static String extractGrpcService(String path) {
+        if (path == null || path.isEmpty()) return null;
+        // gRPC paths always start with "/"
+        if (!path.startsWith("/")) return null;
+        // Find the second "/" that separates service and method
+        int secondSlash = path.indexOf('/', 1);
+        if (secondSlash < 0) return null;
+        // Service name is between first and second slash
+        String service = path.substring(1, secondSlash);
+        return service.isEmpty() ? null : service;
+    }
+
+    /**
+     * Extract the gRPC method name from a gRPC HTTP/2 path.
+     *
+     * <p>gRPC path format: {@code /package.Service/Method}
+     * <ul>
+     *   <li>{@code /helloworld.Greeter/SayHello} → "SayHello"</li>
+     * </ul>
+     *
+     * @param path the HTTP path from the gRPC request
+     * @return the method name, or null if the path is not a valid gRPC path
+     */
+    static String extractGrpcMethod(String path) {
+        if (path == null || path.isEmpty()) return null;
+        if (!path.startsWith("/")) return null;
+        int secondSlash = path.indexOf('/', 1);
+        if (secondSlash < 0 || secondSlash == path.length() - 1) return null;
+        String method = path.substring(secondSlash + 1);
+        return method.isEmpty() ? null : method;
     }
 
     /**

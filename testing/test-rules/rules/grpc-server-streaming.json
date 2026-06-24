@@ -1,0 +1,32 @@
+{
+  "name": "gRPC Server Streaming - StreamEvents",
+  "protocol": "grpc",
+  "host": "stream.example.com",
+  "port": 50051,
+  "enabled": true,
+  "priority": 100,
+  "conditions": [
+    {
+      "type": "grpcService",
+      "operator": "equals",
+      "value": "events.StreamService"
+    },
+    {
+      "type": "grpcMethod",
+      "operator": "equals",
+      "value": "StreamEvents"
+    }
+  ],
+  "responses": [
+    {
+      "name": "流式事件响应",
+      "statusCode": 200,
+      "headers": {
+        "grpc-status": "0"
+      },
+      "body": "{\"event\":\"event1\",\"timestamp\":1000},{\"event\":\"event2\",\"timestamp\":2000},{\"event\":\"event3\",\"timestamp\":3000}",
+      "delayMs": 500
+    }
+  ],
+  "environments": []
+}

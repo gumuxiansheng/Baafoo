@@ -1,0 +1,32 @@
+{
+  "name": "gRPC Delay Response",
+  "protocol": "grpc",
+  "host": "greeter.example.com",
+  "port": 50051,
+  "enabled": true,
+  "priority": 80,
+  "conditions": [
+    {
+      "type": "grpcService",
+      "operator": "equals",
+      "value": "helloworld.Greeter"
+    },
+    {
+      "type": "grpcMethod",
+      "operator": "equals",
+      "value": "SlowMethod"
+    }
+  ],
+  "responses": [
+    {
+      "name": "延迟响应",
+      "statusCode": 200,
+      "headers": {
+        "grpc-status": "0"
+      },
+      "body": "{\"result\":\"delayed\"}",
+      "delayMs": 500
+    }
+  ],
+  "environments": []
+}

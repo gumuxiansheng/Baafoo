@@ -52,6 +52,12 @@ public final class GlobalRouteState {
     /** JMS stub port (default 9004) */
     public static volatile int JMS_PORT = 9004;
 
+    /** gRPC stub port (default 9005) */
+    public static volatile int GRPC_PORT = 9005;
+
+    /** gRPC streaming stub port (HTTP/2, default 10005) */
+    public static volatile int GRPC_STREAMING_PORT = 10005;
+
     // ---- Logging bridge ----
     // Set by the App CL side (BaafooAgent) with SLF4J-backed implementations.
     // Advice code inlined into Bootstrap CL classes calls logInfo/logWarn/logError/logDebug,
@@ -269,6 +275,11 @@ public final class GlobalRouteState {
         if (port == 80 || port == 443 || port == 8080 || port == 8443) {
             return HTTP_PORT;
         }
+        // gRPC ports → gRPC stub port (or streaming port)
+        if (port == 50051 || port == 50052 || port == 9090) {
+            // Check if HTTP/2 upgrade or ALPN is used (streaming port)
+            return GRPC_STREAMING_PORT;
+        }
         // Kafka ports
         if (port == 9092 || port == 9093 || port == 9094) {
             return KAFKA_PORT;
@@ -296,7 +307,8 @@ public final class GlobalRouteState {
         if (!isServerHost) return false;
         if (port == SERVER_PORT) return true;
         if (port == HTTP_PORT || port == TCP_PORT || port == KAFKA_PORT
-                || port == PULSAR_PORT || port == JMS_PORT) return true;
+                || port == PULSAR_PORT || port == JMS_PORT
+                || port == GRPC_PORT || port == GRPC_STREAMING_PORT) return true;
         return false;
     }
 
@@ -325,6 +337,7 @@ public final class GlobalRouteState {
             if (port == KAFKA_PORT) return "kafka";
             if (port == PULSAR_PORT) return "pulsar";
             if (port == JMS_PORT) return "jms";
+            if (port == GRPC_PORT) return "grpc";
         }
         // External connection — look up the route to find the target stub port.
         String[] route = lookup(host, port);
@@ -351,6 +364,7 @@ public final class GlobalRouteState {
         if (targetPort == KAFKA_PORT) return "kafka";
         if (targetPort == PULSAR_PORT) return "pulsar";
         if (targetPort == JMS_PORT) return "jms";
+        if (targetPort == GRPC_PORT) return "grpc";
         return null;
     }
 

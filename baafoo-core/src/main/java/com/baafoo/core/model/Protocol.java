@@ -9,7 +9,8 @@ public enum Protocol {
     TCP("tcp", 9001),
     KAFKA("kafka", 9002),
     PULSAR("pulsar", 9003),
-    JMS("jms", 9004);
+    JMS("jms", 9004),
+    GRPC("grpc", 9005);
 
     private final String name;
     private final int defaultPort;

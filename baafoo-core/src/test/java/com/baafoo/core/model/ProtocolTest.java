@@ -7,12 +7,13 @@ public class ProtocolTest {
 
     @Test
     public void testValues() {
-        assertEquals(5, Protocol.values().length);
+        assertEquals(6, Protocol.values().length);
         assertEquals(Protocol.HTTP, Protocol.valueOf("HTTP"));
         assertEquals(Protocol.TCP, Protocol.valueOf("TCP"));
         assertEquals(Protocol.KAFKA, Protocol.valueOf("KAFKA"));
         assertEquals(Protocol.PULSAR, Protocol.valueOf("PULSAR"));
         assertEquals(Protocol.JMS, Protocol.valueOf("JMS"));
+        assertEquals(Protocol.GRPC, Protocol.valueOf("GRPC"));
     }
 
     @Test
@@ -22,6 +23,7 @@ public class ProtocolTest {
         assertEquals("kafka", Protocol.KAFKA.getName());
         assertEquals("pulsar", Protocol.PULSAR.getName());
         assertEquals("jms", Protocol.JMS.getName());
+        assertEquals("grpc", Protocol.GRPC.getName());
     }
 
     @Test
@@ -31,6 +33,7 @@ public class ProtocolTest {
         assertEquals(9002, Protocol.KAFKA.getDefaultPort());
         assertEquals(9003, Protocol.PULSAR.getDefaultPort());
         assertEquals(9004, Protocol.JMS.getDefaultPort());
+        assertEquals(9005, Protocol.GRPC.getDefaultPort());
     }
 
     @Test

@@ -83,6 +83,7 @@ public class ServerConfig {
         this.protocolPorts.put("kafka", 9002);
         this.protocolPorts.put("pulsar", 9003);
         this.protocolPorts.put("jms", 9004);
+        this.protocolPorts.put("grpc", 9005);
         this.dataDir = "./data";
         this.rulesDir = "./data/rules";
         this.recordingsDir = "./data/recordings";

@@ -184,6 +184,7 @@ public final class RouteManager {
             case "kafka": return GlobalRouteState.KAFKA_PORT;
             case "pulsar": return GlobalRouteState.PULSAR_PORT;
             case "jms": return GlobalRouteState.JMS_PORT;
+            case "grpc": return GlobalRouteState.GRPC_PORT;
             default: return GlobalRouteState.TCP_PORT;
         }
     }
