@@ -30,21 +30,21 @@ public class KafkaProtocolVersionsTest {
     }
 
     @Test
-    public void testProduceCappedAtV9() {
-        assertEquals("Produce max should be v9 (flexible)",
-                9, KafkaProtocolVersions.maxVersion(KafkaProtocolVersions.API_PRODUCE));
+    public void testProduceCappedBelowFlexible() {
+        assertEquals("Produce max should be v8 (non-flexible, capped below v9)",
+                8, KafkaProtocolVersions.maxVersion(KafkaProtocolVersions.API_PRODUCE));
     }
 
     @Test
-    public void testFetchCappedAtV12() {
-        assertEquals("Fetch max should be v12 (flexible)",
-                12, KafkaProtocolVersions.maxVersion(KafkaProtocolVersions.API_FETCH));
+    public void testFetchCappedBelowFlexible() {
+        assertEquals("Fetch max should be v11 (non-flexible, capped below v12)",
+                11, KafkaProtocolVersions.maxVersion(KafkaProtocolVersions.API_FETCH));
     }
 
     @Test
-    public void testMetadataCappedAtV9() {
-        assertEquals("Metadata max should be v9 (flexible)",
-                9, KafkaProtocolVersions.maxVersion(KafkaProtocolVersions.API_METADATA));
+    public void testMetadataCappedBelowFlexible() {
+        assertEquals("Metadata max should be v8 (non-flexible, capped below v9)",
+                8, KafkaProtocolVersions.maxVersion(KafkaProtocolVersions.API_METADATA));
     }
 
     @Test

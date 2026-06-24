@@ -30,7 +30,7 @@ public class KafkaMockBroker {
 
     private static final Logger log = LoggerFactory.getLogger(KafkaMockBroker.class);
 
-    private final int port;
+    private int port;
     private final KafkaMessageStore messageStore;
     private final StorageService storage;
     private final EventLoopGroup bossGroup;
@@ -74,6 +74,8 @@ public class KafkaMockBroker {
                 });
 
         serverChannel = b.bind(port).sync().channel();
+        // Update port to actual bound port (supports port=0 for OS-assigned port)
+        this.port = ((java.net.InetSocketAddress) serverChannel.localAddress()).getPort();
         log.info("Kafka Mock Broker started on port {}", port);
     }
 

@@ -35,13 +35,14 @@ public class PulsarMockBroker {
 
     private static final Logger log = LoggerFactory.getLogger(PulsarMockBroker.class);
 
-    private final int port;
+    private int port;
     private final EventLoopGroup bossGroup;
     private final EventLoopGroup workerGroup;
     private final PulsarMessageStore messageStore;
     private final StorageService storage;
     private final String advertisedHost;
     private Channel serverChannel;
+    private int actualPort;
 
     /** Cached broker host resolved from the first client connection. */
     private volatile String resolvedHost;
@@ -103,7 +104,8 @@ public class PulsarMockBroker {
                 });
 
         serverChannel = b.bind(port).sync().channel();
-        log.info("Pulsar Mock Broker started on port {}", port);
+        this.actualPort = ((java.net.InetSocketAddress) serverChannel.localAddress()).getPort();
+        log.info("Pulsar Mock Broker started on port {}", actualPort);
     }
 
     /**
@@ -121,5 +123,13 @@ public class PulsarMockBroker {
      */
     public PulsarMessageStore getMessageStore() {
         return messageStore;
+    }
+
+    /**
+     * Get the actual port this broker is listening on.
+     * Supports port=0 (OS-assigned) by returning the bound port.
+     */
+    public int getPort() {
+        return actualPort > 0 ? actualPort : port;
     }
 }

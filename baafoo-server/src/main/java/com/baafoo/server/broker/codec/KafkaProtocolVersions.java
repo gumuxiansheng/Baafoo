@@ -8,37 +8,20 @@ package com.baafoo.server.broker.codec;
  * ApiVersions response.
  *
  * <h2>Version strategy (KIP-482 flexible versions)</h2>
- * <p>Core APIs (Produce, Fetch, Metadata, ApiVersions) are raised to their
- * flexible-version threshold so that clients negotiate the latest codec.
- * The decoder handles both non-flexible and flexible request/response formats
- * for these APIs via dedicated V9/V12 codecs.
+ * <p>All APIs are capped below their flexible-version threshold so that
+ * clients negotiate non-flexible wire format (Request Header v1 with
+ * int16-prefixed strings). The decoder handles non-flexible request/response
+ * formats via dedicated codecs (KafkaProduceCodec, KafkaFetchCodec,
+ * KafkaMetadataCodec).
  *
- * <p>Other APIs are capped below their flexible threshold so that clients
- * use Request Header v0/v1 (int16-prefixed strings) for those APIs.
+ * <p>Flexible-version codecs (KafkaProduceCodecV9, KafkaFetchCodecV12,
+ * KafkaMetadataCodecV9) are retained for future use but are not currently
+ * advertised because Kafka client 3.4.x sends non-flexible request headers
+ * even for flexible API versions, causing header parsing failures.
  *
- * <p>Flexible-version core APIs:
- * <ul>
- *   <li>Produce v9 — flexible (KIP-482 compact arrays)</li>
- *   <li>Fetch v12 — flexible (KIP-482 compact arrays)</li>
- *   <li>Metadata v9 — flexible (KIP-482 compact arrays)</li>
- *   <li>ApiVersions v3 — flexible (KIP-511 gate)</li>
- * </ul>
- *
- * <p>Non-flexible capped APIs:
- * <ul>
- *   <li>ListOffsets v5 — non-flexible max (flexible at v6)</li>
- *   <li>OffsetCommit v7 — non-flexible max (flexible at v8)</li>
- *   <li>OffsetFetch v5 — non-flexible max (flexible at v6)</li>
- *   <li>FindCoordinator v2 — non-flexible max (flexible at v3)</li>
- *   <li>JoinGroup v5 — non-flexible max (flexible at v6)</li>
- *   <li>Heartbeat v3 — non-flexible max (flexible at v4)</li>
- *   <li>LeaveGroup v3 — non-flexible max (flexible at v4)</li>
- *   <li>SyncGroup v3 — non-flexible max (flexible at v4)</li>
- *   <li>DescribeGroups v4 — non-flexible max (flexible at v5)</li>
- *   <li>ListGroups v2 — non-flexible max (flexible at v3)</li>
- *   <li>InitProducerId v1 — non-flexible max (flexible at v2)</li>
- *   <li>DescribeConfigs v3 — non-flexible max (flexible at v4)</li>
- * </ul>
+ * <p>ApiVersions (v3) is the exception: per KIP-511, its request header is
+ * always non-flexible, but its body is flexible. The decoder handles this
+ * special case in {@link com.baafoo.server.broker.KafkaProtocolDecoder}.
  *
  * @see <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-482">KIP-482</a>
  * @see <a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-511">KIP-511</a>
@@ -113,15 +96,17 @@ public final class KafkaProtocolVersions {
     /**
      * Supported API version table: {apiKey, minVersion, maxVersion}.
      *
-     * <p>Core APIs (Produce, Fetch, Metadata, ApiVersions) are raised to their
-     * flexible-version threshold so that clients negotiate the latest codec.
-     * Other APIs are capped below the flexible threshold to keep non-flex parsing.
+     * <p>All APIs are capped below their flexible-version threshold so that
+     * clients negotiate non-flexible wire format (Request Header v1, int16
+     * string lengths). This avoids a Kafka client 3.4.x quirk where flexible
+     * APIs (Metadata v9, Produce v9, Fetch v12) are sent with a non-flexible
+     * request header but a flexible body, causing header parsing failures.
      */
     public static final int[][] SUPPORTED_APIS = {
-            {API_PRODUCE,           0, 9},   // flexible at v9
-            {API_FETCH,             0, 12},  // flexible at v12
+            {API_PRODUCE,           0, 8},   // flexible at v9, cap v8 (keep non-flex)
+            {API_FETCH,             0, 11},  // flexible at v12, cap v11 (keep non-flex)
             {API_LIST_OFFSETS,      0, 5},   // flexible at v6, cap v5 (keep non-flex)
-            {API_METADATA,          0, 9},   // flexible at v9
+            {API_METADATA,          0, 8},   // flexible at v9, cap v8 (keep non-flex)
             {API_OFFSET_COMMIT,     0, 7},   // flexible at v8, cap v7 (keep non-flex)
             {API_OFFSET_FETCH,      0, 5},   // flexible at v6, cap v5 (keep non-flex)
             {API_FIND_COORDINATOR,  0, 2},   // flexible at v3, cap v2 (keep non-flex)

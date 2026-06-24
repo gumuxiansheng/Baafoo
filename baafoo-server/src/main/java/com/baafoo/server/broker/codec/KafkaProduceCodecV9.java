@@ -50,6 +50,8 @@ public final class KafkaProduceCodecV9 {
                                             short errorCode) {
         ByteBuf buf = Unpooled.buffer();
         buf.writeInt(correlationId);
+        // Response Header v1 tag buffer (flexible versions, KIP-482)
+        KafkaFlexibleCodec.writeEmptyTagBuffer(buf);
 
         // Topics: compact array
         KafkaFlexibleCodec.writeCompactArrayLength(buf, response.getTopics().size());

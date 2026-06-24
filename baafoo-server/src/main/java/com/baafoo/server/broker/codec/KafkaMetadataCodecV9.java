@@ -48,6 +48,8 @@ public final class KafkaMetadataCodecV9 {
                                             List<String> topics) {
         ByteBuf buf = Unpooled.buffer();
         buf.writeInt(correlationId);
+        // Response Header v1 tag buffer (flexible versions, KIP-482)
+        KafkaFlexibleCodec.writeEmptyTagBuffer(buf);
 
         // throttle_time_ms
         buf.writeInt(0);

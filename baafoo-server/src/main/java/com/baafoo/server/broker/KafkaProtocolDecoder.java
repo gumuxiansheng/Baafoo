@@ -142,10 +142,13 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         // Request Header v1 (non-flexible): int16-prefixed nullable string for clientId
         // Request Header v2 (flexible, KIP-482): compact string + tag buffer
         //
-        // ApiVersions v3+ uses Request Header v2 (flexible) per KIP-511, same as
-        // other APIs at or above their flexible-version threshold.
+        // ApiVersions is special per KIP-511: its REQUEST header is always v1
+        // (non-flexible) even for v3+, because the client doesn't know if the
+        // broker supports flexible versions yet. Only the body is flexible.
         String clientId;
-        boolean headerIsFlexible = KafkaProtocolVersions.isFlexible(apiKey, apiVersion);
+        boolean headerIsFlexible = apiKey != API_VERSIONS
+                && KafkaProtocolVersions.isFlexible(apiKey, apiVersion);
+        log.debug("Header parsing: apiKey={}, apiVersion={}, headerIsFlexible={}", apiKey, apiVersion, headerIsFlexible);
         if (headerIsFlexible) {
             clientId = KafkaFlexibleCodec.readCompactString(msg);
             KafkaFlexibleCodec.skipTagBuffer(msg); // header tag buffer
@@ -229,7 +232,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 for (byte b : dumpBytes) {
                     hexResp.append(String.format("%02x ", b & 0xFF));
                 }
-                log.info("ApiVersions v{} response hex (first {} bytes): [{}]",
+                log.debug("ApiVersions v{} response hex (first {} bytes): [{}]",
                         apiVersion, dumpBytes.length, hexResp.toString().trim());
             }
             ctx.writeAndFlush(response);
@@ -306,11 +309,11 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         } else {
             request = KafkaMetadataCodec.parseRequest(msg, apiVersion);
         }
-        log.info("Metadata request: apiVersion={}, topicCount={}", apiVersion, request.getTopics().size());
+        log.debug("Metadata request: apiVersion={}, topicCount={}", apiVersion, request.getTopics().size());
         for (int i = 0; i < request.getTopics().size(); i++) {
-            log.info("Metadata request: topic[{}]={}", i, request.getTopics().get(i));
+            log.debug("Metadata request: topic[{}]={}", i, request.getTopics().get(i));
         }
-        log.info("Metadata response: returning {} topics, brokerHost={}, brokerPort={}",
+        log.debug("Metadata response: returning {} topics, brokerHost={}, brokerPort={}",
                 request.getTopics().size(), resolveBrokerHost(ctx), brokerPort);
 
         if (apiVersion >= 9) {
@@ -331,7 +334,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         } else {
             request = KafkaProduceCodec.parseRequest(msg, apiVersion);
         }
-        log.info("Produce request (direction=produce): apiVersion={}, acks={}, timeoutMs={}", apiVersion, request.getAcks(), request.getTimeoutMs());
+        log.debug("Produce request (direction=produce): apiVersion={}, acks={}, timeoutMs={}", apiVersion, request.getAcks(), request.getTimeoutMs());
 
         // Resolve agent + environment + rules ONCE per produce request.
         AgentResolver.AgentInfo agentInfo = matchHelper.resolveAgent(ctx);
@@ -566,7 +569,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         } else {
             request = KafkaFetchCodec.parseRequest(msg, apiVersion);
         }
-        log.info("Fetch request (direction=consume): apiVersion={}, topics={}", apiVersion, request.getTopics().size());
+        log.debug("Fetch request (direction=consume): apiVersion={}, topics={}", apiVersion, request.getTopics().size());
 
         // Resolve agent + environment + rules for consume-side stub
         AgentResolver.AgentInfo agentInfo = matchHelper.resolveAgent(ctx);

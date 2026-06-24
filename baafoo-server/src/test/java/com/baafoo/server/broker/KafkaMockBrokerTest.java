@@ -309,21 +309,20 @@ public class KafkaMockBrokerTest {
     }
 
     /**
-     * A flexible-version request (ApiVersions v3) uses Request Header v2
-     * (compact string + tag buffer). The decoder must correctly parse it
-     * using isFlexible() routing.
+     * Per KIP-511, ApiVersions v3 uses Request Header v1 (non-flexible:
+     * int16-prefixed nullable string for clientId) even though the body
+     * is flexible. The decoder must correctly parse it via the
+     * apiKey != API_VERSIONS gate in the header flexibility check.
      */
     @Test
     public void testCompactStringClientIdDoesNotCrash() throws Exception {
         ByteBuf buf = Unpooled.buffer();
         buf.writeShort(18); // API key: ApiVersions
-        buf.writeShort(3);  // API version: v3 (flexible)
+        buf.writeShort(3);  // API version: v3 (flexible body, non-flexible header per KIP-511)
         buf.writeInt(99);   // correlation ID
-        // compact-string clientId "c": length 2 (= 1 + 1), then byte 'c'
-        buf.writeByte(2);
+        // non-flexible clientId "c" (int16 length + bytes)
+        buf.writeShort(1);
         buf.writeByte('c');
-        // empty tag buffer (1 byte: 0x00)
-        buf.writeByte(0);
         // ApiVersions v3 request body: compact string for client software name + version + tag buffer
         // client software name (compact not-nullable string): "test"
         buf.writeByte(5); // length = 4 + 1 = 5
@@ -593,8 +592,8 @@ public class KafkaMockBrokerTest {
     // ----------------------------------------------------------------------
 
     /**
-     * ApiVersions response must advertise the upgraded caps:
-     * Produce v8, Fetch v11, Metadata v8, ApiVersions v2 (KIP-511 gate).
+     * ApiVersions response must advertise the non-flexible caps:
+     * Produce v8, Fetch v11, Metadata v8, ApiVersions v3 (KIP-511 gate).
      */
     @Test
     public void testApiVersionsReturnsUpgradedCaps() throws Exception {
@@ -618,9 +617,9 @@ public class KafkaMockBrokerTest {
                 default: break;
             }
         }
-        assertEquals("Produce max should be v9 (flexible)", 9, produceMax);
-        assertEquals("Fetch max should be v12 (flexible)", 12, fetchMax);
-        assertEquals("Metadata max should be v9 (flexible)", 9, metadataMax);
+        assertEquals("Produce max should be v8 (non-flexible)", 8, produceMax);
+        assertEquals("Fetch max should be v11 (non-flexible)", 11, fetchMax);
+        assertEquals("Metadata max should be v8 (non-flexible)", 8, metadataMax);
         assertEquals("ApiVersions max should be v3 (flexible, KIP-511)", 3, apiVersionsMax);
     }
 
@@ -749,20 +748,19 @@ public class KafkaMockBrokerTest {
     // ----------------------------------------------------------------------
 
     /**
-     * ApiVersions v3 (flexible) must return a response using compact array
-     * format (uvarint length) with per-entry tag buffers.
+     * ApiVersions v3 (flexible body, non-flexible header per KIP-511) must
+     * return a response using compact array format (uvarint length) with
+     * per-entry tag buffers.
      */
     @Test
     public void testApiVersionsV3FlexibleResponse() throws Exception {
         ByteBuf buf = Unpooled.buffer();
         buf.writeShort(18); // API key: ApiVersions
-        buf.writeShort(3);  // API version: v3 (flexible)
+        buf.writeShort(3);  // API version: v3 (flexible body, non-flexible header per KIP-511)
         buf.writeInt(42);   // correlation ID
-        // compact-string clientId "test"
-        buf.writeByte(5); // length = 4 + 1 = 5
+        // non-flexible clientId "test" (int16 length + bytes)
+        buf.writeShort("test".getBytes().length);
         buf.writeBytes("test".getBytes());
-        // empty tag buffer
-        buf.writeByte(0);
         // ApiVersions v3 body: client software name + version + tag buffer
         buf.writeByte(5); // "test" compact string
         buf.writeBytes("test".getBytes());
@@ -792,7 +790,7 @@ public class KafkaMockBrokerTest {
             short maxVer = response.readShort();
             // per-entry tag buffer
             KafkaFlexibleCodec.skipTagBuffer(response);
-            if (apiKey == 0) { foundProduce = true; assertEquals("Produce max should be v9", 9, maxVer); }
+            if (apiKey == 0) { foundProduce = true; assertEquals("Produce max should be v8 (non-flexible)", 8, maxVer); }
             if (apiKey == 18) { foundApiVersions = true; assertEquals("ApiVersions max should be v3", 3, maxVer); }
         }
         assertTrue("Should find Produce API", foundProduce);
@@ -813,6 +811,8 @@ public class KafkaMockBrokerTest {
         ByteBuf response = sendRequest(buildProduceRequestV9("produce-v9-topic", 0, "k", "v9-payload"));
         assertNotNull(response);
         response.readInt(); // correlationId
+        // Response Header v1 tag buffer (flexible versions, KIP-482)
+        KafkaFlexibleCodec.skipTagBuffer(response);
         // Flexible Produce v9 response: compact array of topics
         int topicCount = KafkaFlexibleCodec.readCompactArrayLength(response);
         assertEquals(1, topicCount);
@@ -853,6 +853,8 @@ public class KafkaMockBrokerTest {
         ByteBuf response = sendRequest(buildFetchRequestV12("fetch-v12-topic", 0, 0));
         assertNotNull(response);
         response.readInt(); // correlationId
+        // Response Header v1 tag buffer (flexible versions, KIP-482)
+        KafkaFlexibleCodec.skipTagBuffer(response);
         response.readInt(); // throttle_time_ms
         response.readShort(); // error_code
         response.readInt(); // session_id

@@ -81,6 +81,8 @@ public final class KafkaFetchCodecV12 {
                                             KafkaMessageStore messageStore) {
         ByteBuf buf = Unpooled.buffer();
         buf.writeInt(correlationId);
+        // Response Header v1 tag buffer (flexible versions, KIP-482)
+        KafkaFlexibleCodec.writeEmptyTagBuffer(buf);
 
         buf.writeInt(0); // throttle_time_ms
         buf.writeShort(KafkaProtocolVersions.NONE); // error_code
