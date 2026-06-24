@@ -24,6 +24,7 @@ services:
       - "9002:9002"  # Kafka mock
       - "9003:9003"  # Pulsar mock
       - "9004:9004"  # JMS mock
+      - "9005:9005"  # gRPC mock
     environment:
       - BAAFOO_HTTP_PORT=${BAAFOO_HTTP_PORT:-8084}
       - BAAFOO_DB_TYPE=${BAAFOO_DB_TYPE:-h2}

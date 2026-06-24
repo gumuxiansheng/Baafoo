@@ -49,6 +49,7 @@ services:
       - "9002:9002"
       - "9003:9003"
       - "9004:9004"
+      - "9005:9005"
     environment:
       - BAAFOO_HTTP_PORT=8084
       - BAAFOO_DB_TYPE=postgresql

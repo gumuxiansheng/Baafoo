@@ -19,6 +19,7 @@ services:
       - "19002:9002"
       - "19003:9003"
       - "19004:9004"
+      - "19005:9005"
     environment:
       - BAAFOO_HTTP_PORT=8084
       - BAAFOO_DB_TYPE=h2
