@@ -7,7 +7,7 @@ Baafoo 挡板系统的 Spring Boot 多协议外调测试应用。通过 REST API
 - JDK 8+
 - Maven 3.6+
 - Baafoo Server 已启动（默认端口 8084）
-- Baafoo Agent 已构建（`baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar`）
+- Baafoo Agent 已构建（`baafoo-agent/target/baafoo-agent-1.1.0-SNAPSHOT.jar`）
 
 ## 构建
 
@@ -17,7 +17,7 @@ Baafoo 挡板系统的 Spring Boot 多协议外调测试应用。通过 REST API
 mvn clean package -pl baafoo-test-spring -am -DskipTests
 ```
 
-构建产物为 `baafoo-test-spring/target/baafoo-test-spring-1.0.0-SNAPSHOT.jar`。
+构建产物为 `baafoo-test-spring/target/baafoo-test-spring-1.1.0-SNAPSHOT.jar`。
 
 ## 启动方式
 
@@ -26,8 +26,8 @@ mvn clean package -pl baafoo-test-spring -am -DskipTests
 Agent 会拦截应用的外调连接并重定向到 Server Stub 端口，用于完整验证拦截功能。
 
 ```bash
-java -javaagent:baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar=config=baafoo-agent/src/main/resources/baafoo-agent.yml \
-     -jar baafoo-test-spring/target/baafoo-test-spring-1.0.0-SNAPSHOT.jar
+java -javaagent:baafoo-agent/target/baafoo-agent-1.1.0-SNAPSHOT.jar=config=baafoo-agent/src/main/resources/baafoo-agent.yml \
+     -jar baafoo-test-spring/target/baafoo-test-spring-1.1.0-SNAPSHOT.jar
 ```
 
 > **Java 9+** 需要额外添加 JVM 参数：`--add-opens java.base/java.net=ALL-UNNAMED`
@@ -37,7 +37,7 @@ java -javaagent:baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar=config=baafo
 不加载 Agent，外调请求直接到达真实目标，用于对比测试：
 
 ```bash
-java -jar baafoo-test-spring/target/baafoo-test-spring-1.0.0-SNAPSHOT.jar
+java -jar baafoo-test-spring/target/baafoo-test-spring-1.1.0-SNAPSHOT.jar
 ```
 
 ### 自定义端口
@@ -45,7 +45,7 @@ java -jar baafoo-test-spring/target/baafoo-test-spring-1.0.0-SNAPSHOT.jar
 默认端口为 `9090`，可通过配置修改：
 
 ```bash
-java -jar baafoo-test-spring-1.0.0-SNAPSHOT.jar --server.port=8081
+java -jar baafoo-test-spring-1.1.0-SNAPSHOT.jar --server.port=8081
 ```
 
 或在 `application.yml` 中修改：
@@ -255,14 +255,14 @@ curl http://localhost:9090/api/stub-demo/external
 
 ```bash
 # 1. 启动 Baafoo Server
-java -jar baafoo-server/target/baafoo-server-1.0.0-SNAPSHOT.jar baafoo-server/src/main/resources/baafoo-server.yml
+java -jar baafoo-server/target/baafoo-server-1.1.0-SNAPSHOT.jar baafoo-server/src/main/resources/baafoo-server.yml
 
 # 2. 构建 Agent 和 Test Spring
 mvn clean package -pl baafoo-agent,baafoo-test-spring -am -DskipTests
 
 # 3. 使用 Agent 启动 Test Spring
-java -javaagent:baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar=config=baafoo-agent/src/main/resources/baafoo-agent.yml \
-     -jar baafoo-test-spring/target/baafoo-test-spring-1.0.0-SNAPSHOT.jar
+java -javaagent:baafoo-agent/target/baafoo-agent-1.1.0-SNAPSHOT.jar=config=baafoo-agent/src/main/resources/baafoo-agent.yml \
+     -jar baafoo-test-spring/target/baafoo-test-spring-1.1.0-SNAPSHOT.jar
 
 # 4. 通过 API 创建挡板规则（或使用 Web 控制台）
 curl -X POST http://localhost:8084/__baafoo__/api/rules \

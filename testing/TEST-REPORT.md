@@ -2,7 +2,7 @@
 
 **测试日期**: 2026-06-20 (最新 - 全链路集成测试重建，含 Plugin 测试)
 **测试环境**: Docker Staging (docker-compose.staging.yml)
-**测试版本**: 1.0.0-SNAPSHOT
+**测试版本**: 1.1.0-SNAPSHOT
 **测试脚本**: `testing/test-fullchain.ps1`
 **本次重点**: 全协议覆盖 (HTTP/TCP/Kafka/Pulsar/JMS) + Plugin SPI + 环境隔离 + 录制验证 + MQ方向标注
 

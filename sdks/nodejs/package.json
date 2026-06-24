@@ -1,6 +1,6 @@
 {
   "name": "@baafoo/sdk",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Baafoo Thin SDK - Node.js implementation",
   "main": "index.js",
   "types": "index.d.ts",

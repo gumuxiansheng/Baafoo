@@ -19,7 +19,7 @@ mvn clean package
 ### Deploy
 
 ```bash
-cp target/kafka-redirect-plugin-1.0.0.jar /path/to/baafoo/plugins/
+cp target/kafka-redirect-plugin-1.1.0.jar /path/to/baafoo/plugins/
 ```
 
 ### Configure

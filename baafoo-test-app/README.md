@@ -7,7 +7,7 @@ Baafoo 挡板系统的多协议外调测试应用。用于验证 Agent 拦截和
 - JDK 8+
 - Maven 3.6+
 - Baafoo Server 已启动（默认端口 8084）
-- Baafoo Agent 已构建（`baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar`）
+- Baafoo Agent 已构建（`baafoo-agent/target/baafoo-agent-1.1.0-SNAPSHOT.jar`）
 
 ## 构建
 
@@ -17,7 +17,7 @@ Baafoo 挡板系统的多协议外调测试应用。用于验证 Agent 拦截和
 mvn clean package -pl baafoo-test-app -am -DskipTests
 ```
 
-构建产物为 `baafoo-test-app/target/baafoo-test-app-1.0.0-SNAPSHOT.jar`（shade 后的 fat jar）。
+构建产物为 `baafoo-test-app/target/baafoo-test-app-1.1.0-SNAPSHOT.jar`（shade 后的 fat jar）。
 
 ## 启动方式
 
@@ -27,15 +27,15 @@ mvn clean package -pl baafoo-test-app -am -DskipTests
 
 ```bash
 java -javaagent:<agent-jar-path>=config=<agent-config-path> \
-     -cp baafoo-test-app/target/baafoo-test-app-1.0.0-SNAPSHOT.jar \
+     -cp baafoo-test-app/target/baafoo-test-app-1.1.0-SNAPSHOT.jar \
      com.baafoo.testapp.BaafooTestApp [server-url]
 ```
 
 示例：
 
 ```bash
-java -javaagent:baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar=config=baafoo-agent/src/main/resources/baafoo-agent.yml \
-     -cp baafoo-test-app/target/baafoo-test-app-1.0.0-SNAPSHOT.jar \
+java -javaagent:baafoo-agent/target/baafoo-agent-1.1.0-SNAPSHOT.jar=config=baafoo-agent/src/main/resources/baafoo-agent.yml \
+     -cp baafoo-test-app/target/baafoo-test-app-1.1.0-SNAPSHOT.jar \
      com.baafoo.testapp.BaafooTestApp
 ```
 
@@ -47,7 +47,7 @@ java -javaagent:baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar=config=baafo
 
 ```bash
 java -javaagent:<agent-jar-path>=config=<agent-config-path> \
-     -cp baafoo-test-app/target/baafoo-test-app-1.0.0-SNAPSHOT.jar \
+     -cp baafoo-test-app/target/baafoo-test-app-1.1.0-SNAPSHOT.jar \
      com.baafoo.testapp.QuickTest
 ```
 
@@ -65,7 +65,7 @@ QuickTest 会依次执行以下检查并输出结果：
 不加载 Agent，外调请求不会被拦截。用于对比测试或验证应用本身的功能：
 
 ```bash
-java -cp baafoo-test-app/target/baafoo-test-app-1.0.0-SNAPSHOT.jar \
+java -cp baafoo-test-app/target/baafoo-test-app-1.1.0-SNAPSHOT.jar \
      com.baafoo.testapp.BaafooTestApp
 ```
 
@@ -213,8 +213,8 @@ cd ..
 mvn clean package -pl baafoo-agent,baafoo-test-app -am -DskipTests
 
 # 3. 使用 Agent 启动 Test App（交互式）
-java -javaagent:baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar=config=baafoo-agent/src/main/resources/baafoo-agent.yml \
-     -cp baafoo-test-app/target/baafoo-test-app-1.0.0-SNAPSHOT.jar \
+java -javaagent:baafoo-agent/target/baafoo-agent-1.1.0-SNAPSHOT.jar=config=baafoo-agent/src/main/resources/baafoo-agent.yml \
+     -cp baafoo-test-app/target/baafoo-test-app-1.1.0-SNAPSHOT.jar \
      com.baafoo.testapp.BaafooTestApp
 
 # 4. 在交互菜单中:
@@ -228,8 +228,8 @@ java -javaagent:baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar=config=baafo
 
 ```bash
 # 一条命令完成 Agent + Server 联通测试
-java -javaagent:baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar=config=baafoo-agent/src/main/resources/baafoo-agent.yml \
-     -cp baafoo-test-app/target/baafoo-test-app-1.0.0-SNAPSHOT.jar \
+java -javaagent:baafoo-agent/target/baafoo-agent-1.1.0-SNAPSHOT.jar=config=baafoo-agent/src/main/resources/baafoo-agent.yml \
+     -cp baafoo-test-app/target/baafoo-test-app-1.1.0-SNAPSHOT.jar \
      com.baafoo.testapp.QuickTest
 ```
 

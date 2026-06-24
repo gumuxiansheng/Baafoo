@@ -53,14 +53,14 @@ No lint/typecheck commands — just the Maven lifecycle. Jacoco coverage runs at
 
 ```bash
 # Server
-java -jar baafoo-server/target/baafoo-server-1.0.0-SNAPSHOT.jar baafoo-server.yml
+java -jar baafoo-server/target/baafoo-server-1.1.0-SNAPSHOT.jar baafoo-server.yml
 
 # App with Agent
-java -javaagent:baafoo-agent/target/baafoo-agent-1.0.0-SNAPSHOT.jar=config=baafoo-agent.yml -jar your-app.jar
+java -javaagent:baafoo-agent/target/baafoo-agent-1.1.0-SNAPSHOT.jar=config=baafoo-agent.yml -jar your-app.jar
 ```
 
 - Java 9+ requires `--add-opens java.base/java.net=ALL-UNNAMED`
-- Server ports: 8084 (API+Web console), 9000–9004 (HTTP/TCP/Kafka/Pulsar/JMS stub)
+- Server ports: 8084 (API+Web console), 9000–9005 (HTTP/TCP/Kafka/Pulsar/JMS/gRPC stub)
 - All API paths: `/__baafoo__/api/*`
 - Server defaults: H2 embedded DB, `unmatchedDefault: passthrough`
 
@@ -118,6 +118,7 @@ testing/
 |----------|-----|-------------|
 | F: Framework | F01–F04 | Health check, DB, rule registration, environment setup |
 | H: HTTP | H01–H09 | GET/POST stub, error code, delay, proxy, GraphQL, Feign plugin |
+| G: gRPC | G01–G04 | gRPC Unary stub, service/method matching, grpc-status, delay |
 | T: TCP | T01–T03 | TCP stub, NIO (skip), multi-round |
 | K: Kafka | K01–K03 | Kafka produce/consume, header condition |
 | P: Pulsar | P01–P03 | Pulsar produce/consume, wildcard topic |
@@ -128,15 +129,15 @@ testing/
 | C: Condition Types | C01–C10 | header/query/body/bodyJsonPath/contains/endsWith/regex/exists/caseInsensitive/disabled |
 | M: Environment Modes | M01–M05 | STUB/PASSTHROUGH/RECORD/RECORD_AND_STUB/RECORD_ALL |
 
-### Rule File Coverage (31 files)
+### Rule File Coverage (34 files)
 
-**Protocol rules (16):** http-get, http-post, http-error, http-delay, http-proxy, http-graphql, http-request-count, tcp-hex, tcp-regex, tcp-multiround, kafka-basic, kafka-header, pulsar-basic, pulsar-wildcard, jms-basic, jms-queue
+**Protocol rules (19):** http-get, http-post, http-error, http-delay, http-proxy, http-graphql, http-request-count, grpc-greeter, grpc-delay, grpc-error, tcp-hex, tcp-regex, tcp-multiround, kafka-basic, kafka-header, pulsar-basic, pulsar-wildcard, jms-basic, jms-queue
 
 **Condition type rules (9):** http-header, http-query, http-body, http-jsonpath, http-contains, http-endswith, http-path-regex, http-header-exists, http-caseinsensitive
 
 **Special rules (6):** http-disabled (enabled=false), http-no-env (global rule), http-feign (plugin), kafka-direction, pulsar-direction, jms-direction
 
-**Condition types covered:** method, path, topic, header, query, body, bodyJsonPath, graphqlOperationName, graphqlOperationType, requestCount
+**Condition types covered:** method, path, topic, header, query, body, bodyJsonPath, graphqlOperationName, graphqlOperationType, requestCount, grpcService, grpcMethod
 
 **Operators covered:** equals, contains, startsWith, endsWith, regex, exists
 
