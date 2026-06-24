@@ -372,6 +372,15 @@ public class BaafooAgent {
                                 .on(isConstructor())));
         registry.register("org.apache.activemq.ActiveMQConnectionFactory", "JmsConnectionFactoryAdvice", "jms");
 
+        // gRPC: intercept ManagedChannelBuilder.forTarget() to redirect channel targets
+        // to the Baafoo stub server. This runs in the App CL (io.grpc.* is App CL visible).
+        agentBuilder = agentBuilder
+                .type(nameStartsWith("io.grpc.").and(nameEndsWith("ManagedChannelBuilder")))
+                .transform((builder, typeDesc, classLoader, module, pd) ->
+                        builder.visit(Advice.to(GrpcChannelAdvice.class)
+                                .on(named("forTarget").and(takesArguments(1)))));
+        registry.register("io.grpc.ManagedChannelBuilder", "GrpcChannelAdvice", "grpc");
+
         classFileTransformer = agentBuilder.installOn(inst);
         log.info("Bytecode transforms installed: {} transforms registered", registry.getCount());
     }

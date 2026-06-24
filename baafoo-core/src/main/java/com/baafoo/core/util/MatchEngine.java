@@ -51,6 +51,28 @@ public class MatchEngine {
     }
 
     /**
+     * Match with port=0 fallback.
+     *
+     * <p>If the first match (with the real port) fails, retries with port=0
+     * to match rules that don't specify a port. Encapsulates the two-step
+     * match pattern previously duplicated in every gRPC handler (D6 fix).</p>
+     *
+     * @param topic the MQ topic/destination name (null for non-MQ requests)
+     */
+    public MatchResult matchWithFallback(List<Rule> rules, String protocol, String host, int port,
+                                          String serviceName, String method, String path, String topic,
+                                          Map<String, String> headers, Map<String, String> queryParams,
+                                          String body) {
+        MatchResult result = match(rules, protocol, host, port, serviceName,
+                method, path, topic, headers, queryParams, body);
+        if (!result.isMatched() && port > 0) {
+            result = match(rules, protocol, host, 0, serviceName,
+                    method, path, topic, headers, queryParams, body);
+        }
+        return result;
+    }
+
+    /**
      * Match request against a list of rules, with an explicit {@code topic} parameter
      * for MQ protocols (Kafka/Pulsar/JMS). The {@code topic} is used by conditions of
      * type {@code "topic"}; for HTTP rules, pass {@code null} and the topic condition

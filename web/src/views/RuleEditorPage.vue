@@ -22,6 +22,7 @@
               <el-select v-model="form.protocol" style="width: 100%">
                 <el-option label="HTTP" value="http" />
                 <el-option label="TCP" value="tcp" />
+                <el-option label="gRPC" value="grpc" />
                 <el-option label="Kafka" value="kafka" />
                 <el-option label="Pulsar" value="pulsar" />
                 <el-option label="JMS" value="jms" />
@@ -119,6 +120,15 @@
                   <el-option label="消息包含" value="bodyContains" />
                   <el-option label="请求次数" value="requestCount" />
                 </template>
+                <template v-else-if="isGrpcProtocol">
+                  <el-option label="gRPC Service" value="grpcService" />
+                  <el-option label="gRPC Method" value="grpcMethod" />
+                  <el-option label="Path" value="path" />
+                  <el-option label="Metadata" value="header" />
+                  <el-option label="Body(hex)" value="body" />
+                  <el-option label="Body包含" value="bodyContains" />
+                  <el-option label="请求次数" value="requestCount" />
+                </template>
                 <template v-else>
                   <el-option label="Method" value="method" />
                   <el-option label="Path" value="path" />
@@ -188,6 +198,20 @@
                 <el-input-number v-model="resp.statusCode" :min="100" :max="599" size="small" />
               </el-form-item>
             </el-col>
+            <el-col :span="4" v-if="isGrpcProtocol">
+              <el-form-item label="gRPC状态" size="small">
+                <el-select v-model="resp.grpcStatus" size="small" style="width: 100%">
+                  <el-option label="OK" :value="0" />
+                  <el-option label="NOT_FOUND" :value="5" />
+                  <el-option label="UNIMPLEMENTED" :value="12" />
+                  <el-option label="UNAVAILABLE" :value="14" />
+                  <el-option label="INVALID_ARGUMENT" :value="3" />
+                  <el-option label="PERMISSION_DENIED" :value="7" />
+                  <el-option label="INTERNAL" :value="13" />
+                  <el-option label="UNAUTHENTICATED" :value="16" />
+                </el-select>
+              </el-form-item>
+            </el-col>
             <el-col :span="4">
               <el-form-item label="延迟ms" size="small">
                 <el-input-number v-model="resp.delayMs" :min="0" :max="60000" size="small" />
@@ -233,6 +257,15 @@
                       <el-option label="Destination" value="destination" v-if="form.protocol === 'jms'" />
                       <el-option label="消息内容" value="body" />
                       <el-option label="消息包含" value="bodyContains" />
+                      <el-option label="请求次数" value="requestCount" />
+                    </template>
+                    <template v-else-if="isGrpcProtocol">
+                      <el-option label="gRPC Service" value="grpcService" />
+                      <el-option label="gRPC Method" value="grpcMethod" />
+                      <el-option label="Path" value="path" />
+                      <el-option label="Metadata" value="header" />
+                      <el-option label="Body(hex)" value="body" />
+                      <el-option label="Body包含" value="bodyContains" />
                       <el-option label="请求次数" value="requestCount" />
                     </template>
                     <template v-else>
@@ -422,6 +455,10 @@ export default {
       return ['kafka', 'pulsar', 'jms'].includes(form.protocol)
     })
 
+    const isGrpcProtocol = computed(() => {
+      return form.protocol === 'grpc'
+    })
+
     const envTagType = (val) => {
       return inheritedEnvs.value.includes(val) ? 'warning' : ''
     }
@@ -503,6 +540,8 @@ export default {
         cond.operator = 'contains'
       } else if (cond.type === 'graphqlOperationName' || cond.type === 'graphqlOperationType') {
         cond.operator = 'equals'
+      } else if (cond.type === 'grpcService' || cond.type === 'grpcMethod') {
+        cond.operator = 'equals'
       } else if (cond.type === 'requestCount') {
         cond.operator = 'equals'
       }
@@ -534,6 +573,8 @@ export default {
         case 'topic': return '如: baafoo-test-topic'
         case 'key': return '如: message-key'
         case 'destination': return '如: BAAFOO.TEST.QUEUE'
+        case 'grpcService': return '如: helloworld.Greeter'
+        case 'grpcMethod': return '如: SayHello'
         case 'requestCount':
           if (cond.operator === 'range') return '如: 1,3 (第1到3次)'
           if (cond.operator === 'mod') return '如: 3,0 (每3次,余0触发)'
@@ -579,7 +620,7 @@ export default {
     }
 
     function addResponse() {
-      form.responses.push({ name: '', statusCode: 200, delayMs: 0, body: '', headers: {}, condition: null })
+      form.responses.push({ name: '', statusCode: 200, delayMs: 0, body: '', headers: {}, condition: null, grpcStatus: 0, grpcStatusMessage: '' })
     }
 
     function removeResponse(idx) {
@@ -632,7 +673,9 @@ export default {
           delayMs: r.delayMs,
           body: r.body,
           headers: r._headerPairs ? buildHeadersFromPairs(r._headerPairs) : (r.headers || null),
-          condition: r.condition || null
+          condition: r.condition || null,
+          grpcStatus: r.grpcStatus != null ? r.grpcStatus : 0,
+          grpcStatusMessage: r.grpcStatusMessage || null
         }
         return entry
       })
@@ -693,7 +736,7 @@ export default {
     return {
       isNew, rule, loading, saving, form, allEnvironments, inheritedEnvs, envTagType, templateVarHint, bodyPlaceholder,
       showFakerRef, fakerGroups, insertFakerVar,
-      isGraphqlPath, isMqProtocol, addGraphqlHelper,
+      isGraphqlPath, isMqProtocol, isGrpcProtocol, addGraphqlHelper,
       addCondition, removeCondition,
       addResponse, removeResponse, addResponseCondition,
       getResponseHeaders, addResponseHeader, removeResponseHeader,

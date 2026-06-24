@@ -31,10 +31,17 @@ public class ResponseEntry {
     /** Response body charset (null = UTF-8). Supports GBK, GB2312, Big5, ISO-8859-1, etc. */
     private String charset;
 
+    /** gRPC status code (0 = OK, 5 = NOT_FOUND, 12 = UNIMPLEMENTED, etc.). Defaults to 0. */
+    private int grpcStatus;
+
+    /** gRPC status message (human-readable error details). */
+    private String grpcStatusMessage;
+
     public ResponseEntry() {
         this.statusCode = 200;
         this.headers = Collections.emptyMap();
         this.delayMs = 0;
+        this.grpcStatus = 0;
     }
 
     // --- Getters / Setters ---
@@ -60,11 +67,18 @@ public class ResponseEntry {
     public String getCharset() { return charset; }
     public void setCharset(String charset) { this.charset = charset; }
 
+    public int getGrpcStatus() { return grpcStatus; }
+    public void setGrpcStatus(int grpcStatus) { this.grpcStatus = grpcStatus; }
+
+    public String getGrpcStatusMessage() { return grpcStatusMessage; }
+    public void setGrpcStatusMessage(String grpcStatusMessage) { this.grpcStatusMessage = grpcStatusMessage; }
+
     @Override
     public String toString() {
         return "ResponseEntry{" +
                 "name='" + name + '\'' +
                 ", statusCode=" + statusCode +
+                ", grpcStatus=" + grpcStatus +
                 ", delayMs=" + delayMs +
                 '}';
     }

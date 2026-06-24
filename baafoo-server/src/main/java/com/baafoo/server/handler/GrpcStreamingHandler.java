@@ -21,6 +21,10 @@ import java.util.concurrent.TimeUnit;
 /**
  * HTTP/2 handler for gRPC Streaming support.
  *
+ * <p><b>Deprecated:</b> Use {@link GrpcUnifiedHandler} instead. This handler's
+ * {@code determineStreamType} logic is flawed (cannot distinguish client streaming
+ * from bidirectional). Retained for backward compatibility only.</p>
+ *
  * <p>Supports all three gRPC streaming patterns:
  * <ul>
  *   <li><b>Server Streaming</b>: Client sends one request, server streams multiple responses</li>
@@ -31,6 +35,7 @@ import java.util.concurrent.TimeUnit;
  * <p>Uses Netty HTTP/2 frame codec for proper stream management and gRPC framing
  * for message encoding/decoding.</p>
  */
+@Deprecated
 public class GrpcStreamingHandler extends ChannelInitializer<Channel> {
 
     private static final Logger log = LoggerFactory.getLogger(GrpcStreamingHandler.class);
@@ -46,7 +51,9 @@ public class GrpcStreamingHandler extends ChannelInitializer<Channel> {
     private final AgentResolver agentResolver;
 
     // Track active streams: streamId -> GrpcStreamContext
-    private final Map<Integer, GrpcStreamContext> activeStreams = new ConcurrentHashMap<>();
+    // D9 fix: HashMap instead of ConcurrentHashMap — Http2MultiplexHandler guarantees
+    // per-channel single-threaded access, so ConcurrentHashMap overhead is unnecessary.
+    private final Map<Integer, GrpcStreamContext> activeStreams = new HashMap<>();
 
     public GrpcStreamingHandler(StorageService storage, ServerConfig config) {
         this.storage = storage;
@@ -195,6 +202,7 @@ public class GrpcStreamingHandler extends ChannelInitializer<Channel> {
             int streamId = frame.stream().id();
             GrpcStreamContext streamContext = activeStreams.remove(streamId);
             if (streamContext != null) {
+                streamContext.release(); // D4 fix: release accumulated buffer
                 log.debug("Stream reset: streamId={}, errorCode={}", streamId, frame.errorCode());
             }
         }
@@ -205,7 +213,10 @@ public class GrpcStreamingHandler extends ChannelInitializer<Channel> {
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-            // Clean up all streams
+            // D4 fix: release all accumulated buffers to prevent memory leaks
+            for (GrpcStreamContext streamContext : activeStreams.values()) {
+                streamContext.release();
+            }
             activeStreams.clear();
             super.channelInactive(ctx);
         }
@@ -213,6 +224,7 @@ public class GrpcStreamingHandler extends ChannelInitializer<Channel> {
 
     // ==================== Stream Processing ====================
 
+    @SuppressWarnings("unused")
     private StreamType determineStreamType(String method, boolean endStream) {
         // gRPC unary: single request, single response (endStream on headers)
         if (endStream) {
@@ -289,17 +301,16 @@ public class GrpcStreamingHandler extends ChannelInitializer<Channel> {
                         result.getRule().getFakerSeed(), result.getRequestCount());
             }
         } else {
-            if (streamContext.streamType == StreamType.BIDIRECTIONAL) {
-                // Echo back for bidirectional if no rule matched
-                echoBidirectionalMessages(streamContext);
-            } else {
-                sendGrpcError(streamContext, 5, "No matching rule found");
-            }
+            // D8 fix: no more echo for bidirectional — unified error response
+            sendGrpcError(streamContext, 5, "No matching rule found");
         }
     }
 
+    @SuppressWarnings("unused")
     private void echoBidirectionalMessages(GrpcStreamContext streamContext) {
-        // Echo back all received messages
+        // D8 fix: deprecated — no longer used. Kept for reference; will be removed next release.
+        // Previously echoed all received messages for unmatched bidirectional streams.
+        // Now unified: unmatched streams return NOT_FOUND(5) regardless of stream type.
         for (byte[] msg : streamContext.messages) {
             sendGrpcMessage(streamContext, msg);
         }
@@ -595,7 +606,22 @@ public class GrpcStreamingHandler extends ChannelInitializer<Channel> {
             if (accumulatedBuffer == null) {
                 accumulatedBuffer = Unpooled.buffer();
             }
-            accumulatedBuffer.writeBytes(data);
+            try {
+                accumulatedBuffer.writeBytes(data);
+            } finally {
+                // D4 fix: release the incoming ByteBuf after copying its contents
+                data.release();
+            }
+        }
+
+        /**
+         * Release accumulated buffer to prevent memory leaks.
+         */
+        void release() {
+            if (accumulatedBuffer != null) {
+                accumulatedBuffer.release();
+                accumulatedBuffer = null;
+            }
         }
     }
 }

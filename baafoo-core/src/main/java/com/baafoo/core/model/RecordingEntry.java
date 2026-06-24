@@ -90,6 +90,18 @@ public class RecordingEntry {
     /** Whether this recording was captured without a matching rule (RECORD_ALL mode) */
     private boolean unmatched;
 
+    /** gRPC service name extracted from path (e.g., "helloworld.Greeter") */
+    private String grpcService;
+
+    /** gRPC method name extracted from path (e.g., "SayHello") */
+    private String grpcMethod;
+
+    /** gRPC response status code (0 = OK, 5 = NOT_FOUND, etc.) */
+    private int grpcStatus;
+
+    /** gRPC content type (e.g., "application/grpc", "application/grpc+proto") */
+    private String grpcContentType;
+
     public RecordingEntry() {
         this.requestHeaders = Collections.emptyMap();
         this.responseHeaders = Collections.emptyMap();
@@ -173,6 +185,18 @@ public class RecordingEntry {
     public boolean isUnmatched() { return unmatched; }
     public void setUnmatched(boolean unmatched) { this.unmatched = unmatched; }
 
+    public String getGrpcService() { return grpcService; }
+    public void setGrpcService(String grpcService) { this.grpcService = grpcService; }
+
+    public String getGrpcMethod() { return grpcMethod; }
+    public void setGrpcMethod(String grpcMethod) { this.grpcMethod = grpcMethod; }
+
+    public int getGrpcStatus() { return grpcStatus; }
+    public void setGrpcStatus(int grpcStatus) { this.grpcStatus = grpcStatus; }
+
+    public String getGrpcContentType() { return grpcContentType; }
+    public void setGrpcContentType(String grpcContentType) { this.grpcContentType = grpcContentType; }
+
     @Override
     public String toString() {
         return "RecordingEntry{" +
@@ -181,6 +205,9 @@ public class RecordingEntry {
                 ", method='" + method + '\'' +
                 ", path='" + path + '\'' +
                 ", responseStatusCode=" + responseStatusCode +
+                ", grpcService='" + grpcService + '\'' +
+                ", grpcMethod='" + grpcMethod + '\'' +
+                ", grpcStatus=" + grpcStatus +
                 ", direction='" + direction + '\'' +
                 ", sessionId='" + sessionId + '\'' +
                 '}';

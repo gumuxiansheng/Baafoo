@@ -11,8 +11,7 @@ import com.baafoo.server.broker.KafkaMockBroker;
 import com.baafoo.server.broker.PulsarMockBroker;
 import com.baafoo.server.handler.HttpStubHandler;
 import com.baafoo.server.handler.TcpStubHandler;
-import com.baafoo.server.handler.GrpcStubHandler;
-import com.baafoo.server.handler.GrpcStreamingHandler;
+import com.baafoo.server.handler.GrpcUnifiedHandler;
 import com.baafoo.server.storage.RecordingCleanupTask;
 import com.baafoo.server.storage.StorageService;
 import com.baafoo.server.storage.StorageServiceFactory;
@@ -126,7 +125,7 @@ public class BaafooServer {
         log.info("Management API: http://localhost:{}", config.getHttpPort());
         log.info("Stub HTTP:      localhost:{}", httpPort);
         log.info("Stub TCP:       localhost:{}", tcpPort);
-        log.info("Stub gRPC:      localhost:{} (HTTP/1.1), localhost:{} (HTTP/2 streaming)", grpcPort, grpcPort + 1000);
+        log.info("Stub gRPC:      localhost:{} (HTTP/2 unified)", grpcPort);
         log.info("Stub Kafka:     localhost:{}", kafkaPort);
         log.info("Stub Pulsar:    localhost:{}", pulsarPort);
         log.info("Stub JMS:       localhost:{}", jmsPort);
@@ -196,39 +195,20 @@ public class BaafooServer {
     }
 
     private void startGrpcStubServer(int port) throws Exception {
-        // Start HTTP/1.1 gRPC stub server (for basic unary calls)
+        // Unified HTTP/2 gRPC server — handles all four call types (unary + streaming)
         ServerBootstrap b = new ServerBootstrap();
         b.group(bossGroup, workerGroup)
                 .channel(NioServerSocketChannel.class)
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     protected void initChannel(SocketChannel ch) {
-                        ChannelPipeline p = ch.pipeline();
-                        p.addLast(new HttpServerCodec());
-                        p.addLast(new HttpObjectAggregator(10 * 1024 * 1024));
-                        p.addLast(new GrpcStubHandler(storage, config));
+                        ch.pipeline().addLast(new GrpcUnifiedHandler(storage, config));
                     }
                 });
 
         Channel ch = b.bind(port).sync().channel();
         channels.add(ch);
-        log.info("gRPC stub (HTTP/1.1) on port {}", port);
-
-        // Start HTTP/2 gRPC streaming server (port + 1000, e.g., 9005 -> 10005)
-        int streamingPort = port + 1000;
-        ServerBootstrap http2 = new ServerBootstrap();
-        http2.group(bossGroup, workerGroup)
-                .channel(NioServerSocketChannel.class)
-                .childHandler(new ChannelInitializer<SocketChannel>() {
-                    @Override
-                    protected void initChannel(SocketChannel ch) {
-                        ch.pipeline().addLast(new GrpcStreamingHandler(storage, config));
-                    }
-                });
-
-        Channel http2Ch = http2.bind(streamingPort).sync().channel();
-        channels.add(http2Ch);
-        log.info("gRPC streaming stub (HTTP/2) on port {}", streamingPort);
+        log.info("gRPC stub (HTTP/2 unified) on port {}", port);
     }
 
     private void startProtocolStubServer(String protocol, int port) throws Exception {

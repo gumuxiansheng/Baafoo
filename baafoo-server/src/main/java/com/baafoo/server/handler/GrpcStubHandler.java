@@ -26,6 +26,10 @@ import java.util.concurrent.TimeUnit;
 /**
  * Netty handler for gRPC stub server (port 9005).
  *
+ * <p><b>Deprecated:</b> Use {@link GrpcUnifiedHandler} instead. This handler uses HTTP/1.1
+ * which is incompatible with standard gRPC clients (HTTP/2 only). Retained for backward
+ * compatibility only — will be removed in the next major release.</p>
+ *
  * <p>gRPC over HTTP/1.1 stub handler. Matches incoming gRPC requests against
  * stored rules and returns pre-configured stub responses. The handler parses
  * gRPC message framing (1-byte compressed-flag + 4-byte big-endian length + message)
@@ -43,8 +47,9 @@ import java.util.concurrent.TimeUnit;
  * </ul></p>
  *
  * <p>Note: This implementation uses HTTP/1.1 for simplicity. For full HTTP/2
- * support, a future upgrade using Netty Http2FrameCodec is planned.</p>
+ * support, use {@link GrpcUnifiedHandler}.</p>
  */
+@Deprecated
 public class GrpcStubHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
 
     private static final Logger log = LoggerFactory.getLogger(GrpcStubHandler.class);
@@ -129,7 +134,8 @@ public class GrpcStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
 
             if (currentMode == EnvironmentMode.PASSTHROUGH || currentMode == EnvironmentMode.RECORD) {
                 log.info("Mode {} — gRPC passthrough for: {}", currentMode.getValue(), path);
-                sendGrpcError(ctx, 14, "Passthrough not supported for gRPC stub");
+                // D7 fix: use UNIMPLEMENTED(12) instead of UNAVAILABLE(14)
+                sendGrpcError(ctx, 12, "Passthrough not supported for gRPC stub");
             } else {
                 if (currentMode == EnvironmentMode.RECORD_AND_STUB || currentMode == EnvironmentMode.RECORD_ALL) {
                     RecordingEntry rec = RecordingHelper.buildFromStub(

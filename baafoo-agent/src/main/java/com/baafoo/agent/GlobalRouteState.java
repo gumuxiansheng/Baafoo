@@ -275,10 +275,9 @@ public final class GlobalRouteState {
         if (port == 80 || port == 443 || port == 8080 || port == 8443) {
             return HTTP_PORT;
         }
-        // gRPC ports → gRPC stub port (or streaming port)
+        // gRPC ports → unified HTTP/2 gRPC stub port (handles all call types)
         if (port == 50051 || port == 50052 || port == 9090) {
-            // Check if HTTP/2 upgrade or ALPN is used (streaming port)
-            return GRPC_STREAMING_PORT;
+            return GRPC_PORT;
         }
         // Kafka ports
         if (port == 9092 || port == 9093 || port == 9094) {
