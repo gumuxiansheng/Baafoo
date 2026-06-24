@@ -238,6 +238,7 @@ public class ControlChannel {
 
             HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
             conn.setRequestMethod("GET");
+            applyApiKey(conn);
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(config.getPollIntervalSec() * 1000 + 1000);
 
@@ -301,11 +302,19 @@ public class ControlChannel {
 
     // --- HTTP helpers (JDK HttpURLConnection only, NO Netty) ---
 
+    private void applyApiKey(HttpURLConnection conn) {
+        AgentConfig.ServerConnection sc = config.getServer();
+        if (sc != null && sc.getApiKey() != null && !sc.getApiKey().isEmpty()) {
+            conn.setRequestProperty("X-Api-Key", sc.getApiKey());
+        }
+    }
+
     private HttpURLConnection post(String path, String json) throws Exception {
         String url = getServerBaseUrl() + path;
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");
+        applyApiKey(conn);
         conn.setConnectTimeout(5000);
         conn.setReadTimeout(5000);
         conn.setDoOutput(true);

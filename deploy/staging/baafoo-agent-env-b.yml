@@ -10,6 +10,7 @@ server:
   kafkaPort: 9002
   pulsarPort: 9003
   jmsPort: 9004
+  apiKey: "staging-admin-key"
 
 environment: "staging-b"
 

@@ -208,6 +208,9 @@ public class AgentConfig {
         /** JMS stub port (default 9004) */
         private int jmsPort = 9004;
 
+        /** API key for server authentication */
+        private String apiKey;
+
         public String getHost() { return host; }
         public void setHost(String host) { this.host = host; }
 
@@ -231,6 +234,9 @@ public class AgentConfig {
 
         public int getJmsPort() { return jmsPort; }
         public void setJmsPort(int jmsPort) { this.jmsPort = jmsPort; }
+
+        public String getApiKey() { return apiKey; }
+        public void setApiKey(String apiKey) { this.apiKey = apiKey; }
 
         /**
          * Get the stub port for a given protocol name.
