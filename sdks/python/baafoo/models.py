@@ -19,6 +19,8 @@ class ResponseEntry:
     headers: Dict[str, str] = field(default_factory=dict)
     body: str = ""
     delay_ms: int = 0
+    grpc_status: int = 0
+    grpc_status_message: str = ""
 
 
 @dataclass
@@ -62,6 +64,9 @@ class Rule:
     faker_seed: Optional[int] = None
     request_count_reset: Optional[int] = None
     fault_injection: Optional[FaultInjection] = None
+    grpc_service: str = ""
+    grpc_method: str = ""
+    grpc_streaming: str = ""
     version: int = 1
     created_at: int = 0
     updated_at: int = 0
@@ -94,6 +99,10 @@ class RecordingEntry:
     data_hex: str = ""
     duration_ms: int = 0
     unmatched: bool = False
+    grpc_service: str = ""
+    grpc_method: str = ""
+    grpc_status: int = 0
+    grpc_content_type: str = ""
 
     def to_dict(self) -> dict:
         """转换为字典，使用 camelCase 键名以匹配 Server API"""
@@ -122,4 +131,8 @@ class RecordingEntry:
             "dataHex": self.data_hex,
             "durationMs": self.duration_ms,
             "unmatched": self.unmatched,
+            "grpcService": self.grpc_service,
+            "grpcMethod": self.grpc_method,
+            "grpcStatus": self.grpc_status,
+            "grpcContentType": self.grpc_content_type,
         }

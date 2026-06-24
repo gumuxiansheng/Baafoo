@@ -290,7 +290,7 @@ GET /agents
 | `environmentId` | string | 环境 ID |
 | `agentId` | string | 录制此数据的 Agent ID |
 | `agentIp` | string | Agent 服务器 IP |
-| `protocol` | string | 协议（http/tcp/kafka/pulsar/jms 等） |
+| `protocol` | string | 协议（http/tcp/kafka/pulsar/jms/grpc 等） |
 | `host` | string | 目标主机 |
 | `port` | int | 目标端口 |
 | `serviceName` | string | 服务名（Consul） |
@@ -309,6 +309,10 @@ GET /agents
 | `dataHex` | string | 原始数据十六进制（TCP 字节录制） |
 | `durationMs` | long | 持续时间（毫秒） |
 | `unmatched` | boolean | 是否无匹配规则的录制 |
+| `grpcService` | string | **gRPC** 服务名（如 `helloworld.Greeter`） |
+| `grpcMethod` | string | **gRPC** 方法名（如 `SayHello`） |
+| `grpcStatus` | int | **gRPC** 响应状态码（0=OK, 1=CANCELLED, 2=UNKNOWN, ...） |
+| `grpcContentType` | string | **gRPC** Content-Type（`application/grpc` 或 `application/grpc+proto`） |
 
 ### 3.2 Rule
 
@@ -330,6 +334,9 @@ GET /agents
 | `tcpLoop` | boolean | TCP 是否循环 |
 | `fakerSeed` | long | Faker 种子 |
 | `faultInjection` | FaultInjection | 故障注入配置 |
+| `grpcService` | string | **gRPC** 服务名（完整包名+服务名） |
+| `grpcMethod` | string | **gRPC** 方法名 |
+| `grpcStreaming` | string | **gRPC** 流类型：`unary`/`client-streaming`/`server-streaming`/`bidi-streaming` |
 | `version` | int | 规则版本 |
 | `createdAt` | long | 创建时间戳 |
 | `updatedAt` | long | 更新时间戳 |
@@ -338,8 +345,8 @@ GET /agents
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `field` | string | 匹配字段（method/path/header.xxx/body.xxx 等） |
-| `operator` | string | 操作符（equals/contains/regex/exists 等） |
+| `field` | string | 匹配字段（method/path/header.xxx/body.xxx/grpc.service/grpc.method/grpc.status 等） |
+| `operator` | string | 操作符（equals/contains/regex/exists/prefix/suffix 等） |
 | `value` | string | 匹配值 |
 
 ### 3.4 ResponseEntry
@@ -348,10 +355,75 @@ GET /agents
 |------|------|------|
 | `statusCode` | int | HTTP 状态码 |
 | `headers` | map\<string, string\> | 响应头 |
-| `body` | string | 响应体 |
+| `body` | string | 响应体（HTTP 为文本，gRPC 为 JSON 格式的 protobuf 消息） |
 | `delayMs` | int | 延迟（毫秒） |
+| `grpcStatus` | int | **gRPC** 响应状态码（0=OK, 默认） |
+| `grpcStatusMessage` | string | **gRPC** 状态消息 |
 
 ---
+
+### 3.5 gRPC 协议扩展
+
+gRPC 协议基于 HTTP/2 传输，使用 Protocol Buffers 序列化。Baafoo 对 gRPC 的支持如下：
+
+#### 3.5.1 gRPC URL 格式
+
+```
+/{package}.{Service}/{Method}
+```
+
+例如：`/helloworld.Greeter/SayHello`
+
+#### 3.5.2 gRPC 状态码
+
+| 码值 | 名称 | 说明 |
+|------|------|------|
+| 0 | OK | 成功 |
+| 1 | CANCELLED | 已取消 |
+| 2 | UNKNOWN | 未知错误 |
+| 3 | INVALID_ARGUMENT | 参数无效 |
+| 4 | DEADLINE_EXCEEDED | 超时 |
+| 5 | NOT_FOUND | 未找到 |
+| 6 | ALREADY_EXISTS | 已存在 |
+| 7 | PERMISSION_DENIED | 权限不足 |
+| 8 | RESOURCE_EXHAUSTED | 资源耗尽 |
+| 9 | FAILED_PRECONDITION | 前置条件失败 |
+| 10 | ABORTED | 中止 |
+| 11 | OUT_OF_RANGE | 超出范围 |
+| 12 | UNIMPLEMENTED | 未实现 |
+| 13 | INTERNAL | 内部错误 |
+| 14 | UNAVAILABLE | 不可用 |
+| 15 | DATA_LOSS | 数据丢失 |
+| 16 | UNAUTHENTICATED | 未认证 |
+
+#### 3.5.3 gRPC 录制示例
+
+```json
+{
+  "id": "rec-grpc-001",
+  "protocol": "grpc",
+  "host": "grpc-server",
+  "port": 50051,
+  "grpcService": "helloworld.Greeter",
+  "grpcMethod": "SayHello",
+  "method": "POST",
+  "path": "/helloworld.Greeter/SayHello",
+  "requestHeaders": {
+    "content-type": "application/grpc+proto",
+    "grpc-encoding": "identity",
+    "grpc-accept-encoding": "gzip"
+  },
+  "requestBody": "{\"name\":\"world\"}",
+  "responseStatusCode": 200,
+  "responseHeaders": {
+    "content-type": "application/grpc+proto",
+    "grpc-status": "0"
+  },
+  "responseBody": "{\"message\":\"Hello world\"}",
+  "grpcStatus": 0,
+  "responseTimeMs": 15
+}
+```
 
 ## 4. 环境模式
 

@@ -9,10 +9,12 @@ type MatchCondition struct {
 
 // ResponseEntry 挡板响应配置
 type ResponseEntry struct {
-	StatusCode int               `json:"statusCode"`
-	Headers    map[string]string `json:"headers"`
-	Body       string            `json:"body"`
-	DelayMs    int               `json:"delayMs"`
+	StatusCode       int               `json:"statusCode"`
+	Headers          map[string]string `json:"headers"`
+	Body             string            `json:"body"`
+	DelayMs          int               `json:"delayMs"`
+	GrpcStatus       int               `json:"grpcStatus"`
+	GrpcStatusMessage string           `json:"grpcStatusMessage"`
 }
 
 // TcpRound TCP 多轮交互轮次
@@ -31,31 +33,34 @@ type FaultInjection struct {
 
 // Rule 挡板规则
 type Rule struct {
-	ID              string            `json:"id"`
-	Name            string            `json:"name"`
-	Protocol        string            `json:"protocol"`
-	ServiceName     string            `json:"serviceName"`
-	Host            string            `json:"host"`
-	Port            int               `json:"port"`
-	Conditions     []MatchCondition  `json:"conditions"`
-	Responses      []ResponseEntry   `json:"responses"`
-	Enabled         bool              `json:"enabled"`
-	Priority        int               `json:"priority"`
-	Tags            []string          `json:"tags"`
-	Environments    []string          `json:"environments"`
-	TcpRounds       []TcpRound        `json:"tcpRounds"`
-	TcpLoop         bool              `json:"tcpLoop"`
-	TcpPattern      string            `json:"tcpPattern"`
-	TcpPrefixHex    string            `json:"tcpPrefixHex"`
-	TcpOffsetStart  int               `json:"tcpOffsetStart"`
-	TcpOffsetEnd    int               `json:"tcpOffsetEnd"`
-	TcpOffsetHex    string            `json:"tcpOffsetHex"`
-	FakerSeed       *int64            `json:"fakerSeed"`
-	RequestCountReset *int            `json:"requestCountReset"`
-	FaultInjection  *FaultInjection   `json:"faultInjection"`
-	Version         int               `json:"version"`
-	CreatedAt       int64             `json:"createdAt"`
-	UpdatedAt       int64             `json:"updatedAt"`
+	ID                string            `json:"id"`
+	Name              string            `json:"name"`
+	Protocol          string            `json:"protocol"`
+	ServiceName       string            `json:"serviceName"`
+	Host              string            `json:"host"`
+	Port              int               `json:"port"`
+	Conditions       []MatchCondition  `json:"conditions"`
+	Responses        []ResponseEntry   `json:"responses"`
+	Enabled           bool              `json:"enabled"`
+	Priority          int               `json:"priority"`
+	Tags              []string          `json:"tags"`
+	Environments      []string          `json:"environments"`
+	TcpRounds         []TcpRound        `json:"tcpRounds"`
+	TcpLoop           bool              `json:"tcpLoop"`
+	TcpPattern        string            `json:"tcpPattern"`
+	TcpPrefixHex      string            `json:"tcpPrefixHex"`
+	TcpOffsetStart    int               `json:"tcpOffsetStart"`
+	TcpOffsetEnd      int               `json:"tcpOffsetEnd"`
+	TcpOffsetHex      string            `json:"tcpOffsetHex"`
+	FakerSeed         *int64            `json:"fakerSeed"`
+	RequestCountReset *int              `json:"requestCountReset"`
+	FaultInjection    *FaultInjection   `json:"faultInjection"`
+	GrpcService       string            `json:"grpcService"`
+	GrpcMethod        string            `json:"grpcMethod"`
+	GrpcStreaming     string            `json:"grpcStreaming"`
+	Version           int               `json:"version"`
+	CreatedAt         int64             `json:"createdAt"`
+	UpdatedAt         int64             `json:"updatedAt"`
 }
 
 // RecordingEntry 录制数据
@@ -84,4 +89,8 @@ type RecordingEntry struct {
 	DataHex           string            `json:"dataHex"`
 	DurationMs        int64             `json:"durationMs"`
 	Unmatched         bool              `json:"unmatched"`
+	GrpcService       string            `json:"grpcService"`
+	GrpcMethod        string            `json:"grpcMethod"`
+	GrpcStatus        int               `json:"grpcStatus"`
+	GrpcContentType   string            `json:"grpcContentType"`
 }

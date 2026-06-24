@@ -88,6 +88,8 @@ func (p *Proxy) handleConn(ctx context.Context, clientConn net.Conn, m PortMappi
 	switch strings.ToLower(m.Protocol) {
 	case "http", "https":
 		p.handleHTTP(ctx, clientConn, m, sessionID, startTime)
+	case "grpc":
+		p.handleGRPC(ctx, clientConn, m, sessionID, startTime)
 	default:
 		p.handleTCP(ctx, clientConn, m, sessionID, startTime)
 	}
@@ -152,6 +154,57 @@ func (p *Proxy) handleHTTP(ctx context.Context, clientConn net.Conn, m PortMappi
 	// 录制
 	duration := time.Since(startTime).Milliseconds()
 	p.recordHTTP(m, sessionID, reqBuf, respBuf, duration)
+}
+
+// handleGRPC 处理 gRPC 协议（基于 HTTP/2，这里复用 HTTP 转发逻辑）
+func (p *Proxy) handleGRPC(ctx context.Context, clientConn net.Conn, m PortMapping, sessionID string, startTime time.Time) {
+	backendConn, err := net.DialTimeout("tcp", m.Target, 30*time.Second)
+	if err != nil {
+		log.Printf("Failed to connect to backend %s: %v", m.Target, err)
+		return
+	}
+	defer backendConn.Close()
+
+	var reqBuf, respBuf []byte
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		defer backendConn.Close()
+		buf := make([]byte, 32*1024)
+		for {
+			n, err := clientConn.Read(buf)
+			if n > 0 {
+				reqBuf = append(reqBuf, buf[:n]...)
+				backendConn.Write(buf[:n])
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		defer clientConn.Close()
+		buf := make([]byte, 32*1024)
+		for {
+			n, err := backendConn.Read(buf)
+			if n > 0 {
+				respBuf = append(respBuf, buf[:n]...)
+				clientConn.Write(buf[:n])
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
+
+	wg.Wait()
+
+	duration := time.Since(startTime).Milliseconds()
+	p.recordGRPC(m, sessionID, reqBuf, respBuf, duration)
 }
 
 // handleTCP 处理 TCP 协议
@@ -239,6 +292,48 @@ func (p *Proxy) recordHTTP(m PortMapping, sessionID string, reqBuf, respBuf []by
 		Direction:          "request",
 		SessionID:          sessionID,
 		DurationMs:        durationMs,
+	}
+
+	p.sdk.ReportRecording(entry)
+}
+
+// recordGRPC 录制 gRPC 请求/响应
+func (p *Proxy) recordGRPC(m PortMapping, sessionID string, reqBuf, respBuf []byte, durationMs int64) {
+	mode := p.sdk.GetMode()
+	if mode != baafoo.ModeRecord && mode != baafoo.ModeRecordAndStub && mode != baafoo.ModeRecordAll {
+		return
+	}
+
+	if len(reqBuf) == 0 && len(respBuf) == 0 {
+		return
+	}
+
+	method, reqPath, reqHeaders, reqBody := parseHTTPRequest(reqBuf)
+	statusCode, respHeaders, respBody := parseHTTPResponse(respBuf)
+
+	host, port := splitHostPort(m.Target, 50051)
+
+	grpcService, grpcMethod := extractGRPCServiceMethod(reqPath)
+	grpcContentType := reqHeaders["content-type"]
+
+	entry := baafoo.RecordingEntry{
+		Protocol:           "grpc",
+		Host:               host,
+		Port:               port,
+		Method:             method,
+		Path:               reqPath,
+		RequestHeaders:     reqHeaders,
+		RequestBody:        reqBody,
+		ResponseStatusCode: statusCode,
+		ResponseHeaders:    respHeaders,
+		ResponseBody:       respBody,
+		ResponseTimeMs:     durationMs,
+		Direction:          "request",
+		SessionID:          sessionID,
+		DurationMs:         durationMs,
+		GrpcService:        grpcService,
+		GrpcMethod:         grpcMethod,
+		GrpcContentType:    grpcContentType,
 	}
 
 	p.sdk.ReportRecording(entry)
@@ -414,4 +509,18 @@ func bytesIndex(s, sep []byte) int {
 		}
 	}
 	return -1
+}
+
+// extractGRPCServiceMethod 从 gRPC 请求路径中提取 service 和 method
+// 路径格式: /package.ServiceName/MethodName
+func extractGRPCServiceMethod(path string) (service, method string) {
+	path = strings.TrimPrefix(path, "/")
+	parts := strings.SplitN(path, "/", 2)
+	if len(parts) == 2 {
+		service = parts[0]
+		method = parts[1]
+	} else if len(parts) == 1 {
+		service = parts[0]
+	}
+	return
 }
