@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.boot.web.server.LocalServerPort;
+import org.springframework.boot.test.web.server.LocalServerPort;
 
 import java.util.Map;
 
@@ -186,7 +186,7 @@ class BaafooTestSpringApplicationTests {
     @Test
     void pulsarAllEndpointReturnsAll() {
         Map<String, Object> result = restTemplate.getForObject(
-                "http://localhost:" + port + "/api/pulsar/all",
+                "http://localhost:" + port + "/api/pulsar/all?serviceUrl=slow://localhost:0000&topic=test&message=test",
                 Map.class);
         assertThat(result).isNotNull();
         assertThat(result.containsKey("pulsar")).isTrue();

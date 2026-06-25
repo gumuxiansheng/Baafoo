@@ -52,15 +52,13 @@ public class PulsarCallerController {
     }
 
     @GetMapping("/all")
-    public Map<String, Object> all() {
+    public Map<String, Object> all(
+            @RequestParam(defaultValue = "pulsar://pulsar-broker:6650") String serviceUrl,
+            @RequestParam(defaultValue = "persistent://public/default/baafoo-test-topic") String topic,
+            @RequestParam(defaultValue = "hello-baafoo-pulsar") String message) {
         Map<String, Object> results = new LinkedHashMap<String, Object>();
-        results.put("pulsar", pulsarCallerService.sendMessage(
-                "pulsar://pulsar-broker:6650",
-                "persistent://public/default/baafoo-test-topic",
-                "hello-baafoo-pulsar"));
-        results.put("consume", pulsarCallerService.consumeMessage(
-                "pulsar://pulsar-broker:6650",
-                "persistent://public/default/baafoo-test-topic"));
+        results.put("pulsar", pulsarCallerService.sendMessage(serviceUrl, topic, message));
+        results.put("consume", pulsarCallerService.consumeMessage(serviceUrl, topic));
         results.put("tdmqInfo", tdmqCallerService.checkConfig());
         return results;
     }
