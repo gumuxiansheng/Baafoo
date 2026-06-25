@@ -70,11 +70,18 @@ public class KafkaProducerAdvice {
             try {
                 PluginManager pm = BaafooAgent.getPluginManager();
                 if (pm != null) {
-                    // P2: Use new ConnectAdvice API via connectWithMonitor
-                    ConnectContext ctx = new ConnectContext();
-                    ctx.setProtocol("kafka");
-                    ctx.setHost(extractHost(originalServers));
-                    ctx.setPort(extractPort(originalServers));
+                        // P2: Use new ConnectAdvice API via connectWithMonitor
+                        // ConnectContext constructor requires (String,String,int,String,String,String,String).
+                        // Provide protocol, host and port; other fields are not applicable here and set to null.
+                        ConnectContext ctx = new ConnectContext(
+                            "kafka",
+                            extractHost(originalServers),
+                            extractPort(originalServers),
+                            null,
+                            null,
+                            null,
+                            null
+                        );
                     ConnectAdvice advice = pm.connectWithMonitor(InterceptTarget.KAFKA, ctx);
                     if (advice != null && advice.isRedirect()) {
                         stubHost = advice.getRedirectHost();

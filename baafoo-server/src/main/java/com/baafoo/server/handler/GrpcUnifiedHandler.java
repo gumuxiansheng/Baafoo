@@ -1,23 +1,44 @@
 package com.baafoo.server.handler;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.baafoo.core.config.ServerConfig;
-import com.baafoo.core.model.*;
+import com.baafoo.core.model.EnvironmentMode;
+import com.baafoo.core.model.RecordingEntry;
+import com.baafoo.core.model.ResponseEntry;
+import com.baafoo.core.model.Rule;
 import com.baafoo.core.util.GrpcCodecUtils;
 import com.baafoo.core.util.MatchEngine;
 import com.baafoo.core.util.TemplateEngine;
 import com.baafoo.plugin.PluginEvent;
 import com.baafoo.server.storage.StorageService;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.*;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelInitializer;
 import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http2.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.nio.ByteBuffer;
-import java.util.*;
-import java.util.concurrent.TimeUnit;
+import io.netty.handler.codec.http2.DefaultHttp2DataFrame;
+import io.netty.handler.codec.http2.DefaultHttp2Headers;
+import io.netty.handler.codec.http2.DefaultHttp2HeadersFrame;
+import io.netty.handler.codec.http2.Http2DataFrame;
+import io.netty.handler.codec.http2.Http2FrameCodec;
+import io.netty.handler.codec.http2.Http2FrameCodecBuilder;
+import io.netty.handler.codec.http2.Http2FrameStream;
+import io.netty.handler.codec.http2.Http2GoAwayFrame;
+import io.netty.handler.codec.http2.Http2HeadersFrame;
+import io.netty.handler.codec.http2.Http2MultiplexHandler;
+import io.netty.handler.codec.http2.Http2ResetFrame;
+import io.netty.handler.codec.http2.Http2Settings;
 
 /**
  * Unified HTTP/2 gRPC handler.
@@ -92,7 +113,7 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
 
         ch.pipeline().addLast(codec);
         ch.pipeline().addLast(new Http2MultiplexHandler(new GrpcStreamChildHandler(
-                storage, config, agentResolver, matchEngine)));
+            storage, config, agentResolver, matchEngine, this.eventBus)));
     }
 
     /**
@@ -106,6 +127,7 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
         private final ServerConfig config;
         private final AgentResolver agentResolver;
         private final MatchEngine matchEngine;
+        private final com.baafoo.core.event.EventBus eventBus;
 
         // Per-stream state
         private String path;
@@ -116,11 +138,20 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
         private boolean clientEnded = false;
 
         GrpcStreamChildHandler(StorageService storage, ServerConfig config,
-                               AgentResolver agentResolver, MatchEngine matchEngine) {
+                               AgentResolver agentResolver, MatchEngine matchEngine,
+                               com.baafoo.core.event.EventBus eventBus) {
             this.storage = storage;
             this.config = config;
             this.agentResolver = agentResolver;
             this.matchEngine = matchEngine;
+            this.eventBus = eventBus;
+        }
+
+        /** P2: Fire a plugin event if event bus is available. */
+        private void fireEvent(PluginEvent event) {
+            if (eventBus != null) {
+                eventBus.fire(event);
+            }
         }
 
         @Override

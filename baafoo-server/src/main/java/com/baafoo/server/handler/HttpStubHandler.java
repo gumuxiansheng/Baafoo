@@ -1,5 +1,14 @@
 package com.baafoo.server.handler;
 
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.FaultInjection;
@@ -9,20 +18,19 @@ import com.baafoo.core.util.FaultInjector;
 import com.baafoo.core.util.MatchEngine;
 import com.baafoo.plugin.PluginEvent;
 import com.baafoo.server.storage.StorageService;
+
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.SimpleChannelInboundHandler;
-import io.netty.handler.codec.http.*;
 import io.netty.channel.EventLoopGroup;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
+import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.handler.codec.http.DefaultFullHttpResponse;
+import io.netty.handler.codec.http.FullHttpRequest;
+import io.netty.handler.codec.http.FullHttpResponse;
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.HttpResponseStatus;
+import io.netty.handler.codec.http.HttpVersion;
 
 /**
  * Netty handler for HTTP stub server (port 9000).
@@ -57,7 +65,7 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
     private final AgentResolver agentResolver;
     private final PassthroughProxy passthroughProxy;
     /** P2: Event bus for firing plugin events (may be null) */
-    private final com.baafoo.core.event.EventBus eventBus;
+    private com.baafoo.core.event.EventBus eventBus;
 
     /**
      * Note: this handler must NOT be annotated with {@code @Sharable} — each
