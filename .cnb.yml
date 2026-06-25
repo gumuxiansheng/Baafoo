@@ -1,0 +1,140 @@
+main:
+  push:
+    - name: test-and-build
+      runner:
+        cpus: 4
+      docker:
+        image: maven:3.9-eclipse-temurin-8
+        volumes:
+          - /root/.m2:copy-on-write
+      stages:
+        - name: test-core
+          script: ./mvnw test -pl baafoo-core -am
+        - name: test-agent
+          script: ./mvnw test -pl baafoo-agent -am -DskipTests=false
+        - name: test-server
+          script: ./mvnw test -pl baafoo-server -am -DskipTests=false
+        - name: test-all
+          script: ./mvnw test
+        - name: package
+          script: ./mvnw clean package -DskipTests
+      endStages:
+        - name: check-artifacts
+          script: ls -lh baafoo-server/target/baafoo-server-*.jar baafoo-agent/target/baafoo-agent-*.jar
+
+    - name: build-frontend
+      ifModify:
+        - web/**/*
+        - web/*
+      docker:
+        image: node:20
+        volumes:
+          - /root/.npm:copy-on-write
+      stages:
+        - name: install
+          script: |
+            cd web
+            npm ci
+        - name: build
+          script: |
+            cd web
+            npm run build
+
+  pull_request:
+    - name: pr-check
+      runner:
+        cpus: 4
+      docker:
+        image: maven:3.9-eclipse-temurin-8
+        volumes:
+          - /root/.m2:copy-on-write
+      stages:
+        - name: test-core
+          script: ./mvnw test -pl baafoo-core -am
+        - name: test-server
+          script: ./mvnw test -pl baafoo-server -am -DskipTests=false
+        - name: test-agent
+          script: ./mvnw test -pl baafoo-agent -am -DskipTests=false
+        - name: package
+          script: ./mvnw clean package -DskipTests
+      failStages:
+        - name: notify-failure
+          script: echo "PR checks failed for $CNB_BRANCH"
+
+  pull_request.mergeable:
+    - name: auto-merge
+      stages:
+        - name: merge
+          type: git:auto-merge
+          options:
+            mergeType: squash
+            removeSourceBranch: true
+
+"feature/*":
+  push:
+    - name: quick-test
+      ifModify:
+        - "**/*.java"
+        - "**/*.xml"
+      runner:
+        cpus: 2
+      docker:
+        image: maven:3.9-eclipse-temurin-8
+        volumes:
+          - /root/.m2:copy-on-write
+      stages:
+        - name: test-affected
+          script: |
+            ./mvnw test -pl baafoo-core -am
+            if [ $? -eq 0 ]; then
+              ./mvnw test -pl baafoo-server -am -DskipTests=false
+            fi
+
+"hotfix/*":
+  push:
+    - name: hotfix-test
+      runner:
+        cpus: 4
+      docker:
+        image: maven:3.9-eclipse-temurin-8
+        volumes:
+          - /root/.m2:copy-on-write
+      stages:
+        - name: test-all
+          script: ./mvnw test
+        - name: package
+          script: ./mvnw clean package -DskipTests
+
+$:
+  tag_push:
+    - name: release
+      runner:
+        cpus: 4
+      docker:
+        image: maven:3.9-eclipse-temurin-8
+        volumes:
+          - /root/.m2:copy-on-write
+      services:
+        - docker
+      stages:
+        - name: test
+          script: ./mvnw test
+        - name: package
+          script: ./mvnw clean package -DskipTests
+        - name: build-and-push-image
+          script: |
+            docker build -t docker.cnb.cool/$CNB_REPO_SLUG/baafoo-server:$CNB_TAG .
+            docker tag docker.cnb.cool/$CNB_REPO_SLUG/baafoo-server:$CNB_TAG docker.cnb.cool/$CNB_REPO_SLUG/baafoo-server:latest
+            docker push docker.cnb.cool/$CNB_REPO_SLUG/baafoo-server:$CNB_TAG
+            docker push docker.cnb.cool/$CNB_REPO_SLUG/baafoo-server:latest
+      endStages:
+        - name: release-notes
+          image: cnbcool/changelog
+          settings:
+            latestChangeLogTarget: RELEASE.md
+
+  branch.delete:
+    - name: cleanup
+      stages:
+        - name: log-deletion
+          script: echo "Branch $CNB_BRANCH deleted"
