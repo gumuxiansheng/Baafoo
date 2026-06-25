@@ -258,6 +258,7 @@
                             <arguments>
                                 <argument>install</argument>
                             </arguments>
+                            <skip>${npm.skip}</skip>
                         </configuration>
                     </execution>
                     <execution>
@@ -271,6 +272,7 @@
                                 <argument>run</argument>
                                 <argument>build</argument>
                             </arguments>
+                            <skip>${npm.skip}</skip>
                         </configuration>
                     </execution>
                 </executions>
