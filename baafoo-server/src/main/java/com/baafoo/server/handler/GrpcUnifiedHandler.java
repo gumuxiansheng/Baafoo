@@ -5,6 +5,7 @@ import com.baafoo.core.model.*;
 import com.baafoo.core.util.GrpcCodecUtils;
 import com.baafoo.core.util.MatchEngine;
 import com.baafoo.core.util.TemplateEngine;
+import com.baafoo.plugin.PluginEvent;
 import com.baafoo.server.storage.StorageService;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -208,6 +209,9 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
 
         private void processAndRespond(ChannelHandlerContext ctx) {
             try {
+                // P2: Fire REQUEST_RECEIVED event
+                fireEvent(PluginEvent.requestReceived("grpc", "POST", path));
+
                 // 1. Resolve agent environment
                 AgentResolver.AgentInfo agentInfo = agentResolver.resolveAll(ctx);
                 String agentEnv = agentInfo.environment;
@@ -221,6 +225,9 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
                         "POST", path, null, metadata, null, accumulatedHex);
 
                 if (result.isMatched()) {
+                    // P2: Fire RULE_MATCHED event
+                    fireEvent(PluginEvent.ruleMatched(
+                            result.getRule().getId(), result.getRule().getName(), "grpc"));
                     EnvironmentMode mode = agentResolver.resolveEnvironmentMode(agentEnv);
 
                     if (mode == EnvironmentMode.PASSTHROUGH || mode == EnvironmentMode.RECORD) {
@@ -248,11 +255,17 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
                         if (ct == null && metadata != null) ct = metadata.get("Content-Type");
                         rec.setGrpcContentType(ct != null ? ct : "application/grpc");
                         storage.addRecording(rec);
+                        // P2: Fire RECORDING_SAVED event
+                        fireEvent(PluginEvent.recordingSaved(rec.getId(), "grpc", agentEnv));
                     }
 
                     // Send stub response
                     sendStubResponse(ctx, result, agentInfo);
+                    // P2: Fire RESPONSE_SENT event
+                    fireEvent(PluginEvent.responseSent("grpc", 200, 0));
                 } else {
+                    // P2: Fire RULE_NOT_MATCHED event
+                    fireEvent(PluginEvent.ruleNotMatched("grpc", null, 0));
                     // No matching rule
                     EnvironmentMode mode = agentResolver.resolveEnvironmentMode(agentEnv);
                     if (mode == EnvironmentMode.RECORD_ALL) {

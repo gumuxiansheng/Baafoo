@@ -30,6 +30,8 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
     private final List<ResourceHandler> handlers;
     private final ChaosManager chaosManager;
     private final ServerConfig config;
+    /** P2: Event bus for firing plugin events from API handlers */
+    private final com.baafoo.core.event.EventBus eventBus;
 
     public ManagementApiHandler(StorageService storage, AuthService authService) {
         this(storage, authService, new ChaosManager(), null);
@@ -47,11 +49,21 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
 
     public ManagementApiHandler(StorageService storage, AuthService authService,
                                  ChaosManager chaosManager, ServerConfig config) {
+        this(storage, authService, chaosManager, config, null);
+    }
+
+    /**
+     * P2: Constructor with EventBus for plugin event firing.
+     */
+    public ManagementApiHandler(StorageService storage, AuthService authService,
+                                 ChaosManager chaosManager, ServerConfig config,
+                                 com.baafoo.core.event.EventBus eventBus) {
         this.storage = storage;
         this.authService = authService;
         this.mapper = new ObjectMapper();
         this.chaosManager = chaosManager != null ? chaosManager : new ChaosManager();
         this.config = config;
+        this.eventBus = eventBus;
         this.handlers = Arrays.asList(
                 new AuthApiHandler(),
                 new UserApiHandler(),
@@ -113,7 +125,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             throw new ApiException(401, "Authentication failed: " + auth.getMessage());
         }
 
-        ApiContext apiCtx = new ApiContext(storage, authService, mapper, uri, auth, remoteAddr);
+        ApiContext apiCtx = new ApiContext(storage, authService, mapper, uri, auth, remoteAddr, eventBus);
         String body = request.content().toString(StandardCharsets.UTF_8);
 
         for (ResourceHandler handler : handlers) {

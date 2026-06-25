@@ -4,10 +4,10 @@ import com.baafoo.agent.BaafooAgent;
 import com.baafoo.agent.GlobalRouteState;
 import com.baafoo.agent.plugin.PluginManager;
 import com.baafoo.core.model.EnvironmentMode;
-import com.baafoo.plugin.AgentPlugin;
-import com.baafoo.plugin.InterceptResult;
+import com.baafoo.plugin.ConnectAdvice;
+import com.baafoo.plugin.ConnectContext;
 import com.baafoo.plugin.InterceptTarget;
-import com.baafoo.plugin.PluginContext;
+import com.baafoo.plugin.PluginEvent;
 import net.bytebuddy.asm.Advice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,22 +70,21 @@ public class KafkaProducerAdvice {
             try {
                 PluginManager pm = BaafooAgent.getPluginManager();
                 if (pm != null) {
-                    AgentPlugin plugin = pm.getPlugin(InterceptTarget.KAFKA);
-                    if (plugin != null) {
-                        PluginContext ctx = new PluginContext();
-                        ctx.setProtocol("kafka");
-                        ctx.setHost(extractHost(originalServers));
-                        ctx.setPort(extractPort(originalServers));
-                        // P1: inject per-plugin config
-                        ctx.setPluginConfig(pm.getPluginConfig(plugin.getName()));
-                        // P2: Kafka constructor has no topic/partition/key — those
-                        // are specified at send() time, not available here.
-                        InterceptResult result = plugin.intercept(ctx);
-                        if (result != null && result.isRedirect()) {
-                            stubHost = result.getRedirectHost();
-                            stubPort = result.getRedirectPort();
-                            log.info("[Baafoo] Kafka plugin redirected to {}:{}", stubHost, stubPort);
-                        }
+                    // P2: Use new ConnectAdvice API via connectWithMonitor
+                    ConnectContext ctx = new ConnectContext();
+                    ctx.setProtocol("kafka");
+                    ctx.setHost(extractHost(originalServers));
+                    ctx.setPort(extractPort(originalServers));
+                    ConnectAdvice advice = pm.connectWithMonitor(InterceptTarget.KAFKA, ctx);
+                    if (advice != null && advice.isRedirect()) {
+                        stubHost = advice.getRedirectHost();
+                        stubPort = advice.getRedirectPort();
+                        log.info("[Baafoo] Kafka plugin redirected to {}:{}", stubHost, stubPort);
+                        pm.fireEvent(PluginEvent.connectionRedirected(
+                                "kafka", originalServers, stubHost + ":" + stubPort));
+                    } else if (advice != null && advice.isPassthrough()) {
+                        pm.fireEvent(PluginEvent.connectionPassthrough("kafka", originalServers));
+                        return; // Let original constructor proceed with real servers
                     }
                 }
             } catch (Throwable t) {

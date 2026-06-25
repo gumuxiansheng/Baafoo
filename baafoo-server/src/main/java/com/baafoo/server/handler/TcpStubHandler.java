@@ -4,6 +4,7 @@ import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.model.*;
 import com.baafoo.core.util.MatchEngine;
 import com.baafoo.core.util.TemplateEngine;
+import com.baafoo.plugin.PluginEvent;
 import com.baafoo.server.storage.StorageService;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -50,14 +51,34 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
     private final StorageService storage;
     private final MatchEngine matchEngine;
     private final AgentResolver agentResolver;
+    /** P2: Event bus for plugin event firing */
+    private final com.baafoo.core.event.EventBus eventBus;
 
     /** Pre-compiled regex patterns (cached by pattern string) */
     private final ConcurrentHashMap<String, Pattern> patternCache = new ConcurrentHashMap<String, Pattern>();
 
     public TcpStubHandler(StorageService storage, ServerConfig config) {
+        this(storage, config, null);
+    }
+
+    /**
+     * P2: Constructor with EventBus for plugin event firing.
+     */
+    public TcpStubHandler(StorageService storage, ServerConfig config,
+                          com.baafoo.core.event.EventBus eventBus) {
         this.storage = storage;
         this.matchEngine = new MatchEngine();
         this.agentResolver = new AgentResolver(storage, config);
+        this.eventBus = eventBus;
+    }
+
+    /**
+     * P2: Fire a plugin event if event bus is available.
+     */
+    private void fireEvent(PluginEvent event) {
+        if (eventBus != null) {
+            eventBus.fire(event);
+        }
     }
 
     @Override
@@ -71,6 +92,9 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
         msg.readBytes(data);
         String payload = new String(data, StandardCharsets.UTF_8);
         String hexPayload = bytesToHex(data);
+
+        // P2: Fire REQUEST_RECEIVED event
+        fireEvent(PluginEvent.requestReceived("tcp", null, null));
 
         // Resolve agent info (single pass over agent list)
         AgentResolver.AgentInfo agentInfo = agentResolver.resolveAll(ctx);
@@ -136,6 +160,9 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                 payload);
 
         if (result.isMatched()) {
+            // P2: Fire RULE_MATCHED event
+            fireEvent(PluginEvent.ruleMatched(
+                    result.getRule().getId(), result.getRule().getName(), "tcp"));
             ResponseEntry entry = result.getResponse();
             EnvironmentMode currentMode = agentResolver.resolveEnvironmentMode(agentEnvironment);
 
@@ -147,10 +174,16 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                 rec.setAgentIp(agentIp);
                 rec.setEnvironmentId(agentEnvironment);
                 storage.addRecording(rec);
+                // P2: Fire RECORDING_SAVED event
+                fireEvent(PluginEvent.recordingSaved(rec.getId(), "tcp", agentEnvironment));
             }
 
             sendTcpResponse(ctx, entry, payload, true, agentEnvironment);
+            // P2: Fire RESPONSE_SENT event
+            fireEvent(PluginEvent.responseSent("tcp", 200, 0));
         } else {
+            // P2: Fire RULE_NOT_MATCHED event
+            fireEvent(PluginEvent.ruleNotMatched("tcp", "127.0.0.1", 0));
             // RECORD_ALL: record the unmatched TCP payload as raw hex data.
             //
             // NOTE: In the current design, RECORD_ALL TCP passthrough is handled at the

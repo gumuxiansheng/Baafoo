@@ -4,10 +4,10 @@ import com.baafoo.agent.BaafooAgent;
 import com.baafoo.agent.GlobalRouteState;
 import com.baafoo.agent.plugin.PluginManager;
 import com.baafoo.core.model.EnvironmentMode;
-import com.baafoo.plugin.AgentPlugin;
-import com.baafoo.plugin.InterceptResult;
+import com.baafoo.plugin.ConnectAdvice;
+import com.baafoo.plugin.ConnectContext;
 import com.baafoo.plugin.InterceptTarget;
-import com.baafoo.plugin.PluginContext;
+import com.baafoo.plugin.PluginEvent;
 import net.bytebuddy.asm.Advice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,25 +73,20 @@ public class PulsarClientAdvice {
             try {
                 PluginManager pm = BaafooAgent.getPluginManager();
                 if (pm != null) {
-                    AgentPlugin plugin = pm.getPlugin(InterceptTarget.PULSAR);
-                    if (plugin != null) {
-                        PluginContext ctx = new PluginContext();
-                        ctx.setProtocol("pulsar");
-                        ctx.setHost(extractHost(serviceUrl));
-                        ctx.setPort(extractPort(serviceUrl));
-                        // P1: inject per-plugin config
-                        ctx.setPluginConfig(pm.getPluginConfig(plugin.getName()));
-                        // P2: extract tenant/namespace from serviceUrl path if present
-                        // e.g. pulsar://broker:6650/my-tenant/my-namespace
-                        String[] pathParts = extractPathSegments(serviceUrl);
-                        if (pathParts.length > 0) ctx.setTenant(pathParts[0]);
-                        if (pathParts.length > 1) ctx.setNamespace(pathParts[1]);
-                        InterceptResult result = plugin.intercept(ctx);
-                        if (result != null && result.isRedirect()) {
-                            targetHost = result.getRedirectHost();
-                            targetPort = result.getRedirectPort();
-                            log.info("[Baafoo] Pulsar plugin redirected to {}:{}", targetHost, targetPort);
-                        }
+                    // P2: Use new ConnectAdvice API via connectWithMonitor
+                    ConnectContext ctx = new ConnectContext(
+                            "pulsar", extractHost(serviceUrl), extractPort(serviceUrl),
+                            null, null, null, serviceUrl);
+                    ConnectAdvice advice = pm.connectWithMonitor(InterceptTarget.PULSAR, ctx);
+                    if (advice != null && advice.isRedirect()) {
+                        targetHost = advice.getRedirectHost();
+                        targetPort = advice.getRedirectPort();
+                        log.info("[Baafoo] Pulsar plugin redirected to {}:{}", targetHost, targetPort);
+                        pm.fireEvent(PluginEvent.connectionRedirected(
+                                "pulsar", serviceUrl, targetHost + ":" + targetPort));
+                    } else if (advice != null && advice.isPassthrough()) {
+                        pm.fireEvent(PluginEvent.connectionPassthrough("pulsar", serviceUrl));
+                        return; // Let original serviceUrl proceed
                     }
                 }
             } catch (Throwable t) {

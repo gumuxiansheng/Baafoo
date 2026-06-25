@@ -163,7 +163,7 @@ public class BaafooServer {
                         p.addLast(new HttpServerCodec());
                         p.addLast(new HttpObjectAggregator(10 * 1024 * 1024));
                         p.addLast(new AuthFilter(authService));
-                        p.addLast(new ManagementApiHandler(storage, authService, config));
+                        p.addLast(new ManagementApiHandler(storage, authService, new com.baafoo.core.util.ChaosManager(), config, eventBus));
                         p.addLast(new StaticFileHandler(config.getWebConsolePath()));
                     }
                 });
@@ -197,7 +197,7 @@ public class BaafooServer {
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     protected void initChannel(SocketChannel ch) {
-                        ch.pipeline().addLast(new TcpStubHandler(storage, config));
+                        ch.pipeline().addLast(new TcpStubHandler(storage, config, eventBus));
                     }
                 });
 
@@ -232,7 +232,7 @@ public class BaafooServer {
                         // Beta: Kafka/Pulsar/JMS currently share TcpStubHandler for basic connectivity.
                         // Protocol-specific handlers (e.g., KafkaStubHandler) will be needed for
                         // proper application-layer protocol frame parsing in a future release.
-                        ch.pipeline().addLast(new TcpStubHandler(storage, config));
+                        ch.pipeline().addLast(new TcpStubHandler(storage, config, eventBus));
                     }
                 });
         Channel ch = b.bind(port).sync().channel();

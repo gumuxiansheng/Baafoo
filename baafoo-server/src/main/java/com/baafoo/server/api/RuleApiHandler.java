@@ -2,9 +2,11 @@ package com.baafoo.server.api;
 
 import com.baafoo.core.api.ApiResponse;
 import com.baafoo.core.api.PaginatedResult;
+import com.baafoo.core.event.EventBus;
 import com.baafoo.core.model.*;
 import com.baafoo.core.util.OpenApiImporter;
 import com.baafoo.core.util.StatefulCounterStore;
+import com.baafoo.plugin.PluginEvent;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -45,7 +47,9 @@ class RuleApiHandler implements ResourceHandler {
             if ("POST".equals(method)) {
                 ctx.requirePermission("rule", "create");
                 Rule rule = ctx.mapper.readValue(body, Rule.class);
-                return ApiResponse.created(ctx.storage.createRule(rule));
+                Rule created = ctx.storage.createRule(rule);
+                fireRuleChanged(ctx, created.getId(), "created", null);
+                return ApiResponse.created(created);
             }
         }
 
@@ -98,6 +102,9 @@ class RuleApiHandler implements ResourceHandler {
                 // Inherited-environment merging is now handled in
                 // JdbcStorageService.updateRule so all update paths stay consistent.
                 Rule updated = ctx.storage.updateRule(id, update);
+                if (updated != null) {
+                    fireRuleChanged(ctx, id, "updated", null);
+                }
                 return updated != null ? ApiResponse.ok(updated) : ApiResponse.notFound("Rule not found");
             }
             if ("DELETE".equals(method)) {
@@ -106,6 +113,7 @@ class RuleApiHandler implements ResourceHandler {
                 if (deleted) {
                     // Clean up the per-rule counter to prevent unbounded map growth (S4 fix).
                     StatefulCounterStore.global().reset(id);
+                    fireRuleChanged(ctx, id, "deleted", null);
                 }
                 return deleted ? ApiResponse.ok("Deleted", null) : ApiResponse.notFound("Rule not found");
             }
@@ -210,5 +218,16 @@ class RuleApiHandler implements ResourceHandler {
         }
 
         return ApiResponse.ok(resultData);
+    }
+
+    /**
+     * P2: Fire a RULE_CHANGED event if an EventBus is available in the context.
+     */
+    private void fireRuleChanged(ApiContext ctx, String ruleId, String action, String environmentId) {
+        EventBus bus = ctx.getEventBus();
+        if (bus != null) {
+            PluginEvent event = PluginEvent.ruleChanged(ruleId, action, environmentId);
+            bus.fire(event);
+        }
     }
 }

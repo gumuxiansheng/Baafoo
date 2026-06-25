@@ -41,10 +41,58 @@ public class GrpcChannelAdvice {
 
             // Check route table for redirect
             String[] route = com.baafoo.agent.GlobalRouteState.lookup(host, port);
+
+            // P2: Plugin SPI fallback (prefer EXT, fallback to legacy)
+            if (route == null) {
+                java.util.function.Function<Object[], Object[]> consultExtFn =
+                        com.baafoo.agent.GlobalRouteState.PLUGIN_CONSULT_FN_EXT;
+                if (consultExtFn != null) {
+                    try {
+                        Object[] extResult = consultExtFn.apply(
+                                new Object[]{host, Integer.valueOf(port), "grpc"});
+                        if (extResult != null && extResult.length >= 1) {
+                            int action = ((Integer) extResult[0]).intValue();
+                            if (action == 1 && extResult.length >= 3) {
+                                route = new String[]{(String) extResult[1], String.valueOf(extResult[2])};
+                            } else if (action == 2) {
+                                // BLOCK — return without redirecting
+                                com.baafoo.agent.GlobalRouteState.logInfo(
+                                        "[Baafoo] gRPC channel blocked by plugin: " + host + ":" + port);
+                                return;
+                            }
+                            // action == 0 (PASSTHROUGH): do nothing
+                        }
+                    } catch (Throwable t) {
+                        com.baafoo.agent.GlobalRouteState.logDebug(
+                                "[Baafoo] gRPC plugin EXT consult skipped: " + t.getMessage());
+                    }
+                }
+                // Legacy fallback
+                if (route == null) {
+                    java.util.function.Function<Object[], Object[]> consultFn =
+                            com.baafoo.agent.GlobalRouteState.PLUGIN_CONSULT_FN;
+                    if (consultFn != null) {
+                        try {
+                            Object[] pluginResult = consultFn.apply(
+                                    new Object[]{host, Integer.valueOf(port)});
+                            if (pluginResult != null && pluginResult.length >= 2) {
+                                route = new String[]{(String) pluginResult[0], String.valueOf(pluginResult[1])};
+                            }
+                        } catch (Throwable t) {
+                            com.baafoo.agent.GlobalRouteState.logDebug(
+                                    "[Baafoo] gRPC plugin consult skipped: " + t.getMessage());
+                        }
+                    }
+                }
+            }
+
             if (route != null) {
                 String newTarget = route[0] + ":" + route[1];
                 com.baafoo.agent.GlobalRouteState.logInfo(
                         "[Baafoo] gRPC channel redirect: " + host + ":" + port + " -> " + newTarget);
+                com.baafoo.agent.GlobalRouteState.firePluginEvent(
+                        com.baafoo.plugin.PluginEvent.connectionRedirected(
+                                "grpc", host + ":" + port, newTarget));
                 target = newTarget;
             }
         } catch (Throwable t) {

@@ -4,10 +4,10 @@ import com.baafoo.agent.BaafooAgent;
 import com.baafoo.agent.GlobalRouteState;
 import com.baafoo.agent.plugin.PluginManager;
 import com.baafoo.core.model.EnvironmentMode;
-import com.baafoo.plugin.AgentPlugin;
-import com.baafoo.plugin.InterceptResult;
+import com.baafoo.plugin.ConnectAdvice;
+import com.baafoo.plugin.ConnectContext;
 import com.baafoo.plugin.InterceptTarget;
-import com.baafoo.plugin.PluginContext;
+import com.baafoo.plugin.PluginEvent;
 import net.bytebuddy.asm.Advice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,24 +66,20 @@ public class JmsConnectionFactoryAdvice {
             try {
                 PluginManager pm = BaafooAgent.getPluginManager();
                 if (pm != null) {
-                    AgentPlugin plugin = pm.getPlugin(InterceptTarget.JMS);
-                    if (plugin != null) {
-                        PluginContext ctx = new PluginContext();
-                        ctx.setProtocol("jms");
-                        ctx.setHost(extractHost(originalUrl));
-                        ctx.setPort(extractPort(originalUrl));
-                        // P1: inject per-plugin config
-                        ctx.setPluginConfig(pm.getPluginConfig(plugin.getName()));
-                        // P2: extract destination from brokerURL path if present
-                        // e.g. tcp://broker:61616/queue.orders?jms.useAsyncSend=true
-                        String dest = extractDestination(originalUrl);
-                        if (dest != null) ctx.setDestination(dest);
-                        InterceptResult result = plugin.intercept(ctx);
-                        if (result != null && result.isRedirect()) {
-                            stubHost = result.getRedirectHost();
-                            stubPort = result.getRedirectPort();
-                            log.info("[Baafoo] JMS plugin redirected to {}:{}", stubHost, stubPort);
-                        }
+                    // P2: Use new ConnectAdvice API via connectWithMonitor
+                    ConnectContext ctx = new ConnectContext(
+                            "jms", extractHost(originalUrl), extractPort(originalUrl),
+                            null, null, null, originalUrl);
+                    ConnectAdvice advice = pm.connectWithMonitor(InterceptTarget.JMS, ctx);
+                    if (advice != null && advice.isRedirect()) {
+                        stubHost = advice.getRedirectHost();
+                        stubPort = advice.getRedirectPort();
+                        log.info("[Baafoo] JMS plugin redirected to {}:{}", stubHost, stubPort);
+                        pm.fireEvent(PluginEvent.connectionRedirected(
+                                "jms", originalUrl, stubHost + ":" + stubPort));
+                    } else if (advice != null && advice.isPassthrough()) {
+                        pm.fireEvent(PluginEvent.connectionPassthrough("jms", originalUrl));
+                        return; // Let original brokerURL proceed
                     }
                 }
             } catch (Throwable t) {

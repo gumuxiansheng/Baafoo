@@ -7,6 +7,7 @@ import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.Rule;
 import com.baafoo.core.util.FaultInjector;
 import com.baafoo.core.util.MatchEngine;
+import com.baafoo.plugin.PluginEvent;
 import com.baafoo.server.storage.StorageService;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFutureListener;
@@ -110,6 +111,9 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         Map<String, String> headers = extractHeaders(request);
         String body = request.content().toString(StandardCharsets.UTF_8);
 
+        // P2: Fire REQUEST_RECEIVED event
+        fireEvent(PluginEvent.requestReceived("http", method, path));
+
         // Extract original host and port from Host header
         // Note: Netty normalizes header names to lowercase, so we check both cases
         String host = null;
@@ -161,6 +165,9 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         }
 
         if (result.isMatched()) {
+            // P2: Fire RULE_MATCHED event
+            fireEvent(PluginEvent.ruleMatched(
+                    result.getRule().getId(), result.getRule().getName(), "http"));
             EnvironmentMode currentMode = agentResolver.resolveEnvironmentMode(agentEnvironment);
 
             if (currentMode == EnvironmentMode.PASSTHROUGH || currentMode == EnvironmentMode.RECORD) {
@@ -174,6 +181,8 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     rec.setAgentIp(agentIp);
                     rec.setEnvironmentId(agentEnvironment);
                     storage.addRecording(rec);
+                    // P2: Fire RECORDING_SAVED event
+                    fireEvent(PluginEvent.recordingSaved(rec.getId(), "http", agentEnvironment));
                 }
                 // Fault injection evaluation (PRD §4 R-S12).
                 // Evaluate before sending the normal response. Phase 1 supports
@@ -213,9 +222,13 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     StubResponseRenderer.sendStubResponse(ctx, result.getResponse(), result.getRule().getId(),
                             method, path, host, headers, queryParams, body, agentEnvironment,
                             result.getRule().getFakerSeed(), result.getRequestCount(), faultDelayMs);
+                    // P2: Fire RESPONSE_SENT event
+                    fireEvent(PluginEvent.responseSent("http", result.getResponse().getStatusCode(), 0));
                 }
             }
         } else {
+            // P2: Fire RULE_NOT_MATCHED event
+            fireEvent(PluginEvent.ruleNotMatched("http", host, port));
             // No rule matched.
             // RECORD_ALL mode: passthrough + record the unmatched request/response.
             EnvironmentMode currentMode = agentResolver.resolveEnvironmentMode(agentEnvironment);
