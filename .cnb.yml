@@ -1,4 +1,4 @@
-main:
+master:
   push:
     - name: test-and-build
       runner:
