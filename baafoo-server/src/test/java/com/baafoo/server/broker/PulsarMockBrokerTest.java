@@ -35,13 +35,14 @@ import static org.mockito.Mockito.*;
  */
 public class PulsarMockBrokerTest {
 
-    private static final int TEST_PORT = 19093;
+    private static final int TEST_PORT = 0; // 0 = ephemeral port (assigned by OS)
 
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private PulsarMessageStore messageStore;
     private Channel serverChannel;
     private StorageService storage;
+    private int actualPort;
 
     @Before
     public void setUp() throws Exception {
@@ -61,11 +62,13 @@ public class PulsarMockBrokerTest {
                     @Override
                     protected void initChannel(SocketChannel ch) {
                         ch.pipeline().addLast(new PulsarFrameDecoder());
-                        ch.pipeline().addLast(new PulsarMockBrokerHandler(messageStore, storage, "localhost", TEST_PORT, null));
+                        ch.pipeline().addLast(new PulsarMockBrokerHandler(messageStore, storage, "localhost", actualPort, null));
                     }
                 });
 
         serverChannel = b.bind(TEST_PORT).sync().channel();
+        // Capture the actual ephemeral port assigned by the OS
+        actualPort = ((io.netty.channel.socket.ServerSocketChannel) serverChannel).localAddress().getPort();
     }
 
     @After
@@ -372,7 +375,7 @@ public class PulsarMockBrokerTest {
                     }
                 });
 
-        Channel ch = b.connect("127.0.0.1", TEST_PORT).sync().channel();
+        Channel ch = b.connect("127.0.0.1", actualPort).sync().channel();
         for (ByteBuf frame : frames) {
             latchHolder[0] = new CountDownLatch(1);
             ch.writeAndFlush(frame);
@@ -757,7 +760,7 @@ public class PulsarMockBrokerTest {
                     }
                 });
 
-        Channel ch = b.connect("127.0.0.1", TEST_PORT).sync().channel();
+        Channel ch = b.connect("127.0.0.1", actualPort).sync().channel();
         ch.writeAndFlush(frame);
 
         boolean received = latch.await(10, TimeUnit.SECONDS);
@@ -894,7 +897,7 @@ public class PulsarMockBrokerTest {
                     }
                 });
 
-        Channel ch = b.connect("127.0.0.1", TEST_PORT).sync().channel();
+        Channel ch = b.connect("127.0.0.1", actualPort).sync().channel();
         ch.writeAndFlush(frame);
 
         boolean received = latch.await(10, TimeUnit.SECONDS);

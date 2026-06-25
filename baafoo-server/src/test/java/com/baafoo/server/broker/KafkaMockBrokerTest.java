@@ -40,13 +40,14 @@ import static org.mockito.Mockito.*;
  */
 public class KafkaMockBrokerTest {
 
-    private static final int TEST_PORT = 19092;
+    private static final int TEST_PORT = 0; // 0 = ephemeral port (assigned by OS)
 
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private KafkaMessageStore messageStore;
     private Channel serverChannel;
     private StorageService storage;
+    private int actualPort;
 
     @Before
     public void setUp() throws Exception {
@@ -67,11 +68,12 @@ public class KafkaMockBrokerTest {
                     protected void initChannel(SocketChannel ch) {
                         ch.pipeline().addLast(new LengthFieldBasedFrameDecoder(
                                 100 * 1024 * 1024, 0, 4, 0, 4));
-                        ch.pipeline().addLast(new KafkaProtocolDecoder(messageStore, storage, TEST_PORT, null));
+                        ch.pipeline().addLast(new KafkaProtocolDecoder(messageStore, storage, actualPort, null));
                     }
                 });
 
         serverChannel = b.bind(TEST_PORT).sync().channel();
+        actualPort = ((io.netty.channel.socket.ServerSocketChannel) serverChannel).localAddress().getPort();
     }
 
     @After
@@ -115,7 +117,7 @@ public class KafkaMockBrokerTest {
         int brokerId = response.readInt();
         String host = readNullableString(response);
         int port = response.readInt();
-        assertEquals("Broker port should match", TEST_PORT, port);
+        assertEquals("Broker port should match", actualPort, port);
         // rack (v1+)
         readNullableString(response);
 
@@ -384,7 +386,7 @@ public class KafkaMockBrokerTest {
         assertNotNull("Host should not be null", host);
 
         int port = response.readInt();
-        assertEquals("Port should match", TEST_PORT, port);
+        assertEquals("Port should match", actualPort, port);
     }
 
     @Test
@@ -1414,7 +1416,7 @@ public class KafkaMockBrokerTest {
                     }
                 });
 
-        Channel ch = b.connect("127.0.0.1", TEST_PORT).sync().channel();
+        Channel ch = b.connect("127.0.0.1", actualPort).sync().channel();
         ch.writeAndFlush(request);
 
         boolean received = latch.await(10, TimeUnit.SECONDS);
