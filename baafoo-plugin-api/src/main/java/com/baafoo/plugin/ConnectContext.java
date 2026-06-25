@@ -32,9 +32,22 @@ public class ConnectContext {
     /** Original target string (for gRPC: "dns:///host:port") */
     private final String rawTarget;
 
+    /** Tenant name (e.g., Pulsar tenant from service URL path) */
+    private final String tenant;
+
+    /** Destination name (e.g., JMS queue/topic from broker URL path) */
+    private final String destination;
+
     public ConnectContext(String protocol, String host, int port,
                           String serviceName, String environmentId,
                           String agentId, String rawTarget) {
+        this(protocol, host, port, serviceName, environmentId, agentId, rawTarget, null, null);
+    }
+
+    public ConnectContext(String protocol, String host, int port,
+                          String serviceName, String environmentId,
+                          String agentId, String rawTarget,
+                          String tenant, String destination) {
         this.protocol = protocol;
         this.host = host;
         this.port = port;
@@ -42,6 +55,8 @@ public class ConnectContext {
         this.environmentId = environmentId;
         this.agentId = agentId;
         this.rawTarget = rawTarget;
+        this.tenant = tenant;
+        this.destination = destination;
     }
 
     // --- Getters ---
@@ -53,6 +68,8 @@ public class ConnectContext {
     public String getEnvironmentId() { return environmentId; }
     public String getAgentId() { return agentId; }
     public String getRawTarget() { return rawTarget; }
+    public String getTenant() { return tenant; }
+    public String getDestination() { return destination; }
 
     /**
      * Convert to legacy PluginContext for backward-compatible intercept() call.
@@ -63,6 +80,8 @@ public class ConnectContext {
         ctx.setHost(host);
         ctx.setPort(port);
         ctx.setServiceName(serviceName);
+        ctx.setTenant(tenant);
+        ctx.setDestination(destination);
         return ctx;
     }
 }

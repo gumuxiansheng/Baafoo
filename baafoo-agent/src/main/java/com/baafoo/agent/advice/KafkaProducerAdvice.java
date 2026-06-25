@@ -91,7 +91,6 @@ public class KafkaProducerAdvice {
                                 "kafka", originalServers, stubHost + ":" + stubPort));
                     } else if (advice != null && advice.isPassthrough()) {
                         pm.fireEvent(PluginEvent.connectionPassthrough("kafka", originalServers));
-                        return; // Let original constructor proceed with real servers
                     }
                 }
             } catch (Throwable t) {

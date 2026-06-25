@@ -69,7 +69,8 @@ public class JmsConnectionFactoryAdvice {
                     // P2: Use new ConnectAdvice API via connectWithMonitor
                     ConnectContext ctx = new ConnectContext(
                             "jms", extractHost(originalUrl), extractPort(originalUrl),
-                            null, null, null, originalUrl);
+                            null, null, null, originalUrl,
+                            null, extractDestination(originalUrl));
                     ConnectAdvice advice = pm.connectWithMonitor(InterceptTarget.JMS, ctx);
                     if (advice != null && advice.isRedirect()) {
                         stubHost = advice.getRedirectHost();
@@ -79,7 +80,6 @@ public class JmsConnectionFactoryAdvice {
                                 "jms", originalUrl, stubHost + ":" + stubPort));
                     } else if (advice != null && advice.isPassthrough()) {
                         pm.fireEvent(PluginEvent.connectionPassthrough("jms", originalUrl));
-                        return; // Let original brokerURL proceed
                     }
                 }
             } catch (Throwable t) {

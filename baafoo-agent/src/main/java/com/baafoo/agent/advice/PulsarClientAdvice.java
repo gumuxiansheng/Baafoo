@@ -86,7 +86,6 @@ public class PulsarClientAdvice {
                                 "pulsar", serviceUrl, targetHost + ":" + targetPort));
                     } else if (advice != null && advice.isPassthrough()) {
                         pm.fireEvent(PluginEvent.connectionPassthrough("pulsar", serviceUrl));
-                        return; // Let original serviceUrl proceed
                     }
                 }
             } catch (Throwable t) {
