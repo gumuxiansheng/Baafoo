@@ -153,6 +153,29 @@ public final class GlobalRouteState {
      */
     public static volatile java.util.function.Function<Object[], Object[]> PLUGIN_CONSULT_FN;
 
+    /**
+     * Extended plugin consultation function (P1).
+     *
+     * <p>Arguments: Object[] { String host, Integer port, String protocol }</p>
+     * <p>Returns: Object[] { Integer action, String targetHost, Integer targetPort, String reason }</p>
+     * <ul>
+     *   <li>action=0: PASSTHROUGH (targetHost/targetPort ignored)</li>
+     *   <li>action=1: REDIRECT to targetHost:targetPort</li>
+     *   <li>action=2: BLOCK with reason</li>
+     *   <li>null: no plugin consulted (fallback to PLUGIN_CONSULT_FN)</li>
+     * </ul>
+     *
+     * <p><b>Backward compatibility:</b> If PLUGIN_CONSULT_FN_EXT returns null
+     * or is not set, the old PLUGIN_CONSULT_FN is consulted as fallback.</p>
+     */
+    public static volatile java.util.function.Function<Object[], Object[]> PLUGIN_CONSULT_FN_EXT;
+
+    /**
+     * P2: Event fire bridge for Bootstrap CL advice.
+     * Set from App CL (BaafooAgent) to forward events to PluginManager.fireEvent().
+     */
+    public static volatile java.util.function.Consumer<com.baafoo.plugin.PluginEvent> EVENT_FIRE_FN;
+
     private GlobalRouteState() {}
 
     // ---- Logging methods for Bootstrap CL advice ----
@@ -190,6 +213,21 @@ public final class GlobalRouteState {
             try { h.accept(msg); } catch (Throwable t) { System.out.println(msg); }
         } else {
             System.out.println(msg);
+        }
+    }
+
+    /**
+     * P2: Fire a plugin event through the bridge to PluginManager.
+     * Safe to call from Bootstrap CL advice code.
+     *
+     * @param event the plugin event to fire
+     */
+    public static void firePluginEvent(com.baafoo.plugin.PluginEvent event) {
+        java.util.function.Consumer<com.baafoo.plugin.PluginEvent> fn = EVENT_FIRE_FN;
+        if (fn != null) {
+            try { fn.accept(event); } catch (Throwable t) {
+                logDebug("[Baafoo] Event fire skipped: " + t.getMessage());
+            }
         }
     }
 

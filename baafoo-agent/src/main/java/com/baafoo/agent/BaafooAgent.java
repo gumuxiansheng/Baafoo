@@ -128,6 +128,61 @@ public class BaafooAgent {
                 return null;
             };
 
+            // P1: Set up PLUGIN_CONSULT_FN_EXT — extended bridge with action semantics.
+            // Input: Object[] { String host, Integer port, String protocol }
+            // Output: Object[] { Integer action, String targetHost, Integer targetPort, String reason }
+            //   action=0: PASSTHROUGH, action=1: REDIRECT, action=2: BLOCK
+            //   null: fall back to PLUGIN_CONSULT_FN
+            GlobalRouteState.PLUGIN_CONSULT_FN_EXT = (java.util.function.Function<Object[], Object[]>) args -> {
+                if (args == null || args.length < 2) return null;
+                try {
+                    String host = (String) args[0];
+                    int port = (Integer) args[1];
+                    String protocol = args.length > 2 ? (String) args[2] : "tcp";
+                    PluginManager pm = pluginManager;
+                    if (pm == null) return null;
+
+                    com.baafoo.plugin.InterceptTarget target;
+                    switch (protocol.toLowerCase()) {
+                        case "nio":
+                        case "nio-socket":
+                            target = com.baafoo.plugin.InterceptTarget.NIO_SOCKET;
+                            break;
+                        default:
+                            target = com.baafoo.plugin.InterceptTarget.SOCKET;
+                            break;
+                    }
+                    com.baafoo.plugin.AgentPlugin plugin = pm.getPlugin(target);
+                    if (plugin == null) return null;
+
+                    com.baafoo.plugin.ConnectContext connectCtx =
+                            new com.baafoo.plugin.ConnectContext(protocol, host, port, null, null, null, null);
+                    com.baafoo.plugin.ConnectAdvice advice = pm.connectWithMonitor(target, connectCtx);
+
+                    switch (advice.getAction()) {
+                        case PASSTHROUGH:
+                            return new Object[]{0, null, null, null};
+                        case REDIRECT:
+                            return new Object[]{1, advice.getRedirectHost(), advice.getRedirectPort(), null};
+                        case BLOCK:
+                            return new Object[]{2, null, null, advice.getBlockReason()};
+                        default:
+                            return null;
+                    }
+                } catch (Throwable t) {
+                    log.debug("[Baafoo] Plugin consult EXT skipped: {}", t.getMessage());
+                    return null;
+                }
+            };
+
+            // P2: Set up EVENT_FIRE_FN bridge for Bootstrap CL advice.
+            GlobalRouteState.EVENT_FIRE_FN = (java.util.function.Consumer<com.baafoo.plugin.PluginEvent>) event -> {
+                PluginManager pm = pluginManager;
+                if (pm != null) {
+                    pm.fireEvent(event);
+                }
+            };
+
             // Set up recording infrastructure
             initRecording(config);
 
@@ -649,13 +704,17 @@ public class BaafooAgent {
             java.lang.reflect.Field oswField = bootGRS.getField("OUTPUT_STREAM_WRAPPER");
             java.lang.reflect.Field nioField = bootGRS.getField("NIO_RECORDING_HANDLER");
             java.lang.reflect.Field pluginConsultField = bootGRS.getField("PLUGIN_CONSULT_FN");
+            java.lang.reflect.Field pluginConsultExtField = bootGRS.getField("PLUGIN_CONSULT_FN_EXT");
+            java.lang.reflect.Field eventFireField = bootGRS.getField("EVENT_FIRE_FN");
 
             iswField.set(null, GlobalRouteState.INPUT_STREAM_WRAPPER);
             oswField.set(null, GlobalRouteState.OUTPUT_STREAM_WRAPPER);
             nioField.set(null, GlobalRouteState.NIO_RECORDING_HANDLER);
             pluginConsultField.set(null, GlobalRouteState.PLUGIN_CONSULT_FN);
+            pluginConsultExtField.set(null, GlobalRouteState.PLUGIN_CONSULT_FN_EXT);
+            eventFireField.set(null, GlobalRouteState.EVENT_FIRE_FN);
 
-            log.info("Synced recording stream wrappers, NIO handler, and plugin consult bridge to Bootstrap CL GlobalRouteState");
+            log.info("Synced recording stream wrappers, NIO handler, plugin consult bridge, and event bridge to Bootstrap CL GlobalRouteState");
         } catch (Exception e) {
             log.warn("Failed to sync recording wrappers to Bootstrap CL GlobalRouteState: {}. " +
                     "Stream recording will not work.", e.getMessage());

@@ -13,6 +13,8 @@ import com.baafoo.server.handler.HttpStubHandler;
 import com.baafoo.server.handler.TcpStubHandler;
 import com.baafoo.server.handler.GrpcUnifiedHandler;
 import com.baafoo.server.storage.RecordingCleanupTask;
+import com.baafoo.core.event.EventBus;
+import com.baafoo.server.storage.ServerPluginServices;
 import com.baafoo.server.storage.StorageService;
 import com.baafoo.server.storage.StorageServiceFactory;
 import com.baafoo.server.web.StaticFileHandler;
@@ -54,6 +56,10 @@ public class BaafooServer {
     private final EventLoopGroup bossGroup;
     private final EventLoopGroup workerGroup;
     private final List<Channel> channels;
+    /** P2: Server-side event bus */
+    private EventBus eventBus;
+    /** P1: Plugin services exposed to plugins */
+    private ServerPluginServices pluginServices;
     private KafkaMockBroker kafkaBroker;
     private PulsarMockBroker pulsarBroker;
     private JmsMockBroker jmsBroker;
@@ -90,6 +96,11 @@ public class BaafooServer {
 
         // Initialize storage
         storage.init();
+
+        // P1/P2: Initialize EventBus and PluginServices
+        this.eventBus = new EventBus();
+        this.pluginServices = new ServerPluginServices(storage, new ServerAdminImpl());
+        log.info("EventBus and PluginServices initialized");
 
         // Start recording cleanup task
         recordingCleanupTask = new RecordingCleanupTask(storage, config);
@@ -171,7 +182,7 @@ public class BaafooServer {
                         ChannelPipeline p = ch.pipeline();
                         p.addLast(new HttpServerCodec());
                         p.addLast(new HttpObjectAggregator(10 * 1024 * 1024));
-                        p.addLast(new HttpStubHandler(storage, config, workerGroup));
+                        p.addLast(new HttpStubHandler(storage, config, workerGroup, eventBus));
                     }
                 });
 
@@ -202,7 +213,7 @@ public class BaafooServer {
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     protected void initChannel(SocketChannel ch) {
-                        ch.pipeline().addLast(new GrpcUnifiedHandler(storage, config));
+                        ch.pipeline().addLast(new GrpcUnifiedHandler(storage, config, eventBus));
                     }
                 });
 
@@ -384,5 +395,57 @@ public class BaafooServer {
 
         // Keep running until interrupted
         Thread.currentThread().join();
+    }
+
+    // ---- P1/P2: Plugin Infrastructure ----
+
+    /**
+     * @return server-side event bus, or null if not yet initialized
+     */
+    public EventBus getEventBus() {
+        return eventBus;
+    }
+
+    /**
+     * @return plugin services, or null if not yet initialized
+     */
+    public ServerPluginServices getPluginServices() {
+        return pluginServices;
+    }
+
+    /**
+     * Minimal ServerAdmin implementation for plugins.
+     */
+    private class ServerAdminImpl implements com.baafoo.plugin.service.ServerAdmin {
+
+        private final java.util.Map<String, com.baafoo.plugin.service.AdminHandler> endpoints =
+                new java.util.concurrent.ConcurrentHashMap<>();
+
+        @Override
+        public void registerEndpoint(String path, com.baafoo.plugin.service.AdminHandler handler) {
+            endpoints.put(path, handler);
+            log.info("Plugin admin endpoint registered: {}", path);
+        }
+
+        @Override
+        public void reloadRules() {
+            // Trigger rule reload from storage
+            log.info("Plugin-triggered rule reload");
+            // StorageService doesn't have explicit cache invalidation;
+            // rules are read from storage on each request (or cached with TTL).
+            // This is a no-op for now — future implementations can add caching.
+        }
+
+        @Override
+        public String getConfig(String key) {
+            // ServerConfig doesn't expose arbitrary properties.
+            // Return null for unknown keys; future implementations can
+            // add a properties map to ServerConfig if needed.
+            return null;
+        }
+
+        java.util.Map<String, com.baafoo.plugin.service.AdminHandler> getEndpoints() {
+            return endpoints;
+        }
     }
 }

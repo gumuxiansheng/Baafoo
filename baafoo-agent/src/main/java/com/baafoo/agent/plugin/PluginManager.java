@@ -2,11 +2,20 @@ package com.baafoo.agent.plugin;
 
 import com.baafoo.agent.loader.PluginClassLoader;
 import com.baafoo.core.config.AgentConfig;
+import com.baafoo.core.event.EventBus;
 import com.baafoo.plugin.AgentPlugin;
+import com.baafoo.plugin.ConnectAdvice;
+import com.baafoo.plugin.ConnectContext;
 import com.baafoo.plugin.InterceptResult;
 import com.baafoo.plugin.InterceptTarget;
 import com.baafoo.plugin.PluginContext;
+import com.baafoo.plugin.PluginEvent;
 import com.baafoo.plugin.PluginHealth;
+import com.baafoo.plugin.RequestAdvice;
+import com.baafoo.plugin.RequestContext;
+import com.baafoo.plugin.ResponseAdvice;
+import com.baafoo.plugin.ResponseContext;
+import com.baafoo.plugin.service.PluginServices;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,10 +43,10 @@ public class PluginManager {
     /** Consecutive error threshold before auto-disabling a plugin. */
     private static final int UNHEALTHY_THRESHOLD = 5;
 
-    /** Loaded plugins (target â†’ plugin instance) */
+    /** Loaded plugins (target â†?plugin instance) */
     private final Map<InterceptTarget, AgentPlugin> plugins = new ConcurrentHashMap<InterceptTarget, AgentPlugin>();
 
-    /** Per-plugin configuration from baafoo-agent.yml (pluginName â†’ config map) */
+    /** Per-plugin configuration from baafoo-agent.yml (pluginName â†?config map) */
     private final Map<String, Map<String, Object>> pluginConfigs;
 
     /** P3: Health status per plugin target */
@@ -47,6 +56,12 @@ public class PluginManager {
     /** P3: Manually disabled plugins */
     private final Set<InterceptTarget> disabledPlugins =
             Collections.newSetFromMap(new ConcurrentHashMap<InterceptTarget, Boolean>());
+
+    /** P2: Event bus for broadcasting PluginEvents */
+    private final EventBus eventBus = new EventBus();
+
+    /** P1: Injected services (null in Agent-only mode) */
+    private PluginServices services;
 
     /** Default plugins directory */
     private static final String DEFAULT_PLUGIN_DIR = "./plugins";
@@ -188,7 +203,7 @@ public class PluginManager {
     /**
      * Get health status for all loaded plugins.
      *
-     * @return unmodifiable map of target â†’ health status
+     * @return unmodifiable map of target â†?health status
      */
     public Map<InterceptTarget, PluginHealthStatus> getAllHealthStatuses() {
         return Collections.unmodifiableMap(healthStatuses);
@@ -218,6 +233,133 @@ public class PluginManager {
         AgentPlugin plugin = plugins.get(target);
         if (plugin == null) return Collections.emptyMap();
         return getPluginConfig(plugin.getName());
+    }
+
+    // ==================== P1: Phase Hooks ====================
+
+    /**
+     * Connection-phase hook with health monitoring.
+     * Calls plugin.onConnect() and tracks success/error.
+     *
+     * @param target intercept target
+     * @param ctx connection context
+     * @return connect advice, or passthrough if plugin unavailable
+     */
+    public ConnectAdvice connectWithMonitor(InterceptTarget target, ConnectContext ctx) {
+        AgentPlugin plugin = getPlugin(target);
+        if (plugin == null) return ConnectAdvice.passthrough();
+
+        PluginHealthStatus status = healthStatuses.get(target);
+        long start = System.currentTimeMillis();
+        try {
+            ConnectAdvice advice = plugin.onConnect(ctx);
+            long elapsed = System.currentTimeMillis() - start;
+            if (status != null) status.recordSuccess(elapsed);
+            return advice;
+        } catch (Throwable t) {
+            long elapsed = System.currentTimeMillis() - start;
+            if (status != null) status.recordError(elapsed, t.getMessage());
+            log.warn("[Baafoo] Plugin {} onConnect failed: {}", plugin.getName(), t.getMessage());
+            return ConnectAdvice.passthrough();
+        }
+    }
+
+    /**
+     * Request-phase hook with health monitoring.
+     *
+     * @param target intercept target
+     * @param ctx request context
+     * @return request advice, or continue() if plugin unavailable
+     */
+    public RequestAdvice requestWithMonitor(InterceptTarget target, RequestContext ctx) {
+        AgentPlugin plugin = getPlugin(target);
+        if (plugin == null) return RequestAdvice.proceed();
+
+        PluginHealthStatus status = healthStatuses.get(target);
+        long start = System.currentTimeMillis();
+        try {
+            RequestAdvice advice = plugin.onRequest(ctx);
+            long elapsed = System.currentTimeMillis() - start;
+            if (status != null) status.recordSuccess(elapsed);
+            return advice;
+        } catch (Throwable t) {
+            long elapsed = System.currentTimeMillis() - start;
+            if (status != null) status.recordError(elapsed, t.getMessage());
+            log.warn("[Baafoo] Plugin {} onRequest failed: {}", plugin.getName(), t.getMessage());
+            return RequestAdvice.proceed();
+        }
+    }
+
+    /**
+     * Response-phase hook with health monitoring.
+     *
+     * @param target intercept target
+     * @param ctx response context
+     * @return response advice, or continue() if plugin unavailable
+     */
+    public ResponseAdvice responseWithMonitor(InterceptTarget target, ResponseContext ctx) {
+        AgentPlugin plugin = getPlugin(target);
+        if (plugin == null) return ResponseAdvice.proceed();
+
+        PluginHealthStatus status = healthStatuses.get(target);
+        long start = System.currentTimeMillis();
+        try {
+            ResponseAdvice advice = plugin.onResponse(ctx);
+            long elapsed = System.currentTimeMillis() - start;
+            if (status != null) status.recordSuccess(elapsed);
+            return advice;
+        } catch (Throwable t) {
+            long elapsed = System.currentTimeMillis() - start;
+            if (status != null) status.recordError(elapsed, t.getMessage());
+            log.warn("[Baafoo] Plugin {} onResponse failed: {}", plugin.getName(), t.getMessage());
+            return ResponseAdvice.proceed();
+        }
+    }
+
+    // ==================== P1: Service Injection ====================
+
+    /**
+     * Inject PluginServices into this manager.
+     * When set, all PluginContext objects created via this manager will
+     * have services attached.
+     *
+     * @param services service instance, or null to clear
+     */
+    public void setServices(PluginServices services) {
+        this.services = services;
+    }
+
+    public PluginServices getServices() {
+        return services;
+    }
+
+    // ==================== P2: Event Bus ====================
+
+    /**
+     * Get the event bus for registering external listeners (Metrics, Audit, etc.).
+     *
+     * @return the event bus instance
+     */
+    public EventBus getEventBus() {
+        return eventBus;
+    }
+
+    /**
+     * Fire an event to the EventBus + all plugins' onEvent hook.
+     * Exceptions from plugins are caught and logged.
+     *
+     * @param event the event to fire
+     */
+    public void fireEvent(PluginEvent event) {
+        eventBus.fire(event);
+        // Also deliver to all plugins' onEvent hook
+        for (AgentPlugin plugin : plugins.values()) {
+            try {
+                plugin.onEvent(event);
+            } catch (Throwable t) {
+                log.warn("[Baafoo] Plugin {} onEvent threw: {}", plugin.getName(), t.getMessage());
+            }
+        }
     }
 
     // ==================== Protocol Resolution ====================
@@ -302,6 +444,10 @@ public class PluginManager {
             plugins.put(plugin.getTarget(), plugin);
             // P3: Initialize health status
             healthStatuses.put(plugin.getTarget(), new PluginHealthStatus(plugin.getName()));
+            // P2: Auto-register plugin as event listener
+            eventBus.addListener(plugin::onEvent);
+            // P2: Fire PLUGIN_LOADED event
+            eventBus.fire(PluginEvent.pluginLoaded(plugin.getName(), plugin.getTarget().name()));
             log.info("Plugin loaded: {} (target={}, config={})", plugin.getName(), plugin.getTarget(),
                     config.isEmpty() ? "none" : config.keySet());
         }
@@ -316,6 +462,7 @@ public class PluginManager {
         for (AgentPlugin plugin : plugins.values()) {
             try {
                 plugin.destroy();
+                eventBus.fire(PluginEvent.pluginUnloaded(plugin.getName()));
             } catch (Exception e) {
                 log.error("Error destroying plugin {}: {}", plugin.getName(), e.getMessage());
             }

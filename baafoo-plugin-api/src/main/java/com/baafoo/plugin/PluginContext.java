@@ -1,5 +1,7 @@
 package com.baafoo.plugin;
 
+import com.baafoo.plugin.service.PluginServices;
+
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -51,6 +53,9 @@ public class PluginContext {
 
     /** Plugin-specific configuration (keyed by plugin name in baafoo-agent.yml) */
     private Map<String, Object> pluginConfig;
+
+    /** Injected services (null in Agent-only mode) */
+    private PluginServices services;
 
     // ---- Protocol-specific fields (all optional, null by default) ----
 
@@ -162,6 +167,10 @@ public class PluginContext {
 
     public Map<String, String> getQueryParams() { return queryParams; }
     public void setQueryParams(Map<String, String> queryParams) { this.queryParams = queryParams; }
+
+    /** @return injected services, or null if not available (Agent-only mode) */
+    public PluginServices getServices() { return services; }
+    public void setServices(PluginServices services) { this.services = services; }
 
     @Override
     public String toString() {

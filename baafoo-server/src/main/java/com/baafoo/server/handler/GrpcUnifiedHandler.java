@@ -55,12 +55,29 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
     private final ServerConfig config;
     private final AgentResolver agentResolver;
     private final MatchEngine matchEngine;
+    /** P2: Event bus for firing plugin events (may be null) */
+    private final com.baafoo.core.event.EventBus eventBus;
 
     public GrpcUnifiedHandler(StorageService storage, ServerConfig config) {
+        this(storage, config, null);
+    }
+
+    public GrpcUnifiedHandler(StorageService storage, ServerConfig config,
+                               com.baafoo.core.event.EventBus eventBus) {
         this.storage = storage;
         this.config = config;
         this.agentResolver = new AgentResolver(storage, config);
         this.matchEngine = new MatchEngine();
+        this.eventBus = eventBus;
+    }
+
+    /**
+     * P2: Fire a plugin event if event bus is available.
+     */
+    private void fireEvent(com.baafoo.plugin.PluginEvent event) {
+        if (eventBus != null) {
+            eventBus.fire(event);
+        }
     }
 
     @Override

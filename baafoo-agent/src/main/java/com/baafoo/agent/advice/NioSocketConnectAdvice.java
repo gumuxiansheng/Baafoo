@@ -118,17 +118,36 @@ public final class NioSocketConnectAdvice {
                     }
                 }
 
-                // Plugin SPI fallback
+                // Plugin SPI fallback (prefer EXT, fallback to legacy)
                 if (routeValue == null) {
-                    java.util.function.Function<Object[], Object[]> consultFn = GlobalRouteState.PLUGIN_CONSULT_FN;
-                    if (consultFn != null) {
+                    java.util.function.Function<Object[], Object[]> consultExtFn = GlobalRouteState.PLUGIN_CONSULT_FN_EXT;
+                    if (consultExtFn != null) {
                         try {
-                            Object[] pluginResult = consultFn.apply(new Object[]{host, Integer.valueOf(port)});
-                            if (pluginResult != null && pluginResult.length >= 2) {
-                                routeValue = new String[]{(String) pluginResult[0], String.valueOf(pluginResult[1])};
+                            Object[] extResult = consultExtFn.apply(new Object[]{host, Integer.valueOf(port), "nio"});
+                            if (extResult != null && extResult.length >= 1) {
+                                int action = ((Integer) extResult[0]).intValue();
+                                if (action == 1 && extResult.length >= 3) {
+                                    routeValue = new String[]{(String) extResult[1], String.valueOf(extResult[2])};
+                                } else if (action == 2) {
+                                    GlobalRouteState.logInfo("[Baafoo] NIO Socket blocked by plugin: " + (extResult.length > 3 ? extResult[3] : "blocked"));
+                                    return;
+                                }
                             }
                         } catch (Throwable t) {
-                            GlobalRouteState.logDebug("[Baafoo] NIO Socket plugin consult skipped: " + t.getMessage());
+                            GlobalRouteState.logDebug("[Baafoo] NIO Socket plugin EXT consult skipped: " + t.getMessage());
+                        }
+                    }
+                    if (routeValue == null) {
+                        java.util.function.Function<Object[], Object[]> consultFn = GlobalRouteState.PLUGIN_CONSULT_FN;
+                        if (consultFn != null) {
+                            try {
+                                Object[] pluginResult = consultFn.apply(new Object[]{host, Integer.valueOf(port)});
+                                if (pluginResult != null && pluginResult.length >= 2) {
+                                    routeValue = new String[]{(String) pluginResult[0], String.valueOf(pluginResult[1])};
+                                }
+                            } catch (Throwable t) {
+                                GlobalRouteState.logDebug("[Baafoo] NIO Socket plugin consult skipped: " + t.getMessage());
+                            }
                         }
                     }
                 }
@@ -179,19 +198,38 @@ public final class NioSocketConnectAdvice {
                 }
             }
 
-            // Plugin SPI fallback: if no route matched, consult the plugin bridge.
-            // This allows third-party Socket/NIO plugins to override the redirect target.
+            // Plugin SPI fallback: prefer EXT, fallback to legacy
             if (routeValue == null) {
-                java.util.function.Function<Object[], Object[]> consultFn = GlobalRouteState.PLUGIN_CONSULT_FN;
-                if (consultFn != null) {
+                java.util.function.Function<Object[], Object[]> consultExtFn = GlobalRouteState.PLUGIN_CONSULT_FN_EXT;
+                if (consultExtFn != null) {
                     try {
-                        Object[] pluginResult = consultFn.apply(new Object[]{host, Integer.valueOf(port)});
-                        if (pluginResult != null && pluginResult.length >= 2) {
-                            routeValue = new String[]{(String) pluginResult[0], String.valueOf(pluginResult[1])};
-                            GlobalRouteState.logInfo("[Baafoo] NIO Socket plugin redirected: " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
+                        Object[] extResult = consultExtFn.apply(new Object[]{host, Integer.valueOf(port), "nio"});
+                        if (extResult != null && extResult.length >= 1) {
+                            int action = ((Integer) extResult[0]).intValue();
+                            if (action == 1 && extResult.length >= 3) {
+                                routeValue = new String[]{(String) extResult[1], String.valueOf(extResult[2])};
+                                GlobalRouteState.logInfo("[Baafoo] NIO Socket plugin redirected (EXT): " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
+                            } else if (action == 2) {
+                                GlobalRouteState.logInfo("[Baafoo] NIO Socket blocked by plugin: " + (extResult.length > 3 ? extResult[3] : "blocked"));
+                                return;
+                            }
                         }
                     } catch (Throwable t) {
-                        GlobalRouteState.logDebug("[Baafoo] NIO Socket plugin consult skipped: " + t.getMessage());
+                        GlobalRouteState.logDebug("[Baafoo] NIO Socket plugin EXT consult skipped: " + t.getMessage());
+                    }
+                }
+                if (routeValue == null) {
+                    java.util.function.Function<Object[], Object[]> consultFn = GlobalRouteState.PLUGIN_CONSULT_FN;
+                    if (consultFn != null) {
+                        try {
+                            Object[] pluginResult = consultFn.apply(new Object[]{host, Integer.valueOf(port)});
+                            if (pluginResult != null && pluginResult.length >= 2) {
+                                routeValue = new String[]{(String) pluginResult[0], String.valueOf(pluginResult[1])};
+                                GlobalRouteState.logInfo("[Baafoo] NIO Socket plugin redirected: " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
+                            }
+                        } catch (Throwable t) {
+                            GlobalRouteState.logDebug("[Baafoo] NIO Socket plugin consult skipped: " + t.getMessage());
+                        }
                     }
                 }
             }

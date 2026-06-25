@@ -55,6 +55,8 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
     private final ServerConfig config;
     private final AgentResolver agentResolver;
     private final PassthroughProxy passthroughProxy;
+    /** P2: Event bus for firing plugin events (may be null) */
+    private final com.baafoo.core.event.EventBus eventBus;
 
     /**
      * Note: this handler must NOT be annotated with {@code @Sharable} — each
@@ -63,11 +65,29 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
      * and does not require per-instance state (S4 fix).
      */
     public HttpStubHandler(StorageService storage, ServerConfig config, EventLoopGroup workerGroup) {
+        this(storage, config, workerGroup, null);
+    }
+
+    /**
+     * P2: Constructor with EventBus for plugin event firing.
+     */
+    public HttpStubHandler(StorageService storage, ServerConfig config, EventLoopGroup workerGroup,
+                           com.baafoo.core.event.EventBus eventBus) {
         this.storage = storage;
         this.config = config;
         this.matchEngine = new MatchEngine();
         this.agentResolver = new AgentResolver(storage, config);
         this.passthroughProxy = new PassthroughProxy(workerGroup, config.isPassthroughSslVerifyDisabled());
+        this.eventBus = eventBus;
+    }
+
+    /**
+     * P2: Fire a plugin event if event bus is available.
+     */
+    private void fireEvent(com.baafoo.plugin.PluginEvent event) {
+        if (eventBus != null) {
+            eventBus.fire(event);
+        }
     }
 
     /**
