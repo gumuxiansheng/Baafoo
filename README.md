@@ -352,6 +352,112 @@ testing/test-integration.ps1
     pwsh testing/test-fullchain.ps1
 ```
 
+## Testcontainers 模块
+
+`baafoo-testcontainers` 模块让用户在集成测试中**一键启动 Baafoo Server**，无需手动搭建环境。
+
+### 添加依赖
+
+```xml
+<dependency>
+    <groupId>com.baafoo</groupId>
+    <artifactId>baafoo-testcontainers</artifactId>
+    <version>1.1.0-SNAPSHOT</version>
+    <scope>test</scope>
+</dependency>
+```
+
+### 快速开始
+
+```java
+// JUnit 4
+@ClassRule
+public static BaafooServerContainer baafoo = new BaafooServerContainer();
+
+@Test
+public void testWithBaafoo() {
+    String serverUrl = baafoo.getHttpBaseUrl();
+    // 你的测试逻辑...
+}
+```
+
+### 核心 API
+
+#### `BaafooServerContainer`
+
+| 方法 | 说明 |
+|:-----|:-----|
+| `new BaafooServerContainer()` | 使用默认镜像 `baafoo-server:latest` |
+| `new BaafooServerContainer("custom-image:tag")` | 指定自定义镜像 |
+| `withApiKey(String)` | 设置 API Key（Server 开启 auth 时需要） |
+| `withRule(Rule)` | 预加载一条规则 |
+| `withRuleFromClasspath("rules/my-rule.json")` | 从 classpath JSON 文件加载规则 |
+| `withRuleFromFile("/path/to/rule.json")` | 从本地文件加载规则 |
+| `withRuleFromJson("{\"protocol\":\"http\",...}")` | 从 JSON 字符串加载规则 |
+| `withEnvironment("staging", "stub")` | 预加载一个环境 |
+| `getHttpBaseUrl()` | 获取 Server API 的 HTTP 基础地址 |
+| `getClient()` | 获取 `BaafooClient`，用于编程式管理规则/环境 |
+
+预加载的规则和环境在容器启动后自动通过 REST API 注入。
+
+#### `BaafooClient`
+
+```java
+BaafooClient client = baafoo.getClient();
+
+// 规则管理
+client.createRule(rule);
+client.listRules();
+client.getRule("rule-id");
+client.updateRule("rule-id", rule);
+client.deleteRule("rule-id");
+
+// 环境管理
+client.createEnvironment("ft-1", "stub");
+client.setEnvironmentMode("ft-1", "passthrough");
+client.listEnvironments();
+
+// 场景集管理
+client.createSceneSet(sceneSet);
+client.listSceneSets();
+
+// 系统状态
+client.getStatus();
+```
+
+### 编程式规则配置示例
+
+```java
+@ClassRule
+public static BaafooServerContainer baafoo = new BaafooServerContainer()
+        .withEnvironment("test", "stub")
+        .withRule(new Rule() {{
+            setName("GET /api/users");
+            setProtocol("http");
+            setHost("api.example.com");
+            setConditions(Collections.singletonList(
+                    MatchCondition.path("equals", "/api/users")));
+            setResponses(Collections.singletonList(
+                    new ResponseEntry() {{ setBody("{\"users\":[]}"); }}));
+        }});
+
+@Test
+public void testUserService() {
+    String stubUrl = "http://localhost:" + baafoo.getMappedPort(9000);
+    // stubUrl 指向 Baafoo Server 的 HTTP Mock 端口
+    // Agent 模式下无需手动获取端口，Agent 自动路由
+}
+```
+
+### 镜像构建
+
+首次使用前需构建 Baafoo Server 镜像：
+
+```bash
+mvn clean package -DskipTests
+docker build -t baafoo-server:latest .
+```
+
 ---
 
 ## 配置说明
