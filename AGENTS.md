@@ -155,6 +155,15 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
 
 Staging environments: `staging-a` (STUB mode), `staging-b` (STUB mode), `staging-c` (fallback). Agent configs include `apiKey: "staging-admin-key"` for server authentication.
 
+## Documentation
+
+Documentation lives in `.workmemo/`. Follow these rules when writing or updating docs:
+
+- **Pre-commit check**: Before each commit, update any `.workmemo/` documents affected by the change. If a feature, design decision, or architectural change is being committed, the corresponding "why" doc must reflect it.
+- **"Why" not "what"**: Only write docs that explain *why* a decision was made or *why* an approach was chosen. If the doc describes *what* the code does, put that in code comments instead.
+- **Auto-generatable → automate**: If content can be derived from git log, code types, or test output, set up a script rather than writing manually. See `gen-changelog.ps1` for reference.
+- **Stale docs**: If a doc would become seriously misleading after 6 months without updates, either make it auto-validatable or don't write it. Archive superseded docs to `archive/` under the relevant directory.
+
 ## Known Issues
 
 See `.review/deep-code-review-report.md` for 20+ verified findings including:
