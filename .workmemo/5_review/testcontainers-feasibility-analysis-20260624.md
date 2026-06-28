@@ -118,7 +118,7 @@ Testcontainers 是一个 Java 库，用于在 **JUnit/TestNG 测试中启动 Doc
 - 测试数据清理困难
 
 **Testcontainers 方案**:
-```
+```java
 @RunWith(SpringRunner.class)
 @SpringBootTest
 public class KafkaEnterpriseCompatibilityTest {
