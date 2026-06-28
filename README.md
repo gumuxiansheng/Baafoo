@@ -230,6 +230,130 @@ baafoo/
 
 ---
 
+## 测试体系
+
+### 层次结构
+
+| 层级 | 工具 | 覆盖范围 | Docker 依赖 |
+|:-----|:-----|:---------|:-----------:|
+| **单元测试** | JUnit 4 + Mockito | 各模块核心逻辑、匹配引擎、编解码器 | ❌ |
+| **集成测试** | JUnit 4 + Testcontainers | 协议兼容性验证（Kafka / Pulsar / JMS） | ✅ |
+| **端到端测试** | Testcontainers + Docker Compose | Agent 字节码增强全链路 + 多环境编排 | ✅ |
+
+### 单元测试
+
+所有模块的基本功能验证，无需外部依赖：
+
+```bash
+# 全部模块
+mvn test
+
+# 单模块
+mvn test -pl baafoo-core
+mvn test -pl baafoo-server -Dtest="KafkaMockBrokerTest"
+```
+
+| 测试类 | 模块 | 说明 |
+|:-------|:-----|:-----|
+| `KafkaMockBrokerTest` | baafoo-server | Kafka 协议编解码、消息存储、规则匹配、MQ 关系映射 |
+| `PulsarMockBrokerTest` | baafoo-server | Pulsar 协议 CONNECT/LOOKUP/PRODUCER/SEND/SUBSCRIBE 处理 |
+| `JmsMockBrokerTest` | baafoo-server | JMS Queue/Topic、FIFO 顺序、消息录制 |
+| `MatchEngineTest` | baafoo-core | 规则匹配引擎、优先级排序、condition 条件组合 |
+| `SocketInterceptionIntegrationTest` | baafoo-agent | Socket 拦截核心逻辑（非字节码增强） |
+
+### 集成测试 (Testcontainers)
+
+使用真实容器验证 Baafoo Mock Broker 的**二进制协议兼容性**。通过在 Docker 容器中启动真实服务（Kafka、ActiveMQ），运行与 Mock Broker 相同的客户端操作，对比行为一致性。
+
+```bash
+# 前置条件：Docker 需运行中
+# 运行全部集成测试
+mvn test -pl baafoo-server -Dtest="*CompatibilityTest"
+
+# 运行单个协议测试
+mvn test -pl baafoo-server -Dtest="KafkaProtocolCompatibilityTest"
+mvn test -pl baafoo-server -Dtest="JmsProtocolCompatibilityTest"
+mvn test -pl baafoo-server -Dtest="PulsarProtocolCompatibilityTest"
+```
+
+| 测试类 | 真实容器 | 验证内容 |
+|:-------|:---------|:---------|
+| `KafkaProtocolCompatibilityTest` | `confluentinc/cp-kafka:7.4.0` | ApiVersions 握手、Produce/Fetch 往返、Stub 规则注入 |
+| `JmsProtocolCompatibilityTest` | `rmohr/activemq:5.15.9` | Queue FIFO 顺序、Topic 广播、消息计数一致性 |
+| `PulsarProtocolCompatibilityTest` | —（Mock Broker 仅使用真实 Pulsar 客户端） | CONNECT 握手、Producer/SEND、订阅消费、Stub 注入 |
+
+> **Docker 不可用时**：所有容器依赖的测试自动跳过（`assumeTrue`），Mock Broker 基础验证仍正常执行。
+
+### 端到端测试
+
+#### Agent 容器化集成测试
+
+在 Docker 容器中启动 Baafoo Server + 挂载 Agent 的测试应用，验证字节码增强全链路：
+
+```bash
+# 前置条件：先构建镜像
+mvn clean package -DskipTests
+docker build -t baafoo-server:latest .
+docker build -t baafoo-test-spring:latest -f baafoo-test-spring/Dockerfile .
+
+# 运行测试
+mvn test -pl baafoo-server -Dtest="AgentContainerizedIntegrationTest"
+```
+
+验证流程：
+1. 启动 Server 容器 → 健康检查 `/__baafoo__/api/status`
+2. 启动测试应用容器（挂载 Agent）→ Agent 向 Server 注册
+3. 通过 API 创建 Mock 规则
+4. 向测试应用发送 HTTP 请求 → 请求经 Agent 拦截 → 返回 Stub 响应
+
+#### Staging 环境编排
+
+```bash
+# 启动完整 staging 集群（含 PostgreSQL、多环境 Agent）
+docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
+
+# 重建特定服务
+docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build server app-env-a
+```
+
+#### 全链路集成测试脚本
+
+完整 48 个测试用例（覆盖 Framework / HTTP / gRPC / TCP / Kafka / Pulsar / JMS / Plugin / Environment / Condition / Mode），基于 Docker Compose staging 环境：
+
+```bash
+# PowerShell（Windows）
+testing/test-fullchain.ps1
+
+# Bash（Linux/macOS）
+testing/test-integration.ps1
+```
+
+测试资产位于 `testing/` 目录：
+
+| 目录/文件 | 说明 |
+|:----------|:-----|
+| `testing/test-rules/` | 34 个 JSON 规则文件，覆盖全部协议与条件类型 |
+| `testing/deploy/staging/` | Staging 环境 Agent & Server 配置 |
+| `testing/TEST-MANUAL.md` | 完整测试手册 |
+| `testing/TEST-REPORT.md` | 最新测试报告 |
+
+### 持续集成建议
+
+```yaml
+# GitHub Actions 示例
+- name: Unit & Integration Tests
+  run: mvn test -pl baafoo-server -Dtest="*MockBrokerTest,*CompatibilityTest"
+
+- name: Full-chain E2E (requires Docker)
+  run: |
+    mvn clean package -DskipTests
+    docker build -t baafoo-server:latest .
+    docker build -t baafoo-test-spring:latest -f baafoo-test-spring/Dockerfile .
+    pwsh testing/test-fullchain.ps1
+```
+
+---
+
 ## 配置说明
 
 ### Agent 配置（`baafoo-agent.yml`）
