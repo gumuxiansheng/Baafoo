@@ -1,0 +1,2 @@
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+com.baafoo.springboot.test.BaafooTestAutoConfiguration

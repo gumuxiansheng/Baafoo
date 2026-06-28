@@ -28,7 +28,21 @@
             <scope>compile</scope>
         </dependency>
 
-        <!-- Testcontainers extends TestRule at class level -->
+        <!-- Testcontainers JUnit 5 integration -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>compile</scope>
+        </dependency>
+
+        <!-- JUnit Jupiter API (testcontainers-junit-jupiter does not transitively include it) -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <scope>compile</scope>
+        </dependency>
+
+        <!-- JUnit 4 (GenericContainer implements TestRule at class level) -->
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>

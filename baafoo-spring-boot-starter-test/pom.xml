@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.baafoo</groupId>
+        <artifactId>baafoo-parent</artifactId>
+        <version>1.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>baafoo-spring-boot-starter-test</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Baafoo Spring Boot Starter Test</name>
+    <description>Spring Boot Test Starter for Baafoo — @BaafooTest annotation with auto-configured BaafooServerContainer</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.baafoo</groupId>
+            <artifactId>baafoo-testcontainers</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.baafoo</groupId>
+            <artifactId>baafoo-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <scope>compile</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <scope>compile</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>compile</scope>
+        </dependency>
+    </dependencies>
+</project>
