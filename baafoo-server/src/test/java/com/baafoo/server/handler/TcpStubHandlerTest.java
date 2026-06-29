@@ -7,15 +7,20 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.rules.Timeout;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 public class TcpStubHandlerTest {
+
+    @org.junit.Rule
+    public Timeout globalTimeout = new Timeout(30, TimeUnit.SECONDS);
 
     private StorageService storage;
 
@@ -776,6 +781,61 @@ public class TcpStubHandlerTest {
         rule.setEnabled(true);
         rule.setEnvironments(Arrays.asList("stub-env"));
         rule.setTcpPrefixHex("68656c6c6f");
+
+        ResponseEntry resp = new ResponseEntry();
+        resp.setBody("stub-response");
+        rule.setResponses(Arrays.asList(resp));
+
+        setupAgentAndEnv("stub-env", EnvironmentMode.STUB);
+        when(storage.listRules()).thenReturn(Arrays.asList(rule));
+
+        EmbeddedChannel channel = createChannel();
+        channel.writeInbound(Unpooled.copiedBuffer("hello world", StandardCharsets.UTF_8));
+
+        verify(storage, never()).addRecording(any(RecordingEntry.class));
+    }
+
+    @Test
+    public void testRecordsUnmatchedInRecordAllMode() {
+        when(storage.listRules()).thenReturn(new ArrayList<Rule>());
+        setupAgentAndEnv("record-all-env", EnvironmentMode.RECORD_ALL);
+
+        EmbeddedChannel channel = createChannel();
+        channel.writeInbound(Unpooled.copiedBuffer("test payload", StandardCharsets.UTF_8));
+
+        verify(storage).addRecording(any(RecordingEntry.class));
+    }
+
+    @Test
+    public void testMatchEngineFallbackRecordsInRecordMode() {
+        Rule rule = new Rule();
+        rule.setId("r-fallback-record");
+        rule.setProtocol("tcp");
+        rule.setEnabled(true);
+        rule.setEnvironments(Arrays.asList("record-env"));
+        rule.setConditions(Arrays.asList(MatchCondition.body("contains", "hello")));
+
+        ResponseEntry resp = new ResponseEntry();
+        resp.setBody("recorded-response");
+        rule.setResponses(Arrays.asList(resp));
+
+        setupAgentAndEnv("record-env", EnvironmentMode.RECORD);
+        when(storage.listRules()).thenReturn(Arrays.asList(rule));
+
+        EmbeddedChannel channel = createChannel();
+        channel.writeInbound(Unpooled.copiedBuffer("hello world", StandardCharsets.UTF_8));
+
+        verify(storage).addRecording(any(RecordingEntry.class));
+    }
+
+    @Test
+    public void testMatchEngineFallbackDoesNotRecordInStubMode() {
+        Rule rule = new Rule();
+        rule.setId("r-fallback-stub");
+        rule.setProtocol("tcp");
+        rule.setEnabled(true);
+        rule.setEnvironments(Arrays.asList("stub-env"));
+        rule.setConditions(Arrays.asList(MatchCondition.body("contains", "hello")));
 
         ResponseEntry resp = new ResponseEntry();
         resp.setBody("stub-response");

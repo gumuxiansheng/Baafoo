@@ -5,20 +5,26 @@ import com.baafoo.core.model.*;
 import com.baafoo.server.auth.AuthService;
 import com.baafoo.server.storage.StorageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.*;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.rules.Timeout;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
 public class ManagementApiHandlerTest {
+
+    @org.junit.Rule
+    public Timeout globalTimeout = new Timeout(30, TimeUnit.SECONDS);
 
     private StorageService storage;
     private AuthService authService;
@@ -39,6 +45,15 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.valueOf(method), uri, content);
         request.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json");
         return request;
+    }
+
+    private JsonNode assertOkResponse(FullHttpResponse response) throws Exception {
+        assertNotNull(response);
+        assertEquals(200, response.status().code());
+        String respBody = response.content().toString(StandardCharsets.UTF_8);
+        JsonNode json = mapper.readTree(respBody);
+        assertTrue("Response should be successful", json.get("success").asBoolean());
+        return json;
     }
 
     @Test
@@ -67,7 +82,8 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/rules", null);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertTrue("data should be an array", json.get("data").isArray());
     }
 
     @Test
@@ -80,7 +96,8 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("POST", "/__baafoo__/api/rules", body);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertEquals("new-rule", json.get("data").get("name").asText());
     }
 
     @Test
@@ -93,7 +110,9 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/rules/r1", null);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertEquals("r1", json.get("data").get("id").asText());
+        assertEquals("found", json.get("data").get("name").asText());
     }
 
     @Test
@@ -103,9 +122,12 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/rules/nonexistent", null);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
+        assertNotNull(response);
         assertEquals(200, response.status().code());
         String respBody = response.content().toString(StandardCharsets.UTF_8);
-        assertTrue(respBody.contains("false"));
+        JsonNode json = mapper.readTree(respBody);
+        assertFalse("Should indicate failure", json.get("success").asBoolean());
+        assertEquals("Rule not found", json.get("message").asText());
     }
 
     @Test
@@ -124,7 +146,8 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("PUT", "/__baafoo__/api/rules/r1", body);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertEquals("updated", json.get("data").get("name").asText());
     }
 
     @Test
@@ -134,7 +157,8 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("DELETE", "/__baafoo__/api/rules/r1", null);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertEquals("Deleted", json.get("message").asText());
     }
 
     @Test
@@ -144,7 +168,8 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("POST", "/__baafoo__/api/rules/r1/undo", null);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertTrue("Should contain 'Undo'", json.get("message").asText().contains("Undo"));
     }
 
     @Test
@@ -154,7 +179,8 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/environments", null);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertTrue("data should be an array", json.get("data").isArray());
     }
 
     @Test
@@ -167,7 +193,8 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("POST", "/__baafoo__/api/environments", body);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertEquals("test-env", json.get("data").get("name").asText());
     }
 
     @Test
@@ -179,7 +206,8 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/environments/e1", null);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertEquals("e1", json.get("data").get("id").asText());
     }
 
     @Test
@@ -198,7 +226,8 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("POST", "/__baafoo__/api/agent/register", json);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode respJson = assertOkResponse(response);
+        assertTrue("data should be present", respJson.has("data"));
     }
 
     @Test
@@ -210,7 +239,7 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("POST", "/__baafoo__/api/agent/heartbeat", json);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        assertOkResponse(response);
     }
 
     @Test
@@ -221,7 +250,8 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/agent/poll?agentId=agent-1", null);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertTrue("data should be present", json.has("data"));
     }
 
     @Test
@@ -233,7 +263,7 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("POST", "/__baafoo__/api/agent/recordings", json);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        assertOkResponse(response);
     }
 
     @Test
@@ -243,18 +273,19 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/recordings", null);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertTrue("data should be an array", json.get("data").isArray());
     }
 
     @Test
     public void testListScenes() throws Exception {
         when(storage.listScenes()).thenReturn(new ArrayList<SceneSet>());
-        when(storage.listScenes()).thenReturn(new ArrayList<SceneSet>());
 
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/scenes", null);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertTrue("data should be an array", json.get("data").isArray());
     }
 
     @Test
@@ -267,7 +298,8 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("POST", "/__baafoo__/api/scenes", body);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertEquals("test-scene", json.get("data").get("name").asText());
     }
 
     @Test
@@ -279,7 +311,8 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/scenes/s1", null);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertEquals("s1", json.get("data").get("id").asText());
     }
 
     @Test
@@ -289,7 +322,7 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("DELETE", "/__baafoo__/api/scenes/s1", null);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        assertOkResponse(response);
     }
 
     @Test
@@ -302,7 +335,9 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/status", null);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertTrue("data should have rules field", json.get("data").has("rules"));
+        assertTrue("data should have agents field", json.get("data").has("agents"));
     }
 
     @Test
@@ -311,6 +346,10 @@ public class ManagementApiHandlerTest {
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
         assertEquals(404, response.status().code());
+        String respBody = response.content().toString(StandardCharsets.UTF_8);
+        JsonNode json = mapper.readTree(respBody);
+        assertFalse(json.get("success").asBoolean());
+        assertEquals(404, json.get("code").asInt());
     }
 
     @Test
@@ -320,7 +359,8 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/rulesets", null);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertTrue("data should be an array", json.get("data").isArray());
     }
 
     @Test
@@ -330,7 +370,8 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/agents", null);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertTrue("data should be an array", json.get("data").isArray());
     }
 
     @Test
@@ -343,7 +384,8 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/rules/r1/inherited-environments", null);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        assertEquals(200, response.status().code());
+        JsonNode json = assertOkResponse(response);
+        assertTrue("data should be an array", json.get("data").isArray());
     }
 
     @Test

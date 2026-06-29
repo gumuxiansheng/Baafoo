@@ -362,4 +362,99 @@ public class FileStorageTest {
         assertEquals(created2.getId(), rules.get(0).getId());
         assertEquals(created1.getId(), rules.get(1).getId());
     }
+
+    @Test
+    public void testCreateRulePersistsToDisk() throws Exception {
+        Rule rule = new Rule();
+        rule.setName("persisted-rule");
+        Rule created = storage.createRule(rule);
+        String ruleId = created.getId();
+
+        FileStorage storage2 = new FileStorage(config);
+        storage2.init();
+
+        Rule loaded = storage2.getRule(ruleId);
+        assertNotNull("Rule should be loaded from disk", loaded);
+        assertEquals("persisted-rule", loaded.getName());
+    }
+
+    @Test
+    public void testCreateEnvironmentPersistsToDisk() throws Exception {
+        Environment env = new Environment();
+        env.setName("persisted-env");
+        env.setMode(EnvironmentMode.STUB);
+        Environment created = storage.createEnvironment(env);
+        String envId = created.getId();
+
+        FileStorage storage2 = new FileStorage(config);
+        storage2.init();
+
+        Environment loaded = storage2.getEnvironment(envId);
+        assertNotNull("Environment should be loaded from disk", loaded);
+        assertEquals("persisted-env", loaded.getName());
+    }
+
+    @Test
+    public void testCreateScenePersistsToDisk() throws Exception {
+        SceneSet scene = new SceneSet();
+        scene.setName("persisted-scene");
+        scene.setActive(true);
+        storage.createScene(scene);
+
+        FileStorage storage2 = new FileStorage(config);
+        storage2.init();
+
+        List<SceneSet> scenes = storage2.listScenes();
+        assertEquals(1, scenes.size());
+        assertEquals("persisted-scene", scenes.get(0).getName());
+    }
+
+    @Test
+    public void testRecordingsPersistToDiskViaBatch() throws Exception {
+        RecordingEntry rec = new RecordingEntry();
+        rec.setRuleId("r1");
+        rec.setProtocol("http");
+        rec.setRequestBody("test-request");
+        storage.addRecordings(Arrays.asList(rec));
+
+        FileStorage storage2 = new FileStorage(config);
+        storage2.init();
+
+        List<RecordingEntry> loaded = storage2.listRecordings(null, 100);
+        assertEquals(1, loaded.size());
+        assertEquals("test-request", loaded.get(0).getRequestBody());
+    }
+
+    @Test
+    public void testVerifySaveAndDeleteRulePersistence() throws Exception {
+        Rule rule = new Rule();
+        rule.setName("delete-persist-test");
+        Rule created = storage.createRule(rule);
+        String ruleId = created.getId();
+
+        storage.deleteRule(ruleId);
+
+        FileStorage storage2 = new FileStorage(config);
+        storage2.init();
+
+        assertNull("Deleted rule should not appear in new storage", storage2.getRule(ruleId));
+    }
+
+    @Test
+    public void testVerifyUpdateRulePersistence() throws Exception {
+        Rule rule = new Rule();
+        rule.setName("original-name");
+        Rule created = storage.createRule(rule);
+
+        Rule update = new Rule();
+        update.setName("updated-name");
+        storage.updateRule(created.getId(), update);
+
+        FileStorage storage2 = new FileStorage(config);
+        storage2.init();
+
+        Rule loaded = storage2.getRule(created.getId());
+        assertNotNull(loaded);
+        assertEquals("updated-name", loaded.getName());
+    }
 }
