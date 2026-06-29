@@ -72,6 +72,7 @@
         <maven-compiler-plugin.version>3.11.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>2.22.2</maven-surefire-plugin.version>
         <jacoco.version>0.8.11</jacoco.version>
+        <pitest.version>1.15.0</pitest.version>
     </properties>
 
     <dependencyManagement>
@@ -247,6 +248,14 @@
                 <version>${testcontainers.version}</version>
                 <scope>test</scope>
             </dependency>
+
+            <!-- Mutation Testing -->
+            <dependency>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-junit5-plugin</artifactId>
+                <version>1.2.1</version>
+                <scope>test</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -286,6 +295,39 @@
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
                     <version>${spring-boot.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.pitest</groupId>
+                    <artifactId>pitest-maven</artifactId>
+                    <version>${pitest.version}</version>
+                    <configuration>
+                        <targetClasses>
+                            <param>com.baafoo.core.util.*</param>
+                            <param>com.baafoo.core.model.*</param>
+                            <param>com.baafoo.server.handler.*</param>
+                            <param>com.baafoo.server.auth.*</param>
+                            <param>com.baafoo.server.storage.*</param>
+                            <param>com.baafoo.agent.advice.*</param>
+                            <param>com.baafoo.agent.plugin.*</param>
+                        </targetClasses>
+                        <targetTests>
+                            <param>com.baafoo.*</param>
+                        </targetTests>
+                        <mutationThreshold>60</mutationThreshold>
+                        <coverageThreshold>75</coverageThreshold>
+                        <excludedMethods>
+                            <param>toString</param>
+                            <param>hashCode</param>
+                            <param>equals</param>
+                        </excludedMethods>
+                        <excludedClasses>
+                            <param>com.baafoo.core.config.*</param>
+                        </excludedClasses>
+                        <outputFormats>
+                            <param>HTML</param>
+                            <param>XML</param>
+                        </outputFormats>
+                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>
