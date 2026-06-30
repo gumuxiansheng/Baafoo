@@ -146,15 +146,15 @@
         SELECT * FROM recordings ORDER BY recorded_at ASC LIMIT #{limit}
     </select>
 
-    <!-- Recordings count by day for the last N days -->
+    <!-- Recordings count by day for the last N days (H2 & PostgreSQL compatible) -->
     <select id="countRecordingsByDay" resultType="map">
         SELECT
-            CAST(FLOOR(recorded_at / 86400000) * 86400000 AS BIGINT) AS day,
-            COUNT(*) AS count
+            (recorded_at / 86400000) * 86400000 AS "day",
+            COUNT(*) AS "count"
         FROM recordings
         WHERE recorded_at >= #{startTime}
-        GROUP BY FLOOR(recorded_at / 86400000)
-        ORDER BY day ASC
+        GROUP BY (recorded_at / 86400000) * 86400000
+        ORDER BY "day" ASC
     </select>
 
 </mapper>

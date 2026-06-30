@@ -43,10 +43,10 @@ public class PluginManager {
     /** Consecutive error threshold before auto-disabling a plugin. */
     private static final int UNHEALTHY_THRESHOLD = 5;
 
-    /** Loaded plugins (target â†?plugin instance) */
+    /** Loaded plugins (target -> plugin instance) */
     private final Map<InterceptTarget, AgentPlugin> plugins = new ConcurrentHashMap<InterceptTarget, AgentPlugin>();
 
-    /** Per-plugin configuration from baafoo-agent.yml (pluginName â†?config map) */
+    /** Per-plugin configuration from baafoo-agent.yml (pluginName -> config map) */
     private final Map<String, Map<String, Object>> pluginConfigs;
 
     /** P3: Health status per plugin target */
@@ -203,7 +203,7 @@ public class PluginManager {
     /**
      * Get health status for all loaded plugins.
      *
-     * @return unmodifiable map of target â†?health status
+     * @return unmodifiable map of target -> health status
      */
     public Map<InterceptTarget, PluginHealthStatus> getAllHealthStatuses() {
         return Collections.unmodifiableMap(healthStatuses);
