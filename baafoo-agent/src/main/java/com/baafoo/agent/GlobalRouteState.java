@@ -349,6 +349,46 @@ public final class GlobalRouteState {
         return false;
     }
 
+    // ---- Mode dispatch helpers (P1-1) ----
+    //
+    // These static int-based helpers consolidate the duplicated mode-ordinal
+    // checks scattered across SocketConnectAdvice / NioSocketConnectAdvice /
+    // NioSocketFinishConnectAdvice. They live on GlobalRouteState so they
+    // are reachable from Bootstrap-CL-inlined advice (no baafoo-core types
+    // referenced, no relocation concerns). ByteBuddy-inlined bytecode can
+    // safely call these static methods.
+
+    /** True unless the active mode is PASSTHROUGH (i.e., the agent should intercept). */
+    public static boolean shouldIntercept(int mode) {
+        return mode != MODE_PASSTHROUGH;
+    }
+
+    /**
+     * True for modes that record the matched request/response at the stream
+     * level (RECORD, RECORD_AND_STUB, RECORD_ALL). Used by the Bootstrap-CL
+     * socket advice to decide whether to register a stream-recording session.
+     */
+    public static boolean shouldRecordStream(int mode) {
+        return mode == MODE_RECORD || mode == MODE_RECORD_AND_STUB || mode == MODE_RECORD_ALL;
+    }
+
+    /**
+     * True for RECORD_AND_STUB mode, where the matched connection must be
+     * redirected to the stub port (in addition to recording).
+     */
+    public static boolean isRecordAndStub(int mode) {
+        return mode == MODE_RECORD_AND_STUB;
+    }
+
+    /**
+     * True for RECORD_ALL mode, where unmatched traffic should also be
+     * redirected to a stub port (for HTTP/MQ) or recorded as raw bytes
+     * (for generic TCP).
+     */
+    public static boolean shouldRedirectUnmatched(int mode) {
+        return mode == MODE_RECORD_ALL;
+    }
+
     /**
      * Infer the high-level protocol name from a connection's target host:port.
      *
