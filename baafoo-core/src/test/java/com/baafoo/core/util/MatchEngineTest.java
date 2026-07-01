@@ -971,4 +971,69 @@ public class MatchEngineTest {
         r.setResponses(Arrays.asList(defaultResp));
         return r;
     }
+
+    /**
+     * P2-5: A catastrophic-backtracking regex must not hang the matching
+     * thread. The engine should time out and treat the match as a non-match.
+     */
+    @Test
+    public void testRegexReDoSTimeout() {
+        // Engine with a short 100ms timeout, and a counter store independent
+        // of the global one for isolation.
+        StatefulCounterStore store = new StatefulCounterStore();
+        MatchEngine timedEngine = new MatchEngine(store, 100L);
+
+        Rule r = createSimpleRule("redos");
+        // Classic evil regex: (a+)+ against a long string of a's followed by a non-matching char
+        r.setConditions(Collections.singletonList(
+                MatchCondition.path("regex", "(a+)+b")));
+
+        // Long enough to trigger the timeout path (>= 64 chars).
+        char[] chars = new char[80];
+        Arrays.fill(chars, 'a');
+        String evilInput = new String(chars); // no trailing 'b' -> catastrophic backtracking
+
+        long start = System.currentTimeMillis();
+        MatchEngine.MatchResult result = timedEngine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", evilInput,
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        long elapsed = System.currentTimeMillis() - start;
+
+        assertFalse("ReDoS regex should time out and not match", result.isMatched());
+        // Should return well under 1 second, not hang for minutes.
+        assertTrue("Regex timeout should be enforced quickly (elapsed=" + elapsed + "ms)",
+                elapsed < 1000L);
+    }
+
+    /**
+     * P2-6: MatchEngine must accept an injected StatefulCounterStore instead
+     * of always using the global singleton.
+     */
+    @Test
+    public void testCounterStoreInjection() {
+        StatefulCounterStore customStore = new StatefulCounterStore();
+        MatchEngine injectedEngine = new MatchEngine(customStore, 100L);
+
+        Rule r = createSimpleRule("injected-counter");
+        ResponseEntry firstResp = new ResponseEntry();
+        firstResp.setBody("first");
+        firstResp.setCondition(MatchCondition.requestCount("equals", "1"));
+        r.setResponses(Arrays.asList(firstResp));
+
+        // Snapshot the global store's count for this rule before invoking the
+        // injected engine. The global store should remain untouched.
+        StatefulCounterStore.global().reset("injected-counter");
+        int globalBefore = StatefulCounterStore.global().get("injected-counter");
+
+        MatchEngine.MatchResult result = injectedEngine.match(
+                Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
+        assertTrue(result.isMatched());
+        assertEquals(1, result.getRequestCount());
+
+        // The injected engine must NOT have touched the global counter store.
+        int globalAfter = StatefulCounterStore.global().get("injected-counter");
+        assertEquals("Injected engine must not touch the global counter store",
+                globalBefore, globalAfter);
+    }
 }

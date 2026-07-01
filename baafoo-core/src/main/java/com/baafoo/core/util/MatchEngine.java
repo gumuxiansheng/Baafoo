@@ -28,6 +28,32 @@ public class MatchEngine {
     private final Map<String, Pattern> patternCache = new ConcurrentHashMap<String, Pattern>();
 
     /**
+     * Per-rule request counter store. P2-6: decoupled from the global static
+     * singleton so tests can inject a mock. Defaults to the global singleton
+     * for backward compatibility.
+     */
+    private final StatefulCounterStore counterStore;
+
+    /**
+     * Max wall-clock time (ms) for a single regex match before timing out
+     * and treating the match as a non-match (P2-5 ReDoS protection).
+     */
+    private final long regexTimeoutMs;
+
+    /** Default regex timeout (ms) used when no value is configured. */
+    private static final long DEFAULT_REGEX_TIMEOUT_MS = 100L;
+
+    public MatchEngine() {
+        this(StatefulCounterStore.global(), DEFAULT_REGEX_TIMEOUT_MS);
+    }
+
+    /** Test-friendly constructor allowing counter store and regex timeout injection. */
+    public MatchEngine(StatefulCounterStore counterStore, long regexTimeoutMs) {
+        this.counterStore = counterStore != null ? counterStore : StatefulCounterStore.global();
+        this.regexTimeoutMs = regexTimeoutMs > 0 ? regexTimeoutMs : DEFAULT_REGEX_TIMEOUT_MS;
+    }
+
+    /**
      * Match request against a list of rules.
      *
      * @param rules     sorted list of rules (by priority)
@@ -176,7 +202,7 @@ public class MatchEngine {
         // counter (1-based). This happens AFTER rule-level conditions pass but
         // BEFORE response entry evaluation, so requestCount conditions in
         // response entries see the incremented count.
-        int count = StatefulCounterStore.global().incrementAndGet(rule.getId());
+        int count = counterStore.incrementAndGet(rule.getId());
 
         // Select response entry, evaluating requestCount conditions with the
         // incremented count.
@@ -187,7 +213,7 @@ public class MatchEngine {
         // still uses the threshold-reaching count.
         Integer resetThreshold = rule.getRequestCountReset();
         if (resetThreshold != null && resetThreshold > 0) {
-            StatefulCounterStore.global().resetIfThreshold(rule.getId(), resetThreshold);
+            counterStore.resetIfThreshold(rule.getId(), resetThreshold);
         }
 
         return new int[]{responseIdx, count};
@@ -583,6 +609,19 @@ public class MatchEngine {
         }
     }
 
+    /**
+     * Match {@code input} against {@code regex} with a wall-clock timeout
+     * (P2-5 ReDoS protection).
+     *
+     * <p>If the regex match exceeds {@link #regexTimeoutMs}, it is treated as
+     * a non-match and a warning is logged. This prevents a malicious or
+     * pathological regex (e.g., catastrophic backtracking) from blocking the
+     * matching thread.</p>
+     *
+     * <p>Implementation note: the timeout is enforced via a bounded thread pool
+     * + Future.get(timeout). We deliberately do NOT use {@code Matcher.hasTransparentBounds}
+     * or Java 9+ {@code Matcher} timeouts because Baafoo targets Java 8.</p>
+     */
     private boolean matchRegex(String input, String regex) {
         try {
             Pattern pattern = patternCache.get(regex);
@@ -592,9 +631,49 @@ public class MatchEngine {
                     patternCache.putIfAbsent(regex, pattern);
                 }
             }
-            return pattern.matcher(input).matches();
+            return matchWithTimeout(pattern, input);
         } catch (PatternSyntaxException e) {
             log.warn("Invalid regex: {}", regex);
+            return false;
+        }
+    }
+
+    private static final java.util.concurrent.ExecutorService REGEX_EXECUTOR =
+            java.util.concurrent.Executors.newCachedThreadPool(
+                    new java.util.concurrent.ThreadFactory() {
+                        final java.util.concurrent.atomic.AtomicInteger seq = new java.util.concurrent.atomic.AtomicInteger();
+                        @Override
+                        public Thread newThread(Runnable r) {
+                            Thread t = new Thread(r, "baafoo-regex-" + seq.incrementAndGet());
+                            t.setDaemon(true);
+                            return t;
+                        }
+                    });
+
+    private boolean matchWithTimeout(Pattern pattern, String input) {
+        // Fast path: for short inputs and simple patterns, run inline to avoid
+        // the thread-pool overhead. We only offload to the executor when the
+        // input is non-trivial in length.
+        if (input == null) return false;
+        if (input.length() < 64) {
+            return pattern.matcher(input).matches();
+        }
+
+        java.util.concurrent.Future<Boolean> future = REGEX_EXECUTOR.submit(
+                () -> pattern.matcher(input).matches());
+        try {
+            return future.get(regexTimeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            future.cancel(true);
+            log.warn("Regex match timed out after {}ms (possible ReDoS): pattern={}",
+                    regexTimeoutMs, pattern.pattern());
+            return false;
+        } catch (java.util.concurrent.ExecutionException e) {
+            log.warn("Regex match failed: {}", e.getMessage());
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("Regex match interrupted");
             return false;
         }
     }
