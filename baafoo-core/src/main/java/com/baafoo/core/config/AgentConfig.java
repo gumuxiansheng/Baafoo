@@ -208,6 +208,12 @@ public class AgentConfig {
         /** JMS stub port (default 9004) */
         private int jmsPort = 9004;
 
+        /** gRPC stub port (default 9005) */
+        private int grpcPort = 9005;
+
+        /** gRPC streaming stub port (HTTP/2, default 10005) */
+        private int grpcStreamingPort = 10005;
+
         /** API key for server authentication */
         private String apiKey;
 
@@ -235,6 +241,12 @@ public class AgentConfig {
         public int getJmsPort() { return jmsPort; }
         public void setJmsPort(int jmsPort) { this.jmsPort = jmsPort; }
 
+        public int getGrpcPort() { return grpcPort; }
+        public void setGrpcPort(int grpcPort) { this.grpcPort = grpcPort; }
+
+        public int getGrpcStreamingPort() { return grpcStreamingPort; }
+        public void setGrpcStreamingPort(int grpcStreamingPort) { this.grpcStreamingPort = grpcStreamingPort; }
+
         public String getApiKey() { return apiKey; }
         public void setApiKey(String apiKey) { this.apiKey = apiKey; }
 
@@ -249,6 +261,7 @@ public class AgentConfig {
                 case "kafka": return kafkaPort;
                 case "pulsar": return pulsarPort;
                 case "jms": return jmsPort;
+                case "grpc": return grpcPort;
                 default: return tcpPort;
             }
         }
@@ -259,7 +272,8 @@ public class AgentConfig {
                     ", apiPort=" + apiPort +
                     ", http=" + httpPort + ", tcp=" + tcpPort +
                     ", kafka=" + kafkaPort + ", pulsar=" + pulsarPort +
-                    ", jms=" + jmsPort + '}';
+                    ", jms=" + jmsPort +
+                    ", grpc=" + grpcPort + ", grpcStreaming=" + grpcStreamingPort + '}';
         }
     }
 }

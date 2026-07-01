@@ -20,6 +20,9 @@ public enum InterceptTarget {
     /** JMS producer/consumer */
     JMS,
 
+    /** gRPC channel - io.grpc.ClientChannel/ManagedChannelBuilder */
+    GRPC,
+
     /** Consul DNS resolution - java.net.InetAddress#getByName() */
     CONSUL_DNS,
 

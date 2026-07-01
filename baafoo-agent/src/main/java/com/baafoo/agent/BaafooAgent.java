@@ -92,6 +92,7 @@ public class BaafooAgent {
             GlobalRouteState.LOG_INFO_HANDLER = (Consumer<String>) adviceLogger::info;
             GlobalRouteState.LOG_WARN_HANDLER = (Consumer<String>) adviceLogger::warn;
             GlobalRouteState.LOG_ERROR_HANDLER = (Consumer<String>) adviceLogger::error;
+            GlobalRouteState.LOG_DEBUG_HANDLER = (Consumer<String>) adviceLogger::debug;
             // Also sync handlers to the Bootstrap CL copy of GlobalRouteState
             syncLogHandlersToBootstrapCL(adviceLogger);
 
@@ -148,6 +149,20 @@ public class BaafooAgent {
                         case "nio-socket":
                             target = com.baafoo.plugin.InterceptTarget.NIO_SOCKET;
                             break;
+                        case "kafka":
+                            target = com.baafoo.plugin.InterceptTarget.KAFKA;
+                            break;
+                        case "pulsar":
+                            target = com.baafoo.plugin.InterceptTarget.PULSAR;
+                            break;
+                        case "jms":
+                            target = com.baafoo.plugin.InterceptTarget.JMS;
+                            break;
+                        case "grpc":
+                            target = com.baafoo.plugin.InterceptTarget.GRPC;
+                            break;
+                        case "tcp":
+                        case "socket":
                         default:
                             target = com.baafoo.plugin.InterceptTarget.SOCKET;
                             break;
@@ -263,6 +278,8 @@ public class BaafooAgent {
         AgentManifest.setKafkaPort(sc.getKafkaPort());
         AgentManifest.setPulsarPort(sc.getPulsarPort());
         AgentManifest.setJmsPort(sc.getJmsPort());
+        AgentManifest.setGrpcPort(sc.getGrpcPort());
+        AgentManifest.setGrpcStreamingPort(sc.getGrpcStreamingPort());
 
         AgentManifest.environmentId = cfg.getEnvironment() != null ? cfg.getEnvironment() : "default";
 
@@ -591,14 +608,17 @@ public class BaafooAgent {
             bootGRS.getField("KAFKA_PORT").setInt(null, GlobalRouteState.KAFKA_PORT);
             bootGRS.getField("PULSAR_PORT").setInt(null, GlobalRouteState.PULSAR_PORT);
             bootGRS.getField("JMS_PORT").setInt(null, GlobalRouteState.JMS_PORT);
+            bootGRS.getField("GRPC_PORT").setInt(null, GlobalRouteState.GRPC_PORT);
+            bootGRS.getField("GRPC_STREAMING_PORT").setInt(null, GlobalRouteState.GRPC_STREAMING_PORT);
 
             bootstrapGRSClass = bootGRS;
 
             log.info("Synced GlobalRouteState fields to Bootstrap CL: CURRENT_MODE={}, SERVER_HOST={}, SERVER_HOST_IP={}, SERVER_PORT={}, " +
-                            "HTTP_PORT={}, TCP_PORT={}, KAFKA_PORT={}, PULSAR_PORT={}, JMS_PORT={}",
+                            "HTTP_PORT={}, TCP_PORT={}, KAFKA_PORT={}, PULSAR_PORT={}, JMS_PORT={}, GRPC_PORT={}, GRPC_STREAMING_PORT={}",
                     GlobalRouteState.CURRENT_MODE, GlobalRouteState.SERVER_HOST, GlobalRouteState.SERVER_HOST_IP, GlobalRouteState.SERVER_PORT,
                     GlobalRouteState.HTTP_PORT, GlobalRouteState.TCP_PORT, GlobalRouteState.KAFKA_PORT,
-                    GlobalRouteState.PULSAR_PORT, GlobalRouteState.JMS_PORT);
+                    GlobalRouteState.PULSAR_PORT, GlobalRouteState.JMS_PORT,
+                    GlobalRouteState.GRPC_PORT, GlobalRouteState.GRPC_STREAMING_PORT);
         } catch (Exception e) {
             log.error("Failed to sync GlobalRouteState to Bootstrap CL: {}", e.getMessage(), e);
         }
@@ -738,16 +758,19 @@ public class BaafooAgent {
             java.lang.reflect.Field infoField = bootGRS.getField("LOG_INFO_HANDLER");
             java.lang.reflect.Field warnField = bootGRS.getField("LOG_WARN_HANDLER");
             java.lang.reflect.Field errorField = bootGRS.getField("LOG_ERROR_HANDLER");
+            java.lang.reflect.Field debugField = bootGRS.getField("LOG_DEBUG_HANDLER");
 
             Consumer<String> infoHandler = (Consumer<String>) adviceLogger::info;
             Consumer<String> warnHandler = (Consumer<String>) adviceLogger::warn;
             Consumer<String> errorHandler = (Consumer<String>) adviceLogger::error;
+            Consumer<String> debugHandler = (Consumer<String>) adviceLogger::debug;
 
             infoField.set(null, infoHandler);
             warnField.set(null, warnHandler);
             errorField.set(null, errorHandler);
+            debugField.set(null, debugHandler);
 
-            log.info("Synced SLF4J log handlers to Bootstrap CL GlobalRouteState");
+            log.info("Synced SLF4J log handlers (INFO/WARN/ERROR/DEBUG) to Bootstrap CL GlobalRouteState");
         } catch (Exception e) {
             log.warn("Failed to sync log handlers to Bootstrap CL GlobalRouteState: {}. " +
                     "Bootstrap CL advice will fall back to System.out.", e.getMessage());

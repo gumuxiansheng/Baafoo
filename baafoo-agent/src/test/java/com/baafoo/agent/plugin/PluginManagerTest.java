@@ -119,11 +119,27 @@ public class PluginManagerTest {
         assertNull(pm.getPluginForProtocol("kafka"));
         assertNull(pm.getPluginForProtocol("pulsar"));
         assertNull(pm.getPluginForProtocol("jms"));
+        assertNull(pm.getPluginForProtocol("grpc"));
         assertNull(pm.getPluginForProtocol("consul-dns"));
         assertNull(pm.getPluginForProtocol("consul"));
         assertNull(pm.getPluginForProtocol("consul-api"));
         assertNull(pm.getPluginForProtocol("feign"));
         assertNull(pm.getPluginForProtocol(""));
         assertNull(pm.getPluginForProtocol("random"));
+    }
+
+    /**
+     * P2-2 regression: fireEvent must deliver each event to each plugin exactly
+     * once. The old implementation called eventBus.fire() and then iterated
+     * plugins calling onEvent() directly, but loadPlugin() also registered
+     * plugin::onEvent as an EventBus listener — causing double delivery.
+     */
+    @Test
+    public void testFireEventDeliveredOncePerPlugin() {
+        PluginManager pm = new PluginManager("/nonexistent/path/plugins");
+        final int[] eventCount = {0};
+        pm.getEventBus().addListener(event -> eventCount[0]++);
+        pm.fireEvent(com.baafoo.plugin.PluginEvent.pluginLoaded("test", "SOCKET"));
+        assertEquals("EventBus listener should receive event exactly once", 1, eventCount[0]);
     }
 }

@@ -345,21 +345,18 @@ public class PluginManager {
     }
 
     /**
-     * Fire an event to the EventBus + all plugins' onEvent hook.
-     * Exceptions from plugins are caught and logged.
+     * Fire an event to the EventBus.
+     *
+     * <p>Plugins receive events exclusively via the EventBus — they are
+     * auto-registered as listeners in {@link #loadPlugin(File)} via
+     * {@code eventBus.addListener(plugin::onEvent)}. Do NOT iterate plugins
+     * and call {@code onEvent} directly here; that would double-deliver
+     * every event (P2-2 fix).</p>
      *
      * @param event the event to fire
      */
     public void fireEvent(PluginEvent event) {
         eventBus.fire(event);
-        // Also deliver to all plugins' onEvent hook
-        for (AgentPlugin plugin : plugins.values()) {
-            try {
-                plugin.onEvent(event);
-            } catch (Throwable t) {
-                log.warn("[Baafoo] Plugin {} onEvent threw: {}", plugin.getName(), t.getMessage());
-            }
-        }
     }
 
     // ==================== Protocol Resolution ====================
@@ -380,6 +377,8 @@ public class PluginManager {
                 return InterceptTarget.PULSAR;
             case "jms":
                 return InterceptTarget.JMS;
+            case "grpc":
+                return InterceptTarget.GRPC;
             case "consul-dns":
                 return InterceptTarget.CONSUL_DNS;
             case "consul-api":

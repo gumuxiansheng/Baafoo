@@ -64,6 +64,12 @@ public final class AgentManifest {
     /** JMS stub port (default 9004) */
     public static volatile int jmsPort = 9004;
 
+    /** gRPC stub port (default 9005) */
+    public static volatile int grpcPort = 9005;
+
+    /** gRPC streaming stub port (HTTP/2, default 10005) */
+    public static volatile int grpcStreamingPort = 10005;
+
     /** Environment ID this agent belongs to */
     public static volatile String environmentId = "default";
 
@@ -151,6 +157,16 @@ public final class AgentManifest {
     public static void setJmsPort(int port) {
         jmsPort = port;
         com.baafoo.agent.GlobalRouteState.JMS_PORT = port;
+    }
+
+    public static void setGrpcPort(int port) {
+        grpcPort = port;
+        com.baafoo.agent.GlobalRouteState.GRPC_PORT = port;
+    }
+
+    public static void setGrpcStreamingPort(int port) {
+        grpcStreamingPort = port;
+        com.baafoo.agent.GlobalRouteState.GRPC_STREAMING_PORT = port;
     }
 
     public static void setCurrentMode(int mode) {
