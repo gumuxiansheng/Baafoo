@@ -271,9 +271,20 @@ public final class RouteManager {
         try {
             Class<?> bootGRS = BaafooAgent.getBootstrapGRSClass();
             if (bootGRS == null) return;
-            java.lang.reflect.Field field = bootGRS.getField("CURRENT_MODE");
+            java.lang.reflect.Field field;
+            try {
+                field = bootGRS.getField("CURRENT_MODE");
+            } catch (NoSuchFieldException e) {
+                throw new IllegalStateException(
+                        "Bootstrap CL GlobalRouteState is missing field 'CURRENT_MODE'. "
+                                + "The Bootstrap JAR is out of sync with the agent source — "
+                                + "rebuild the agent JAR and restart. Cause: " + e.getMessage(), e);
+            }
             field.setInt(null, modeValue);
             log.debug("Synced mode {} to Bootstrap CL GlobalRouteState", modeValue);
+        } catch (IllegalStateException e) {
+            // P2-4: re-throw actionable configuration errors so the operator sees them
+            throw e;
         } catch (Exception e) {
             log.error("Failed to sync mode to Bootstrap CL: {}", e.getMessage());
         }
@@ -293,11 +304,21 @@ public final class RouteManager {
                 Object bootHostPort = bootCtor.newInstance(entry.getValue().host, entry.getValue().port);
                 newBootRoutes.put(entry.getKey(), bootHostPort);
             }
-            java.lang.reflect.Field routesField = bootGRS.getField("ROUTES");
+            java.lang.reflect.Field routesField;
+            try {
+                routesField = bootGRS.getField("ROUTES");
+            } catch (NoSuchFieldException e) {
+                throw new IllegalStateException(
+                        "Bootstrap CL GlobalRouteState is missing field 'ROUTES'. "
+                                + "The Bootstrap JAR is out of sync with the agent source — "
+                                + "rebuild the agent JAR and restart. Cause: " + e.getMessage(), e);
+            }
             routesField.set(null, newBootRoutes);
             // Update the cached reference used by subsequent syncs
             BaafooAgent.updateBootstrapRoutes(newBootRoutes);
             log.info("Synced {} routes to Bootstrap CL GlobalRouteState.ROUTES (atomic swap)", newBootRoutes.size());
+        } catch (IllegalStateException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Failed to sync routes to Bootstrap CL: {}", e.getMessage());
         }

@@ -597,19 +597,17 @@ public class BaafooAgent {
 
             bootGRS.getField("CURRENT_MODE").setInt(null, GlobalRouteState.CURRENT_MODE);
 
-            bootGRS.getField("SERVER_HOST").set(null, GlobalRouteState.SERVER_HOST);
+            setBootstrapRef(bootGRS, "SERVER_HOST", GlobalRouteState.SERVER_HOST);
+            setBootstrapRef(bootGRS, "SERVER_HOST_IP", GlobalRouteState.SERVER_HOST_IP);
+            setBootstrapInt(bootGRS, "SERVER_PORT", GlobalRouteState.SERVER_PORT);
 
-            bootGRS.getField("SERVER_HOST_IP").set(null, GlobalRouteState.SERVER_HOST_IP);
-
-            bootGRS.getField("SERVER_PORT").setInt(null, GlobalRouteState.SERVER_PORT);
-
-            bootGRS.getField("HTTP_PORT").setInt(null, GlobalRouteState.HTTP_PORT);
-            bootGRS.getField("TCP_PORT").setInt(null, GlobalRouteState.TCP_PORT);
-            bootGRS.getField("KAFKA_PORT").setInt(null, GlobalRouteState.KAFKA_PORT);
-            bootGRS.getField("PULSAR_PORT").setInt(null, GlobalRouteState.PULSAR_PORT);
-            bootGRS.getField("JMS_PORT").setInt(null, GlobalRouteState.JMS_PORT);
-            bootGRS.getField("GRPC_PORT").setInt(null, GlobalRouteState.GRPC_PORT);
-            bootGRS.getField("GRPC_STREAMING_PORT").setInt(null, GlobalRouteState.GRPC_STREAMING_PORT);
+            setBootstrapInt(bootGRS, "HTTP_PORT", GlobalRouteState.HTTP_PORT);
+            setBootstrapInt(bootGRS, "TCP_PORT", GlobalRouteState.TCP_PORT);
+            setBootstrapInt(bootGRS, "KAFKA_PORT", GlobalRouteState.KAFKA_PORT);
+            setBootstrapInt(bootGRS, "PULSAR_PORT", GlobalRouteState.PULSAR_PORT);
+            setBootstrapInt(bootGRS, "JMS_PORT", GlobalRouteState.JMS_PORT);
+            setBootstrapInt(bootGRS, "GRPC_PORT", GlobalRouteState.GRPC_PORT);
+            setBootstrapInt(bootGRS, "GRPC_STREAMING_PORT", GlobalRouteState.GRPC_STREAMING_PORT);
 
             bootstrapGRSClass = bootGRS;
 
@@ -633,6 +631,69 @@ public class BaafooAgent {
             return Class.forName(name, false, cl);
         } catch (Exception e) {
             return Class.forName(name);
+        }
+    }
+
+    // ---- P2-4: hardened Bootstrap CL reflection bridge helpers ----
+    //
+    // The previous sync methods used Class.getField(fieldName) directly, which
+    // throws NoSuchFieldException if a field is renamed or removed. That
+    // exception was swallowed by a broad catch (Exception) and logged as a
+    // generic warning, causing the bridge to fail silently — the agent would
+    // appear to start but connections would not be intercepted.
+    //
+    // These helpers centralize field access with explicit existence checks
+    // and actionable error messages. Sync failures now throw a clear
+    // IllegalStateException naming the missing field, so the operator sees
+    // the root cause at startup instead of debugging silent interception
+    // failures at runtime.
+
+    /**
+     * Get a static field on the Bootstrap CL GlobalRouteState class, throwing
+     * an actionable error if the field does not exist.
+     *
+     * @param bootGRS    the Bootstrap CL GlobalRouteState class
+     * @param fieldName  the field name to look up
+     * @return the reflected field
+     * @throws IllegalStateException if the field does not exist (P2-4)
+     */
+    private static java.lang.reflect.Field requireBootstrapField(Class<?> bootGRS, String fieldName) {
+        try {
+            return bootGRS.getField(fieldName);
+        } catch (NoSuchFieldException e) {
+            throw new IllegalStateException(
+                    "Bootstrap CL GlobalRouteState is missing field '" + fieldName
+                            + "'. The Bootstrap JAR (created by createBootstrapJar) is likely "
+                            + "out of sync with the agent source. Rebuild the agent JAR and "
+                            + "restart. Underlying cause: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Set an int static field on the Bootstrap CL GlobalRouteState class.
+     * Validates field existence with an actionable error message (P2-4).
+     */
+    private static void setBootstrapInt(Class<?> bootGRS, String fieldName, int value) {
+        java.lang.reflect.Field f = requireBootstrapField(bootGRS, fieldName);
+        try {
+            f.setInt(null, value);
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException(
+                    "Cannot set Bootstrap CL field '" + fieldName + "': " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Set a reference static field on the Bootstrap CL GlobalRouteState class.
+     * Validates field existence with an actionable error message (P2-4).
+     */
+    private static void setBootstrapRef(Class<?> bootGRS, String fieldName, Object value) {
+        java.lang.reflect.Field f = requireBootstrapField(bootGRS, fieldName);
+        try {
+            f.set(null, value);
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException(
+                    "Cannot set Bootstrap CL field '" + fieldName + "': " + e.getMessage(), e);
         }
     }
 
@@ -720,12 +781,12 @@ public class BaafooAgent {
                 return;
             }
 
-            java.lang.reflect.Field iswField = bootGRS.getField("INPUT_STREAM_WRAPPER");
-            java.lang.reflect.Field oswField = bootGRS.getField("OUTPUT_STREAM_WRAPPER");
-            java.lang.reflect.Field nioField = bootGRS.getField("NIO_RECORDING_HANDLER");
-            java.lang.reflect.Field pluginConsultField = bootGRS.getField("PLUGIN_CONSULT_FN");
-            java.lang.reflect.Field pluginConsultExtField = bootGRS.getField("PLUGIN_CONSULT_FN_EXT");
-            java.lang.reflect.Field eventFireField = bootGRS.getField("EVENT_FIRE_FN");
+            java.lang.reflect.Field iswField = requireBootstrapField(bootGRS, "INPUT_STREAM_WRAPPER");
+            java.lang.reflect.Field oswField = requireBootstrapField(bootGRS, "OUTPUT_STREAM_WRAPPER");
+            java.lang.reflect.Field nioField = requireBootstrapField(bootGRS, "NIO_RECORDING_HANDLER");
+            java.lang.reflect.Field pluginConsultField = requireBootstrapField(bootGRS, "PLUGIN_CONSULT_FN");
+            java.lang.reflect.Field pluginConsultExtField = requireBootstrapField(bootGRS, "PLUGIN_CONSULT_FN_EXT");
+            java.lang.reflect.Field eventFireField = requireBootstrapField(bootGRS, "EVENT_FIRE_FN");
 
             iswField.set(null, GlobalRouteState.INPUT_STREAM_WRAPPER);
             oswField.set(null, GlobalRouteState.OUTPUT_STREAM_WRAPPER);
@@ -755,10 +816,10 @@ public class BaafooAgent {
             }
 
             Class<?> consumerClass = java.util.function.Consumer.class;
-            java.lang.reflect.Field infoField = bootGRS.getField("LOG_INFO_HANDLER");
-            java.lang.reflect.Field warnField = bootGRS.getField("LOG_WARN_HANDLER");
-            java.lang.reflect.Field errorField = bootGRS.getField("LOG_ERROR_HANDLER");
-            java.lang.reflect.Field debugField = bootGRS.getField("LOG_DEBUG_HANDLER");
+            java.lang.reflect.Field infoField = requireBootstrapField(bootGRS, "LOG_INFO_HANDLER");
+            java.lang.reflect.Field warnField = requireBootstrapField(bootGRS, "LOG_WARN_HANDLER");
+            java.lang.reflect.Field errorField = requireBootstrapField(bootGRS, "LOG_ERROR_HANDLER");
+            java.lang.reflect.Field debugField = requireBootstrapField(bootGRS, "LOG_DEBUG_HANDLER");
 
             Consumer<String> infoHandler = (Consumer<String>) adviceLogger::info;
             Consumer<String> warnHandler = (Consumer<String>) adviceLogger::warn;
