@@ -386,7 +386,7 @@
 - **验收标准**：
   - 插件开发者可直接访问 `context.getGrpcService()` 等类型化 API。
 
-### P3-3 补齐文档一致性
+### P3-3 补齐文档一致性 ✅ 已完成
 
 - **问题**：README/AGENTS/docs 中关于插件、SPI、环境模式的描述与代码实现不一致。
 - **位置**：
@@ -397,6 +397,10 @@
   1. P1-4 完成后，统一更新所有文档。
   2. 明确说明 SPI 支持范围、加载方式、事件机制。
   3. 删除过时的 `PluginManager @Deprecated` 描述。
+- **完成情况**：
+  - README.md：移除 Kafka/Pulsar/JMS 的 "Beta" 标记；补全 advice 拦截器列表（含 gRPC/JMS/Feign）；新增 `state/` 子包说明；修正"仅 stub 模式才拦截"为"stub/record-and-stub/record-all 模式拦截"；插件开发章节补充分阶段钩子示例；补全示例插件路径（feign/kafka-redirect/tdmq）；新增 gRPC streaming 端口 10005。
+  - AGENTS.md：修正 `baafoo-plugin-api` 的 ClassLoader 归属（App CL，非 Bootstrap CL）；Server 端口新增 10005 gRPC streaming；Known Issues 标注 P0-5/P0-6 已修复。
+  - docs/plugin-developer-guide.md：重画架构图（Bootstrap CL 仅含 GlobalRouteState + 6 个 state 管理类，Advice/PluginManager 在 App CL）；InterceptTarget 枚举补全 GRPC；AgentPlugin 接口文档补全 onConnect/onRequest/onResponse/onEvent 分阶段钩子；拦截模式表从 4 种补全为 5 种（含 record-all）；新增事件总线（EventBus）章节；扩展协议 Checklist 示例从"gRPC"改为"Redis/AMQP"（gRPC 已支持）。
 
 ---
 

@@ -25,7 +25,7 @@ No lint/typecheck commands — just the Maven lifecycle. Jacoco coverage runs at
 | Module | Entrypoint | Notes |
 |--------|-----------|-------|
 | `baafoo-core` | — | shared models, config, `MatchEngine` |
-| `baafoo-plugin-api` | `AgentPlugin` SPI | **zero external deps** (must load from Bootstrap CL) |
+| `baafoo-plugin-api` | `AgentPlugin` SPI | **zero external deps** (loaded by App CL / `PluginClassLoader.spiLoader`, NOT Bootstrap CL) |
 | `baafoo-agent` | `BaafooAgent#premain` | shade + **relocate** Jackson/SLF4J/SnakeYAML/baafoo-core; **ByteBuddy NOT relocated** |
 | `baafoo-server` | `BaafooServer#main` | Netty, H2/PostgreSQL, MyBatis, HikariCP, JWT |
 | `baafoo-cli` | `BaafooCli#main` | `baafoo init` scaffolding tool |
@@ -60,7 +60,7 @@ java -javaagent:baafoo-agent/target/baafoo-agent-1.1.0-SNAPSHOT.jar=config=baafo
 ```
 
 - Java 9+ requires `--add-opens java.base/java.net=ALL-UNNAMED`
-- Server ports: 8084 (API+Web console), 9000–9005 (HTTP/TCP/Kafka/Pulsar/JMS/gRPC stub)
+- Server ports: 8084 (API+Web console), 9000–9005 (HTTP/TCP/Kafka/Pulsar/JMS/gRPC stub), 10005 (gRPC streaming stub)
 - All API paths: `/__baafoo__/api/*`
 - Server defaults: H2 embedded DB, `unmatchedDefault: passthrough`
 
@@ -166,7 +166,9 @@ Documentation lives in `.workmemo/`. Follow these rules when writing or updating
 
 ## Known Issues
 
-See `.review/deep-code-review-report.md` for 20+ verified findings including:
+See `.review/deep-code-review-report.md` for 20+ verified findings. The following P0 items have been resolved by the architecture improvement work (`.workmemo/5_review/baafoo_architecture_improvement_todo.md`):
+- ✅ Fixed (P0-6): `RouteManager.rebuildRouteTable` now uses atomic reference swap instead of clear+putAll
+- ✅ Fixed (P0-5): `PassthroughProxy` SSL verification is now secure by default; `sslVerifyDisabled` must be explicitly set to `true` to disable
+
+Still outstanding:
 - P0: `TcpStubHandler` uses `Thread.sleep` on Netty EventLoop
-- P0: `RouteManager.rebuildRouteTable` non-atomic clear+putAll
-- P0: `PassthroughProxy` skips SSL verification
