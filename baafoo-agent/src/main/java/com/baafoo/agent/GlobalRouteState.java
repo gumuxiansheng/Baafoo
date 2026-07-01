@@ -1,9 +1,56 @@
 package com.baafoo.agent;
 
+import com.baafoo.agent.state.DnsCache;
+import com.baafoo.agent.state.LogBridge;
+import com.baafoo.agent.state.PluginBridge;
+import com.baafoo.agent.state.ProtocolMapper;
+import com.baafoo.agent.state.RecordingTracker;
+import com.baafoo.agent.state.RouteTable;
+
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
+/**
+ * Global route + mode + bridge state for the Baafoo agent.
+ *
+ * <p><b>P1-2 Facade:</b> This class is now a Facade over six manager classes in
+ * {@code com.baafoo.agent.state} — {@link RouteTable}, {@link DnsCache},
+ * {@link RecordingTracker}, {@link LogBridge}, {@link PluginBridge}, and
+ * {@link ProtocolMapper}. The actual logic now lives in those managers; the
+ * public static methods below delegate to them.</p>
+ *
+ * <p><b>Bootstrap ClassLoader constraint (critical):</b> This class is packaged
+ * into the Bootstrap JAR by {@code BaafooAgent.createBootstrapJar()} and loaded
+ * by BOTH the Bootstrap CL and the App CL. The two copies are different class
+ * objects; their static fields are kept in sync via reflection (see
+ * {@code BaafooAgent.syncGlobalRouteStateToBootstrapCL()}). ByteBuddy-inlined
+ * advice running in JDK classes (java.net.Socket, java.net.InetAddress,
+ * sun.nio.ch.SocketChannelImpl) resolves {@code GlobalRouteState} via the
+ * Bootstrap CL.</p>
+ *
+ * <p>Because of this:</p>
+ * <ul>
+ *   <li>All existing {@code public static volatile} fields are KEPT with their
+ *       original names and JDK-only types. Bootstrap-CL advice reads them by
+ *       field name; renaming or removing any field breaks the inlined advice.</li>
+ *   <li>The six manager classes ({@link RouteTable}, {@link DnsCache}, etc.)
+ *       live in {@code com.baafoo.agent.state} and are packaged into the
+ *       Bootstrap JAR by {@code BaafooAgent.createBootstrapJar()}. They are
+ *       therefore loadable on BOTH the App CL and the Bootstrap CL, and the
+ *       static block below instantiates them on both. The managers are
+ *       stateless — every method operates on {@code GlobalRouteState}'s own
+ *       static fields, which are kept in sync across the two CLs by the five
+ *       reflection sync methods in {@code BaafooAgent} / {@code RouteManager} —
+ *       so no additional cross-CL sync is required for the managers.</li>
+ *   <li>The {@link #logError(String)} / {@link #logInfo(String)} /
+ *       {@link #logWarn(String)} / {@link #logDebug(String)} methods are kept
+ *       inline (they do not delegate to {@link LogBridge}) so that advice
+ *       catch-blocks can still emit diagnostics even if a manager is somehow
+ *       null (e.g. a future packaging regression drops the state classes from
+ *       the Bootstrap JAR).</li>
+ * </ul>
+ */
 public final class GlobalRouteState {
 
     public static final class HostPort {
@@ -81,7 +128,7 @@ public final class GlobalRouteState {
      * Used in SocketConnectAdvice/NioSocketConnectAdvice to look up routes by domain
      * with an IP address instead of the original hostname.
      *
-     * Bounded at {@link #MAX_DNS_CACHE_SIZE} entries to prevent memory leak.
+     * Bounded at {@code MAX_DNS_CACHE_SIZE} entries to prevent memory leak.
      * Eviction strategy: when full, removes all entries — this is a best-effort
      * cache for route-lookup fallback, so occasional full clears are acceptable.
      */
@@ -93,12 +140,6 @@ public final class GlobalRouteState {
      * we can provide a fake resolution pointing to the stub server.
      */
     public static final ThreadLocal<String> DNS_REDIRECT_TARGET = new ThreadLocal<String>();
-
-    /** Maximum number of entries in {@link #DNS_CACHE} */
-    private static final int MAX_DNS_CACHE_SIZE = 10000;
-
-    private static final java.util.concurrent.atomic.AtomicBoolean DNS_EVICTION_IN_PROGRESS =
-            new java.util.concurrent.atomic.AtomicBoolean(false);
 
     // ---- Recording session tracking ----
     // Maps socket identity (System.identityHashCode) to session info:
@@ -112,9 +153,6 @@ public final class GlobalRouteState {
      */
     public static final ConcurrentHashMap<Integer, String[]> RECORDING_SESSIONS =
             new ConcurrentHashMap<Integer, String[]>();
-
-    /** Maximum number of concurrent recording sessions (prevents memory leak) */
-    private static final int MAX_RECORDING_SESSIONS = 10000;
 
     /**
      * Bridge function to wrap an InputStream with recording.
@@ -176,9 +214,50 @@ public final class GlobalRouteState {
      */
     public static volatile java.util.function.Consumer<com.baafoo.plugin.PluginEvent> EVENT_FIRE_FN;
 
+    // ---- P1-2: manager instances ----
+    //
+    // These are App-CL only. The Bootstrap CL copy of GlobalRouteState cannot
+    // load com.baafoo.agent.state.* (those classes are intentionally excluded
+    // from the Bootstrap JAR), so the static block below leaves them null on
+    // the Bootstrap CL. The delegating methods will throw NoClassDefFoundError
+    // when invoked from Bootstrap-CL advice; the advice's try/catch blocks
+    // handle that. See the class javadoc for the full rationale.
+
+    private static volatile RouteTable routeTable;
+    private static volatile DnsCache dnsCache;
+    private static volatile RecordingTracker recordingTracker;
+    private static volatile LogBridge logBridge;
+    private static volatile PluginBridge pluginBridge;
+    private static volatile ProtocolMapper protocolMapper;
+
+    static {
+        try {
+            routeTable = new RouteTable();
+            dnsCache = new DnsCache();
+            recordingTracker = new RecordingTracker();
+            logBridge = new LogBridge();
+            pluginBridge = new PluginBridge();
+            protocolMapper = new ProtocolMapper();
+        } catch (Throwable t) {
+            // Defensive: the six manager classes are packaged into the Bootstrap
+            // JAR by BaafooAgent.createBootstrapJar() so this block succeeds on
+            // both the App CL and the Bootstrap CL. If a future packaging
+            // change drops them from the Bootstrap JAR, the managers stay null
+            // here and delegating methods will throw — advice catch blocks
+            // degrade gracefully (connection proceeds without interception),
+            // but socket/NIO/DNS interception will be silently disabled. The
+            // Bootstrap JAR's classResources array is the source of truth.
+        }
+    }
+
     private GlobalRouteState() {}
 
     // ---- Logging methods for Bootstrap CL advice ----
+    //
+    // P1-2: these are KEPT INLINE (they do not delegate to LogBridge) so that
+    // Bootstrap-CL advice catch-blocks can still emit diagnostics when a
+    // delegating method throws NoClassDefFoundError. LogBridge exposes the
+    // same logic for App-CL callers.
 
     public static void logInfo(String msg) {
         Consumer<String> h = LOG_INFO_HANDLER;
@@ -216,6 +295,13 @@ public final class GlobalRouteState {
         }
     }
 
+    /** @return the LogBridge manager (App-CL only; null on the Bootstrap CL). */
+    public static LogBridge getLogBridge() {
+        return logBridge;
+    }
+
+    // ---- Plugin event bridge ----
+
     /**
      * P2: Fire a plugin event through the bridge to PluginManager.
      * Safe to call from Bootstrap CL advice code.
@@ -223,13 +309,16 @@ public final class GlobalRouteState {
      * @param event the plugin event to fire
      */
     public static void firePluginEvent(com.baafoo.plugin.PluginEvent event) {
-        java.util.function.Consumer<com.baafoo.plugin.PluginEvent> fn = EVENT_FIRE_FN;
-        if (fn != null) {
-            try { fn.accept(event); } catch (Throwable t) {
-                logDebug("[Baafoo] Event fire skipped: " + t.getMessage());
-            }
-        }
+        // P1-2: delegates to PluginBridge
+        pluginBridge.fireEvent(event);
     }
+
+    /** @return the PluginBridge manager (App-CL only; null on the Bootstrap CL). */
+    public static PluginBridge getPluginBridge() {
+        return pluginBridge;
+    }
+
+    // ---- DNS cache ----
 
     /**
      * Record a DNS resolution for later route lookup.
@@ -238,67 +327,62 @@ public final class GlobalRouteState {
      * @param ip     the resolved IP address (e.g., "93.184.216.34")
      */
     public static void recordDns(String domain, String ip) {
-        if (domain == null || domain.isEmpty() || ip == null || ip.isEmpty()) {
-            return;
-        }
-        if (DNS_CACHE.size() >= MAX_DNS_CACHE_SIZE) {
-            if (DNS_EVICTION_IN_PROGRESS.compareAndSet(false, true)) {
-                try {
-                    DNS_CACHE.clear();
-                } finally {
-                    DNS_EVICTION_IN_PROGRESS.set(false);
-                }
-            }
-            return;
-        }
-        DNS_CACHE.putIfAbsent(ip, domain);
+        // P1-2: delegates to DnsCache
+        dnsCache.recordDns(domain, ip);
     }
 
+    /** @return the DnsCache manager (App-CL only; null on the Bootstrap CL). */
+    public static DnsCache getDnsCache() {
+        return dnsCache;
+    }
+
+    // ---- Route table ----
+
     public static String[] lookup(String host, int port) {
-        if (host == null) {
-            return null;
-        }
-        // First try exact host:port match
-        String key = host + ":" + port;
-        HostPort target = ROUTES.get(key);
-        if (target != null) {
-            return new String[]{target.host, String.valueOf(target.port)};
-        }
-        // Fallback: try host-only match (for rules without specific port)
-        HostPort hostOnly = ROUTES.get(host);
-        if (hostOnly != null) {
-            return new String[]{hostOnly.host, String.valueOf(hostOnly.port)};
-        }
-        return null;
+        // P1-2: delegates to RouteTable
+        return routeTable.lookup(host, port);
     }
 
     public static HostPort lookupByHost(String host) {
-        if (host == null) return null;
-        // Check host-only entries first
-        HostPort hostOnly = ROUTES.get(host);
-        if (hostOnly != null) return hostOnly;
-        // Check host:port entries
-        String prefix = host + ":";
-        for (Map.Entry<String, HostPort> entry : ROUTES.entrySet()) {
-            if (entry.getKey().startsWith(prefix)) {
-                return entry.getValue();
-            }
-        }
-        return null;
+        // P1-2: delegates to RouteTable
+        return routeTable.lookupByHost(host);
     }
 
     public static HostPort lookupService(String serviceName) {
-        if (serviceName == null) return null;
-        return ROUTES.get("svc:" + serviceName);
+        // P1-2: delegates to RouteTable
+        return routeTable.lookupService(serviceName);
     }
 
+    public static void addRoute(String originalHost, int originalPort, String targetHost, int targetPort) {
+        // P1-2: delegates to RouteTable
+        routeTable.addRoute(originalHost, originalPort, targetHost, targetPort);
+    }
+
+    public static void addService(String serviceName, String targetHost, int targetPort) {
+        // P1-2: delegates to RouteTable
+        routeTable.addService(serviceName, targetHost, targetPort);
+    }
+
+    public static void clearRoutes() {
+        // P1-2: delegates to RouteTable
+        routeTable.clear();
+    }
+
+    /** @return the RouteTable manager (App-CL only; null on the Bootstrap CL). */
+    public static RouteTable getRouteTable() {
+        return routeTable;
+    }
+
+    // ---- Mode + protocol mapping ----
+
     public static boolean isPassthrough() {
-        return CURRENT_MODE == MODE_PASSTHROUGH;
+        // P1-2: delegates to ProtocolMapper
+        return protocolMapper.isPassthrough();
     }
 
     public static boolean isRecording() {
-        return CURRENT_MODE == MODE_RECORD || CURRENT_MODE == MODE_RECORD_AND_STUB
-                || CURRENT_MODE == MODE_RECORD_ALL;
+        // P1-2: delegates to ProtocolMapper
+        return protocolMapper.isRecording();
     }
 
     /**
@@ -309,44 +393,13 @@ public final class GlobalRouteState {
      * @return stub port number (never -1)
      */
     public static int forceRedirectPort(int port) {
-        // HTTP ports → HTTP stub port
-        if (port == 80 || port == 443 || port == 8080 || port == 8443) {
-            return HTTP_PORT;
-        }
-        // gRPC ports → unified HTTP/2 gRPC stub port (handles all call types)
-        if (port == 50051 || port == 50052 || port == 9090) {
-            return GRPC_PORT;
-        }
-        // Kafka ports
-        if (port == 9092 || port == 9093 || port == 9094) {
-            return KAFKA_PORT;
-        }
-        // Pulsar ports
-        if (port == 6650 || port == 6651) {
-            return PULSAR_PORT;
-        }
-        // JMS (ActiveMQ) port
-        if (port == 61616) {
-            return JMS_PORT;
-        }
-        // Everything else → TCP stub port
-        return TCP_PORT;
+        // P1-2: delegates to ProtocolMapper
+        return protocolMapper.forceRedirectPort(port);
     }
 
     public static boolean isInternal(String host, int port) {
-        // Recognize connections to the Baafoo server itself (control API + stub ports).
-        // In Docker, SERVER_HOST may be a container name like "server" that resolves
-        // to a container IP (e.g., 172.19.0.2). We check both the hostname and the
-        // resolved IP to cover all cases.
-        boolean isServerHost = "127.0.0.1".equals(host) || "localhost".equals(host)
-                || host.equals(SERVER_HOST)
-                || (SERVER_HOST_IP != null && host.equals(SERVER_HOST_IP));
-        if (!isServerHost) return false;
-        if (port == SERVER_PORT) return true;
-        if (port == HTTP_PORT || port == TCP_PORT || port == KAFKA_PORT
-                || port == PULSAR_PORT || port == JMS_PORT
-                || port == GRPC_PORT || port == GRPC_STREAMING_PORT) return true;
-        return false;
+        // P1-2: delegates to ProtocolMapper
+        return protocolMapper.isInternal(host, port);
     }
 
     // ---- Mode dispatch helpers (P1-1) ----
@@ -360,7 +413,8 @@ public final class GlobalRouteState {
 
     /** True unless the active mode is PASSTHROUGH (i.e., the agent should intercept). */
     public static boolean shouldIntercept(int mode) {
-        return mode != MODE_PASSTHROUGH;
+        // P1-2: delegates to ProtocolMapper
+        return protocolMapper.shouldIntercept(mode);
     }
 
     /**
@@ -369,7 +423,8 @@ public final class GlobalRouteState {
      * socket advice to decide whether to register a stream-recording session.
      */
     public static boolean shouldRecordStream(int mode) {
-        return mode == MODE_RECORD || mode == MODE_RECORD_AND_STUB || mode == MODE_RECORD_ALL;
+        // P1-2: delegates to ProtocolMapper
+        return protocolMapper.shouldRecordStream(mode);
     }
 
     /**
@@ -377,7 +432,8 @@ public final class GlobalRouteState {
      * redirected to the stub port (in addition to recording).
      */
     public static boolean isRecordAndStub(int mode) {
-        return mode == MODE_RECORD_AND_STUB;
+        // P1-2: delegates to ProtocolMapper
+        return protocolMapper.isRecordAndStub(mode);
     }
 
     /**
@@ -386,7 +442,8 @@ public final class GlobalRouteState {
      * (for generic TCP).
      */
     public static boolean shouldRedirectUnmatched(int mode) {
-        return mode == MODE_RECORD_ALL;
+        // P1-2: delegates to ProtocolMapper
+        return protocolMapper.shouldRedirectUnmatched(mode);
     }
 
     /**
@@ -407,55 +464,16 @@ public final class GlobalRouteState {
      * Returns {@code "tcp"} when no mapping is found.</p>
      */
     public static String inferProtocol(String host, int port) {
-        // Internal connection to a stub port — the port identifies the protocol.
-        if (isInternal(host, port)) {
-            if (port == HTTP_PORT) return "http";
-            if (port == TCP_PORT) return "tcp";
-            if (port == KAFKA_PORT) return "kafka";
-            if (port == PULSAR_PORT) return "pulsar";
-            if (port == JMS_PORT) return "jms";
-            if (port == GRPC_PORT) return "grpc";
-        }
-        // External connection — look up the route to find the target stub port.
-        String[] route = lookup(host, port);
-        String protocol = protocolForRoute(route);
-        if (protocol != null) return protocol;
-        // DNS cache fallback: the host may be a resolved IP whose original domain
-        // is the route key (common in Docker where the app connects to a container IP).
-        if (route == null && !"127.0.0.1".equals(host) && !"localhost".equals(host)) {
-            String originalDomain = DNS_CACHE.get(host);
-            if (originalDomain != null) {
-                protocol = protocolForRoute(lookup(originalDomain, port));
-                if (protocol != null) return protocol;
-            }
-        }
-        return "tcp";
+        // P1-2: delegates to ProtocolMapper
+        return protocolMapper.inferProtocol(host, port);
     }
 
-    /** Map a {@code lookup(...)} result's target port to a protocol name, or null. */
-    private static String protocolForRoute(String[] route) {
-        if (route == null) return null;
-        int targetPort = Integer.parseInt(route[1]);
-        if (targetPort == HTTP_PORT) return "http";
-        if (targetPort == TCP_PORT) return "tcp";
-        if (targetPort == KAFKA_PORT) return "kafka";
-        if (targetPort == PULSAR_PORT) return "pulsar";
-        if (targetPort == JMS_PORT) return "jms";
-        if (targetPort == GRPC_PORT) return "grpc";
-        return null;
+    /** @return the ProtocolMapper manager (App-CL only; null on the Bootstrap CL). */
+    public static ProtocolMapper getProtocolMapper() {
+        return protocolMapper;
     }
 
-    public static void addRoute(String originalHost, int originalPort, String targetHost, int targetPort) {
-        ROUTES.put(originalHost + ":" + originalPort, new HostPort(targetHost, targetPort));
-    }
-
-    public static void addService(String serviceName, String targetHost, int targetPort) {
-        ROUTES.put("svc:" + serviceName, new HostPort(targetHost, targetPort));
-    }
-
-    public static void clearRoutes() {
-        ROUTES.clear();
-    }
+    // ---- Recording session tracking ----
 
     /**
      * Register a socket for recording. Called from SocketConnectAdvice in RECORD mode.
@@ -465,10 +483,8 @@ public final class GlobalRouteState {
      * @param port original target port
      */
     public static void startRecording(int socketIdentity, String sessionId, String host, int port) {
-        if (RECORDING_SESSIONS.size() >= MAX_RECORDING_SESSIONS) {
-            RECORDING_SESSIONS.clear();
-        }
-        RECORDING_SESSIONS.put(socketIdentity, new String[]{sessionId, host, String.valueOf(port)});
+        // P1-2: delegates to RecordingTracker
+        recordingTracker.startRecording(socketIdentity, sessionId, host, port);
     }
 
     /**
@@ -476,7 +492,8 @@ public final class GlobalRouteState {
      * @param socketIdentity System.identityHashCode of the socket
      */
     public static void stopRecording(int socketIdentity) {
-        RECORDING_SESSIONS.remove(socketIdentity);
+        // P1-2: delegates to RecordingTracker
+        recordingTracker.stopRecording(socketIdentity);
     }
 
     /**
@@ -485,7 +502,8 @@ public final class GlobalRouteState {
      * @return session info array or null
      */
     public static String[] getRecordingSession(int socketIdentity) {
-        return RECORDING_SESSIONS.get(socketIdentity);
+        // P1-2: delegates to RecordingTracker
+        return recordingTracker.getRecordingSession(socketIdentity);
     }
 
     /**
@@ -496,9 +514,12 @@ public final class GlobalRouteState {
      * @param hexData hex string of recorded bytes
      */
     public static void addNioRecording(String[] sessionInfo, String direction, String hexData) {
-        java.util.function.Consumer<Object[]> handler = NIO_RECORDING_HANDLER;
-        if (handler != null) {
-            handler.accept(new Object[]{sessionInfo, direction, hexData});
-        }
+        // P1-2: delegates to RecordingTracker
+        recordingTracker.addNioRecording(sessionInfo, direction, hexData);
+    }
+
+    /** @return the RecordingTracker manager (App-CL only; null on the Bootstrap CL). */
+    public static RecordingTracker getRecordingTracker() {
+        return recordingTracker;
     }
 }

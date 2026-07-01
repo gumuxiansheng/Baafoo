@@ -532,9 +532,25 @@ public class BaafooAgent {
             File tempJar = File.createTempFile("baafoo-bootstrap-", ".jar");
             tempJar.deleteOnExit();
 
+            // P1-2: the six state manager classes are included so that the
+            // Bootstrap-CL copy of GlobalRouteState can instantiate them in its
+            // static initializer. Without these, the managers stay null on the
+            // Bootstrap CL and every delegating method (lookup, recordDns,
+            // isInternal, startRecording, forceRedirectPort, ...) throws NPE
+            // inside Bootstrap-CL advice, silently disabling socket/NIO/DNS
+            // interception. The managers are stateless — they operate on
+            // GlobalRouteState's own static fields, which are already kept in
+            // sync by the five reflection sync methods below — so no additional
+            // cross-CL sync is required for the managers themselves.
             String[] classResources = {
                     "com/baafoo/agent/GlobalRouteState.class",
-                    "com/baafoo/agent/GlobalRouteState$HostPort.class"
+                    "com/baafoo/agent/GlobalRouteState$HostPort.class",
+                    "com/baafoo/agent/state/RouteTable.class",
+                    "com/baafoo/agent/state/DnsCache.class",
+                    "com/baafoo/agent/state/RecordingTracker.class",
+                    "com/baafoo/agent/state/LogBridge.class",
+                    "com/baafoo/agent/state/PluginBridge.class",
+                    "com/baafoo/agent/state/ProtocolMapper.class"
             };
 
             java.util.jar.Manifest manifest = new java.util.jar.Manifest();
