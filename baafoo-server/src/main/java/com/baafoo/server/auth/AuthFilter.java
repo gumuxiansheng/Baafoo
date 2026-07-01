@@ -1,6 +1,7 @@
 package com.baafoo.server.auth;
 
 import com.baafoo.core.api.ApiResponse;
+import com.baafoo.core.config.ServerConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFutureListener;
@@ -33,10 +34,12 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
     private static final String AUTH_PREFIX = "/__baafoo__/api/auth/";
 
     private final AuthService authService;
+    private final ServerConfig config;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public AuthFilter(AuthService authService) {
+    public AuthFilter(AuthService authService, ServerConfig config) {
         this.authService = authService;
+        this.config = config;
     }
 
     @Override
@@ -116,17 +119,60 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
     }
 
     private String resolveRemoteAddr(ChannelHandlerContext ctx, FullHttpRequest request) {
-        String forwarded = request.headers().get("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isEmpty()) {
-            return forwarded.split(",")[0].trim();
-        }
+        // Get the direct connection address first
+        String directAddr = "unknown";
         if (ctx.channel().remoteAddress() != null) {
             String addr = ctx.channel().remoteAddress().toString();
             if (addr.startsWith("/")) addr = addr.substring(1);
             int colonIdx = addr.indexOf(':');
-            return colonIdx > 0 ? addr.substring(0, colonIdx) : addr;
+            directAddr = colonIdx > 0 ? addr.substring(0, colonIdx) : addr;
         }
-        return "unknown";
+
+        // Only trust X-Forwarded-For when the direct connection is from a trusted
+        // proxy. Trusted proxies may be specified as exact IPs or CIDR ranges.
+        String forwarded = request.headers().get("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isEmpty() && isTrustedProxy(directAddr)) {
+            return forwarded.split(",")[0].trim();
+        }
+
+        return directAddr;
+    }
+
+    private boolean isTrustedProxy(String addr) {
+        if (config.getAuth() == null || config.getAuth().getTrustedProxies() == null) {
+            return false;
+        }
+        for (String entry : config.getAuth().getTrustedProxies()) {
+            if (entry == null || entry.isEmpty()) continue;
+            if (entry.equals(addr)) return true;
+            if (entry.contains("/")) {
+                if (isInCidr(addr, entry)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isInCidr(String addr, String cidr) {
+        try {
+            String[] parts = cidr.split("/");
+            if (parts.length != 2) return false;
+            byte[] addrBytes = java.net.InetAddress.getByName(addr).getAddress();
+            int prefixLen = Integer.parseInt(parts[1]);
+            byte[] cidrBytes = java.net.InetAddress.getByName(parts[0]).getAddress();
+            if (addrBytes.length != cidrBytes.length) return false;
+            int fullBytes = prefixLen / 8;
+            int leftoverBits = prefixLen % 8;
+            for (int i = 0; i < fullBytes; i++) {
+                if (addrBytes[i] != cidrBytes[i]) return false;
+            }
+            if (leftoverBits > 0 && fullBytes < addrBytes.length) {
+                int mask = 0xFF << (8 - leftoverBits);
+                if ((addrBytes[fullBytes] & mask) != (cidrBytes[fullBytes] & mask)) return false;
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void sendJson(ChannelHandlerContext ctx, int statusCode, Object data) {

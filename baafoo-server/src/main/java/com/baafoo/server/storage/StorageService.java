@@ -158,6 +158,8 @@ public interface StorageService {
 
     boolean updateUserApiKey(String username, String apiKey);
 
+    boolean updateUserPassword(String username, String passwordHash);
+
     boolean updateUserLastLogin(String username);
 
     boolean deleteUser(String username);

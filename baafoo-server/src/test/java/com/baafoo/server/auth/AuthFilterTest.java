@@ -1,6 +1,7 @@
 package com.baafoo.server.auth;
 
 import com.baafoo.core.api.ApiResponse;
+import com.baafoo.core.config.ServerConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -22,7 +23,7 @@ public class AuthFilterTest {
     @Before
     public void setUp() {
         authService = mock(AuthService.class);
-        AuthFilter filter = new AuthFilter(authService);
+        AuthFilter filter = new AuthFilter(authService, new ServerConfig());
         channel = new EmbeddedChannel(filter);
     }
 

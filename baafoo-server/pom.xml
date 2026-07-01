@@ -82,6 +82,12 @@
             <artifactId>jjwt-jackson</artifactId>
         </dependency>
 
+        <!-- Password Hashing (bcrypt) -->
+        <dependency>
+            <groupId>org.mindrot</groupId>
+            <artifactId>jbcrypt</artifactId>
+        </dependency>
+
         <!-- Apache ActiveMQ Artemis - JMS Mock Broker -->
         <dependency>
             <groupId>org.apache.activemq</groupId>

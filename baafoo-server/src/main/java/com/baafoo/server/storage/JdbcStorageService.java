@@ -1043,6 +1043,16 @@ public class JdbcStorageService implements StorageService {
     }
 
     @Override
+    public boolean updateUserPassword(String username, String passwordHash) {
+        try (SqlSession session = openSession()) {
+            return session.getMapper(UserMapper.class).updateUserPassword(username, passwordHash, System.currentTimeMillis()) > 0;
+        } catch (Exception e) {
+            log.error("Failed to update password for user {}: {}", username, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
     public boolean updateUserLastLogin(String username) {
         try (SqlSession session = openSession()) {
             return session.getMapper(UserMapper.class).updateUserLastLogin(username, System.currentTimeMillis()) > 0;

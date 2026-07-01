@@ -204,10 +204,12 @@ public class ServerConfig {
 
     public static class AuthConfig {
         private boolean enabled = true;
-        private boolean localBypass = true;
+        private boolean localBypass = false;
         private String jwtSecret;
         private long tokenExpiryHours = 24;
         private Map<String, String> apiKeys;
+        /** Trusted proxy IPs that are allowed to set X-Forwarded-For (empty = trust none) */
+        private java.util.Set<String> trustedProxies = new java.util.HashSet<>();
 
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -223,6 +225,9 @@ public class ServerConfig {
 
         public Map<String, String> getApiKeys() { return apiKeys; }
         public void setApiKeys(Map<String, String> apiKeys) { this.apiKeys = apiKeys; }
+
+        public java.util.Set<String> getTrustedProxies() { return trustedProxies; }
+        public void setTrustedProxies(java.util.Set<String> trustedProxies) { this.trustedProxies = trustedProxies; }
 
         @Override
         public String toString() {

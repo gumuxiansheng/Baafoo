@@ -55,6 +55,9 @@
         <!-- JWT -->
         <jjwt.version>0.11.5</jjwt.version>
 
+        <!-- Password Hashing -->
+        <jbcrypt.version>0.4</jbcrypt.version>
+
         <!-- Spring Boot -->
         <spring-boot.version>2.7.18</spring-boot.version>
 
@@ -190,6 +193,13 @@
             <version>${jjwt.version}</version>
             <scope>runtime</scope>
         </dependency>
+
+            <!-- Password Hashing -->
+            <dependency>
+                <groupId>org.mindrot</groupId>
+                <artifactId>jbcrypt</artifactId>
+                <version>${jbcrypt.version}</version>
+            </dependency>
 
             <!-- Logging -->
             <dependency>

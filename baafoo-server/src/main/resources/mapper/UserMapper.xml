@@ -43,6 +43,10 @@
         UPDATE users SET api_key = #{apiKey}, updated_at = #{updatedAt} WHERE username = #{username}
     </update>
 
+    <update id="updateUserPassword">
+        UPDATE users SET password_hash = #{passwordHash}, updated_at = #{updatedAt} WHERE username = #{username}
+    </update>
+
     <update id="updateUserLastLogin">
         UPDATE users SET last_login_at = #{lastLoginAt} WHERE username = #{username}
     </update>

@@ -162,7 +162,7 @@ public class BaafooServer {
                         ChannelPipeline p = ch.pipeline();
                         p.addLast(new HttpServerCodec());
                         p.addLast(new HttpObjectAggregator(10 * 1024 * 1024));
-                        p.addLast(new AuthFilter(authService));
+                        p.addLast(new AuthFilter(authService, config));
                         p.addLast(new ManagementApiHandler(storage, authService, new com.baafoo.core.util.ChaosManager(), config, eventBus));
                         p.addLast(new StaticFileHandler(config.getWebConsolePath()));
                     }
@@ -265,7 +265,7 @@ public class BaafooServer {
     }
 
     private void ensureDefaultAdmin() {
-        // Always create default admin user, regardless of auth state
+        // Create default admin user only if it doesn't exist (new install)
         User existing = storage.getUserByUsername("admin");
         if (existing == null) {
             String tempPassword = generateTempPassword();
@@ -280,28 +280,17 @@ public class BaafooServer {
             log.warn("Default admin user created (username: admin) — initial credentials written to credentials file, change the password after first login");
             return;
         }
-        boolean needsFix = false;
+
+        // Fix role if incorrect (update, not delete+create — P0-4 fix)
         if (!"admin".equals(existing.getRole())) {
-            needsFix = true;
             log.info("Admin user has incorrect role '{}', fixing to 'admin'", existing.getRole());
+            storage.updateUserRole("admin", "admin");
         }
-        if (authService.verifyPassword("admin123", existing.getPasswordHash())
-                || authService.verifyPassword("B@af00!Adm1n#2026", existing.getPasswordHash())) {
-            needsFix = true;
-            log.warn("Admin user still has default/weak password, upgrading to a randomly generated one");
-        }
-        if (needsFix) {
-            String tempPassword = generateTempPassword();
-            storage.deleteUser("admin");
-            User admin = new User();
-            admin.setUsername("admin");
-            admin.setPasswordHash(authService.hashPassword(tempPassword));
-            admin.setDisplayName("系统管理员");
-            admin.setEmail("admin@baafoo.local");
-            admin.setRole("admin");
-            storage.createUser(admin);
-            writeAdminCredentials(tempPassword);
-            log.warn("Default admin user repaired (username: admin) — initial credentials written to credentials file, change the password after first login");
+
+        // Check if password hash needs migration from SHA-256 to bcrypt (P0-1/P0-2 fix)
+        // Do NOT reset the password — just log a warning. Rehash happens on next login.
+        if (authService.needsRehash(existing.getPasswordHash())) {
+            log.warn("Admin password uses legacy SHA-256 hashing — it will be upgraded to bcrypt on next login");
         }
     }
 
@@ -344,13 +333,30 @@ public class BaafooServer {
     }
 
     private String generateTempPassword() {
-        String chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+        // Char pools must satisfy AuthService.validatePassword:
+        // upper, lower, digit, and special character requirements.
+        String upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        String lower = "abcdefghjkmnpqrstuvwxyz";
+        String digit = "23456789";
+        String special = "!@#$%^&*-_=+";
+        String all = upper + lower + digit + special;
         java.security.SecureRandom random = new java.security.SecureRandom();
-        StringBuilder sb = new StringBuilder(16);
-        for (int i = 0; i < 16; i++) {
-            sb.append(chars.charAt(random.nextInt(chars.length())));
+        StringBuilder sb = new StringBuilder(20);
+        // Guarantee at least one char from each required pool
+        sb.append(upper.charAt(random.nextInt(upper.length())));
+        sb.append(lower.charAt(random.nextInt(lower.length())));
+        sb.append(digit.charAt(random.nextInt(digit.length())));
+        sb.append(special.charAt(random.nextInt(special.length())));
+        for (int i = 4; i < 20; i++) {
+            sb.append(all.charAt(random.nextInt(all.length())));
         }
-        return sb.toString();
+        // Shuffle to avoid predictable first 4 positions
+        char[] arr = sb.toString().toCharArray();
+        for (int i = arr.length - 1; i > 0; i--) {
+            int j = random.nextInt(i + 1);
+            char tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+        }
+        return new String(arr);
     }
 
     private void stop() {

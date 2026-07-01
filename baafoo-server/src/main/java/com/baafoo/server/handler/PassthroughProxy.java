@@ -56,6 +56,9 @@ public class PassthroughProxy {
     public PassthroughProxy(EventLoopGroup eventLoopGroup, boolean sslVerifyDisabled) {
         this.eventLoopGroup = eventLoopGroup;
         this.sslVerifyDisabled = sslVerifyDisabled;
+        if (sslVerifyDisabled) {
+            log.warn("PassthroughProxy initialized with SSL verification DISABLED — this is insecure for production use");
+        }
         this.bootstrap = new Bootstrap()
                 .group(eventLoopGroup)
                 .channel(io.netty.channel.socket.nio.NioSocketChannel.class)
@@ -81,6 +84,8 @@ public class PassthroughProxy {
         if (insecureSslContext == null) {
             synchronized (this) {
                 if (insecureSslContext == null) {
+                    log.warn("SECURITY WARNING: SSL certificate verification is DISABLED. " +
+                            "This is insecure and should only be used in development/testing environments.");
                     insecureSslContext = SslContextBuilder.forClient()
                             .trustManager(InsecureTrustManagerFactory.INSTANCE)
                             .build();

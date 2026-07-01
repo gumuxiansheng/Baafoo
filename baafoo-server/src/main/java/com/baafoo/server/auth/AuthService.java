@@ -6,6 +6,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
+import org.mindrot.jbcrypt.BCrypt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -178,6 +179,13 @@ public class AuthService {
             return new LoginResult(false, null, null, "Invalid username or password");
         }
 
+        // Migrate legacy SHA-256 hash to bcrypt on successful login
+        if (needsRehash(user.getPasswordHash())) {
+            String newHash = hashPassword(password);
+            storage.updateUserPassword(username, newHash);
+            log.info("Upgraded password hash from SHA-256 to bcrypt for user: {}", username);
+        }
+
         long expiry = expiresInMs != null && expiresInMs > 0
                 ? Math.min(expiresInMs, MAX_TOKEN_EXPIRY_MS)
                 : DEFAULT_TOKEN_EXPIRY_MS;
@@ -200,19 +208,30 @@ public class AuthService {
     }
 
     public String hashPassword(String password) {
-        try {
-            byte[] salt = new byte[16];
-            random.nextBytes(salt);
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            md.update(salt);
-            byte[] hashed = md.digest(password.getBytes(StandardCharsets.UTF_8));
-            return Base64.getEncoder().encodeToString(salt) + ":" + Base64.getEncoder().encodeToString(hashed);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to hash password", e);
-        }
+        return BCrypt.hashpw(password, BCrypt.gensalt(12));
     }
 
+    /**
+     * Verify a password against a stored hash.
+     * Supports both bcrypt (new format, starts with $2a$/$2b$/$2y$) and
+     * legacy SHA-256 (old format, Base64(salt):Base64(hash)).
+     * Legacy hashes that verify successfully should be rehashed via
+     * {@link #needsRehash(String)}.
+     */
     public boolean verifyPassword(String password, String storedHash) {
+        if (storedHash == null || storedHash.isEmpty()) return false;
+
+        // bcrypt format: $2a$, $2b$, $2y$ prefix
+        if (storedHash.startsWith("$2a$") || storedHash.startsWith("$2b$") || storedHash.startsWith("$2y$")) {
+            try {
+                return BCrypt.checkpw(password, storedHash);
+            } catch (Exception e) {
+                log.error("bcrypt password verification failed: {}", e.getMessage());
+                return false;
+            }
+        }
+
+        // Legacy SHA-256 format: Base64(salt):Base64(hash)
         try {
             String[] parts = storedHash.split(":");
             if (parts.length != 2) return false;
@@ -226,6 +245,17 @@ public class AuthService {
             log.error("Password verification failed: {}", e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Check if a stored hash uses the legacy SHA-256 format and should be
+     * rehashed to bcrypt on next login.
+     */
+    public boolean needsRehash(String storedHash) {
+        return storedHash != null && !storedHash.isEmpty()
+                && !storedHash.startsWith("$2a$")
+                && !storedHash.startsWith("$2b$")
+                && !storedHash.startsWith("$2y$");
     }
 
     public String generateApiKey() {

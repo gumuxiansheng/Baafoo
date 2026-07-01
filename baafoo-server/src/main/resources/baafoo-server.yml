@@ -64,8 +64,15 @@ database:
 auth:
   # Whether to enable authentication. When disabled, all requests get admin role.
   enabled: false
-  # Whether to auto-grant admin role for local requests (127.0.0.1 / ::1)
-  localBypass: true
+  # Whether to auto-grant admin role for local requests (127.0.0.1 / ::1).
+  # Default is false. Only enable in trusted, isolated environments.
+  localBypass: false
+  # Trusted proxy IPs allowed to set X-Forwarded-For. Only requests from these
+  # IPs will have their X-Forwarded-For header honored during remote address
+  # resolution. Empty list (default) means X-Forwarded-For is never trusted.
+  # trustedProxies:
+  #   - 127.0.0.1
+  #   - 10.0.0.0/8
   # JWT signing secret (at least 32 characters). If not set, auto-generated key is used.
   # jwtSecret: "change-me-to-a-long-random-secret-string"
   # JWT token expiry in hours (default: 24, max: 168/7 days)

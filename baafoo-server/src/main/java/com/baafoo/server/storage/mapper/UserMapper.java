@@ -19,6 +19,8 @@ public interface UserMapper {
 
     int updateUserApiKey(@Param("username") String username, @Param("apiKey") String apiKey, @Param("updatedAt") long updatedAt);
 
+    int updateUserPassword(@Param("username") String username, @Param("passwordHash") String passwordHash, @Param("updatedAt") long updatedAt);
+
     int updateUserLastLogin(@Param("username") String username, @Param("lastLoginAt") long lastLoginAt);
 
     int deleteUser(@Param("username") String username);
