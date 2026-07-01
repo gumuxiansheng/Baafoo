@@ -1036,4 +1036,57 @@ public class MatchEngineTest {
         assertEquals("Injected engine must not touch the global counter store",
                 globalBefore, globalAfter);
     }
+
+    /**
+     * P2-1: MatchRequest overload must produce the same result as the
+     * positional-parameter overload.
+     */
+    @Test
+    public void testMatchRequestOverloadMatchesPositional() {
+        Rule r = createSimpleRule("matchrequest-overload");
+        r.setConditions(Collections.singletonList(MatchCondition.path("equals", "/api/test")));
+
+        List<Rule> rules = Collections.singletonList(r);
+        Map<String, String> headers = Collections.<String, String>emptyMap();
+        Map<String, String> queryParams = Collections.<String, String>emptyMap();
+
+        // Positional call
+        MatchEngine.MatchResult posResult = engine.match(
+                rules, "http", "host", 80, null, "GET", "/api/test",
+                null, headers, queryParams, "body");
+
+        // MatchRequest call
+        MatchRequest req = new MatchRequest("http", "host", 80)
+                .setMethod("GET")
+                .setPath("/api/test")
+                .setHeaders(headers)
+                .setQueryParams(queryParams)
+                .setBody("body");
+        MatchEngine.MatchResult reqResult = engine.match(rules, req);
+
+        assertTrue("positional call should match", posResult.isMatched());
+        assertTrue("MatchRequest call should match", reqResult.isMatched());
+        assertEquals(posResult.getRule().getId(), reqResult.getRule().getId());
+        assertEquals(posResult.getResponseIndex(), reqResult.getResponseIndex());
+    }
+
+    /**
+     * P2-1: matchWithFallback with MatchRequest must retry with port=0 when
+     * the original port doesn't match.
+     */
+    @Test
+    public void testMatchRequestWithFallbackToPortZero() {
+        // Rule that matches any port (port=0 in matchesTarget)
+        Rule r = createSimpleRule("fallback-port-zero");
+        r.setPort(0); // wildcard port
+
+        List<Rule> rules = Collections.singletonList(r);
+        MatchRequest req = MatchRequest.http("http", "host", 8080, "GET", "/x",
+                Collections.<String, String>emptyMap(),
+                Collections.<String, String>emptyMap(), "");
+
+        MatchEngine.MatchResult result = engine.matchWithFallback(rules, req);
+        assertTrue("Fallback to port=0 should match the wildcard rule", result.isMatched());
+        assertEquals("Port should be restored after fallback", 8080, req.getPort());
+    }
 }

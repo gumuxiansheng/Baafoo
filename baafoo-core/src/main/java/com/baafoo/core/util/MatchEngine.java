@@ -98,6 +98,41 @@ public class MatchEngine {
         return result;
     }
 
+    // ---- P2-1: MatchRequest overloads (preferred for new call sites) ----
+
+    /**
+     * Match a {@link MatchRequest} against a list of rules.
+     *
+     * <p>P2-1: preferred over the 11-14 parameter overloads. Equivalent to
+     * {@code match(rules, req.getProtocol(), req.getHost(), req.getPort(), ...)}.</p>
+     */
+    public MatchResult match(List<Rule> rules, MatchRequest req) {
+        return match(rules, req.getProtocol(), req.getHost(), req.getPort(),
+                req.getServiceName(), req.getMethod(), req.getPath(), req.getTopic(),
+                req.getHeaders(), req.getQueryParams(), req.getBody());
+    }
+
+    /**
+     * Match a {@link MatchRequest} with port=0 fallback.
+     *
+     * <p>P2-1: preferred over the 11-14 parameter overload. If the first match
+     * (with the real port) fails, retries with port=0 to match rules that
+     * don't specify a port.</p>
+     */
+    public MatchResult matchWithFallback(List<Rule> rules, MatchRequest req) {
+        MatchResult result = match(rules, req);
+        if (!result.isMatched() && req.getPort() > 0) {
+            int originalPort = req.getPort();
+            req.setPort(0);
+            try {
+                result = match(rules, req);
+            } finally {
+                req.setPort(originalPort);
+            }
+        }
+        return result;
+    }
+
     /**
      * Match request against a list of rules, with an explicit {@code topic} parameter
      * for MQ protocols (Kafka/Pulsar/JMS). The {@code topic} is used by conditions of
