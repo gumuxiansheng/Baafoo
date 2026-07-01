@@ -21,8 +21,16 @@ public class HttpCallerController {
     }
 
     @GetMapping("/get")
-    public Map<String, Object> doGet(@RequestParam(defaultValue = "http://httpbin.org/get") String url) throws Exception {
-        return httpCallerService.doGet(url);
+    public Map<String, Object> doGet(@RequestParam(defaultValue = "http://httpbin.org/get") String url) {
+        try {
+            return httpCallerService.doGet(url);
+        } catch (Exception e) {
+            Map<String, Object> err = new LinkedHashMap<String, Object>();
+            err.put("statusCode", 0);
+            err.put("stubbed", false);
+            err.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
+            return err;
+        }
     }
 
     @PostMapping("/post")

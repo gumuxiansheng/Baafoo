@@ -40,9 +40,9 @@ public class FeignCallerService {
     public Map<String, Object> callViaFeign(String baseUrl) {
         Map<String, Object> result = new LinkedHashMap<String, Object>();
         OkHttpClient okHttpClient = new OkHttpClient.Builder()
-                .connectTimeout(5, TimeUnit.SECONDS)
-                .readTimeout(5, TimeUnit.SECONDS)
-                .writeTimeout(5, TimeUnit.SECONDS)
+                .connectTimeout(2, TimeUnit.SECONDS)
+                .readTimeout(2, TimeUnit.SECONDS)
+                .writeTimeout(2, TimeUnit.SECONDS)
                 .build();
         feign.okhttp.OkHttpClient feignOkHttp = new feign.okhttp.OkHttpClient(okHttpClient);
         HttpbinApi api = Feign.builder()
@@ -53,6 +53,8 @@ public class FeignCallerService {
         try (Response response = api.get()) {
             fillResult(response, result);
         } catch (Exception e) {
+            result.put("statusCode", 0);
+            result.put("stubbed", false);
             result.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
         }
         return result;
@@ -61,9 +63,9 @@ public class FeignCallerService {
     public Map<String, Object> callViaFeignPost(String baseUrl, String body) {
         Map<String, Object> result = new LinkedHashMap<String, Object>();
         OkHttpClient okHttpClient = new OkHttpClient.Builder()
-                .connectTimeout(5, TimeUnit.SECONDS)
-                .readTimeout(5, TimeUnit.SECONDS)
-                .writeTimeout(5, TimeUnit.SECONDS)
+                .connectTimeout(2, TimeUnit.SECONDS)
+                .readTimeout(2, TimeUnit.SECONDS)
+                .writeTimeout(2, TimeUnit.SECONDS)
                 .build();
         feign.okhttp.OkHttpClient feignOkHttp = new feign.okhttp.OkHttpClient(okHttpClient);
         HttpbinApi api = Feign.builder()
@@ -74,6 +76,8 @@ public class FeignCallerService {
         try (Response response = api.post(body)) {
             fillResult(response, result);
         } catch (Exception e) {
+            result.put("statusCode", 0);
+            result.put("stubbed", false);
             result.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
         }
         return result;
