@@ -97,7 +97,6 @@ public final class SocketConnectAdvice {
                     // In RECORD_AND_STUB mode, also redirect to stub
                     if (GlobalRouteState.CURRENT_MODE == 3) {
                         GlobalRouteState.logInfo("[Baafoo] Socket redirect (record-and-stub): " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
-                        GlobalRouteState.firePluginEvent(com.baafoo.plugin.PluginEvent.connectionRedirected("tcp", host + ":" + port, routeValue[0] + ":" + routeValue[1]));
                         endpoint = new InetSocketAddress(routeValue[0], targetPort);
                     }
                 }
@@ -129,7 +128,7 @@ public final class SocketConnectAdvice {
                                 if (action == 1 && extResult.length >= 3) {
                                     // REDIRECT
                                     routeValue = new String[]{(String) extResult[1], String.valueOf(extResult[2])};
-                                    GlobalRouteState.firePluginEvent(com.baafoo.plugin.PluginEvent.connectionRedirected("tcp", host + ":" + port, routeValue[0] + ":" + routeValue[1]));
+                                    GlobalRouteState.logInfo("[Baafoo] Socket plugin redirected (EXT): " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
                                 } else if (action == 2) {
                                     // BLOCK — log and return without connecting
                                     GlobalRouteState.logInfo("[Baafoo] Socket blocked by plugin: " + (extResult.length > 3 ? extResult[3] : "blocked"));
@@ -188,7 +187,6 @@ public final class SocketConnectAdvice {
                     GlobalRouteState.logInfo("[Baafoo] Socket recording (record-all): " + host + ":" + port + " (sessionId=" + sessionId + ")");
                 }
                 GlobalRouteState.logInfo("[Baafoo] Socket redirect (record-all): " + host + ":" + port + " -> " + routeValue[0] + ":" + targetPort);
-                GlobalRouteState.firePluginEvent(com.baafoo.plugin.PluginEvent.connectionRedirected("tcp", host + ":" + port, routeValue[0] + ":" + targetPort));
                 endpoint = new InetSocketAddress(routeValue[0], targetPort);
                 return;
             }
@@ -243,7 +241,6 @@ public final class SocketConnectAdvice {
 
             if (routeValue != null) {
                 GlobalRouteState.logInfo("[Baafoo] Socket redirect: " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
-                GlobalRouteState.firePluginEvent(com.baafoo.plugin.PluginEvent.connectionRedirected("tcp", host + ":" + port, routeValue[0] + ":" + routeValue[1]));
                 endpoint = new InetSocketAddress(routeValue[0], Integer.parseInt(routeValue[1]));
             }
         } catch (Throwable t) {

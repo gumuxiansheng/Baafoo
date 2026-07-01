@@ -211,8 +211,13 @@ public final class GlobalRouteState {
     /**
      * P2: Event fire bridge for Bootstrap CL advice.
      * Set from App CL (BaafooAgent) to forward events to PluginManager.fireEvent().
+     *
+     * <p>Typed as {@code Consumer<Object>} intentionally: the Bootstrap CL copy
+     * of GlobalRouteState must not reference {@code com.baafoo.plugin.PluginEvent}
+     * directly. Bootstrap-CL advice passes the event as an opaque Object; the
+     * App-CL side casts it back to PluginEvent before dispatching.</p>
      */
-    public static volatile java.util.function.Consumer<com.baafoo.plugin.PluginEvent> EVENT_FIRE_FN;
+    public static volatile java.util.function.Consumer<Object> EVENT_FIRE_FN;
 
     // ---- P1-2: manager instances ----
     //
@@ -306,9 +311,13 @@ public final class GlobalRouteState {
      * P2: Fire a plugin event through the bridge to PluginManager.
      * Safe to call from Bootstrap CL advice code.
      *
-     * @param event the plugin event to fire
+     * <p>The event is accepted as {@code Object} so that Bootstrap-CL advice
+     * (which cannot load {@code com.baafoo.plugin.PluginEvent}) can still
+     * trigger the bridge. The App-CL implementation casts it back safely.</p>
+     *
+     * @param event the plugin event to fire (typically a PluginEvent instance)
      */
-    public static void firePluginEvent(com.baafoo.plugin.PluginEvent event) {
+    public static void firePluginEvent(Object event) {
         // P1-2: delegates to PluginBridge
         pluginBridge.fireEvent(event);
     }

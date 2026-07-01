@@ -59,13 +59,17 @@ public final class PluginBridge {
 
     /**
      * Fire a plugin event through the bridge to PluginManager.
-     * Safe to call from Bootstrap-CL advice code (the bridge is synced to
-     * the Bootstrap-CL copy of GlobalRouteState via reflection).
+     * Safe to call from Bootstrap-CL advice code.
      *
-     * @param event the plugin event to fire
+     * <p>The event is accepted as {@code Object} so that Bootstrap-CL advice
+     * (which cannot load {@code com.baafoo.plugin.PluginEvent}) can still
+     * trigger the bridge. The App-CL side casts it back safely.</p>
+     *
+     * @param event the plugin event to fire (as an Object to avoid Bootstrap-CL
+     *              type linkage issues)
      */
-    public void fireEvent(PluginEvent event) {
-        Consumer<PluginEvent> fn = GlobalRouteState.EVENT_FIRE_FN;
+    public void fireEvent(Object event) {
+        Consumer<Object> fn = GlobalRouteState.EVENT_FIRE_FN;
         if (fn != null) {
             try {
                 fn.accept(event);
@@ -84,6 +88,10 @@ public final class PluginBridge {
     }
 
     public void setEventFireFn(Consumer<PluginEvent> fn) {
-        GlobalRouteState.EVENT_FIRE_FN = fn;
+        GlobalRouteState.EVENT_FIRE_FN = event -> {
+            if (event instanceof PluginEvent) {
+                fn.accept((PluginEvent) event);
+            }
+        };
     }
 }

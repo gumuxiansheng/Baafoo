@@ -98,7 +98,6 @@ public final class NioSocketConnectAdvice {
                     // In RECORD_AND_STUB mode, also redirect to stub
                     if (GlobalRouteState.CURRENT_MODE == 3) {
                         GlobalRouteState.logInfo("[Baafoo] NIO Socket redirect (record-and-stub): " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
-                        GlobalRouteState.firePluginEvent(com.baafoo.plugin.PluginEvent.connectionRedirected("nio", host + ":" + port, routeValue[0] + ":" + routeValue[1]));
                         remote = new InetSocketAddress(routeValue[0], targetPort);
                     }
                 }
@@ -184,7 +183,6 @@ public final class NioSocketConnectAdvice {
                     GlobalRouteState.logInfo("[Baafoo] NIO Socket recording (record-all): " + host + ":" + port + " (sessionId=" + sessionId + ")");
                 }
                 GlobalRouteState.logInfo("[Baafoo] NIO Socket redirect (record-all): " + host + ":" + port + " -> " + routeValue[0] + ":" + targetPort);
-                GlobalRouteState.firePluginEvent(com.baafoo.plugin.PluginEvent.connectionRedirected("nio", host + ":" + port, routeValue[0] + ":" + targetPort));
                 remote = new InetSocketAddress(routeValue[0], targetPort);
                 return;
             }
@@ -238,7 +236,6 @@ public final class NioSocketConnectAdvice {
 
             if (routeValue != null) {
                 GlobalRouteState.logInfo("[Baafoo] NIO Socket redirect: " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
-                GlobalRouteState.firePluginEvent(com.baafoo.plugin.PluginEvent.connectionRedirected("nio", host + ":" + port, routeValue[0] + ":" + routeValue[1]));
                 remote = new InetSocketAddress(routeValue[0], Integer.parseInt(routeValue[1]));
             }
         } catch (Throwable t) {

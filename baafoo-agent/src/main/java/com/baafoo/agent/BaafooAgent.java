@@ -191,10 +191,12 @@ public class BaafooAgent {
             };
 
             // P2: Set up EVENT_FIRE_FN bridge for Bootstrap CL advice.
-            GlobalRouteState.EVENT_FIRE_FN = (java.util.function.Consumer<com.baafoo.plugin.PluginEvent>) event -> {
+            // Stored as Consumer<Object> on GlobalRouteState to avoid Bootstrap-CL
+            // loading of com.baafoo.plugin.PluginEvent. The App-CL side casts back.
+            GlobalRouteState.EVENT_FIRE_FN = (java.util.function.Consumer<Object>) event -> {
                 PluginManager pm = pluginManager;
-                if (pm != null) {
-                    pm.fireEvent(event);
+                if (pm != null && event instanceof com.baafoo.plugin.PluginEvent) {
+                    pm.fireEvent((com.baafoo.plugin.PluginEvent) event);
                 }
             };
 
