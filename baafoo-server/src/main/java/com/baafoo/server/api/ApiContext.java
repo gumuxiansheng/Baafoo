@@ -2,6 +2,8 @@ package com.baafoo.server.api;
 
 import com.baafoo.core.event.EventBus;
 import com.baafoo.server.auth.AuthService;
+import com.baafoo.server.storage.JdbcStorageService;
+import com.baafoo.server.storage.SceneService;
 import com.baafoo.server.storage.StorageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -47,6 +49,20 @@ public class ApiContext {
     }
 
     public StorageService getStorage() { return storage; }
+
+    /**
+     * P1-3: returns the {@link SceneService} if the backing storage exposes one
+     * (e.g., {@link JdbcStorageService}). Returns {@code null} for storage
+     * implementations that have not been migrated. Callers should fall back to
+     * {@link #getStorage()} when null.
+     */
+    public SceneService getSceneService() {
+        if (storage instanceof JdbcStorageService) {
+            return ((JdbcStorageService) storage).getSceneService();
+        }
+        return null;
+    }
+
     public AuthService getAuthService() { return authService; }
     public AuthService.AuthResult getAuth() { return auth; }
     public String getRemoteAddr() { return remoteAddr; }

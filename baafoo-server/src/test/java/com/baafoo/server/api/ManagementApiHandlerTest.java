@@ -306,7 +306,11 @@ public class ManagementApiHandlerTest {
     public void testGetScene() throws Exception {
         SceneSet scene = new SceneSet();
         scene.setId("s1");
+        // P1-3: SceneApiHandler now prefers SceneService.getScene(id) over
+        // listScenes().stream().filter(...). Mock both so the test works
+        // whether the adapter uses getScene (Jdbc) or the listScenes fallback.
         when(storage.listScenes()).thenReturn(Arrays.asList(scene));
+        when(storage.getScene("s1")).thenReturn(scene);
 
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/scenes/s1", null);
         channel.writeInbound(request);

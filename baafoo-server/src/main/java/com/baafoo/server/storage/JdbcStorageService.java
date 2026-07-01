@@ -43,6 +43,15 @@ public class JdbcStorageService implements StorageService {
     private HikariDataSource dataSource;
     private SqlSessionFactory sqlSessionFactory;
 
+    /**
+     * P1-3: delegated scene operations. Initialized in {@link #init()} after
+     * the SqlSessionFactory is built. {@link JdbcStorageService} retains its
+     * {@link StorageService} scene methods as thin delegations so existing
+     * callers keep working, while new callers can depend on
+     * {@link SceneService} directly.
+     */
+    private JdbcSceneService sceneService;
+
     // --- Local caches for high-frequency reads ---
     private final AtomicReference<List<Rule>> rulesCache = new AtomicReference<List<Rule>>();
     private volatile long rulesCacheTime;
@@ -108,7 +117,19 @@ public class JdbcStorageService implements StorageService {
         // Initialize MyBatis
         sqlSessionFactory = buildSqlSessionFactory(dataSource);
 
+        // P1-3: initialize the delegated scene service with a cache-invalidation
+        // callback that reaches back into this class's private cache fields.
+        sceneService = new JdbcSceneService(sqlSessionFactory, new JdbcSceneService.CacheInvalidator() {
+            @Override public void invalidateRulesCache() { JdbcStorageService.this.invalidateRulesCache(); }
+            @Override public void invalidateEnvironmentsCache() { JdbcStorageService.this.invalidateEnvironmentsCache(); }
+        });
+
         log.info("{} storage initialized with HikariCP pool: {}", dialect.getConfigValue().toUpperCase(), jdbcUrl);
+    }
+
+    /** Public accessor so the bootstrap can wire {@link SceneService} consumers. */
+    public SceneService getSceneService() {
+        return sceneService;
     }
 
     private SqlSessionFactory buildSqlSessionFactory(DataSource ds) {
@@ -283,21 +304,12 @@ public class JdbcStorageService implements StorageService {
      * Compute the set of environments inherited by {@code ruleId} from active scenes
      * that include this rule in their itemIds. Moved here from ApiUtils so that all
      * update paths (API handler, scene sync, etc.) consistently preserve inheritance.
+     *
+     * <p>P1-3: now delegates to {@link JdbcSceneService#getInheritedEnvironments(String)}
+     * so the scene-rule coupling logic lives in one place.</p>
      */
     private List<String> getInheritedEnvironments(SceneMapper sm, String ruleId) {
-        List<String> inherited = new ArrayList<>();
-        for (com.baafoo.core.model.SceneSet scene : sm.listScenes()) {
-            if (!scene.isActive()) continue;
-            List<String> items = scene.getItemIds();
-            if (items == null || !items.contains(ruleId)) continue;
-            List<String> envs = scene.getEnvironments();
-            if (envs != null) {
-                for (String env : envs) {
-                    if (!inherited.contains(env)) inherited.add(env);
-                }
-            }
-        }
-        return inherited;
+        return sceneService.getInheritedEnvironments(ruleId);
     }
 
     private void saveVersion(RuleMapper rm, String ruleId, Rule previous) {
@@ -451,194 +463,34 @@ public class JdbcStorageService implements StorageService {
     }
 
     // --- Scene Set CRUD ---
+    //
+    // P1-3: scene operations are delegated to JdbcSceneService. These methods
+    // remain as thin wrappers so existing callers of StorageService keep
+    // working. New callers should depend on SceneService directly.
 
     @Override
     public List<SceneSet> listScenes() {
-        try (SqlSession session = openSession()) {
-            return session.getMapper(SceneMapper.class).listScenes();
-        }
+        return sceneService.listScenes();
     }
 
     @Override
     public SceneSet getScene(String id) {
-        try (SqlSession session = openSession()) {
-            return session.getMapper(SceneMapper.class).getScene(id);
-        }
+        return sceneService.getScene(id);
     }
 
     @Override
     public SceneSet createScene(SceneSet scene) {
-        if (scene.getId() == null || scene.getId().isEmpty()) {
-            scene.setId(IdGenerator.uuid());
-        }
-        long now = System.currentTimeMillis();
-        scene.setCreatedAt(now);
-        scene.setUpdatedAt(now);
-
-        try (SqlSession session = openSession()) {
-            session.getMapper(SceneMapper.class).createScene(scene);
-            return scene;
-        } catch (Exception e) {
-            log.error("Failed to create scene: {}", e.getMessage());
-            return null;
-        }
+        return sceneService.createScene(scene);
     }
 
     @Override
     public SceneSet updateScene(String id, SceneSet update) {
-        try (SqlSession session = openSession()) {
-            SceneMapper sm = session.getMapper(SceneMapper.class);
-            RuleMapper rm = session.getMapper(RuleMapper.class);
-            SceneSet existing = sm.getScene(id);
-            if (existing == null) return null;
-
-            List<String> oldEnvironments = existing.getEnvironments() != null
-                    ? new ArrayList<>(existing.getEnvironments()) : new ArrayList<>();
-            List<String> oldItemIds = existing.getItemIds() != null
-                    ? new ArrayList<>(existing.getItemIds()) : new ArrayList<>();
-            boolean wasActive = existing.isActive();
-
-            if (update.getName() != null) existing.setName(update.getName());
-            if (update.getDescription() != null) existing.setDescription(update.getDescription());
-            if (update.getItemIds() != null)
-                existing.setItemIds(update.getItemIds());
-            if (update.getEnvironments() != null)
-                existing.setEnvironments(update.getEnvironments());
-            existing.setActive(update.isActive());
-            existing.setUpdatedAt(System.currentTimeMillis());
-
-            sm.updateScene(existing);
-            syncSceneEnvironmentsToRules(rm, sm, existing, oldEnvironments, oldItemIds, wasActive);
-
-            return existing;
-        } catch (Exception e) {
-            log.error("Failed to update scene {}: {}", id, e.getMessage());
-            return null;
-        }
-    }
-
-    private void syncSceneEnvironmentsToRules(RuleMapper rm, SceneMapper sm,
-                                               SceneSet scene, List<String> oldEnvironments,
-                                               List<String> oldItemIds, boolean wasActive) {
-        List<String> newEnvironments = scene.getEnvironments() != null ? scene.getEnvironments() : Collections.<String>emptyList();
-        List<String> currentItemIds = scene.getItemIds() != null ? scene.getItemIds() : Collections.<String>emptyList();
-        boolean isActive = scene.isActive();
-
-        Set<String> allRuleIds = new HashSet<>();
-        allRuleIds.addAll(oldItemIds);
-        allRuleIds.addAll(currentItemIds);
-
-        // Rules removed from this scene's itemIds
-        Set<String> removedRuleIds = new HashSet<>(oldItemIds);
-        removedRuleIds.removeAll(currentItemIds);
-
-        // Rules newly added to this scene's itemIds
-        Set<String> addedRuleIds = new HashSet<>(currentItemIds);
-        addedRuleIds.removeAll(oldItemIds);
-
-        for (String ruleId : allRuleIds) {
-            Rule rule = rm.getRule(ruleId);
-            if (rule == null) continue;
-
-            List<String> ruleEnvs = new ArrayList<>(rule.getEnvironments() != null ? rule.getEnvironments() : Collections.<String>emptyList());
-
-            // When scene is deactivated, remove all its environments from associated rules
-            // (unless the environment is still inherited from another active scene)
-            if (wasActive && !isActive) {
-                for (String env : oldEnvironments) {
-                    boolean stillInherited = isEnvironmentInheritedFromOtherScene(sm, ruleId, env, scene.getId());
-                    if (!stillInherited) {
-                        ruleEnvs.remove(env);
-                    }
-                }
-            } else if (removedRuleIds.contains(ruleId)) {
-                // Rule removed from this scene: remove this scene's environments
-                // (unless the environment is still inherited from another active scene)
-                if (wasActive) {
-                    for (String env : oldEnvironments) {
-                        boolean stillInherited = isEnvironmentInheritedFromOtherScene(sm, ruleId, env, scene.getId());
-                        if (!stillInherited) {
-                            ruleEnvs.remove(env);
-                        }
-                    }
-                }
-            } else {
-                // Normal environment list change sync for rules still in this scene
-                for (String oldEnv : oldEnvironments) {
-                    if (!newEnvironments.contains(oldEnv)) {
-                        boolean stillInherited = isEnvironmentInheritedFromOtherScene(sm, ruleId, oldEnv, scene.getId());
-                        if (!stillInherited) {
-                            ruleEnvs.remove(oldEnv);
-                        }
-                    }
-                }
-
-                // When scene is active, add new environments to associated rules
-                if (isActive) {
-                    for (String newEnv : newEnvironments) {
-                        if (!ruleEnvs.contains(newEnv)) {
-                            ruleEnvs.add(newEnv);
-                        }
-                    }
-                }
-            }
-
-            rule.setEnvironments(ruleEnvs);
-            rm.updateRule(rule);
-        }
-        // Invalidate caches once after the loop, not on every iteration —
-        // otherwise concurrent requests see an empty cache N times and all
-        // penetrate to the database.
-        invalidateRulesCache();
-        invalidateEnvironmentsCache();
-    }
-
-    private boolean isEnvironmentInheritedFromOtherScene(SceneMapper sm, String ruleId, String envName, String excludeSceneId) {
-        for (SceneSet otherScene : sm.listScenes()) {
-            if (otherScene.getId().equals(excludeSceneId)) continue;
-            if (!otherScene.isActive()) continue;
-            List<String> envs = otherScene.getEnvironments();
-            if (envs == null || !envs.contains(envName)) continue;
-            List<String> items = otherScene.getItemIds();
-            if (items != null && items.contains(ruleId)) return true;
-        }
-        return false;
+        return sceneService.updateScene(id, update);
     }
 
     @Override
     public boolean deleteScene(String id) {
-        try (SqlSession session = openSession()) {
-            SceneMapper sm = session.getMapper(SceneMapper.class);
-            RuleMapper rm = session.getMapper(RuleMapper.class);
-            SceneSet scene = sm.getScene(id);
-            if (scene == null) return false;
-
-            // Remove this scene's environments from associated rules before deleting
-            if (scene.isActive()) {
-                List<String> envs = scene.getEnvironments() != null ? scene.getEnvironments() : Collections.<String>emptyList();
-                List<String> itemIds = scene.getItemIds() != null ? scene.getItemIds() : Collections.<String>emptyList();
-                for (String ruleId : itemIds) {
-                    Rule rule = rm.getRule(ruleId);
-                    if (rule == null) continue;
-                    List<String> ruleEnvs = new ArrayList<>(rule.getEnvironments() != null ? rule.getEnvironments() : Collections.<String>emptyList());
-                    for (String env : envs) {
-                        boolean stillInherited = isEnvironmentInheritedFromOtherScene(sm, ruleId, env, id);
-                        if (!stillInherited) {
-                            ruleEnvs.remove(env);
-                        }
-                    }
-                    rule.setEnvironments(ruleEnvs);
-                    rm.updateRule(rule);
-                }
-                invalidateRulesCache();
-                invalidateEnvironmentsCache();
-            }
-
-            return sm.deleteScene(id) > 0;
-        } catch (Exception e) {
-            log.error("Failed to delete scene {}: {}", id, e.getMessage());
-            return false;
-        }
+        return sceneService.deleteScene(id);
     }
 
     // --- Rule Set CRUD ---
