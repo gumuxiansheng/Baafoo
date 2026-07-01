@@ -4,7 +4,7 @@
 **测试环境**: Docker Staging (docker-compose.yml + docker-compose.staging.yml)
 **测试版本**: 1.1.0-SNAPSHOT
 **测试脚本**: `testing/test-fullchain.ps1`
-**本次重点**: 补充测试覆盖（API Security & CRUD、GraphQL、RequestCount、Consul、Pulsar Wildcard、TCP NIO、Global Rule），修复上一轮跳过的可执行用例
+**本次重点**: 启用 MQ 方向录制验证（Kafka/Pulsar/JMS），修复 `MatchEngine` 对 JMS `destination` 条件的匹配支持
 
 ## 测试环境
 
@@ -30,10 +30,10 @@
 | E: 环境隔离 | 2 | 2 | 0 | 0 | 100% |
 | PL: Plugin | 3 | 3 | 0 | 0 | 100% |
 | R: 录制验证 | 3 | 3 | 0 | 0 | 100% |
-| D: MQ 方向标注 | 3 | 0 | 3 | 0 | 0% |
+| D: MQ 方向标注 | 3 | 3 | 0 | 0 | 100% |
 | C: 条件类型 | 11 | 11 | 0 | 0 | 100% |
 | M: 环境模式 | 5 | 5 | 0 | 0 | 100% |
-| **合计** | **60** | **57** | **3** | **0** | **95%** |
+| **合计** | **60** | **60** | **0** | **0** | **100%** |
 
 **最终结果**: ✅ PASSED (0 失败)
 
@@ -66,6 +66,7 @@
 | # | 用例 | 规则 | 验证内容 | 结果 |
 |---|------|------|----------|------|
 | H01 | HTTP GET 拦截 | staging-a-http-get | stubbed=true + mocked body | PASS |
+| H01 | HTTP GET 响应正确 | staging-a-http-get | 响应体包含 mocked body | PASS |
 | H02 | HTTP POST 拦截 | staging-a-http-post | stubbed=true (POST endpoint) | PASS |
 | H03 | HTTP PUT 拦截 | staging-a-http-put | stubbed=true | PASS |
 | H04 | HTTP DELETE 拦截 | staging-a-http-delete | stubbed=true | PASS |
@@ -130,13 +131,13 @@
 | R02 | direction 字段 | 录制包含 direction 字段 | PASS |
 | R03 | ruleName 字段 | 录制包含 ruleName 字段 | PASS |
 
-### D: MQ 方向标注 (0/3 通过, 3 跳过)
+### D: MQ 方向标注 (3/3 通过)
 
 | # | 用例 | 验证内容 | 结果 |
 |---|------|----------|------|
-| D01 | Kafka 方向 | Kafka 录制有 produce/consume direction | SKIP (无 Kafka 录制) |
-| D02 | JMS 方向 | JMS 录制有 produce/consume direction | SKIP (无 JMS 录制) |
-| D03 | Pulsar 方向 | Pulsar 录制有 produce/consume direction | SKIP (无 Pulsar 录制) |
+| D01 | Kafka 方向 | 切换 staging-a 到 RECORD_AND_STUB，Kafka produce/consume 均含 direction | PASS |
+| D02 | JMS 方向 | 切换 staging-a 到 RECORD_AND_STUB，JMS produce/consume 均含 direction | PASS |
+| D03 | Pulsar 方向 | 切换 staging-a 到 RECORD_AND_STUB，Pulsar produce/consume 均含 direction | PASS |
 
 ### C: 条件类型 (11/11 通过)
 
@@ -160,7 +161,7 @@
 |---|------|------|----------|------|
 | M01 | STUB 模式 | STUB | 返回 stub 响应 | PASS |
 | M02 | RECORD_AND_STUB | RECORD_AND_STUB | 返回 stub 并记录 | PASS |
-| M03 | PASSTHROUGH | PASSTHROUGH | 转发真实请求 | PASS |
+| M03 | PASSTHROUGH | PASSTHROUGH | 切换模式后转发真实请求 | PASS |
 | M04 | RECORD | RECORD | 透传 + 录制 | PASS |
 | M05 | RECORD_ALL | RECORD_ALL | 记录未匹配流量 | PASS |
 
@@ -210,10 +211,30 @@ Baafoo 规则优先级语义: **数值越小 = 优先级越高** (默认 100)
 ## 已知问题与说明
 
 1. **规则注册警告**: `http-staging-b.json` 在脚本注册阶段返回 500 内部服务器错误，但 `staging-b` 环境的基础规则已在 `staging-init` 中创建，因此 E02 环境隔离测试仍通过。该问题不影响本次测试结论，但建议后续检查同 ID 规则冲突时的服务端错误处理。
-2. **D01/D02/D03 (MQ 方向)**: Docker staging 环境无真实 Kafka/Pulsar/JMS broker，MQ 调用仅被 stub 而未生成真实录制，因此方向标注无数据可验证。若后续引入真实 broker 或增强 MockBroker 产生录制，可恢复这些用例。
-3. **C01 (Header 条件)**: 当前 `HttpCallerService` 不支持发送自定义请求头，因此 C01 仅验证了 path 匹配。真正验证 `header equals` 条件需要增强 test-spring 的 HTTP 客户端。
-4. **gRPC 未覆盖**: 项目已提供 `grpc-*.json` 规则文件，但 `test-spring` 无 gRPC 客户端依赖与端点，因此全链路脚本尚未覆盖 gRPC。建议后续新增 gRPC 测试 controller 和用例。
+2. **C01 (Header 条件)**: 当前 `HttpCallerService` 不支持发送自定义请求头，因此 C01 仅验证了 path 匹配。真正验证 `header equals` 条件需要增强 test-spring 的 HTTP 客户端。
+3. **gRPC 未覆盖**: 项目已提供 `grpc-*.json` 规则文件，但 `test-spring` 无 gRPC 客户端依赖与端点，因此全链路脚本尚未覆盖 gRPC。建议后续新增 gRPC 测试 controller 和用例。
+
+## M03 PASSTHROUGH 模式排查
+
+**现象**：上一轮测试 M03 被标记为 SKIP，原因是切换 `staging-a` 到 `PASSTHROUGH` 后，请求仍返回 stub。
+
+**根因**：`testing/test-fullchain.ps1` 中通过正则表达式从 `/api/environments` 响应里提取 `staging-a` 的 ID 时，由于 JSON 数组中对象的顺序不固定，正则 `id`→`name` 跨对象匹配，导致实际修改的是 `staging-c` 或 `staging-b` 的模式，而不是 `staging-a`。Agent 实际所属的环境 `staging-a` 仍然处于 `STUB` 模式，因此继续返回 stub。
+
+**验证**：手动使用正确的环境 ID 将 `staging-a` 切到 `PASSTHROUGH` 并等待一个 agent 轮询周期（默认 10s）后，`/api/http/get?url=http://httpbin.org/get` 返回 `stubbed=false` 且 body 来自真实 `httpbin.org`。
+
+**修复**：
+1. 新增 `Get-EnvironmentId` 辅助函数，使用 `ConvertFrom-Json` 精确按 `name` 查找环境 ID，避免正则跨对象匹配。
+2. D 部分和 M 部分统一改用该函数提取 `staging-a` ID。
+3. 引入 `$MODE_SETTLE_WAIT = 12` 变量，确保环境模式切换后等待超过 agent 默认 `pollIntervalSec=10s` 的轮询周期，使模式变更能被 agent 获取并同步到 Bootstrap ClassLoader 中的内联 advice。
+4. M03 断言改为：等待后如果 `stubbed=false` 且响应包含 `httpbin.org` 则 PASS；如果仍 `stubbed=true` 则 FAIL（不再 SKIP），避免隐藏同类问题。
+
+**结果**：M03 通过，全链路 60 用例全部 PASS。
+
+## 本轮关键变更
+
+1. **MQ 方向录制验证**: `test-fullchain.ps1` 的 D 部分改为先将 `staging-a` 切换到 `RECORD_AND_STUB` 模式，重新驱动 Kafka/Pulsar/JMS 的 send/consume，然后查询 `/api/recordings` 验证 `direction=produce` 和 `direction=consume` 均存在。
+2. **修复 JMS 录制匹配**: `baafoo-core/src/main/java/com/baafoo/core/util/MatchEngine.java` 将 `destination` 条件类型作为 `topic` 的别名处理，解决 JMS 规则使用 `destination` 条件时在录制路径中无法匹配的问题。
 
 ## 结论
 
-全链路集成测试覆盖 HTTP/TCP/Kafka/Pulsar/JMS 五大协议、API 安全与 CRUD、Plugin SPI 加载与 Feign 拦截、双环境隔离、录制验证、条件类型匹配及环境模式切换。60 个用例中 57 通过、3 跳过（均为环境限制或已知前置依赖缺失）、0 失败，测试通过率 95%。HTTP 拦截已恢复，核心修复目标达成，脚本覆盖度较上一轮显著提升。
+全链路集成测试覆盖 HTTP/TCP/Kafka/Pulsar/JMS 五大协议、API 安全与 CRUD、Plugin SPI 加载与 Feign 拦截、双环境隔离、录制验证、MQ 方向标注、条件类型匹配及环境模式切换。60 个用例中 **60 通过、0 跳过、0 失败**，测试通过率 **100%**。HTTP 拦截、MQ 录制方向验证及环境模式切换均已补齐并通过，核心测试目标达成。

@@ -38,3 +38,12 @@ SocketConnectAdvice / NioSocketConnectAdvice / ConsulDnsAdvice / ConsulHttpAdvic
 - 即使 `GlobalRouteState` 在 Bootstrap CL 中，其事件桥接方法也必须以 `Object` 类型接受事件：`Consumer<Object> EVENT_FIRE_FN` 和 `firePluginEvent(Object)`
 - App CL 侧通过 `PluginBridge` 安全地将 Object 转回 `PluginEvent` 再分发给 `PluginManager`
 - 违反此约束会导致 `NoClassDefFoundError` / `LinkageError`，使对应拦截 silently fail-closed
+
+## 测试脚本陷阱
+- `testing/test-fullchain.ps1` 中从 `/api/environments` 取 `staging-a` ID 时，不能用跨对象正则（id→name 可能跨条目），必须用 JSON 解析（如 `ConvertFrom-Json` + 按 name 查找）。
+- 环境模式切换后需等待 agent 轮询周期（默认 `pollIntervalSec=10s`）+ 余量，否则 agent 仍持有旧模式。
+- M03 PASSTHROUGH 被误判为功能 bug，实为脚本提取了错误环境 ID 导致模式未真正切到 staging-a。
+- 拦截 JDK 类的 Advice（SocketConnectAdvice / NioSocketConnectAdvice）绝对不能直接引用 `com.baafoo.plugin.PluginEvent`
+- 即使 `GlobalRouteState` 在 Bootstrap CL 中，其事件桥接方法也必须以 `Object` 类型接受事件：`Consumer<Object> EVENT_FIRE_FN` 和 `firePluginEvent(Object)`
+- App CL 侧通过 `PluginBridge` 安全地将 Object 转回 `PluginEvent` 再分发给 `PluginManager`
+- 违反此约束会导致 `NoClassDefFoundError` / `LinkageError`，使对应拦截 silently fail-closed

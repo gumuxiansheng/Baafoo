@@ -308,6 +308,7 @@ public class MatchEngine {
                     return applyOperator(path, operator, cond.getValue(), cond.isCaseSensitive());
 
                 case "topic":
+                case "destination":
                     // MQ (Kafka/Pulsar/JMS) topic/destination matching.
                     // Uses the explicit topic parameter; falls back to path for
                     // backward compatibility when topic is not provided.

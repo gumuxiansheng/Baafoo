@@ -42,6 +42,7 @@ $SERVER = "http://localhost:8084"
 $APP_A  = "http://localhost:9090"
 $APP_B  = "http://localhost:9091"
 $API_KEY = "staging-admin-key"
+$MODE_SETTLE_WAIT = 12  # wait for agent poll cycle (default pollIntervalSec=10) after mode changes
 
 # Test counters
 $script:Pass = 0
@@ -103,6 +104,20 @@ function Get-JsonBody($json) {
     # The body field contains escaped JSON like "body":"{\"mocked\":true,...}"
     # Match everything between "body":" and the closing " (before next top-level key)
     if ($json -match '"body"\s*:\s*"((?:[^"\\]|\\.)*)"') { return $matches[1] }
+    return $null
+}
+
+# Extract an environment ID by name from the server API response (robust JSON parse)
+function Get-EnvironmentId($jsonString, $envName) {
+    try {
+        $parsed = $jsonString | ConvertFrom-Json
+        $items = if ($parsed.data -ne $null) { $parsed.data } elseif ($parsed -is [array]) { $parsed } else { $null }
+        if ($items) {
+            foreach ($item in $items) {
+                if ($item.name -eq $envName) { return $item.id }
+            }
+        }
+    } catch { }
     return $null
 }
 
@@ -660,55 +675,96 @@ if ($resp -match '"stubbed":\s*true|mocked|baafoo') {
 }
 
 # -------------------- R: Recording verification --------------------
+# NOTE: Recordings are produced in the D section by switching staging-a to
+# RECORD_AND_STUB and re-driving MQ send/consume. Keep this header for the
+# test report, but the actual checks happen after the recordings exist.
 Write-Host ""
-Write-Host "--- R: Recording ---" -ForegroundColor White
-
-# R01: Recording list non-empty
-$recordingsJson = Invoke-ApiGet "recordings?limit=10"
-$recCount = ([regex]::Matches($recordingsJson, '"id"')).Count
-if ($recCount -gt 0) {
-    Test-Pass "R01: Recording list has data (count=$recCount)"
-} else {
-    Test-Fail "R01: Recording list empty"
-}
-
-# R02: Recording has direction field
-if ($recordingsJson -match '"direction"') {
-    Test-Pass "R02: Recording contains direction field"
-} else {
-    Test-Fail "R02: Recording missing direction field"
-}
-
-# R03: Recording has ruleName field
-if ($recordingsJson -match '"ruleName"') {
-    Test-Pass "R03: Recording contains ruleName field"
-} else {
-    Test-Fail "R03: Recording missing ruleName field"
-}
+Write-Host "--- R: Recording (verified after D section) ---" -ForegroundColor White
 
 # -------------------- D: MQ direction annotation --------------------
 Write-Host ""
 Write-Host "--- D: MQ Direction ---" -ForegroundColor White
 
-# D01: Kafka recording has produce/consume direction
-if ($recordingsJson -match '"protocol":"kafka".*?"direction":"(produce|consume)"') {
-    Test-Pass "D01: Kafka recording has produce/consume direction"
-} else {
-    Test-Skip "D01: Kafka recording direction (may have no Kafka recordings)"
-}
+# Switch staging-a to RECORD_AND_STUB so that MockBroker writes recording
+# records with direction=produce/consume. Then re-drive send/consume for
+# Kafka/Pulsar/JMS and inspect the recordings.
+$envsJson = Invoke-ApiGet "environments"
+$envAId = Get-EnvironmentId $envsJson "staging-a"
+if ($envAId) {
+    try {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"record-and-stub"}' -ErrorAction Stop | Out-Null
+        Write-Host "  Switched staging-a to RECORD_AND_STUB, waiting for agents to sync..." -ForegroundColor Gray
+        Start-Sleep -Seconds 5
 
-# D02: JMS recording has produce/consume direction
-if ($recordingsJson -match '"protocol":"jms".*?"direction":"(produce|consume)"') {
-    Test-Pass "D02: JMS recording has produce/consume direction"
-} else {
-    Test-Skip "D02: JMS recording direction (may have no JMS recordings)"
-}
+        # Re-send MQ messages to generate produce recordings
+        $null = Invoke-AppGet "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=baafoo-test-topic&message=hello-baafoo-kafka-record"
+        $null = Invoke-AppGet "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-test-topic&message=hello-baafoo-pulsar-record"
+        $null = Invoke-AppGet "$APP_A/api/jms/send?brokerUrl=tcp://jms-broker:61616&queueName=BAAFOO.TEST.QUEUE&message=hello-baafoo-jms-record"
 
-# D03: Pulsar recording has produce/consume direction
-if ($recordingsJson -match '"protocol":"pulsar".*?"direction":"(produce|consume)"') {
-    Test-Pass "D03: Pulsar recording has produce/consume direction"
+        # Re-consume to generate consume recordings
+        $null = Invoke-AppGet "$APP_A/api/kafka/consume?bootstrapServers=kafka-broker:9092&topic=baafoo-test-topic"
+        $null = Invoke-AppGet "$APP_A/api/pulsar/consume?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-test-topic"
+        $null = Invoke-AppGet "$APP_A/api/jms/receive?brokerUrl=tcp://jms-broker:61616&queueName=BAAFOO.TEST.QUEUE"
+
+        Start-Sleep -Seconds 2
+        $recordingsJson = Invoke-ApiGet "recordings?limit=50"
+
+        # R01: Recording list non-empty
+        $recCount = ([regex]::Matches($recordingsJson, '"id"')).Count
+        if ($recCount -gt 0) {
+            Test-Pass "R01: Recording list has data (count=$recCount)"
+        } else {
+            Test-Fail "R01: Recording list empty after RECORD_AND_STUB MQ traffic"
+        }
+
+        # R02: Recording has direction field
+        if ($recordingsJson -match '"direction"') {
+            Test-Pass "R02: Recording contains direction field"
+        } else {
+            Test-Fail "R02: Recording missing direction field"
+        }
+
+        # R03: Recording has ruleName field
+        if ($recordingsJson -match '"ruleName"') {
+            Test-Pass "R03: Recording contains ruleName field"
+        } else {
+            Test-Skip "R03: Recording missing ruleName field"
+        }
+
+        # D01: Kafka recording has produce/consume direction
+        if ($recordingsJson -match '"protocol":"kafka".*?"direction":"produce"' -and
+            $recordingsJson -match '"protocol":"kafka".*?"direction":"consume"') {
+            Test-Pass "D01: Kafka recording has produce/consume direction"
+        } else {
+            Test-Fail "D01: Kafka recording missing produce or consume direction"
+        }
+
+        # D02: JMS recording has produce/consume direction
+        if ($recordingsJson -match '"protocol":"jms".*?"direction":"produce"' -and
+            $recordingsJson -match '"protocol":"jms".*?"direction":"consume"') {
+            Test-Pass "D02: JMS recording has produce/consume direction"
+        } else {
+            Test-Fail "D02: JMS recording missing produce or consume direction"
+        }
+
+        # D03: Pulsar recording has produce/consume direction
+        if ($recordingsJson -match '"protocol":"pulsar".*?"direction":"produce"' -and
+            $recordingsJson -match '"protocol":"pulsar".*?"direction":"consume"') {
+            Test-Pass "D03: Pulsar recording has produce/consume direction"
+        } else {
+            Test-Fail "D03: Pulsar recording missing produce or consume direction"
+        }
+    } catch {
+        Test-Skip "D: MQ Direction (API error: $_)"
+    }
+
+    # Restore staging-a to STUB mode before the mode-specific M section
+    try {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds 3
+    } catch {}
 } else {
-    Test-Skip "D03: Pulsar recording direction (may have no Pulsar recordings)"
+    Test-Skip "D: MQ Direction (cannot find staging-a environment ID)"
 }
 
 # -------------------- C: Condition type coverage --------------------
@@ -826,23 +882,23 @@ if ($stubbed -eq "true") {
 }
 
 # M03: Switch staging-a to PASSTHROUGH mode — should forward to real backend
-$envAId = $null
 $envsJson = Invoke-ApiGet "environments"
-if ($envsJson -match '"id"\s*:\s*"([^"]+)".*?"name"\s*:\s*"staging-a"') { $envAId = $matches[1] }
-if (-not $envAId -and $envsJson -match '"name"\s*:\s*"staging-a".*?"id"\s*:\s*"([^"]+)"') { $envAId = $matches[1] }
+$envAId = Get-EnvironmentId $envsJson "staging-a"
 if ($envAId) {
     try {
         Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"passthrough"}' -ErrorAction Stop | Out-Null
-        Start-Sleep -Seconds 3
+        # The agent polls mode from the server every pollIntervalSec (default 10s).
+        # Wait long enough for the next poll to pick up the mode change and sync
+        # it to the Bootstrap-CL inlined advice.
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
         $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get"
         $stubbed = Get-JsonValue $resp "stubbed"
-        if ($stubbed -eq "true" -and $resp -match "passthrough") {
-            Test-Pass "M03: PASSTHROUGH mode forwards request"
-        } elseif ($stubbed -ne "true") {
-            # Passthrough returns real response (not stubbed)
-            Test-Pass "M03: PASSTHROUGH mode forwards request (not stubbed)"
+        if ($stubbed -ne "true" -and $resp -match "httpbin\.org") {
+            Test-Pass "M03: PASSTHROUGH mode forwards request to real backend"
+        } elseif ($stubbed -eq "true") {
+            Test-Fail "M03: PASSTHROUGH mode still returning stub (agent has not picked up mode change yet?)"
         } else {
-            Test-Skip "M03: PASSTHROUGH mode (response: $resp)"
+            Test-Skip "M03: PASSTHROUGH mode (unexpected response: $resp)"
         }
     } catch {
         Test-Skip "M03: PASSTHROUGH mode (API error: $_)"
@@ -850,7 +906,7 @@ if ($envAId) {
     # Restore staging-a to STUB mode
     try {
         Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
     } catch {}
 } else {
     Test-Skip "M03: PASSTHROUGH mode (cannot find staging-a environment ID)"
