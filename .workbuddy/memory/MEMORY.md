@@ -32,3 +32,9 @@ export JAVA_HOME="C:/Program Files/Java/jdk1.8.0_202" && cd "C:/Dev/Projects/Baa
 
 ## Bootstrap-safe 四件套（已验证）
 SocketConnectAdvice / NioSocketConnectAdvice / ConsulDnsAdvice / ConsulHttpAdvice
+
+## Bootstrap-safe 事件桥接约束（关键教训）
+- 拦截 JDK 类的 Advice（SocketConnectAdvice / NioSocketConnectAdvice）绝对不能直接引用 `com.baafoo.plugin.PluginEvent`
+- 即使 `GlobalRouteState` 在 Bootstrap CL 中，其事件桥接方法也必须以 `Object` 类型接受事件：`Consumer<Object> EVENT_FIRE_FN` 和 `firePluginEvent(Object)`
+- App CL 侧通过 `PluginBridge` 安全地将 Object 转回 `PluginEvent` 再分发给 `PluginManager`
+- 违反此约束会导致 `NoClassDefFoundError` / `LinkageError`，使对应拦截 silently fail-closed

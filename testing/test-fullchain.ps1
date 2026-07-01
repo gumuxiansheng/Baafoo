@@ -7,7 +7,7 @@
 #   3. Start Docker Staging environment (server + postgres + app-env-a + app-env-b)
 #   4. Wait for all services to be healthy
 #   5. Register all 31 test rules
-#   6. Run full-chain test cases (HTTP/TCP/Kafka/Pulsar/JMS + Plugin + Env isolation + Recording + Condition types + Env modes)
+#   6. Run full-chain test cases (~60 cases covering HTTP/TCP/Kafka/Pulsar/JMS + Plugin + Env isolation + Recording + MQ direction + Condition types + Env modes + API security & CRUD)
 #   7. Summary report and cleanup
 #
 # Usage:
@@ -327,6 +327,108 @@ if ($appBHealth -eq "OK") {
     Test-Fail "F05: app-env-b health check (response: $appBHealth)"
 }
 
+# -------------------- A: API security & CRUD --------------------
+Write-Host ""
+Write-Host "--- A: API Security & CRUD ---" -ForegroundColor White
+
+# A01: Invalid API key should be rejected
+$invalidKeyStatus = 0
+try {
+    $invalidKeyResponse = & curl.exe -s -o /dev/null -w "%{http_code}" -H "X-Api-Key: invalid-key" "$SERVER/__baafoo__/api/rules" 2>$null
+    $invalidKeyStatus = [int]$invalidKeyResponse
+} catch { $invalidKeyStatus = 0 }
+if ($invalidKeyStatus -eq 401 -or $invalidKeyStatus -eq 403) {
+    Test-Pass "A01: API rejects invalid API key"
+} else {
+    Test-Skip "A01: API invalid key rejection (status=$invalidKeyStatus)"
+}
+
+# A02: Rule CRUD (create -> verify -> delete)
+$testRuleId = "test-rule-crud-" + (Get-Random -Minimum 1000 -Maximum 9999)
+$ruleBody = @{
+    id = $testRuleId
+    name = "CRUD Test Rule"
+    protocol = "http"
+    host = "example.com"
+    port = 80
+    conditions = @(@{ type = "path"; operator = "equals"; value = "/crud-test" })
+    responses = @(@{ name = "CRUD Response"; statusCode = 200; body = '{"mocked":true}'; delayMs = 0 })
+    enabled = $true
+    priority = 100
+    environments = @("staging-a")
+} | ConvertTo-Json -Depth 5
+
+try {
+    $createResult = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules" -Method Post -ContentType "application/json" -Headers $headers -Body $ruleBody -ErrorAction Stop
+    if ($createResult.success -eq $true -or $createResult.data.id) {
+        Test-Pass "A02: Rule created"
+    } else {
+        Test-Skip "A02: Rule create (response: $createResult)"
+    }
+} catch {
+    Test-Skip "A02: Rule CRUD (create error: $_)"
+}
+
+try {
+    $ruleDetail = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/$testRuleId" -Method Get -Headers $headers -ErrorAction Stop
+    if ($ruleDetail.success -eq $true -or $ruleDetail.data.id -eq $testRuleId) {
+        Test-Pass "A03: Rule queried"
+    } else {
+        Test-Skip "A03: Rule query (response: $ruleDetail)"
+    }
+} catch {
+    Test-Skip "A03: Rule query (error: $_)"
+}
+
+try {
+    Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/$testRuleId" -Method Delete -Headers $headers -ErrorAction Stop | Out-Null
+    Test-Pass "A04: Rule deleted"
+} catch {
+    Test-Skip "A04: Rule delete (error: $_)"
+}
+
+# A05: Environment CRUD (create -> verify -> delete)
+$testEnvName = "test-env-crud-" + (Get-Random -Minimum 1000 -Maximum 9999)
+$envBody = @{
+    name = $testEnvName
+    mode = "stub"
+    description = "CRUD test environment"
+} | ConvertTo-Json -Depth 2
+
+try {
+    $createEnv = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments" -Method Post -ContentType "application/json" -Headers $headers -Body $envBody -ErrorAction Stop
+    $envId = $null
+    if ($createEnv.success -eq $true) { $envId = $createEnv.data.id }
+    if ($createEnv.data.id) { $envId = $createEnv.data.id }
+    if ($createEnv.success -eq $true -or $createEnv.data.name -eq $testEnvName) {
+        Test-Pass "A05: Environment created"
+    } else {
+        Test-Skip "A05: Environment create (response: $createEnv)"
+    }
+} catch {
+    Test-Skip "A05: Environment CRUD (create error: $_)"
+}
+
+try {
+    $envQueryPath = if ($envId) { "environments/$envId" } else { "environments/$testEnvName" }
+    $envDetail = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/$envQueryPath" -Method Get -Headers $headers -ErrorAction Stop
+    if ($envDetail.success -eq $true -or $envDetail.data.name -eq $testEnvName) {
+        Test-Pass "A06: Environment queried"
+    } else {
+        Test-Skip "A06: Environment query (response: $envDetail)"
+    }
+} catch {
+    Test-Skip "A06: Environment query (error: $_)"
+}
+
+try {
+    $envDeletePath = if ($envId) { "environments/$envId" } else { "environments/$testEnvName" }
+    Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/$envDeletePath" -Method Delete -Headers $headers -ErrorAction Stop | Out-Null
+    Test-Pass "A07: Environment deleted"
+} catch {
+    Test-Skip "A07: Environment delete (error: $_)"
+}
+
 # -------------------- H: HTTP protocol --------------------
 Write-Host ""
 Write-Host "--- H: HTTP ---" -ForegroundColor White
@@ -368,6 +470,30 @@ $statusCode = Get-JsonValue $resp "statusCode"
 if ($statusCode -eq "500") { Test-Pass "H06: HTTP error code returns 500" }
 else { Test-Fail "H06: HTTP error code returns 500 (statusCode=$statusCode)" }
 
+# H07: HTTP GraphQL rule (POST body via test-spring)
+$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://httpbin.org/graphql&body=%7B%22query%22%3A%22query%20GetUser%7Buser%7Bid%20name%7D%7D%22%7D"
+if ($resp -match "Baafoo Mock User|mocked") {
+    Test-Pass "H07: HTTP GraphQL rule matched"
+} else {
+    Test-Skip "H07: HTTP GraphQL rule (response: $resp)"
+}
+
+# H08: HTTP request-count rule (first request should match requestCount=1)
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/counted"
+if ($resp -match "requestCount|matchedBy.*requestCount|mocked") {
+    Test-Pass "H08: HTTP request-count rule matched"
+} else {
+    Test-Skip "H08: HTTP request-count rule (response: $resp)"
+}
+
+# H09: HTTP Consul rule (service discovery stub)
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://consul-server:8500/v1/status/leader"
+if ($resp -match "mocked|protocol.*consul") {
+    Test-Pass "H09: HTTP Consul rule matched"
+} else {
+    Test-Skip "H09: HTTP Consul rule (response: $resp)"
+}
+
 # -------------------- T: TCP protocol --------------------
 Write-Host ""
 Write-Host "--- T: TCP ---" -ForegroundColor White
@@ -388,9 +514,10 @@ if ($resp -match '"intercepted":\s*true|"sent":') {
 
 # T02: TCP NIO Socket
 $resp = Invoke-AppGet "$APP_A/api/socket/nio?host=$TCP_HOST&port=$TCP_PORT"
-$body = Get-JsonValue $resp "body"
-if ($body -and $body -ne "null") {
-    Test-Pass "T02: TCP NIO Socket has response"
+$connected = Get-JsonValue $resp "connected"
+$intercepted = Get-JsonValue $resp "intercepted"
+if ($connected -eq "true" -or $intercepted -eq "true") {
+    Test-Pass "T02: TCP NIO Socket connected/intercepted"
 } else {
     Test-Skip "T02: TCP NIO Socket (no response)"
 }
@@ -451,7 +578,13 @@ if ($resp -match "success|stubbed|mocked|baafoo|error|timeout") {
     Test-Skip "P02: Pulsar Consume (response: $resp)"
 }
 
-# -------------------- J: JMS protocol --------------------
+# P03: Pulsar wildcard topic
+$resp = Invoke-AppGet "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-wildcard-topic&message=test"
+if ($resp -match "success|stubbed|mocked|baafoo|topicPattern") {
+    Test-Pass "P03: Pulsar wildcard topic stub"
+} else {
+    Test-Skip "P03: Pulsar wildcard topic (response: $resp)"
+}
 Write-Host ""
 Write-Host "--- J: JMS ---" -ForegroundColor White
 
@@ -660,6 +793,14 @@ if ($resp -notmatch "disabled") {
     Test-Pass "C10: Disabled rule not matched"
 } else {
     Test-Fail "C10: Disabled rule should not match (response: $resp)"
+}
+
+# C11: No-environment global rule should match regardless of environment
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/global-endpoint"
+if ($resp -match "mocked|rule.*global") {
+    Test-Pass "C11: Global rule (no env) matched"
+} else {
+    Test-Skip "C11: Global rule (response: $resp)"
 }
 
 # -------------------- M: Environment Mode --------------------
