@@ -462,8 +462,53 @@ public class BaafooAgent {
     private static void setupBootstrapClassPath(Instrumentation inst) {
         appendToBootstrapClassLoaderSearch(inst);
 
+        // ---- Defensive self-check: Bootstrap CL must NOT load plugin-api classes ----
+        //
+        // WHY: commit 73f7849 fixed a NoClassDefFoundError / LinkageError caused by
+        // Bootstrap-CL advice classes (inlined by ByteBuddy into java.net.Socket,
+        // java.net.InetAddress, sun.nio.ch.SocketChannelImpl) referencing
+        // com.baafoo.plugin.* types. The plugin-api package is loaded by the App CL,
+        // not the Bootstrap CL — any such reference pushes HTTP/TCP/DNS interception
+        // into fail-closed mode with no visible error. This self-check verifies the
+        // invariant from the loading side: after the Bootstrap helper JAR is appended,
+        // the Bootstrap CL must NOT be able to load com.baafoo.plugin.PluginEvent. If
+        // it can, createBootstrapJar()'s classResources array incorrectly packages
+        // plugin-api classes and the 73f7849 bug will recur. Wrapped in
+        // try/catch(Throwable) so it never breaks agent startup.
+        verifyBootstrapClassPathIsolation();
+
         syncGlobalRouteStateToBootstrapCL();
         log.info("GlobalRouteState synced to Bootstrap CL version");
+    }
+
+    /**
+     * Defensive self-check that the Bootstrap ClassLoader cannot load
+     * {@code com.baafoo.plugin.PluginEvent} after the Bootstrap helper JAR is
+     * appended. Logs an error (but never throws) if the invariant is violated.
+     * See {@link #setupBootstrapClassPath} for the rationale.
+     */
+    private static void verifyBootstrapClassPathIsolation() {
+        try {
+            Class<?> bootGRS = findBootstrapClass("com.baafoo.agent.GlobalRouteState");
+            // bootGRS.getClassLoader() is null for the true Bootstrap CL;
+            // Class.forName(name, false, null) uses the Bootstrap CL, so passing
+            // the null loader directly is the correct Bootstrap-CL resolution.
+            ClassLoader bootstrapCL = bootGRS.getClassLoader();
+            try {
+                Class<?> offending = Class.forName("com.baafoo.plugin.PluginEvent", false, bootstrapCL);
+                log.error("Bootstrap CL self-check FAILED: com.baafoo.plugin.PluginEvent is loadable from " +
+                                "the Bootstrap ClassLoader (loader={}). This means the Bootstrap helper JAR " +
+                                "incorrectly packages plugin-api classes, which will cause Bootstrap-CL advice " +
+                                "to directly reference plugin types and break class linkage. Inspect " +
+                                "createBootstrapJar() classResources array.",
+                        offending.getClassLoader());
+            } catch (ClassNotFoundException expected) {
+                // Expected: Bootstrap CL must NOT be able to load plugin-api classes.
+                log.info("Bootstrap CL self-check passed: plugin-api classes are not loadable from the Bootstrap CL.");
+            }
+        } catch (Throwable t) {
+            log.error("Bootstrap CL self-check error (non-fatal, continuing): {}", t.getMessage(), t);
+        }
     }
 
     public static AgentConfig getConfig() {
