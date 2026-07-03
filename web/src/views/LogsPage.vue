@@ -8,16 +8,16 @@
         </el-table-column>
         <el-table-column prop="agentId" label="Agent ID" width="140" show-overflow-tooltip />
         <el-table-column prop="agentIp" label="Agent IP" width="140" show-overflow-tooltip />
-        <el-table-column prop="protocol" label="协议" width="80">
+        <el-table-column prop="protocol" label="协议" width="105">
           <template #default="{ row }"><el-tag size="small">{{ (row.protocol || '').toUpperCase() }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="method" label="方法" width="80">
           <template #default="{ row }">
             <template v-if="isMqProtocol(row.protocol)">
               <el-tag v-if="row.direction" size="small" :type="directionType(row.direction)">{{ directionLabel(row.direction) }}</el-tag>
-              <span v-else>{{ row.method }}</span>
+              <el-tag v-else size="small" type="info">{{ row.method }}</el-tag>
             </template>
-            <span v-else>{{ row.method }}</span>
+            <el-tag v-else size="small" type="info">{{ row.method }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="path" label="路径" min-width="200" show-overflow-tooltip />

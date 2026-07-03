@@ -51,7 +51,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="id" label="ID" width="160" show-overflow-tooltip />
-        <el-table-column prop="protocol" label="协议" width="80">
+        <el-table-column prop="protocol" label="协议" width="105">
           <template #default="{ row }">
             <el-tag size="small">{{ (row.protocol || '').toUpperCase() }}</el-tag>
           </template>

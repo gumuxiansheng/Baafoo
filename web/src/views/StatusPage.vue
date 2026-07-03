@@ -22,19 +22,16 @@
         <el-table-column prop="hostname" label="主机" width="150" />
         <el-table-column prop="agentIp" label="Agent IP" width="140" />
         <el-table-column prop="version" label="版本" width="100" />
-        <el-table-column label="协议" min-width="200">
-          <template #default="{ row }">
-            <el-tag v-for="p in (row.protocols || [])" :key="p" size="small" style="margin-right: 4px">{{ p }}</el-tag>
-          </template>
-        </el-table-column>
         <el-table-column label="注册时间" width="180">
           <template #default="{ row }">{{ formatTime(row.registeredAt) }}</template>
         </el-table-column>
-        <el-table-column label="最后心跳" width="200">
+        <el-table-column label="最后心跳" min-width="200">
           <template #default="{ row }">
-            {{ formatTime(row.lastHeartbeat) }}
-            <el-tag v-if="isOnline(row)" size="small" type="success" effect="plain" style="margin-left: 8px">在线</el-tag>
-            <el-tag v-else size="small" type="danger" effect="plain" style="margin-left: 8px">离线</el-tag>
+            <div style="display: flex; align-items: center; gap: 8px">
+              <span>{{ formatTime(row.lastHeartbeat) }}</span>
+              <el-tag v-if="isOnline(row)" size="small" type="success" effect="plain">在线</el-tag>
+              <el-tag v-else size="small" type="danger" effect="plain">离线</el-tag>
+            </div>
           </template>
         </el-table-column>
       </el-table>
