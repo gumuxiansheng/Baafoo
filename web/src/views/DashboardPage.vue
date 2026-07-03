@@ -51,13 +51,16 @@
             <el-table-column prop="ruleName" label="规则" width="180" show-overflow-tooltip>
               <template #default="{ row }">{{ row.ruleName || (row.ruleId ? row.ruleId : '未匹配') }}</template>
             </el-table-column>
-            <el-table-column prop="protocol" label="协议" width="80">
+            <el-table-column prop="protocol" label="协议" width="105">
               <template #default="{ row }"><el-tag size="small">{{ (row.protocol || '').toUpperCase() }}</el-tag></template>
             </el-table-column>
             <el-table-column prop="method" label="方法" width="80">
               <template #default="{ row }">
-                <el-tag v-if="row.direction" size="small" :type="row.direction === 'produce' || row.direction === 'request' ? 'warning' : 'success'">{{ row.direction === 'produce' || row.direction === 'request' ? '发送' : '接收' }}</el-tag>
-                <span v-else>{{ row.method }}</span>
+                <template v-if="isMqProtocol(row.protocol)">
+                  <el-tag v-if="row.direction" size="small" :type="directionType(row.direction)">{{ directionLabel(row.direction) }}</el-tag>
+                  <el-tag v-else size="small" type="info">{{ row.method }}</el-tag>
+                </template>
+                <el-tag v-else size="small" type="info">{{ row.method }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="path" label="路径" min-width="200" />
@@ -88,6 +91,22 @@ export default {
     const trendChart = ref(null)
 
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
+
+    const isMqProtocol = (protocol) => {
+      const mqProtocols = ['kafka', 'pulsar', 'jms', 'tcp', 'udp', 'grpc', 'dubbo']
+      return mqProtocols.includes((protocol || '').toLowerCase())
+    }
+
+    const directionLabel = (d) => {
+      if (d === 'produce' || d === 'request') return '发送'
+      if (d === 'consume' || d === 'response') return '接收'
+      return d
+    }
+    const directionType = (d) => {
+      if (d === 'produce' || d === 'request') return 'warning'
+      if (d === 'consume' || d === 'response') return 'success'
+      return 'info'
+    }
 
     onMounted(async () => {
       const [statusRes, rulesRes, recordingsRes, scenesRes, envsRes] = await Promise.all([
@@ -168,7 +187,7 @@ export default {
       })
     }
 
-    return { stats, recentRecordings, rulesChart, trendChart, formatTime }
+    return { stats, recentRecordings, rulesChart, trendChart, formatTime, isMqProtocol, directionLabel, directionType }
   }
 }
 </script>

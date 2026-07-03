@@ -79,7 +79,7 @@
         <el-table-column prop="recordedAt" label="录制时间" width="170">
           <template #default="{ row }">{{ formatTime(row.recordedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text @click="viewDetail(row)">详情</el-button>
             <el-popconfirm title="确定删除？" @confirm="deleteItem(row.id)" v-if="authStore.canWriteRecording">

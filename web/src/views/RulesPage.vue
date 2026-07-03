@@ -77,7 +77,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="version" label="版本" width="60" align="center" />
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text @click="editRule(row)" v-if="authStore.canWriteRule">编辑</el-button>
             <el-button size="small" text @click="undoRuleItem(row)" :disabled="row.version <= 1" v-if="authStore.canWriteRule">撤销</el-button>
