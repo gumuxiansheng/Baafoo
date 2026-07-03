@@ -203,7 +203,6 @@ export default {
 
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; }
-.page-header h2 { font-size: 20px; font-weight: 600; color: #303133; }
 .pagination-wrap { margin-top: 16px; display: flex; justify-content: flex-end; }
 :deep(.el-pagination) { font-size: 12px; }
 :deep(.el-pagination .el-pagination__total) { font-size: 12px; }

@@ -33,7 +33,7 @@ Write-Host ""
 
 # EG-PET-001: 应用健康检查
 try {
-    $response = Invoke-WebRequest -Uri "$AppBaseUrl/petclinic/api/vets" -UseBasicParsing -TimeoutSec 10
+    $response = Invoke-WebRequest -Uri "$AppBaseUrl/vets" -UseBasicParsing -TimeoutSec 10
     Write-Result "EG-PET-001: 应用启动健康检查" ($response.StatusCode -eq 200)
 } catch {
     Write-Result "EG-PET-001: 应用启动健康检查" $false $_.Exception.Message
@@ -56,7 +56,7 @@ try {
 
 # EG-PET-003: Vet API Mock 验证
 try {
-    $response = Invoke-RestMethod -Uri "$AppBaseUrl/petclinic/api/vets" -UseBasicParsing -TimeoutSec 10
+    $response = Invoke-RestMethod -Uri "$AppBaseUrl/vets" -UseBasicParsing -TimeoutSec 10
     $hasMocked = $false
     if ($response -is [PSCustomObject]) {
         $hasMocked = $response.PSObject.Properties.Name -contains "mocked" -and $response.mocked -eq $true
@@ -66,20 +66,20 @@ try {
     Write-Result "EG-PET-003: Vet API Mock 验证" $false $_.Exception.Message
 }
 
-# EG-PET-008: 应用功能完整性（passthrough 模式需要）
-# 这里只验证 API 可访问，不验证内容
+# EG-PET-008: 应用功能完整性（经典版 PetClinic 的页面端点）
+# 这里验证其他可访问的端点，不验证内容
 try {
-    $response = Invoke-WebRequest -Uri "$AppBaseUrl/petclinic/api/specialties" -UseBasicParsing -TimeoutSec 10
-    Write-Result "EG-PET-008a: 专科列表API可访问" ($response.StatusCode -eq 200)
+    $response = Invoke-WebRequest -Uri "$AppBaseUrl/owners" -UseBasicParsing -TimeoutSec 10
+    Write-Result "EG-PET-008a: 业主列表页可访问" ($response.StatusCode -eq 200)
 } catch {
-    Write-Result "EG-PET-008a: 专科列表API可访问" $false $_.Exception.Message
+    Write-Result "EG-PET-008a: 业主列表页可访问" $false $_.Exception.Message
 }
 
 try {
-    $response = Invoke-WebRequest -Uri "$AppBaseUrl/petclinic/api/pettypes" -UseBasicParsing -TimeoutSec 10
-    Write-Result "EG-PET-008b: 宠物类型API可访问" ($response.StatusCode -eq 200)
+    $response = Invoke-WebRequest -Uri "$AppBaseUrl/vets.html" -UseBasicParsing -TimeoutSec 10
+    Write-Result "EG-PET-008b: 兽医HTML页可访问" ($response.StatusCode -eq 200)
 } catch {
-    Write-Result "EG-PET-008b: 宠物类型API可访问" $false $_.Exception.Message
+    Write-Result "EG-PET-008b: 兽医HTML页可访问" $false $_.Exception.Message
 }
 
 Write-Host ""

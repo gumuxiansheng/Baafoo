@@ -59,19 +59,19 @@
           <el-col :span="8">
             <el-form-item label="Faker Seed">
               <el-input-number v-model="form.fakerSeed" :min="0" :step="1" placeholder="留空随机" />
-              <div style="font-size: 12px; color: #909399; margin-top: 4px">设置后该规则所有 Faker 函数使用相同种子，可复现数据</div>
+              <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px">设置后该规则所有 Faker 函数使用相同种子，可复现数据</div>
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item label="计数器重置">
               <el-input-number v-model="form.requestCountReset" :min="0" :step="1" placeholder="不重置" />
-              <div style="font-size: 12px; color: #909399; margin-top: 4px">达到该次数后计数器归零（循环模式），0 表示不重置</div>
+              <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px">达到该次数后计数器归零（循环模式），0 表示不重置</div>
             </el-form-item>
           </el-col>
           <el-col :span="8" v-if="!isNew && form.protocol === 'http'">
             <el-form-item label="状态重置">
               <el-button size="small" @click="resetRuleState" v-if="authStore.canWriteRule">重置请求计数器</el-button>
-              <div style="font-size: 12px; color: #909399; margin-top: 4px">清空该规则的 requestCount 计数器</div>
+              <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px">清空该规则的 requestCount 计数器</div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -87,9 +87,9 @@
           <el-select v-model="form.environments" multiple filterable allow-create default-first-option placeholder="选择或输入环境名" style="width: 100%">
             <el-option v-for="env in allEnvironments" :key="env.name" :label="env.name" :value="env.name" />
           </el-select>
-          <div style="font-size: 12px; color: #909399; margin-top: 4px">
+          <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px">
             未选择环境时规则不生效，需显式关联环境后才参与匹配
-            <span v-if="inheritedEnvs.length > 0" style="color: #E6A23C">；橙色标签为场景集继承的环境，不可删除</span>
+            <span v-if="inheritedEnvs.length > 0" style="color: var(--bf-warning)">；橙色标签为场景集继承的环境，不可删除</span>
           </div>
         </el-form-item>
 
@@ -105,7 +105,7 @@
             </template>
           </el-alert>
         </div>
-        <div v-if="form.conditions.length === 0" style="color: #909399; font-size: 12px; margin-bottom: 8px">
+        <div v-if="form.conditions.length === 0" style="color: var(--bf-text-muted); font-size: 12px; margin-bottom: 8px">
           未添加条件时，该规则对所有请求生效（受主机/端口/环境约束）
         </div>
         <div v-for="(cond, idx) in form.conditions" :key="'cond-' + idx" style="margin-bottom: 8px">
@@ -173,7 +173,7 @@
         <el-divider content-position="left">响应分支
           <el-button size="small" @click="addResponse" v-if="authStore.canWriteRule">+ 添加响应分支</el-button>
         </el-divider>
-        <div v-if="form.responses.length === 0" style="color: #909399; font-size: 12px; margin-bottom: 8px">
+        <div v-if="form.responses.length === 0" style="color: var(--bf-text-muted); font-size: 12px; margin-bottom: 8px">
           请至少添加一个响应分支，第一个无条件的响应将作为默认响应
         </div>
         <div v-for="(resp, idx) in form.responses" :key="'resp-' + idx"
@@ -237,12 +237,12 @@
           <div class="response-condition-section">
             <el-row :gutter="10" align="middle">
               <el-col :span="4">
-                <span style="font-size: 12px; color: #606266; font-weight: 500">响应匹配条件</span>
+                <span style="font-size: 12px; color: var(--bf-text-secondary); font-weight: 500">响应匹配条件</span>
               </el-col>
               <el-col :span="20">
                 <el-button v-if="!resp.condition" size="small" @click="addResponseCondition(resp)">+ 添加匹配条件</el-button>
                 <el-button v-else size="small" type="danger" text @click="resp.condition = null">移除条件</el-button>
-                <span v-if="!resp.condition" style="font-size: 12px; color: #909399; margin-left: 8px">
+                <span v-if="!resp.condition" style="font-size: 12px; color: var(--bf-text-muted); margin-left: 8px">
                   无条件时作为默认响应，当其他响应分支均不匹配时使用
                 </span>
               </el-col>
@@ -310,7 +310,7 @@
           <div class="response-headers-section">
             <el-row :gutter="10" align="middle">
               <el-col :span="4">
-                <span style="font-size: 12px; color: #606266; font-weight: 500">响应头</span>
+                <span style="font-size: 12px; color: var(--bf-text-secondary); font-weight: 500">响应头</span>
               </el-col>
               <el-col :span="20">
                 <el-button size="small" @click="addResponseHeader(resp)">+ 添加响应头</el-button>
@@ -334,7 +334,7 @@
           <!-- Response Body -->
           <el-form-item label="响应体" size="small">
             <el-input v-model="resp.body" type="textarea" :rows="6" :placeholder="bodyPlaceholder" />
-            <div style="font-size: 12px; color: #909399; margin-top: 4px" v-html="templateVarHint"></div>
+            <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px" v-html="templateVarHint"></div>
             <!-- Faker Quick Insert -->
             <div v-if="showFakerRef" class="faker-ref-panel">
               <div class="faker-ref-title">动态数据函数 — 点击插入</div>
@@ -367,7 +367,7 @@
           <el-switch v-model="form.faultInjectionEnabled" size="small" v-if="authStore.canWriteRule" />
         </el-divider>
         <div v-if="form.faultInjectionEnabled" class="fault-injection-panel">
-          <div style="font-size: 12px; color: #909399; margin-bottom: 8px">
+          <div style="font-size: 12px; color: var(--bf-text-muted); margin-bottom: 8px">
             按 declaration 顺序评估，首个 probability 命中的 fault 生效；全部未命中则走正常响应
           </div>
           <div v-for="(fault, fIdx) in form.faults" :key="'fault-' + fIdx" class="fault-card">
@@ -382,18 +382,18 @@
               </el-col>
               <el-col :span="4">
                 <el-input-number v-model="fault.probability" :min="0" :max="1" :step="0.1" :precision="2" size="small" placeholder="概率" />
-                <div style="font-size: 11px; color: #909399">概率 (0-1)</div>
+                <div style="font-size: 11px; color: var(--bf-text-muted)">概率 (0-1)</div>
               </el-col>
               <el-col :span="6" v-if="fault.type === 'HTTP_ERROR'">
                 <el-input v-model="fault.statusCodesStr" size="small" placeholder="如: 503,504" />
-                <div style="font-size: 11px; color: #909399">状态码列表（逗号分隔，等概率分配）</div>
+                <div style="font-size: 11px; color: var(--bf-text-muted)">状态码列表（逗号分隔，等概率分配）</div>
               </el-col>
               <el-col :span="6" v-if="fault.type === 'DELAY'">
                 <el-input-number v-model="fault.delayMs" :min="0" :max="60000" size="small" />
-                <div style="font-size: 11px; color: #909399">延迟毫秒</div>
+                <div style="font-size: 11px; color: var(--bf-text-muted)">延迟毫秒</div>
               </el-col>
               <el-col :span="6" v-if="fault.type === 'CONNECTION_RESET' || fault.type === 'READ_TIMEOUT'">
-                <span style="font-size: 12px; color: #909399">
+                <span style="font-size: 12px; color: var(--bf-text-muted)">
                   {{ fault.type === 'CONNECTION_RESET' ? '响应前关闭连接 (RST)' : '收到请求后不响应，等待客户端超时' }}
                 </span>
               </el-col>
@@ -408,7 +408,7 @@
         <div style="margin-top: 24px; text-align: right">
           <el-button @click="$router.back()">取消</el-button>
           <el-button type="primary" @click="saveRule" :loading="saving" v-if="authStore.canWriteRule">保存规则</el-button>
-          <span v-if="!authStore.canWriteRule" style="color: #909399; font-size: 14px; margin-left: 12px">当前角色无编辑权限</span>
+          <span v-if="!authStore.canWriteRule" style="color: var(--bf-text-muted); font-size: 14px; margin-left: 12px">当前角色无编辑权限</span>
         </div>
       </el-form>
     </el-card>
@@ -463,7 +463,7 @@ export default {
       return inheritedEnvs.value.includes(val) ? 'warning' : ''
     }
 
-    const templateVarHint = '支持模板变量: <code>{{request.body.xxx}}</code> <code>{{request.header.xxx}}</code> <code>{{request.query.xxx}}</code> <code>{{request.path}}</code><br/>动态数据: <code>{{faker.phone}}</code> <code>{{faker.email}}</code> <code>{{faker.name}}</code> <code>{{faker.address}}</code> <code>{{faker.idCard}}</code> <code>{{faker.uuid}}</code> <code>{{faker.int.1.100}}</code> <a href="javascript:void(0)" onclick="document.dispatchEvent(new CustomEvent(\'toggle-faker-ref\'))" style="color:#409EFF">更多函数...</a>'
+    const templateVarHint = '支持模板变量: <code>{{request.body.xxx}}</code> <code>{{request.header.xxx}}</code> <code>{{request.query.xxx}}</code> <code>{{request.path}}</code><br/>动态数据: <code>{{faker.phone}}</code> <code>{{faker.email}}</code> <code>{{faker.name}}</code> <code>{{faker.address}}</code> <code>{{faker.idCard}}</code> <code>{{faker.uuid}}</code> <code>{{faker.int.1.100}}</code> <a href="javascript:void(0)" onclick="document.dispatchEvent(new CustomEvent(\'toggle-faker-ref\'))" style="color:var(--bf-accent)">更多函数...</a>'
 
     // Listen for toggle-faker-ref event from v-html link
     if (typeof document !== 'undefined') {
@@ -749,12 +749,12 @@ export default {
 
 <style scoped>
 .page-header { display: flex; align-items: center; gap: 8px; }
-.page-header h2 { font-size: 20px; font-weight: 600; color: #303133; }
 .response-card {
-  border: 1px solid #e8e8e8;
-  border-radius: 8px;
+  border: 1px solid var(--bf-border);
+  border-radius: var(--bf-radius);
   padding: 16px;
   margin-bottom: 12px;
+  background: var(--bf-surface);
 }
 .response-card-header {
   display: flex;
@@ -762,16 +762,16 @@ export default {
   align-items: center;
   margin-bottom: 12px;
   padding-bottom: 8px;
-  border-bottom: 1px dashed #ebeef5;
+  border-bottom: 1px dashed var(--bf-border);
 }
 .response-card-title {
   font-size: 14px;
-  font-weight: 600;
-  color: #303133;
+  font-weight: 700;
+  color: var(--bf-text);
 }
 .response-condition-section {
-  background: #fafafa;
-  border-radius: 6px;
+  background: var(--bf-fill-color);
+  border-radius: var(--bf-radius-sm);
   padding: 10px 12px;
   margin-bottom: 12px;
 }
@@ -781,14 +781,14 @@ export default {
 .faker-ref-panel {
   margin-top: 8px;
   padding: 10px 12px;
-  background: #f5f7fa;
-  border-radius: 6px;
-  border: 1px solid #e8e8e8;
+  background: var(--bf-fill-color);
+  border-radius: var(--bf-radius-sm);
+  border: 1px solid var(--bf-border);
 }
 .faker-ref-title {
   font-size: 13px;
-  font-weight: 600;
-  color: #303133;
+  font-weight: 700;
+  color: var(--bf-text);
   margin-bottom: 8px;
 }
 .faker-ref-group {
@@ -796,9 +796,9 @@ export default {
 }
 .faker-ref-label {
   font-size: 12px;
-  color: #606266;
+  color: var(--bf-text-secondary);
   margin-bottom: 4px;
-  font-weight: 500;
+  font-weight: 600;
 }
 .faker-tag {
   margin-right: 4px;
@@ -807,22 +807,22 @@ export default {
   transition: all 0.2s;
 }
 .faker-tag:hover {
-  color: #409EFF;
-  border-color: #409EFF;
+  color: var(--bf-accent);
+  border-color: var(--bf-accent);
 }
 .graphql-hint {
   margin-bottom: 12px;
 }
 .fault-injection-panel {
-  background: #fafafa;
-  border-radius: 6px;
+  background: var(--bf-fill-color);
+  border-radius: var(--bf-radius-sm);
   padding: 12px;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--bf-border);
 }
 .fault-card {
-  background: #fff;
-  border: 1px solid #e8e8e8;
-  border-radius: 6px;
+  background: var(--bf-surface);
+  border: 1px solid var(--bf-border);
+  border-radius: var(--bf-radius-sm);
   padding: 10px 12px;
   margin-bottom: 8px;
 }

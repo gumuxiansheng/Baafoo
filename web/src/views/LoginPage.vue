@@ -112,44 +112,50 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background:
+    radial-gradient(circle at 20% 20%, rgba(15, 118, 110, 0.06) 0%, transparent 35%),
+    radial-gradient(circle at 80% 80%, rgba(41, 37, 36, 0.04) 0%, transparent 35%),
+    var(--bf-bg);
 }
 
 .login-card {
-  width: 400px;
-  padding: 40px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  width: 420px;
+  padding: 44px;
+  background: var(--bf-surface);
+  border-radius: var(--bf-radius-lg);
+  border: 1px solid var(--bf-border);
+  box-shadow: var(--bf-shadow-lg);
 }
 
 .login-header {
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: 36px;
 }
 
 .login-logo {
-  width: 64px;
-  height: 64px;
-  margin: 0 auto 12px;
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 16px;
   display: block;
-  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
+  color: var(--bf-accent);
 }
 
 .logo {
-  font-size: 28px;
-  font-weight: 700;
-  color: #303133;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--bf-text);
 }
 
 .subtitle {
   margin-top: 8px;
-  color: #909399;
+  color: var(--bf-text-muted);
   font-size: 14px;
+  font-weight: 500;
 }
 
 .login-footer {
   text-align: center;
-  margin-top: 8px;
+  margin-top: 12px;
 }
 </style>

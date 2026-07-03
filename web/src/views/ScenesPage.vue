@@ -60,7 +60,7 @@
           <el-select v-model="form.environments" multiple filterable allow-create default-first-option placeholder="选择或输入环境名" style="width: 100%">
             <el-option v-for="env in allEnvironments" :key="env.name" :label="env.name" :value="env.name" />
           </el-select>
-          <div style="font-size: 12px; color: #909399; margin-top: 4px">未选择环境时场景集不生效</div>
+          <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px">未选择环境时场景集不生效</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -177,5 +177,4 @@ export default {
 
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; }
-.page-header h2 { font-size: 20px; font-weight: 600; color: #303133; }
 </style>

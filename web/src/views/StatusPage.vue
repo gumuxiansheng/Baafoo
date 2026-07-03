@@ -95,8 +95,7 @@ export default {
 </script>
 
 <style scoped>
-h2 { font-size: 20px; font-weight: 600; color: #303133; }
-.stat-card { text-align: center; }
-.stat-value { font-size: 32px; font-weight: 700; color: #667eea; }
-.stat-label { font-size: 14px; color: #909399; margin-top: 8px; }
+h2 { font-size: 22px; font-weight: 800; letter-spacing: -0.03em; color: var(--bf-text); }
+.stat-card .stat-value { color: var(--bf-accent); }
+.stat-card .stat-label { color: var(--bf-text-muted); }
 </style>

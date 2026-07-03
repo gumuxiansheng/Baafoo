@@ -1,11 +1,11 @@
 <template>
   <svg class="baafoo-logo" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="32" cy="32" r="30" fill="rgba(255,255,255,0.18)" stroke="rgba(255,255,255,0.2)" stroke-width="0.5" stroke-opacity="0.3"/>
-    <circle cx="32" cy="34" r="15" fill="white"/>
-    <path d="M24 25 Q21 14 17 10" stroke="#f59e0b" stroke-width="3" stroke-linecap="round" fill="none"/>
-    <path d="M40 25 Q43 14 47 10" stroke="#f59e0b" stroke-width="3" stroke-linecap="round" fill="none"/>
-    <circle cx="26" cy="32" r="3" fill="#303133"/>
-    <circle cx="38" cy="32" r="3" fill="#303133"/>
+    <circle cx="32" cy="32" r="30" fill="currentColor" opacity="0.12"/>
+    <circle cx="32" cy="34" r="15" fill="var(--bf-surface)"/>
+    <path d="M24 25 Q21 14 17 10" stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none"/>
+    <path d="M40 25 Q43 14 47 10" stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none"/>
+    <circle cx="26" cy="32" r="3" fill="var(--bf-text)"/>
+    <circle cx="38" cy="32" r="3" fill="var(--bf-text)"/>
   </svg>
 </template>
 

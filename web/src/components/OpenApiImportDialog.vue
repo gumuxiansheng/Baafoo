@@ -89,7 +89,7 @@
         </el-table-column>
         <el-table-column label="Body 预览" min-width="250" show-overflow-tooltip>
           <template #default="{ row }">
-            <span style="font-family: monospace; font-size: 12px; color: #606266">{{ getRuleBodyPreview(row) }}</span>
+            <span style="font-family: monospace; font-size: 12px; color: var(--bf-text-secondary)">{{ getRuleBodyPreview(row) }}</span>
           </template>
         </el-table-column>
       </el-table>
@@ -111,13 +111,13 @@
           <el-select v-model="selectedEnvironments" multiple filterable allow-create default-first-option placeholder="选择或输入环境名（可不选）" style="width: 100%">
             <el-option v-for="env in environments" :key="env.name" :label="env.name" :value="env.name" />
           </el-select>
-          <div style="font-size: 12px; color: #909399; margin-top: 4px">
+          <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px">
             未选择环境时规则不生效，需显式关联环境后才参与匹配
           </div>
         </el-form-item>
         <el-form-item label="规则 ID 前缀">
           <el-input v-model="ruleIdPrefix" placeholder="openapi-" style="width: 200px" />
-          <div style="font-size: 12px; color: #909399; margin-top: 4px">自动生成规则 ID 的前缀</div>
+          <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px">自动生成规则 ID 的前缀</div>
         </el-form-item>
         <el-form-item label="导入数量">
           <span>共 {{ previewRules.length }} 条规则将被导入</span>

@@ -156,13 +156,13 @@ lisi,Ls#2026!,李四,lisi@example.com,tester</pre>
       <div v-if="importResult" class="import-result">
         <el-descriptions :column="3" size="small" border style="margin-top: 16px">
           <el-descriptions-item label="成功创建">
-            <span style="color: #67c23a; font-weight: bold">{{ importResult.created }}</span>
+            <span style="color: var(--bf-success); font-weight: bold">{{ importResult.created }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="跳过(已存在)">
-            <span style="color: #e6a23c; font-weight: bold">{{ importResult.skipped }}</span>
+            <span style="color: var(--bf-warning); font-weight: bold">{{ importResult.skipped }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="失败">
-            <span style="color: #f56c6c; font-weight: bold">{{ importResult.failed }}</span>
+            <span style="color: var(--bf-danger); font-weight: bold">{{ importResult.failed }}</span>
           </el-descriptions-item>
         </el-descriptions>
         <div v-if="importResult.errors && importResult.errors.length" style="margin-top: 8px">
@@ -440,17 +440,17 @@ export default {
   align-items: center;
   margin-bottom: 20px;
 }
-.page-header h2 { margin: 0; font-size: 20px; color: #303133; }
+.page-header h2 { margin: 0; }
 .header-actions { display: flex; gap: 8px; }
-.permission-preview { margin-top: 16px; padding: 12px; background: #f5f7fa; border-radius: 6px; }
-.preview-title { font-size: 13px; color: #606266; margin-bottom: 8px; font-weight: 500; }
+.permission-preview { margin-top: 16px; padding: 12px; background: var(--bf-fill-color); border-radius: var(--bf-radius-sm); }
+.preview-title { font-size: 13px; color: var(--bf-text-secondary); margin-bottom: 8px; font-weight: 600; }
 .csv-template { margin-bottom: 16px; }
 .csv-sample {
-  background: #f5f7fa; padding: 10px; border-radius: 4px;
-  font-size: 12px; line-height: 1.6; color: #606266;
+  background: var(--bf-fill-color); padding: 10px; border-radius: var(--bf-radius-sm);
+  font-size: 12px; line-height: 1.6; color: var(--bf-text-secondary);
   overflow-x: auto; white-space: pre;
 }
 .import-result { margin-top: 12px; }
-.error-list { font-size: 12px; color: #f56c6c; padding-left: 16px; margin: 4px 0; }
+.error-list { font-size: 12px; color: var(--bf-danger); padding-left: 16px; margin: 4px 0; }
 .error-list li { margin-bottom: 2px; }
 </style>

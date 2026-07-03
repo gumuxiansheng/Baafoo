@@ -10,6 +10,7 @@
 services:
   # =========================================================================
   # PetClinic 应用（挂载 Baafoo Agent）
+  # 基础镜像使用 Java 17，应用端口 8080，应用路径 /api/vets 等
   # =========================================================================
   petclinic:
     build:
@@ -19,24 +20,22 @@ services:
     networks:
       - baafoo-enterprise-net
     ports:
-      - "19966:9966"
+      - "19966:8080"
     environment:
       - BAAFOO_SERVER_HOST=baafoo-server
       - BAAFOO_ENV=enterprise-petclinic
-      - SERVER_PORT=9966
-      - JAVA_OPTS=-Xms256m -Xmx512m
+      - SERVER_PORT=8080
+      - JAVA_OPTS=-XX:-UseContainerSupport -Xms256m -Xmx512m
       - SPRING_PROFILES_ACTIVE=h2
-    volumes:
-      - ./baafoo-agent-petclinic.yml:/app/baafoo-agent.yml:ro
     depends_on:
       baafoo-server:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:9966/petclinic/api/vets || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/vets || exit 1"]
       interval: 15s
       timeout: 5s
-      retries: 15
-      start_period: 60s
+      retries: 20
+      start_period: 90s
     restart: unless-stopped
 
   # =========================================================================
@@ -70,18 +69,18 @@ services:
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d "{\"id\":\"petclinic-vets-mock\",\"name\":\"PetClinic-Vet API Mock\",\"protocol\":\"http\",\"host\":\"petclinic\",\"port\":9966,\"conditions\":[{\"type\":\"path\",\"operator\":\"equals\",\"value\":\"/petclinic/api/vets\"}],\"responses\":[{\"name\":\"Mock兽医列表\",\"statusCode\":200,\"body\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-petclinic\\\",\\\"vets\\\":[{\\\"id\\\":1,\\\"firstName\\\":\\\"Mock\\\",\\\"lastName\\\":\\\"Doctor\\\",\\\"specialties\\\":[{\\\"name\\\":\\\"Mock Surgery\\\"}]}]}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"petclinic\"],\"environments\":[\"enterprise-petclinic\"]}" && echo "  OK" || echo "  已存在"
+          -d "{\"id\":\"petclinic-vets-mock\",\"name\":\"PetClinic-Vet API Mock\",\"protocol\":\"http\",\"host\":\"petclinic\",\"port\":8080,\"conditions\":[{\"type\":\"path\",\"operator\":\"equals\",\"value\":\"/vets\"}],\"responses\":[{\"name\":\"Mock兽医列表\",\"statusCode\":200,\"body\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-petclinic\\\",\\\"vets\\\":[{\\\"id\\\":1,\\\"firstName\\\":\\\"Mock\\\",\\\"lastName\\\":\\\"Doctor\\\",\\\"specialties\\\":[{\\\"name\\\":\\\"Mock Surgery\\\"}]}]}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"petclinic\"],\"environments\":[\"enterprise-petclinic\"]}" && echo "  OK" || echo "  已存在"
         echo ""
 
         echo "[3/4] 创建 Owner API Mock 规则..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d "{\"id\":\"petclinic-owners-mock\",\"name\":\"PetClinic-Owner API Mock\",\"protocol\":\"http\",\"host\":\"petclinic\",\"port\":9966,\"conditions\":[{\"type\":\"path\",\"operator\":\"startsWith\",\"value\":\"/petclinic/api/owners\"}],\"responses\":[{\"name\":\"Mock业主列表\",\"statusCode\":200,\"body\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-petclinic\\\",\\\"content\\\":[{\\\"id\\\":1,\\\"firstName\\\":\\\"Mock\\\",\\\"lastName\\\":\\\"Owner\\\",\\\"city\\\":\\\"Mock City\\\",\\\"telephone\\\":\\\"1234567890\\\"}]}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"petclinic\"],\"environments\":[\"enterprise-petclinic\"]}" && echo "  OK" || echo "  已存在"
+          -d "{\"id\":\"petclinic-owners-mock\",\"name\":\"PetClinic-Owner API Mock\",\"protocol\":\"http\",\"host\":\"petclinic\",\"port\":8080,\"conditions\":[{\"type\":\"path\",\"operator\":\"startsWith\",\"value\":\"/owners\"}],\"responses\":[{\"name\":\"Mock业主列表\",\"statusCode\":200,\"body\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-petclinic\\\",\\\"content\\\":[{\\\"id\\\":1,\\\"firstName\\\":\\\"Mock\\\",\\\"lastName\\\":\\\"Owner\\\",\\\"city\\\":\\\"Mock City\\\",\\\"telephone\\\":\\\"1234567890\\\"}]}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"petclinic\"],\"environments\":[\"enterprise-petclinic\"]}" && echo "  OK" || echo "  已存在"
         echo ""
 
         echo "[4/4] 验证 PetClinic 应用健康状态..."
-        curl -sf http://petclinic:9966/petclinic/api/vets && echo "  OK" || echo "  不可达"
+        curl -sf http://petclinic:8080/vets && echo "  OK" || echo "  不可达"
         echo ""
 
         echo "============================================"
@@ -89,11 +88,12 @@ services:
         echo "============================================"
         echo ""
         echo "  Baafoo控制台: http://localhost:18084"
-        echo "  PetClinic:    http://localhost:19966/petclinic/"
+        echo "  PetClinic:    http://localhost:19966/vets"
         echo "  API Key:      enterprise-admin-key"
         echo ""
         echo "  测试API:"
-        echo "    GET /petclinic/api/vets - 兽医列表"
-        echo "    GET /petclinic/api/owners - 业主列表"
+        echo "    GET /vets - 兽医列表(JSON)"
+        echo "    GET /owners - 业主列表(HTML)"
+        echo "    GET /vets.html - 兽医HTML页面"
         echo "============================================"
       '

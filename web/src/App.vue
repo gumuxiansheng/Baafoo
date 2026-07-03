@@ -9,7 +9,8 @@
           <el-tag size="small" type="info" effect="plain">v1.0</el-tag>
         </div>
         <div class="header-right">
-          <span class="header-badge" :class="statusConnected ? 'badge-success' : 'badge-danger'">
+          <span class="header-badge">
+            <span class="connection-dot" :class="statusConnected ? 'success' : 'danger'"></span>
             {{ statusConnected ? '已连接' : '已断开' }}
           </span>
           <template v-if="authStore.isLoggedIn">
@@ -166,75 +167,102 @@ export default {
 </script>
 
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background: #f5f7fa;
-}
-
 .baafoo-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: var(--bf-surface);
+  color: var(--bf-text);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  padding: 0 22px;
+  border-bottom: 1px solid var(--bf-border);
+  box-shadow: var(--bf-shadow-sm);
+  z-index: 10;
 }
 
 .header-left { display: flex; align-items: center; gap: 10px; }
-.logo-icon { width: 32px; height: 32px; flex-shrink: 0; }
-.logo { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+.logo-icon {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  color: var(--bf-accent);
+}
+.logo {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--bf-text);
+}
 
-.header-right { display: flex; align-items: center; gap: 10px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 6px;
+}
+.connection-dot.success { background: var(--bf-success); box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.12); }
+.connection-dot.danger { background: var(--bf-danger); box-shadow: 0 0 0 3px rgba(190, 18, 60, 0.12); }
+
 .header-badge {
   display: inline-flex;
   align-items: center;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
   font-size: 12px;
+  font-weight: 600;
   line-height: 1;
   white-space: nowrap;
+  background: var(--bf-fill-color);
+  color: var(--bf-text-secondary);
+  border: 1px solid var(--bf-border);
 }
-.badge-success { background: rgba(255,255,255,0.2); color: #b7eb8f; }
-.badge-danger { background: rgba(255,255,255,0.2); color: #ffa39e; }
-.badge-role { background: rgba(255,255,255,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.35); }
-.badge-guest { background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.75); border: 1px solid rgba(255,255,255,0.25); }
-.user-name { font-size: 13px; color: rgba(255,255,255,0.9); }
-.btn-header-logout { color: rgba(255,255,255,0.8) !important; }
-.btn-header-logout:hover { color: #fff !important; }
-.btn-header-login { color: rgba(255,255,255,0.9) !important; font-weight: 500; }
-.btn-header-login:hover { color: #fff !important; }
+.badge-role {
+  background: var(--bf-accent-light);
+  color: var(--bf-accent);
+  border-color: #ccfbf1;
+}
+.badge-guest {
+  background: var(--bf-fill-color);
+  color: var(--bf-text-muted);
+}
+.user-name { font-size: 13px; font-weight: 600; color: var(--bf-text-secondary); }
+.btn-header-logout { color: var(--bf-text-secondary) !important; }
+.btn-header-logout:hover { color: var(--bf-danger) !important; background: var(--bf-danger-bg) !important; }
+.btn-header-login { color: var(--bf-accent) !important; font-weight: 700; }
+.btn-header-login:hover { color: var(--bf-accent-hover) !important; background: var(--bf-accent-light) !important; }
 
 .baafoo-sidebar {
-  background: #fff;
-  border-right: 1px solid #e8e8e8;
+  background: var(--bf-surface);
+  border-right: 1px solid var(--bf-border);
 }
 
 .sidebar-menu {
   border-right: none;
   height: calc(100vh - 80px);
+  padding-top: 8px;
+  background: transparent;
 }
 
 .baafoo-main {
-  background: #f5f7fa;
-  padding: 20px;
+  background: var(--bf-bg);
+  padding: 24px;
   overflow-y: auto;
   height: calc(100vh - 80px);
 }
 
 .baafoo-footer {
-  background: #fff;
-  border-top: 1px solid #e8e8e8;
+  background: var(--bf-surface);
+  border-top: 1px solid var(--bf-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
+  padding: 0 22px;
   font-size: 12px;
-  color: #909399;
+  font-weight: 600;
+  color: var(--bf-text-muted);
 }
 
-.footer-right { color: #c0c4cc; }
+.footer-right { color: var(--bf-text-muted); }
 </style>

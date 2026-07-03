@@ -163,7 +163,7 @@ export default {
           type: 'line',
           smooth: true,
           areaStyle: { opacity: 0.1 },
-          itemStyle: { color: '#667eea' }
+          itemStyle: { color: 'var(--bf-accent)' }
         }]
       })
     }
@@ -174,8 +174,8 @@ export default {
 </script>
 
 <style scoped>
-.dashboard-page h2 { font-size: 20px; font-weight: 600; color: #303133; }
-.stat-card { text-align: center; cursor: pointer; }
-.stat-value { font-size: 36px; font-weight: 700; color: #667eea; }
-.stat-label { font-size: 14px; color: #909399; margin-top: 8px; }
+.dashboard-page h2 { font-size: 22px; font-weight: 800; letter-spacing: -0.03em; color: var(--bf-text); }
+.stat-card { cursor: pointer; }
+.stat-card .stat-value { color: var(--bf-accent); }
+.stat-card .stat-label { color: var(--bf-text-muted); }
 </style>

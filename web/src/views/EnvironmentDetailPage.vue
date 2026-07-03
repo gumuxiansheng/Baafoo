@@ -22,7 +22,7 @@
         <el-radio-button value="RECORD">Record</el-radio-button>
         <el-radio-button value="RECORD_AND_STUB">Record+Stub</el-radio-button>
       </el-radio-group>
-      <span v-else style="color: #909399; font-size: 14px; margin-top: 12px; display: inline-block">当前模式: {{ env ? modeDisplayName(env.mode) : '' }}（无切换权限）</span>
+      <span v-else style="color: var(--bf-text-muted); font-size: 14px; margin-top: 12px; display: inline-block">当前模式: {{ env ? modeDisplayName(env.mode) : '' }}（无切换权限）</span>
 
       <h3 style="margin-top: 24px">关联 Agents ({{ (env.agentIds || []).length }})</h3>
       <el-table :data="env.agentIds || []" size="small" style="margin-top: 12px" empty-text="暂无 Agent">
@@ -171,6 +171,5 @@ export default {
 
 <style scoped>
 .page-header { display: flex; align-items: center; gap: 8px; }
-.page-header h2 { font-size: 20px; font-weight: 600; color: #303133; }
-h3 { font-size: 16px; font-weight: 600; color: #303133; }
+h3 { font-size: 15px; font-weight: 700; color: var(--bf-text); }
 </style>

@@ -55,13 +55,9 @@ try {
 }
 
 # EG-KAFKA-003: Producer 消息发送 Mock
+# 注意: baafoo-test-spring 的 KafkaCallerController 使用 GET 方法
 try {
-    $body = @{
-        bootstrapServers = "kafka:9092"
-        topic = "enterprise-test-topic"
-        message = "hello enterprise smoke test"
-    } | ConvertTo-Json
-    $response = Invoke-RestMethod -Uri "$AppBaseUrl/api/stub-demo/kafka/send" -Method Post -Body $body -ContentType "application/json" -UseBasicParsing -TimeoutSec 15
+    $response = Invoke-RestMethod -Uri "$AppBaseUrl/api/kafka/send?bootstrapServers=kafka:9092&topic=enterprise-test-topic&message=hello-enterprise-smoke-test" -UseBasicParsing -TimeoutSec 15
     Write-Result "EG-KAFKA-003: Kafka Producer Mock" ($response.success -eq $true)
 } catch {
     Write-Result "EG-KAFKA-003: Kafka Producer Mock" $false $_.Exception.Message
@@ -69,11 +65,7 @@ try {
 
 # EG-KAFKA-004: Consumer 消息消费 Mock
 try {
-    $body = @{
-        bootstrapServers = "kafka:9092"
-        topic = "enterprise-test-topic"
-    } | ConvertTo-Json
-    $response = Invoke-RestMethod -Uri "$AppBaseUrl/api/stub-demo/kafka/consume" -Method Post -Body $body -ContentType "application/json" -UseBasicParsing -TimeoutSec 15
+    $response = Invoke-RestMethod -Uri "$AppBaseUrl/api/kafka/consume?bootstrapServers=kafka:9092&topic=enterprise-test-topic" -UseBasicParsing -TimeoutSec 15
     Write-Result "EG-KAFKA-004: Kafka Consumer Mock" ($response.success -eq $true)
 } catch {
     Write-Result "EG-KAFKA-004: Kafka Consumer Mock" $false $_.Exception.Message

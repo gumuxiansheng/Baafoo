@@ -250,8 +250,7 @@ export default {
 
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; }
-.page-header h2 { font-size: 20px; font-weight: 600; color: #303133; }
-h4 { margin: 8px 0; color: #606266; }
+h4 { margin: 8px 0; color: var(--bf-text-secondary); }
 .pagination-wrap { margin-top: 16px; display: flex; justify-content: flex-end; }
 :deep(.el-pagination) { font-size: 12px; }
 :deep(.el-pagination .el-pagination__total) { font-size: 12px; }
@@ -261,7 +260,7 @@ h4 { margin: 8px 0; color: #606266; }
 :deep(.el-pagination .btn-prev) { font-size: 12px; min-width: 24px; height: 24px; line-height: 24px; }
 :deep(.el-pagination .btn-next) { font-size: 12px; min-width: 24px; height: 24px; line-height: 24px; }
 :deep(.el-pagination .el-pager li) { font-size: 12px; min-width: 24px; height: 24px; line-height: 24px; }
-.detail-meta { margin-bottom: 8px; font-size: 13px; color: #909399; }
+.detail-meta { margin-bottom: 8px; font-size: 13px; color: var(--bf-text-muted); }
 .detail-meta span { margin-right: 16px; }
 :deep(.el-form--inline .el-form-item) { margin-right: 12px; margin-bottom: 8px; }
 </style>

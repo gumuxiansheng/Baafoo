@@ -102,7 +102,7 @@ export default {
 </script>
 
 <style scoped>
-h2 { font-size: 20px; font-weight: 600; color: #303133; margin-bottom: 0; }
+h2 { margin-bottom: 0; }
 .pagination-wrap { margin-top: 16px; display: flex; justify-content: flex-end; }
 :deep(.el-pagination) { font-size: 12px; }
 :deep(.el-pagination .el-pagination__total) { font-size: 12px; }

@@ -46,7 +46,7 @@ services:
   kafka-test-app:
     build:
       context: ../../..
-      dockerfile: baafoo-test-spring/Dockerfile
+      dockerfile: testing/enterprise/kafka/Dockerfile.kafka-test-app
     container_name: baafoo-enterprise-kafka-test-app
     networks:
       - baafoo-enterprise-net
@@ -57,8 +57,6 @@ services:
       - BAAFOO_ENV=enterprise-kafka
       - SERVER_PORT=9090
       - JAVA_OPTS=-Xms128m -Xmx256m
-    volumes:
-      - ./baafoo-agent-kafka.yml:/app/baafoo-agent.yml:ro
     depends_on:
       baafoo-server:
         condition: service_healthy
@@ -103,14 +101,14 @@ services:
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d "{\"id\":\"kafka-enterprise-topic-exact\",\"name\":\"Kafka企业级-Topic精确匹配\",\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"equals\",\"value\":\"enterprise-test-topic\"}],\"responses\":[{\"name\":\"Mock响应\",\"value\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-enterprise-kafka\\\",\\\"timestamp\\\":\\\"{{now}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  已存在"
+          -d "{\"id\":\"kafka-enterprise-topic-exact\",\"name\":\"Kafka企业级-Topic精确匹配\",\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"equals\",\"value\":\"enterprise-test-topic\"}],\"responses\":[{\"name\":\"Mock响应\",\"body\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-enterprise-kafka\\\",\\\"timestamp\\\":\\\"{{now}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  已存在"
         echo ""
 
         echo "[3/5] 创建 Kafka Topic 通配符匹配规则..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d "{\"id\":\"kafka-enterprise-topic-wildcard\",\"name\":\"Kafka企业级-Topic通配符匹配\",\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"startsWith\",\"value\":\"enterprise-\"}],\"responses\":[{\"name\":\"Mock响应(通配符)\",\"value\":\"{\\\"mocked\\\":true,\\\"wildcard\\\":true,\\\"topic\\\":\\\"{{topic}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":50,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  已存在"
+          -d "{\"id\":\"kafka-enterprise-topic-wildcard\",\"name\":\"Kafka企业级-Topic通配符匹配\",\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"startsWith\",\"value\":\"enterprise-\"}],\"responses\":[{\"name\":\"Mock响应(通配符)\",\"body\":\"{\\\"mocked\\\":true,\\\"wildcard\\\":true,\\\"topic\\\":\\\"{{topic}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":50,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  已存在"
         echo ""
 
         echo "[4/5] 验证测试应用健康状态..."
