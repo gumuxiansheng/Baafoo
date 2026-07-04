@@ -351,16 +351,17 @@ public class BaafooAgent {
         // DNS resolution interception — records domain-to-IP mappings so that
         // SocketConnectAdvice can look up domain-based routes when socket connects
         // using a resolved IP address instead of the original hostname.
-        // When consulEnabled, ConsulDnsAdvice also handles service name redirection.
-        if (cfg.isConsulEnabled()) {
+        // When serviceInterceptionEnabled, ServiceNameDnsAdvice also handles
+        // service-name redirection (registry-agnostic: Nacos/Consul/Eureka).
+        if (cfg.isServiceInterceptionEnabled()) {
             agentBuilder = agentBuilder
                     .type(named("java.net.InetAddress"))
                     .transform((builder, typeDesc, classLoader, module, pd) ->
-                            builder.visit(Advice.to(ConsulDnsGetByNameAdvice.class)
+                            builder.visit(Advice.to(ServiceNameDnsAdvice.class)
                                     .on(named("getByName").and(takesArguments(1))))
-                            .visit(Advice.to(ConsulDnsGetAllByNameAdvice.class)
+                            .visit(Advice.to(ServiceNameDnsGetAllByNameAdvice.class)
                                     .on(named("getAllByName").and(takesArguments(1)))));
-            registry.register("java.net.InetAddress", "ConsulDnsGetByNameAdvice/GetAllByNameAdvice", "dns+consul");
+            registry.register("java.net.InetAddress", "ServiceNameDnsAdvice/GetAllByNameAdvice", "dns+serviceName");
         } else {
             agentBuilder = agentBuilder
                     .type(named("java.net.InetAddress"))
@@ -407,13 +408,13 @@ public class BaafooAgent {
         registry.register("sun.nio.ch.SocketChannelImpl", "SocketChannelReadAdvice", "tcp-recording");
         registry.register("sun.nio.ch.SocketChannelImpl", "SocketChannelWriteAdvice", "tcp-recording");
 
-        if (cfg.isConsulEnabled()) {
+        if (cfg.isServiceInterceptionEnabled()) {
             agentBuilder = agentBuilder
                     .type(named("sun.net.www.http.HttpClient"))
                     .transform((builder, typeDesc, classLoader, module, pd) ->
-                            builder.visit(Advice.to(ConsulHttpAdvice.class)
+                            builder.visit(Advice.to(HttpOpenServerAdvice.class)
                                     .on(named("openServer").and(takesArguments(2)))));
-            registry.register("sun.net.www.http.HttpClient", "ConsulHttpAdvice", "http");
+            registry.register("sun.net.www.http.HttpClient", "HttpOpenServerAdvice", "http");
         }
 
         agentBuilder = agentBuilder

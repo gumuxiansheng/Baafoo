@@ -28,8 +28,8 @@ public class AgentConfig {
     /** Rule polling interval in seconds */
     private int pollIntervalSec;
 
-    /** Whether Consul service discovery interception is enabled */
-    private boolean consulEnabled;
+    /** Whether service-name based interception is enabled (registry-agnostic: Nacos, Consul, Eureka, etc.) */
+    private boolean serviceInterceptionEnabled;
 
     /** Consul address (e.g., localhost:8500) */
     private String consulAddress;
@@ -66,7 +66,7 @@ public class AgentConfig {
     public AgentConfig() {
         this.heartbeatIntervalSec = 30;
         this.pollIntervalSec = 10;
-        this.consulEnabled = false;
+        this.serviceInterceptionEnabled = false;
         this.protocols = Collections.emptyList();
         this.maxRecordingSize = 10 * 1024 * 1024; // 10MB
         this.hotReload = true;
@@ -94,8 +94,8 @@ public class AgentConfig {
     public int getPollIntervalSec() { return pollIntervalSec; }
     public void setPollIntervalSec(int pollIntervalSec) { this.pollIntervalSec = pollIntervalSec; }
 
-    public boolean isConsulEnabled() { return consulEnabled; }
-    public void setConsulEnabled(boolean consulEnabled) { this.consulEnabled = consulEnabled; }
+    public boolean isServiceInterceptionEnabled() { return serviceInterceptionEnabled; }
+    public void setServiceInterceptionEnabled(boolean serviceInterceptionEnabled) { this.serviceInterceptionEnabled = serviceInterceptionEnabled; }
 
     public String getConsulAddress() { return consulAddress; }
     public void setConsulAddress(String consulAddress) { this.consulAddress = consulAddress; }

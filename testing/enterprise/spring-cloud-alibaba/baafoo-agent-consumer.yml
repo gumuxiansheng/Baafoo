@@ -14,14 +14,14 @@ environment: "enterprise-sca-consumer"
 heartbeatIntervalSec: 30
 pollIntervalSec: 10
 
-# Enable service-name based interception (ConsulDnsAdvice + ConsulHttpAdvice).
-# Despite the legacy name, this flag enables generic service-name interception
-# for any registry (Nacos, Consul, Eureka). When true:
+# Enable service-name based interception (ServiceNameDnsAdvice + HttpOpenServerAdvice).
+# Registry-agnostic: works with Nacos, Consul, Eureka, or any registry whose
+# service names are routed via Baafoo rules. When true:
 #   - InetAddress.getByName("service-provider") is intercepted
 #   - lookupService("service-provider") is called
 #   - If a rule with serviceName=service-provider exists, DNS is redirected to Baafoo Server
 #   - Result: Feign call to http://service-provider/echo/* is mocked at the DNS layer
-consulEnabled: true
+serviceInterceptionEnabled: true
 consulAddress: "baafoo-server:8084"
 
 protocols:

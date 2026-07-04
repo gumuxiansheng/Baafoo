@@ -11,7 +11,7 @@ public class AgentConfigTest {
         AgentConfig c = new AgentConfig();
         assertEquals(30, c.getHeartbeatIntervalSec());
         assertEquals(10, c.getPollIntervalSec());
-        assertFalse(c.isConsulEnabled());
+        assertFalse(c.isServiceInterceptionEnabled());
         assertTrue(c.getProtocols().isEmpty());
         assertEquals(10 * 1024 * 1024, c.getMaxRecordingSize());
         assertTrue(c.isHotReload());
@@ -36,7 +36,7 @@ public class AgentConfigTest {
         c.setAgentId("agent-1");
         c.setEnvironment("prod");
         c.setServerUrl("http://server:8084");
-        c.setConsulEnabled(true);
+        c.setServiceInterceptionEnabled(true);
         c.setConsulAddress("consul:8500");
         c.setProtocols(Arrays.asList("http", "tcp"));
         c.setRulesFilePath("/tmp/rules.yml");
@@ -47,7 +47,7 @@ public class AgentConfigTest {
         assertEquals("agent-1", c.getAgentId());
         assertEquals("prod", c.getEnvironment());
         assertEquals("http://server:8084", c.getServerUrl());
-        assertTrue(c.isConsulEnabled());
+        assertTrue(c.isServiceInterceptionEnabled());
         assertEquals("consul:8500", c.getConsulAddress());
         assertEquals(2, c.getProtocols().size());
         assertEquals("/tmp/rules.yml", c.getRulesFilePath());

@@ -47,7 +47,7 @@ services:
         aliases:
           # Add "service-provider" as a network alias so Docker DNS can resolve it.
           # This allows InetAddress.getByName("service-provider") to succeed in Consumer,
-          # enabling the ConsulHttpAdvice + ConsulDnsAdvice interception path.
+          # enabling the HttpOpenServerAdvice + ServiceNameDnsAdvice interception path.
           - service-provider
     ports:
       - "18081:18081"

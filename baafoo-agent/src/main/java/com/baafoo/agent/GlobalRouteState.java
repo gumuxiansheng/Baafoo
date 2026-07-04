@@ -142,12 +142,12 @@ public final class GlobalRouteState {
     public static final ThreadLocal<String> DNS_REDIRECT_TARGET = new ThreadLocal<String>();
 
     /**
-     * Re-entry guard for ConsulDnsGetByNameAdvice / ConsulDnsGetAllByNameAdvice.
+     * Re-entry guard for ServiceNameDnsAdvice / ServiceNameDnsGetAllByNameAdvice.
      *
      * <p>Set to {@code Boolean.TRUE} while the advice is in the middle of
      * resolving a redirect target via {@link InetAddress#getByName(String)}.
      * Without this guard, if the redirect target host (typically
-     * {@link #SERVER_HOST}) also matches a Consul service route, the advice
+     * {@link #SERVER_HOST}) also matches a service-name route, the advice
      * would re-enter itself recursively until StackOverflowError.</p>
      *
      * <p><b>Must live here (GlobalRouteState) rather than in the advice class</b>:
@@ -164,7 +164,7 @@ public final class GlobalRouteState {
      * advice would throw {@code NoClassDefFoundError}. Callers must treat
      * {@code null} as {@code false} via {@code Boolean.TRUE.equals(guard.get())}.</p>
      */
-    public static final ThreadLocal<Boolean> CONSUL_DNS_REENTRY_GUARD = new ThreadLocal<Boolean>();
+    public static final ThreadLocal<Boolean> SERVICE_NAME_DNS_REENTRY_GUARD = new ThreadLocal<Boolean>();
 
     // ---- Recording session tracking ----
     // Maps socket identity (System.identityHashCode) to session info:

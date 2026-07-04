@@ -12,7 +12,7 @@ spring:
         password: ${NACOS_PASS:nacos}
         # Register with the Spring application name so the Baafoo Agent on Consumer
         # can match the outbound HttpClient.openServer(server="service-provider")
-        # against the serviceName-based rule (ConsulHttpAdvice interception).
+        # against the serviceName-based rule (HttpOpenServerAdvice interception).
         ip: ${NACOS_REGISTER_HOST:service-provider}
 
 management:

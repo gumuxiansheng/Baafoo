@@ -6,10 +6,16 @@ import net.bytebuddy.asm.Advice;
 import java.net.InetAddress;
 
 /**
- * Intercepts InetAddress.getByName (single-result variant) for Consul/Nacos
- * service-name redirection.
+ * Intercepts InetAddress.getByName (single-result variant) for service-name
+ * (or host-based) redirection.
  *
- * <p><b>CRITICAL</b>: Must be a separate class from ConsulDnsGetAllByNameAdvice
+ * <p>Activated when {@code serviceInterceptionEnabled: true} in the agent
+ * config. Despite the legacy flag name, this advice is registry-agnostic:
+ * it works with Nacos, Consul, Eureka, or any registry whose service names
+ * are routed via Baafoo rules. The redirect target is the Baafoo Server
+ * (which then mocks or forwards the request based on rule matching).</p>
+ *
+ * <p><b>CRITICAL</b>: Must be a separate class from {@link ServiceNameDnsGetAllByNameAdvice}
  * because ByteBuddy's {@code Advice.to()} discovers ALL @Advice.OnMethodExit
  * methods in a class and tries to apply them to the target method, causing a
  * "Duplicate advice" error when two methods with different return types
@@ -21,9 +27,9 @@ import java.net.InetAddress;
  * <p><b>Bootstrap CL constraint:</b> inlined into java.net.InetAddress by ByteBuddy;
  * only reference Bootstrap CL-visible classes.</p>
  */
-public final class ConsulDnsGetByNameAdvice {
+public final class ServiceNameDnsAdvice {
 
-    private ConsulDnsGetByNameAdvice() {}
+    private ServiceNameDnsAdvice() {}
 
     @Advice.OnMethodExit
     public static void onGetByName(
@@ -38,8 +44,8 @@ public final class ConsulDnsGetByNameAdvice {
         // because this advice is inlined into java.net.InetAddress (Bootstrap CL)
         // and static field accesses are not inlined — the field must be reachable
         // from the Bootstrap CL. GlobalRouteState is in the Bootstrap JAR.
-        // Null (unset) is treated as false — see GlobalRouteState.CONSUL_DNS_REENTRY_GUARD javadoc.
-        if (Boolean.TRUE.equals(GlobalRouteState.CONSUL_DNS_REENTRY_GUARD.get())) {
+        // Null (unset) is treated as false — see GlobalRouteState.SERVICE_NAME_DNS_REENTRY_GUARD javadoc.
+        if (Boolean.TRUE.equals(GlobalRouteState.SERVICE_NAME_DNS_REENTRY_GUARD.get())) {
             return;
         }
 
@@ -65,17 +71,17 @@ public final class ConsulDnsGetByNameAdvice {
                 target = GlobalRouteState.lookupByHost(host);
             }
             if (target != null) {
-                GlobalRouteState.logInfo("[Baafoo] ConsulDns redirect (getByName): " + host + " -> " + target.host);
-                GlobalRouteState.CONSUL_DNS_REENTRY_GUARD.set(Boolean.TRUE);
+                GlobalRouteState.logInfo("[Baafoo] ServiceNameDns redirect (getByName): " + host + " -> " + target.host);
+                GlobalRouteState.SERVICE_NAME_DNS_REENTRY_GUARD.set(Boolean.TRUE);
                 try {
                     result = InetAddress.getByName(target.host);
                 } finally {
-                    GlobalRouteState.CONSUL_DNS_REENTRY_GUARD.set(Boolean.FALSE);
+                    GlobalRouteState.SERVICE_NAME_DNS_REENTRY_GUARD.set(Boolean.FALSE);
                 }
             }
         } catch (Throwable t) {
-            GlobalRouteState.CONSUL_DNS_REENTRY_GUARD.set(Boolean.FALSE);
-            GlobalRouteState.logInfo("[Baafoo] ConsulDns (getByName) error: " + t.getMessage());
+            GlobalRouteState.SERVICE_NAME_DNS_REENTRY_GUARD.set(Boolean.FALSE);
+            GlobalRouteState.logInfo("[Baafoo] ServiceNameDns (getByName) error: " + t.getMessage());
         }
     }
 }

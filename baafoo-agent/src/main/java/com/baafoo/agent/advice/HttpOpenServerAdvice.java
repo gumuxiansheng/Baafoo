@@ -7,18 +7,22 @@ import net.bytebuddy.asm.Advice;
  * Intercepts sun.net.www.http.HttpClient.openServer to redirect HTTP traffic
  * targeting a service-name (or hostname) that matches a Baafoo rule.
  *
+ * <p>Activated when {@code serviceInterceptionEnabled: true} in the agent
+ * config. Registry-agnostic: works with Nacos, Consul, Eureka, or any
+ * registry whose service names are routed via Baafoo rules.</p>
+ *
  * <p>Strategy: only modify the <b>port</b>, keep the original <b>server</b>
  * (hostname). This preserves the original Host HTTP header so the Baafoo
  * Server's MatchEngine can match the rule using the host field. The DNS
  * resolution of the original hostname is handled separately by
- * {@link ConsulDnsGetByNameAdvice} which overrides the resolved InetAddress
+ * {@link ServiceNameDnsAdvice} which overrides the resolved InetAddress
  * to point at the Baafoo Server when the hostname matches a rule.</p>
  *
  * <p>Lookup order: try host:port exact match first (via {@code lookup}),
  * then fall back to serviceName lookup (via {@code lookupService}). This
  * supports both host-based and serviceName-based rules.</p>
  */
-public class ConsulHttpAdvice {
+public class HttpOpenServerAdvice {
 
     @Advice.OnMethodEnter
     public static void onOpenServer(
@@ -56,11 +60,11 @@ public class ConsulHttpAdvice {
 
             // IMPORTANT: only modify port, keep original server (hostname).
             // This preserves the Host HTTP header for server-side rule matching.
-            // The actual IP redirect happens in ConsulDnsGetByNameAdvice.
-            GlobalRouteState.logInfo("[Baafoo] ConsulHttpAdvice redirect: " + server + ":" + port + " -> " + server + ":" + targetPort + " (DNS will resolve to " + targetHost + ")");
+            // The actual IP redirect happens in ServiceNameDnsAdvice.
+            GlobalRouteState.logInfo("[Baafoo] HttpOpenServerAdvice redirect: " + server + ":" + port + " -> " + server + ":" + targetPort + " (DNS will resolve to " + targetHost + ")");
             port = targetPort;
         } catch (Throwable t) {
-            GlobalRouteState.logInfo("[Baafoo] ConsulHttpAdvice error: " + t.getMessage());
+            GlobalRouteState.logInfo("[Baafoo] HttpOpenServerAdvice error: " + t.getMessage());
         }
     }
 }

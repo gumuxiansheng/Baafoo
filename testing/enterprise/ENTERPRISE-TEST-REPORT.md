@@ -581,7 +581,7 @@ docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -
 
 | 配置项 | 文件 | 变更 |
 |--------|------|------|
-| 启用 Consul 拦截 | `baafoo-agent-consumer.yml` | `consulEnabled: false` → `consulEnabled: true` |
+| 启用服务名拦截 | `baafoo-agent-consumer.yml` | `serviceInterceptionEnabled: false` → `serviceInterceptionEnabled: true` |
 | 降低 JVM DNS 缓存 TTL | `Dockerfile.consumer` | `JAVA_OPTS` 增加 `-Dnetworkaddress.cache.ttl=5` |
 | Provider 注册 IP | `baafoo-sca-provider/application.yml` | `ip: provider` → `ip: service-provider` |
 | Docker 网络别名 | `docker-compose.yml` (provider) | 增加 `networks.aliases: service-provider` |
@@ -590,11 +590,11 @@ docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -
 
 为支持 serviceName 拦截，对 Agent 和 Server 做了以下代码修改：
 
-1. **拆分 ConsulDnsAdvice**：原 `ConsulDnsAdvice` 同时含 `getByName` 和 `getAllByName` 两个 `@Advice.OnMethodExit` 方法（返回类型不同），ByteBuddy 报 "Duplicate advice" 错误。拆分为两个独立类：
-   - [ConsulDnsGetByNameAdvice.java](file:///c:/Dev/Projects/Baafoo/baafoo-agent/src/main/java/com/baafoo/agent/advice/ConsulDnsGetByNameAdvice.java) — 处理 `InetAddress.getByName()`
-   - [ConsulDnsGetAllByNameAdvice.java](file:///c:/Dev/Projects/Baafoo/baafoo-agent/src/main/java/com/baafoo/agent/advice/ConsulDnsGetAllByNameAdvice.java) — 处理 `InetAddress.getAllByName()`
+1. **拆分 ServiceNameDnsAdvice**：原 `ServiceNameDnsAdvice` 同时含 `getByName` 和 `getAllByName` 两个 `@Advice.OnMethodExit` 方法（返回类型不同），ByteBuddy 报 "Duplicate advice" 错误。拆分为两个独立类：
+   - [ServiceNameDnsAdvice.java](file:///c:/Dev/Projects/Baafoo/baafoo-agent/src/main/java/com/baafoo/agent/advice/ServiceNameDnsAdvice.java) — 处理 `InetAddress.getByName()`
+   - [ServiceNameDnsGetAllByNameAdvice.java](file:///c:/Dev/Projects/Baafoo/baafoo-agent/src/main/java/com/baafoo/agent/advice/ServiceNameDnsGetAllByNameAdvice.java) — 处理 `InetAddress.getAllByName()`
 
-2. **重设 ConsulHttpAdvice 策略**：从"同时修改 server+port"改为"只修改 port，保留原始 server"。原因：若修改 server，HTTP 请求的 `Host` header 会变成 `baafoo-server`，Server 端 `HttpStubHandler` 从 Host header 提取的 host 是 `baafoo-server` 而非 `service-provider`，规则无法匹配。新策略由 `ConsulDnsGetByNameAdvice` 负责 IP 重定向。见 [ConsulHttpAdvice.java](file:///c:/Dev/Projects/Baafoo/baafoo-agent/src/main/java/com/baafoo/agent/advice/ConsulHttpAdvice.java#L57-L61)。
+2. **重设 ConsulHttpAdvice 策略**：从"同时修改 server+port"改为"只修改 port，保留原始 server"。原因：若修改 server，HTTP 请求的 `Host` header 会变成 `baafoo-server`，Server 端 `HttpStubHandler` 从 Host header 提取的 host 是 `baafoo-server` 而非 `service-provider`，规则无法匹配。新策略由 `ServiceNameDnsAdvice` 负责 IP 重定向。见 [ConsulHttpAdvice.java](file:///c:/Dev/Projects/Baafoo/baafoo-agent/src/main/java/com/baafoo/agent/advice/ConsulHttpAdvice.java#L57-L61)。
 
 3. **修复 MatchEngine.matchesTarget**：原逻辑当规则含 `serviceName` 但请求的 `serviceName` 为 null 时直接返回 false（HTTP 请求只有 Host header，无法获知 serviceName）。修复为：serviceName 为 null 时 fall through 到 host 匹配。见 [MatchEngine.java](file:///c:/Dev/Projects/Baafoo/baafoo-core/src/main/java/com/baafoo/core/util/MatchEngine.java#L189-L216)。
 
@@ -619,13 +619,13 @@ docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -
 - **证据（Agent 拦截日志）**:
   ```
   [http-nio-18083-exec-4] INFO com.baafoo.agent.advice - [Baafoo] ConsulHttpAdvice redirect: service-provider:18081 -> service-provider:9000 (DNS will resolve to baafoo-server)
-  [http-nio-18083-exec-4] INFO com.baafoo.agent.advice - [Baafoo] ConsulDns redirect (getAllByName): service-provider -> baafoo-server
-  [http-nio-18083-exec-4] INFO com.baafoo.agent.advice - [Baafoo] ConsulDns redirect (getByName): service-provider -> baafoo-server
+  [http-nio-18083-exec-4] INFO com.baafoo.agent.advice - [Baafoo] ServiceNameDns redirect (getAllByName): service-provider -> baafoo-server
+  [http-nio-18083-exec-4] INFO com.baafoo.agent.advice - [Baafoo] ServiceNameDns redirect (getByName): service-provider -> baafoo-server
   ```
 - **完整拦截链路**:
   1. Consumer Feign 调用 `http://service-provider/echo/test`
   2. `ConsulHttpAdvice` 拦截 `HttpClient.openServer("service-provider", 18081)`：port 改为 9000，server 保留为 `service-provider`（保持 Host header）
-  3. `ConsulDnsGetByNameAdvice` 拦截 `InetAddress.getByName("service-provider")`：DNS 重定向到 `baafoo-server` IP
+  3. `ServiceNameDnsAdvice` 拦截 `InetAddress.getByName("service-provider")`：DNS 重定向到 `baafoo-server` IP
   4. 请求到达 `baafoo-server:9000`，Host header 为 `service-provider:9000`
   5. `HttpStubHandler` 提取 host=`service-provider`, port=9000
   6. `MatchEngine` 首次匹配 port=9000 失败（规则 port=18081），回退 port=0 匹配成功（host 匹配 + serviceName 为 null 时 fall through）
@@ -636,7 +636,7 @@ docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -
 - **状态**: ✅ PASS
 - **预期**: serviceName 拦截仅作用于 Consumer 出站调用，不影响 Provider 入站请求
 - **实际**: 直接访问 Provider 的 `/echo/test` 端点仍返回真实数据（未被 Mock）
-- **说明**: `ConsulHttpAdvice` 和 `ConsulDnsGetByNameAdvice` 拦截的是出站 HttpClient/DNS 调用，Provider 作为被调用方不会触发拦截
+- **说明**: `ConsulHttpAdvice` 和 `ServiceNameDnsAdvice` 拦截的是出站 HttpClient/DNS 调用，Provider 作为被调用方不会触发拦截
 
 **EG-INT-SVC 子项汇总**: 2/2 PASS
 
@@ -765,11 +765,11 @@ spring:
 
 ### 7. ByteBuddy "Duplicate advice" 错误（serviceName 拦截引入）
 
-**问题**: 启用 `consulEnabled: true` 后，Agent 启动报 `ByteBuddy transform error for java.net.InetAddress: Duplicate advice for Delegate to public static void ...ConsulDnsAdvice.onGetByName(...) and public static void ...ConsulDnsAdvice.onGetAllByName(...)`。
+**问题**: 启用 `serviceInterceptionEnabled: true` 后，Agent 启动报 `ByteBuddy transform error for java.net.InetAddress: Duplicate advice for Delegate to public static void ...ServiceNameDnsAdvice.onGetByName(...) and public static void ...ServiceNameDnsAdvice.onGetAllByName(...)`。
 
-**根因**: `ConsulDnsAdvice` 类中同时含两个 `@Advice.OnMethodExit` 方法（返回类型不同：`InetAddress` vs `InetAddress[]`），ByteBuddy 尝试将两个方法都应用到同一目标方法导致冲突。
+**根因**: `ServiceNameDnsAdvice` 类中同时含两个 `@Advice.OnMethodExit` 方法（返回类型不同：`InetAddress` vs `InetAddress[]`），ByteBuddy 尝试将两个方法都应用到同一目标方法导致冲突。
 
-**解决方案**: 拆分为两个独立类 `ConsulDnsGetByNameAdvice` 和 `ConsulDnsGetAllByNameAdvice`（与既有 `DnsGetByNameAdvice` / `DnsGetAllByNameAdvice` 拆分模式一致），并在 [BaafooAgent.java](file:///c:/Dev/Projects/Baafoo/baafoo-agent/src/main/java/com/baafoo/agent/BaafooAgent.java#L355-L363) 分别注册。
+**解决方案**: 拆分为两个独立类 `ServiceNameDnsAdvice` 和 `ServiceNameDnsGetAllByNameAdvice`（与既有 `DnsGetByNameAdvice` / `DnsGetAllByNameAdvice` 拆分模式一致），并在 [BaafooAgent.java](file:///c:/Dev/Projects/Baafoo/baafoo-agent/src/main/java/com/baafoo/agent/BaafooAgent.java#L355-L363) 分别注册。
 
 ### 8. ConsulHttpAdvice 修改 server 导致 Host header 不匹配
 
@@ -777,11 +777,11 @@ spring:
 
 **根因**: `ConsulHttpAdvice` 同时修改 `server` 和 `port` 参数，导致 HTTP 请求的 `Host` header 变成 `baafoo-server`，Server 端 `HttpStubHandler` 从 Host header 提取的 host 是 `baafoo-server` 而非 `service-provider`，规则无法匹配。
 
-**解决方案**: [ConsulHttpAdvice](file:///c:/Dev/Projects/Baafoo/baafoo-agent/src/main/java/com/baafoo/agent/advice/ConsulHttpAdvice.java#L57-L61) 只修改 `port`，保留原始 `server`（hostname），由 `ConsulDnsGetByNameAdvice` 负责 IP 重定向（将 `service-provider` 解析为 `baafoo-server` IP）。这样 Host header 保持为 `service-provider` 供 Server 端规则匹配。
+**解决方案**: [ConsulHttpAdvice](file:///c:/Dev/Projects/Baafoo/baafoo-agent/src/main/java/com/baafoo/agent/advice/ConsulHttpAdvice.java#L57-L61) 只修改 `port`，保留原始 `server`（hostname），由 `ServiceNameDnsAdvice` 负责 IP 重定向（将 `service-provider` 解析为 `baafoo-server` IP）。这样 Host header 保持为 `service-provider` 供 Server 端规则匹配。
 
 ### 9. MatchEngine.matchesTarget 当 serviceName 为 null 时误返回 false
 
-**问题**: serviceName 拦截链路完整触发（ConsulHttpAdvice + ConsulDnsGetByNameAdvice 日志正常），但 Server 端日志显示 `No Baafoo rule matched: GET /echo/test — passthrough`，规则未匹配。
+**问题**: serviceName 拦截链路完整触发（ConsulHttpAdvice + ServiceNameDnsAdvice 日志正常），但 Server 端日志显示 `No Baafoo rule matched: GET /echo/test — passthrough`，规则未匹配。
 
 **根因**: [MatchEngine.matchesTarget](file:///c:/Dev/Projects/Baafoo/baafoo-core/src/main/java/com/baafoo/core/util/MatchEngine.java#L189-L216) 中，当规则含 `serviceName` 字段时优先按 serviceName 匹配，若请求的 `serviceName` 为 null（HTTP 请求只有 Host header，`HttpStubHandler` 传 null）则直接 `return false`，未回退到 host 匹配。
 
@@ -802,7 +802,7 @@ spring:
 7. ✅ **心跳机制**: 两个 Agent 心跳间隔 < 30 秒，Server 实时感知 Agent 存活状态
 8. ✅ **Spring Cloud Alibaba 兼容**: 完全兼容 Spring Cloud Alibaba 2023.0.3.2 + Nacos Discovery + Spring Cloud OpenFeign + LoadBalancer
 9. ✅ **Nacos 服务注册不影响**: Agent 挂载未破坏 Nacos 客户端注册与服务发现流程
-10. ✅ **基于微服务名（serviceName）拦截**: 启用 `consulEnabled: true` 后，Agent 通过 `ConsulHttpAdvice`（拦截 `HttpClient.openServer`）+ `ConsulDnsGetByNameAdvice`（拦截 `InetAddress.getByName`）双重拦截，支持按微服务名而非域名/host 进行拦截
+10. ✅ **基于微服务名（serviceName）拦截**: 启用 `serviceInterceptionEnabled: true` 后，Agent 通过 `ConsulHttpAdvice`（拦截 `HttpClient.openServer`）+ `ServiceNameDnsAdvice`（拦截 `InetAddress.getByName`）双重拦截，支持按微服务名而非域名/host 进行拦截
 11. ✅ **Host header 保持机制**: `ConsulHttpAdvice` 只修改 port 保留 server，确保 Server 端 `HttpStubHandler` 能从 Host header 提取原始 host 进行规则匹配
 12. ✅ **MatchEngine serviceName 兜底匹配**: 规则含 serviceName 但请求 serviceName 为 null 时，回退到 host 匹配而非直接失败
 
@@ -812,7 +812,7 @@ spring:
 |--------|------|------|
 | `Socket.connect` Advice 拦截 | ✅ | ByteBuddy 注入的 SocketConnectAdvice 正确触发（host-based 拦截） |
 | `HttpClient.openServer` Advice 拦截 | ✅ | ByteBuddy 注入的 ConsulHttpAdvice 正确触发（serviceName-based 拦截） |
-| `InetAddress.getByName` Advice 拦截 | ✅ | ConsulDnsGetByNameAdvice 将服务名重定向到 Baafoo Server IP |
+| `InetAddress.getByName` Advice 拦截 | ✅ | ServiceNameDnsAdvice 将服务名重定向到 Baafoo Server IP |
 | `GlobalRouteState.lookup(host, port)` 路由查找 | ✅ | host:port 精确匹配命中（host-based 规则） |
 | `GlobalRouteState.lookupService(serviceName)` 路由查找 | ✅ | `svc:serviceName` 前缀条目查找命中（serviceName-based 规则） |
 | `RouteTable.rebuildRouteTable` 路由表构建 | ✅ | 同时为 host 字段和 serviceName 字段创建路由条目 |
@@ -896,7 +896,7 @@ EG-INT-001,Agent does not break discovery,PASS,Consumer can find Provider instan
 EG-INT-003,Feign call mocked,PASS,Mock enabled: returns 'hello Nacos Discovery mock',Response: hello Nacos Discovery mock,agent intercepts consumer->provider outbound HTTP
 EG-INT-003,Mock path precise match,PASS,Mock only applies to /echo/* /divide unaffected,Response: 5 (10/2=5),/divide-feign returns real calculation
 EG-INT-003,Provider direct call,PASS,Provider direct (no Agent intercept inbound) returns real,Response: hello Nacos Discovery direct,Provider Agent does not intercept inbound HTTP
-EG-INT-SVC,Feign call mocked via serviceName,PASS,serviceName rule enabled with consulEnabled=true returns mock body,Response: hello Nacos Discovery mock via serviceName,ConsulHttpAdvice + ConsulDnsGetByNameAdvice double interception
+EG-INT-SVC,Feign call mocked via serviceName,PASS,serviceName rule enabled with serviceInterceptionEnabled=true returns mock body,Response: hello Nacos Discovery mock via serviceName,ConsulHttpAdvice + ServiceNameDnsAdvice double interception
 EG-INT-SVC,serviceName interception directionality,PASS,serviceName interception only affects outbound calls Provider inbound unaffected,Provider direct /echo/test returns real data,Agent intercepts outbound HttpClient.openServer only
 EG-INT-008,Agents work independently,PASS,Provider direct returns real Consumer Feign mocked by its Agent,"Provider=hello Nacos Discovery direct; Consumer Feign=hello Nacos Discovery mock",Provider Agent no inbound intercept Consumer Agent outbound intercept
 EG-INT-008,Environment isolation rules,PASS,Mock rules only bound to Consumer env Provider env has none,Consumer rules=2 Provider rules=0,environment isolation works as expected

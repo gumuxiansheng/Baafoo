@@ -36,7 +36,7 @@
 │  │  │ 2. SkyWalking 9.4.0 agent (SW_AGENT_NAME=      │  │      │
 │  │  │    service-consumer)                             │  │      │
 │  │  │ 3. Baafoo 1.1.0 agent (env=enterprise-sca-       │  │      │
-│  │  │    consumer, consulEnabled=true)                 │  │      │
+│  │  │    consumer, serviceInterceptionEnabled=true)   │  │      │
 │  │  └──────────────────────────────────────────────────┘  │      │
 │  └────────────────────────────────────────────────────────┘      │
 └──────────────────────────────────────────────────────────────────┘
@@ -107,10 +107,10 @@ INFO main SkyWalkingAgent : Skywalking agent begin to install transformer ...
 
 **Baafoo Agent 转换注册日志**:
 ```
-INFO com.baafoo.agent.transform.TransformRegistry - Registered transform: java.net.InetAddress ← ConsulDnsGetByNameAdvice/GetAllByNameAdvice (dns+consul)
+INFO com.baafoo.agent.transform.TransformRegistry - Registered transform: java.net.InetAddress ← ServiceNameDnsAdvice/ServiceNameDnsGetAllByNameAdvice (dns+serviceName)
 INFO com.baafoo.agent.transform.TransformRegistry - Registered transform: java.net.Socket ← SocketConnectAdvice (tcp)
 INFO com.baafoo.agent.transform.TransformRegistry - Registered transform: sun.nio.ch.SocketChannelImpl ← NioSocketConnectAdvice (tcp)
-INFO com.baafoo.agent.transform.TransformRegistry - Registered transform: sun.net.www.http.HttpClient ← ConsulHttpAdvice (http)
+INFO com.baafoo.agent.transform.TransformRegistry - Registered transform: sun.net.www.http.HttpClient ← HttpOpenServerAdvice (http)
 INFO com.baafoo.agent.transform.TransformRegistry - Registered transform: org.apache.kafka.clients.producer.KafkaProducer ← KafkaProducerAdvice (kafka)
 ```
 
@@ -131,9 +131,9 @@ Body: hello Nacos Discovery mock via serviceName
 
 **Agent 拦截链路日志**:
 ```
-[http-nio-18083-exec-3] INFO com.baafoo.agent.advice - [Baafoo] ConsulHttpAdvice redirect: service-provider:18081 -> service-provider:9000 (DNS will resolve to baafoo-server)
-[http-nio-18083-exec-3] INFO com.baafoo.agent.advice - [Baafoo] ConsulDns redirect (getAllByName): service-provider -> baafoo-server
-[http-nio-18083-exec-3] INFO com.baafoo.agent.advice - [Baafoo] ConsulDns redirect (getByName): service-provider -> baafoo-server
+[http-nio-18083-exec-3] INFO com.baafoo.agent.advice - [Baafoo] HttpOpenServerAdvice redirect: service-provider:18081 -> service-provider:9000 (DNS will resolve to baafoo-server)
+[http-nio-18083-exec-3] INFO com.baafoo.agent.advice - [Baafoo] ServiceNameDns redirect (getAllByName): service-provider -> baafoo-server
+[http-nio-18083-exec-3] INFO com.baafoo.agent.advice - [Baafoo] ServiceNameDns redirect (getByName): service-provider -> baafoo-server
 ```
 
 **结论**: 在 JaCoCo + SkyWalking 同时存在时，Baafoo 的 serviceName-based Mock 拦截能力完整工作，三 Agent 不互相干扰。

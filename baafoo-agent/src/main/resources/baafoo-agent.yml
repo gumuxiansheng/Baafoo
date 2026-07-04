@@ -28,8 +28,8 @@ heartbeatIntervalSec: 30
 # Rule polling interval in seconds
 pollIntervalSec: 10
 
-# Whether Consul service discovery interception is enabled
-consulEnabled: false
+# Whether service-name based interception is enabled (registry-agnostic: Nacos, Consul, Eureka, etc.)
+serviceInterceptionEnabled: false
 
 # Consul address (e.g., localhost:8500)
 consulAddress: "localhost:8500"

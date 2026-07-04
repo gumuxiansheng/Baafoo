@@ -14,7 +14,7 @@ environment: "enterprise-sca-provider"
 heartbeatIntervalSec: 30
 pollIntervalSec: 10
 
-consulEnabled: false
+serviceInterceptionEnabled: false
 consulAddress: "localhost:8500"
 
 protocols:

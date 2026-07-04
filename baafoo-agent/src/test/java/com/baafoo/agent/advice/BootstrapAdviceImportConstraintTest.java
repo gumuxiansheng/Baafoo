@@ -50,9 +50,9 @@ public class BootstrapAdviceImportConstraintTest {
      * forbidden for these classes.</p>
      */
     private static final String[] BOOTSTRAP_CLASSES = {
-            "com.baafoo.agent.advice.ConsulDnsGetByNameAdvice",
-            "com.baafoo.agent.advice.ConsulDnsGetAllByNameAdvice",
-            "com.baafoo.agent.advice.ConsulHttpAdvice",
+            "com.baafoo.agent.advice.HttpOpenServerAdvice",
+            "com.baafoo.agent.advice.ServiceNameDnsAdvice",
+            "com.baafoo.agent.advice.ServiceNameDnsGetAllByNameAdvice",
             "com.baafoo.agent.advice.DnsGetAllByNameAdvice",
             "com.baafoo.agent.advice.DnsGetByNameAdvice",
             "com.baafoo.agent.advice.NioSocketConnectAdvice",
