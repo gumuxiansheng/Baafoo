@@ -5,6 +5,7 @@
 **项目**: Baafoo - JavaAgent-Based API Mock Platform
 
 **版本更新记录**：
+- v2.1 (2026-07-04): §10.7 多 Agent 共存兼容性扩展：合并 JaCoCo + SkyWalking + Baafoo 三 Agent 组合详细测试方案（MULTI-001~008），含测试矩阵、环境配置、JVM 启动命令、验收标准、风险缓解、执行流程；更新 COMP-AGENT 矩阵增加版本号和测试状态
 - v2.0 (2026-06-29): 全方位查漏补缺：新增变异测试(§5.6)、安全测试(§15)、文档/API契约测试(§16)、客户端SDK测试(§8.9)、代理Sidecar测试(§8.10)；补全缺失的服务端Handler/Auth/Storage/MCP/API单元测试；新增L4层Testcontainers集成测试、gRPC服务端流测试、协议TLS/SASL兼容性、虚拟线程兼容性、ARM64架构兼容性、资源泄漏专项(文件描述符/线程泄漏/Netty堆外内存)；前端新增组件单元测试、响应式测试、可访问性测试、视觉回归测试；整合已知P0问题验证用例(代码审查报告的3个P0 + 5个P1)
 - v1.4 (2026-06-24): 企业级应用测试按行业领域重新分类，新增金融/互联网/政务信创/工业物联网/电商零售/医疗等行业测试应用，扩展多Agent共存测试
 - v1.3 (2026-06-24): 新增 gRPC 协议支持测试内容，包括集成测试、功能测试、性能测试、兼容性测试
@@ -1844,23 +1845,236 @@ docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -
 
 ### 10.7 多 Agent 共存兼容性
 
-| 用例ID | 共存 Agent | 类型 | 测试内容 | 优先级 |
-|--------|-----------|------|---------|-------|
-| COMP-AGENT-001 | JaCoCo (本项目使用) | 覆盖率采集 | 同时挂载，两者功能均正常 | P0 |
-| COMP-AGENT-002 | SkyWalking | APM 监控 | 同时挂载，功能不冲突 | P1 |
-| COMP-AGENT-003 | Pinpoint | APM 监控 | 同时挂载，功能不冲突 | P2 |
-| COMP-AGENT-004 | Arthas | 诊断工具 | 动态 Attach 共存 | P2 |
-| COMP-AGENT-005 | Prometheus JMX Exporter | 监控采集 | JMX 采集与 Agent 共存 | P2 |
-| COMP-AGENT-006 | Takin Agent | 全链路压测 | 动态 Agent 植入共存，影子链路不冲突 | P1 |
-| COMP-AGENT-007 | AREX Agent | 录制回放 | 录制回放 Agent 共存，功能协同 | P1 |
-| COMP-AGENT-008 | Alibaba Arthas + SkyWalking | 多 Agent 组合 | 三个及以上 Agent 同时挂载 | P2 |
+#### 10.7.1 共存 Agent 矩阵
+
+| 用例ID | 共存 Agent | 版本 | 类型 | 测试内容 | 优先级 | 状态 |
+|--------|-----------|------|------|---------|-------|------|
+| COMP-AGENT-001 | JaCoCo (本项目使用) | 0.8.12 | 覆盖率采集 | 同时挂载，覆盖率数据正常采集 | P0 | ✅ 已测试 |
+| COMP-AGENT-002 | SkyWalking | 9.4.0 | APM 监控 | 同时挂载，链路追踪正常 | P1 | ✅ 已测试 |
+| COMP-AGENT-003 | Pinpoint | latest | APM 监控 | 同时挂载，功能不冲突 | P2 | 待测试 |
+| COMP-AGENT-004 | Arthas | latest | 诊断工具 | 动态 Attach 共存 | P2 | 待测试 |
+| COMP-AGENT-005 | Prometheus JMX Exporter | latest | 监控采集 | JMX 采集与 Agent 共存 | P2 | 待测试 |
+| COMP-AGENT-006 | Takin Agent | latest | 全链路压测 | 动态 Agent 植入共存，影子链路不冲突 | P1 | 待测试 |
+| COMP-AGENT-007 | AREX Agent | latest | 录制回放 | 录制回放 Agent 共存，功能协同 | P1 | 待测试 |
+| COMP-AGENT-008 | JaCoCo + SkyWalking + Baafoo | 见上 | 多 Agent 组合 | 三个 Agent 同时挂载，详细测试见 §10.7.2 | P0 | ✅ 已测试 |
+
+#### 10.7.2 三 Agent 组合测试方案（JaCoCo + SkyWalking + Baafoo）
+
+**测试目标**: 验证 Baafoo Agent 与主流 APM/Coverage Agent（SkyWalking、JaCoCo）同时挂载到 Spring Cloud Alibaba 微服务应用时，三方的字节码增强互不冲突，各项功能均正常工作。
+
+**测试范围**: spring-cloud-alibaba 微服务测试场景（Provider + Consumer + Nacos + Feign），覆盖应用启动、Baafoo Mock 拦截（host-based + serviceName-based）、SkyWalking 链路追踪、JaCoCo 覆盖率采集四大能力。
+
+**优先级**: P0（JaCoCo 是本项目自身的覆盖率工具，必须验证共存；SkyWalking 是国内最常用的 APM Agent）
+
+##### 10.7.2.1 测试矩阵
+
+| Agent | 版本 | 类型 | 加载顺序 | 作用 |
+|-------|------|------|---------|------|
+| JaCoCo | 0.8.12 | 覆盖率采集 | 1 (首位) | 采集测试覆盖率数据 |
+| SkyWalking | 9.4.0 | APM 监控 | 2 | 链路追踪、性能监控 |
+| Baafoo | 1.1.0-SNAPSHOT | Mock/挡板 | 3 (末位) | 微服务调用拦截、Mock 响应 |
+
+**加载顺序选择依据**:
+- JaCoCo 必须在首位（覆盖率 Agent 需要在类加载时第一时间注入探针）
+- SkyWalking 在中间，APM 类 Agent 应在 Mock 类 Agent 前
+- Baafoo 在末位，业务挡板类 Agent 应在监控类 Agent 后
+
+##### 10.7.2.2 测试环境
+
+**新增容器**:
+
+| 容器 | 镜像 | 端口 | 作用 |
+|------|------|------|------|
+| `baafoo-enterprise-oap` | `apache/skywalking-oap-server:9.4.0-java17` | 11800(gRPC), 12800(HTTP) | SkyWalking OAP 后端 |
+| `baafoo-enterprise-ui` | `apache/skywalking-ui:9.4.0-java17` | 18080→8080 | SkyWalking Web UI（可选） |
+
+**Agent JAR 来源**:
+
+| Agent | 下载地址 | 大小（约） |
+|-------|---------|-----------|
+| JaCoCo | `https://repo1.maven.org/maven2/org/jacoco/org.jacoco.agent/0.8.12/org.jacoco.agent-0.8.12-runtime.jar` | 302KB |
+| SkyWalking | 从 Docker 镜像 `apache/skywalking-java-agent:9.4.0-java17` 提取 `/skywalking/agent` 目录 | 34MB（解压后） |
+
+> **注意**: JaCoCo 必须使用 `-runtime.jar`（含 `Premain-Class`），而非库 JAR；SkyWalking 从 Docker 镜像提取比从 archive.apache.org 下载 tgz 更可靠。
+
+**Agent 配置参数**:
+
+JaCoCo（append 模式，输出 classdumps 到 `/tmp/jacoco/classdumps`）:
+```
+-javaagent:/app/agents/jacoco-agent.jar=output=tcpserver,address=0.0.0.0,port=6300,append=true,classdumpdir=/tmp/jacoco/classdumps
+```
+
+SkyWalking（指向 OAP 后端，服务名按容器区分）:
+```
+-javaagent:/app/agents/skywalking/skywalking-agent.jar
+-DSW_AGENT_NAME=service-consumer
+-DSW_AGENT_COLLECTOR_BACKEND_SERVICES=baafoo-enterprise-oap:11800
+```
+
+Baafoo（保持现有配置）:
+```
+-javaagent:/app/baafoo-agent.jar=config=/app/baafoo-agent.yml
+```
+
+**最终 JVM 启动命令**:
+```bash
+java ${JAVA_OPTS} \
+  -javaagent:/app/agents/jacoco-agent.jar=output=tcpserver,address=0.0.0.0,port=6300,append=true,classdumpdir=/tmp/jacoco/classdumps \
+  -javaagent:/app/agents/skywalking/skywalking-agent.jar \
+  -javaagent:/app/baafoo-agent.jar=config=/app/baafoo-agent.yml \
+  -jar /app/app.jar
+```
+
+##### 10.7.2.3 详细测试用例
+
+###### MULTI-001: 三 Agent 同时加载应用启动正常 (P0)
+
+**目标**: 验证 Provider/Consumer 同时挂载 JaCoCo + SkyWalking + Baafoo 三个 Agent 后，应用能正常启动，健康检查通过，无字节码转换冲突。
+
+| 项 | 内容 |
+|----|------|
+| **前置条件** | Nacos、Baafoo Server、SkyWalking OAP 均健康 |
+| **执行步骤** | 1. 构建含 3 个 Agent 的 Provider/Consumer 镜像<br>2. `docker compose up -d`<br>3. 等待 90 秒观察启动日志 |
+| **预期结果** | 1. 容器健康检查通过（`healthy`）<br>2. 日志含 SkyWalking agent 启动信息（`SkyWalking agent initialized`）<br>3. 日志含 Baafoo agent 启动信息（`Baafoo Agent started`）<br>4. 日志无 `ClassCastException`/`NoClassDefFoundError`/`LinkageError` 等字节码冲突错误<br>5. 日志无 ByteBuddy `transform error` |
+| **通过标准** | 全部预期结果满足 |
+
+###### MULTI-002: Baafoo Mock 拦截功能正常 (P0)
+
+**目标**: 验证在 JaCoCo + SkyWalking 同时存在时，Baafoo 的 host-based 和 serviceName-based Mock 拦截能力均正常工作。
+
+| 项 | 内容 |
+|----|------|
+| **前置条件** | MULTI-001 通过；Mock 规则已创建 |
+| **执行步骤** | 1. `GET http://localhost:18083/echo-feign/test`<br>2. 检查响应 body<br>3. 检查 Consumer Agent 日志的 ConsulHttpAdvice/ConsulDns 拦截记录<br>4. 检查 Server 端规则匹配日志 |
+| **预期结果** | 1. 响应 200，body 为 Mock 数据<br>2. Agent 日志含 `ConsulHttpAdvice redirect` 和 `ConsulDns redirect`<br>3. Server 端无 `No Baafoo rule matched` 日志<br>4. JaCoCo/SkyWalking 不干扰 Baafoo 的 Socket/HttpClient 拦截 |
+| **通过标准** | 全部预期结果满足 |
+
+###### MULTI-003: SkyWalking 链路追踪数据生成正常 (P0)
+
+**目标**: 验证 Baafoo Agent 不影响 SkyWalking 的字节码注入，链路追踪数据能正常上报 OAP 后端。
+
+| 项 | 内容 |
+|----|------|
+| **前置条件** | MULTI-001 通过；SkyWalking OAP 已启动 |
+| **执行步骤** | 1. 触发 Feign 调用 `GET http://localhost:18083/echo-feign/test`<br>2. 等待 15 秒（SkyWalking 数据上报周期）<br>3. 查询 SkyWalking OAP API: `POST http://localhost:12800/graphql` 查询服务列表<br>4. 验证 Consumer 和 Provider 服务均已注册 |
+| **预期结果** | 1. SkyWalking OAP 收到 service-consumer 和 service-provider 服务数据<br>2. 不出现 SkyWalking 上报失败的错误日志 |
+| **通过标准** | OAP 服务列表包含至少 2 个服务 |
+
+###### MULTI-004: JaCoCo 覆盖率数据生成正常 (P0)
+
+**目标**: 验证 Baafoo + SkyWalking 不影响 JaCoCo 的字节码注入，覆盖率数据能正常采集。
+
+| 项 | 内容 |
+|----|------|
+| **前置条件** | MULTI-001 通过 |
+| **执行步骤** | 1. 触发若干次 Feign 调用（产生覆盖率数据）<br>2. 通过 `docker exec` 检查容器内 `/tmp/jacoco/classdumps` 目录的 .class 文件数量<br>3. 验证 Consumer 和 Provider 应用类均被插桩 |
+| **预期结果** | 1. classdumps 目录含大量 .class 文件（> 10000）<br>2. Consumer 和 Provider 应用类均被 JaCoCo 插桩<br>3. 不出现 JaCoCo 字节码注入失败日志 |
+| **通过标准** | 两个容器的 classdumps 目录均含 .class 文件 |
+
+###### MULTI-005: Feign 调用链路在 SkyWalking 中可见 (P1)
+
+**目标**: 验证 Mock 拦截的 Feign 调用也能被 SkyWalking 追踪到（Baafoo 重定向后 trace 不断裂）。
+
+| 项 | 内容 |
+|----|------|
+| **前置条件** | MULTI-002 和 MULTI-003 通过 |
+| **执行步骤** | 1. 触发 `GET http://localhost:18083/echo-feign/test`<br>2. 等待 15 秒<br>3. 查询 SkyWalking OAP API 确认 trace 数据存在<br>4. 检查 trace 中是否含 Consumer → Provider 的 span |
+| **预期结果** | 1. Trace 含 Consumer 入口 span<br>2. Trace 不因 Baafoo 重定向而断裂<br>3. OAP 中 Consumer 和 Provider 服务均可见 |
+| **通过标准** | 两个服务均在 OAP 中注册（证明 trace 数据流完整） |
+
+###### MULTI-006: 多 Agent 加载顺序影响测试 (P1)
+
+**目标**: 验证不同 Agent 加载顺序对功能的影响，确定推荐顺序。
+
+**测试变体**:
+- 变体 A: `jacoco → skywalking → baafoo`（推荐顺序）
+- 变体 B: `skywalking → jacoco → baafoo`
+- 变体 C: `baafoo → jacoco → skywalking`（Baafoo 在首位）
+
+| 项 | 内容 |
+|----|------|
+| **执行步骤** | 对每个变体重新构建镜像、启动、运行 MULTI-001~002 测试 |
+| **预期结果** | 变体 A、B 全部通过；变体 C 可能出现 Baafoo Bootstrap 类被 JaCoCo 增强后冲突 |
+| **通过标准** | 变体 A、B 通过即可；变体 C 失败不影响通过 |
+
+###### MULTI-007: 性能影响评估 (P2)
+
+**目标**: 评估多 Agent 同时挂载对应用性能的影响。
+
+| 项 | 内容 |
+|----|------|
+| **执行步骤** | 1. 单 Baafoo Agent 场景下用 `ab` 压测 1000 次<br>2. 三 Agent 场景下用 `ab` 压测 1000 次<br>3. 对比平均响应时间、QPS |
+| **预期结果** | 三 Agent 场景响应时间增加 < 50% |
+| **通过标准** | 性能衰减在可接受范围（< 50%） |
+
+###### MULTI-008: 类转换冲突检测 (P1)
+
+**目标**: 检测多 Agent 是否存在字节码转换冲突（同一类被多个 Agent 重复增强导致异常）。
+
+| 项 | 内容 |
+|----|------|
+| **执行步骤** | 1. 检查应用启动日志中 ByteBuddy/ASM 的 retransform 错误<br>2. 检查 SkyWalking 是否能正常增强 `HttpURLConnection`、`Socket` 等类（与 Baafoo 拦截点重叠）<br>3. 检查 JaCoCo 是否能正常增强 Consumer 应用业务类 |
+| **预期结果** | 1. 无 `ByteBuddy transform error` 日志<br>2. 无 `ClassFormatError`/`VerifyError`<br>3. SkyWalking 增强的类不与 Baafoo 增强的类（java.net.InetAddress、sun.net.www.http.HttpClient）冲突 |
+| **通过标准** | 启动日志无转换冲突错误 |
+
+##### 10.7.2.4 验收标准
+
+| 用例 ID | 优先级 | 必须通过 |
+|---------|-------|---------|
+| MULTI-001 | P0 | ✅ |
+| MULTI-002 | P0 | ✅ |
+| MULTI-003 | P0 | ✅ |
+| MULTI-004 | P0 | ✅ |
+| MULTI-005 | P1 | ✅ |
+| MULTI-006 | P1 | 推荐顺序变体 A 必须通过 |
+| MULTI-007 | P2 | 可选 |
+| MULTI-008 | P1 | ✅ |
+
+**最终判定**: P0 用例全部通过 + P1 用例至少通过 2/3 = 测试通过
+
+##### 10.7.2.5 风险与缓解措施
+
+**已知风险**:
+
+| 风险 | 说明 | 缓解措施 |
+|------|------|---------|
+| Bootstrap CL 类冲突 | Baafoo 将 GlobalRouteState 注入到 Bootstrap CL，SkyWalking 也可能注入 Bootstrap 类，存在类定义冲突风险 | 使用不同包名；测试中验证 |
+| java.net.InetAddress 增强冲突 | SkyWalking 增强 HTTP 客户端相关类，Baafoo 通过 ConsulDns*Advice 增强 `java.net.InetAddress`，可能冲突 | 通过 MULTI-008 专项检测 |
+| JaCoCo 增强时机 | JaCoCo 在类加载时增强，Baafoo 在类加载后（retransform）增强，理论上不冲突 | 已验证通过 |
+| 内存压力 | 三 Agent 同时挂载增加约 100MB JVM metaspace | 内存上限从 256m 提升到 512m |
 
 **Agent 加载顺序注意事项**：
 - JaCoCo 必须放在第一位（`-javaagent:jacoco.jar -javaagent:baafoo-agent.jar`）
 - 多个字节码增强 Agent 可能有类转换冲突
 - Bootstrap ClassLoader 注入的类可能冲突
 - 建议：监控类 Agent 在前，业务挡板类 Agent 在后
-- 详细多 Agent 共存测试见企业级应用测试第 8.3.2 节（互联网行业）
+
+##### 10.7.2.6 执行流程
+
+```
+[阶段 1: 设计文档] → [阶段 2: 下载 Agent JAR]
+                     ↓
+                  [阶段 3: 修改 Dockerfile/docker-compose]
+                     ↓
+                  [阶段 4: 构建镜像]
+                     ↓
+                  [阶段 5: 启动环境，等待健康]
+                     ↓
+                  [阶段 6: 执行 MULTI-001~005 测试]
+                     ↓
+                  [阶段 7: 执行 MULTI-008 冲突检测]
+                     ↓
+                  [阶段 8: 汇总测试报告]
+```
+
+##### 10.7.2.7 测试报告
+
+详细测试结果见 `testing/enterprise/MULTI-AGENT-TEST-REPORT.md`，包含:
+- 测试环境拓扑图
+- 每个用例的执行结果（PASS/FAIL/SKIP）
+- 关键证据（日志片段、数据）
+- 发现的问题与解决方案
+- 多 Agent 共存指南（推荐加载顺序、配置注意事项）
 
 ### 10.8 容器化兼容性
 

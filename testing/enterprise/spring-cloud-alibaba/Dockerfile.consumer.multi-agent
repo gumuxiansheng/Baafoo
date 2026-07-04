@@ -1,0 +1,72 @@
+# =============================================================================
+# Spring Cloud Alibaba Consumer Dockerfile (Multi-Agent: JaCoCo + SkyWalking + Baafoo)
+# Build context: c:\Dev\Projects\Baafoo
+# =============================================================================
+# Tests coexistence of three Java agents:
+#   1. JaCoCo 0.8.12 (coverage)   - loaded first
+#   2. SkyWalking 9.4.0 (APM/trace) - loaded second
+#   3. Baafoo 1.1.0 (Mock/stub)    - loaded last
+# =============================================================================
+
+FROM eclipse-temurin:17-jre-alpine
+
+LABEL maintainer="Baafoo Multi-Agent Test"
+
+RUN apk add --no-cache tzdata wget && \
+    cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone && \
+    apk del tzdata
+
+RUN addgroup -S baafoo && adduser -S baafoo -G baafoo
+
+WORKDIR /app
+
+# Copy application jar
+COPY testing/enterprise/spring-cloud-alibaba/baafoo-sca-test/baafoo-sca-consumer/target/baafoo-sca-consumer.jar ./app.jar
+
+# Copy Baafoo agent
+COPY baafoo-agent/target/baafoo-agent-*.jar ./baafoo-agent.jar
+COPY testing/enterprise/spring-cloud-alibaba/baafoo-agent-consumer.yml ./baafoo-agent.yml
+
+# Copy JaCoCo agent
+COPY testing/enterprise/spring-cloud-alibaba/agents/jacoco-agent.jar ./agents/jacoco-agent.jar
+
+# Copy SkyWalking agent (entire directory — SkyWalking agent loads optional plugins/bootstrap jars)
+COPY testing/enterprise/spring-cloud-alibaba/agents/skywalking-agent ./agents/skywalking
+
+RUN mkdir -p /home/baafoo/.baafoo/data /tmp/jacoco/classdumps && \
+    chown -R baafoo:baafoo /app /home/baafoo/.baafoo /tmp/jacoco
+
+USER baafoo
+
+EXPOSE 18083 6300
+
+# Agent load order: jacoco → skywalking → baafoo
+# - JaCoCo first (per PROJECT-TEST-PLAN.md guidance)
+# - SkyWalking second (APM before Mock)
+# - Baafoo last (Mock/Stub should be at the end)
+#
+# JaCoCo: tcpserver mode on port 6300, dumps to /tmp/jacoco/classdumps
+# SkyWalking: backend services from env SW_AGENT_COLLECTOR_BACKEND_SERVICES
+# Baafoo: config from /app/baafoo-agent.yml
+ENV JAVA_OPTS="-XX:-UseContainerSupport -Xms256m -Xmx512m -XX:MaxMetaspaceSize=256m -Dnetworkaddress.cache.ttl=5" \
+    BAAFOO_SERVER_HOST="baafoo-server" \
+    BAAFOO_ENV="enterprise-sca-consumer" \
+    SERVER_PORT=18083 \
+    NACOS_ADDR="nacos:8848" \
+    NACOS_USER="nacos" \
+    NACOS_PASS="nacos" \
+    SW_AGENT_NAME="service-consumer" \
+    SW_AGENT_COLLECTOR_BACKEND_SERVICES="baafoo-enterprise-oap:11800" \
+    JACOCO_PORT=6300
+
+ENTRYPOINT ["sh", "-c", \
+    "java ${JAVA_OPTS} \
+     -javaagent:/app/agents/jacoco-agent.jar=output=tcpserver,address=0.0.0.0,port=${JACOCO_PORT},append=true,classdumpdir=/tmp/jacoco/classdumps \
+     -javaagent:/app/agents/skywalking/skywalking-agent.jar \
+     -javaagent:/app/baafoo-agent.jar=config=/app/baafoo-agent.yml \
+     -jar /app/app.jar \
+     --server.port=${SERVER_PORT} \
+     --spring.cloud.nacos.discovery.server-addr=${NACOS_ADDR} \
+     --spring.cloud.nacos.discovery.username=${NACOS_USER} \
+     --spring.cloud.nacos.discovery.password=${NACOS_PASS}"]
