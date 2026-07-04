@@ -17,9 +17,6 @@ environment: "staging-b"
 heartbeatIntervalSec: 30
 pollIntervalSec: 10
 
-serviceInterceptionEnabled: false
-consulAddress: "localhost:8500"
-
 protocols: []
 
 maxRecordingSize: 10485760

@@ -15,6 +15,8 @@ server:
   kafkaPort: 9002
   pulsarPort: 9003
   jmsPort: 9004
+  grpcPort: 9005
+  grpcStreamingPort: 10005
 
 # Agent unique identifier (auto-generated if empty)
 agentId: ""
@@ -27,12 +29,6 @@ heartbeatIntervalSec: 30
 
 # Rule polling interval in seconds
 pollIntervalSec: 10
-
-# Whether service-name based interception is enabled (registry-agnostic: Nacos, Consul, Eureka, etc.)
-serviceInterceptionEnabled: false
-
-# Consul address (e.g., localhost:8500)
-consulAddress: "localhost:8500"
 
 # Protocols to intercept (empty = all)
 protocols: []
@@ -67,7 +63,7 @@ plugins:
   configs:
     # Example: TDMQ plugin configuration
     # tdmq:
-    #   brokerPort: 9005
+    #   brokerPort: 9105
     # Example: Feign plugin configuration
     # feign:
     #   defaultStubStatus: 200

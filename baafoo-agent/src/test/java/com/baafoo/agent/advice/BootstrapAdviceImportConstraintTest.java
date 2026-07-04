@@ -26,7 +26,7 @@ import static org.junit.Assert.fail;
  * {@code NoClassDefFoundError} / {@code LinkageError} at runtime, pushing
  * HTTP/TCP/DNS interception into fail-closed mode.</p>
  *
- * <p>This test scans the bytecode of every Bootstrap-CL advice class (the 12
+ * <p>This test scans the bytecode of every Bootstrap-CL advice class (the 10
  * advice classes whose targets live in {@code java.net.*} / {@code sun.*}, plus
  * {@code GlobalRouteState} itself) and asserts that no constant-pool entry
  * references the {@code com/baafoo/plugin/} package. See commit 73f7849 for the
@@ -38,7 +38,7 @@ public class BootstrapAdviceImportConstraintTest {
     private static final byte[] FORBIDDEN = ascii("com/baafoo/plugin");
 
     /**
-     * The 12 Bootstrap-CL advice classes (targets in {@code java.net.*} /
+     * The 10 Bootstrap-CL advice classes (targets in {@code java.net.*} /
      * {@code sun.*} run on the Bootstrap CL, determined by inspecting
      * {@code BaafooAgent.installTransforms}), plus {@code GlobalRouteState}
      * itself (also packaged into the Bootstrap JAR by
@@ -51,10 +51,8 @@ public class BootstrapAdviceImportConstraintTest {
      */
     private static final String[] BOOTSTRAP_CLASSES = {
             "com.baafoo.agent.advice.HttpOpenServerAdvice",
-            "com.baafoo.agent.advice.ServiceNameDnsAdvice",
-            "com.baafoo.agent.advice.ServiceNameDnsGetAllByNameAdvice",
-            "com.baafoo.agent.advice.DnsGetAllByNameAdvice",
-            "com.baafoo.agent.advice.DnsGetByNameAdvice",
+            "com.baafoo.agent.advice.DnsResolveAdvice",
+            "com.baafoo.agent.advice.DnsResolveAllAdvice",
             "com.baafoo.agent.advice.NioSocketConnectAdvice",
             "com.baafoo.agent.advice.NioSocketFinishConnectAdvice",
             "com.baafoo.agent.advice.SocketChannelReadAdvice",

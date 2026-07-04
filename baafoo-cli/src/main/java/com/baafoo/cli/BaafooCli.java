@@ -335,9 +335,7 @@ public class BaafooCli {
         config.put("serverUrl", "http://" + serverHost + ":8084");
         config.put("heartbeatIntervalSec", 30);
         config.put("pollIntervalSec", 10);
-        config.put("serviceInterceptionEnabled", false);
-        config.put("consulAddress", "localhost:8500");
-        config.put("protocols", protocols);
+        config.put("protocols", Collections.emptyList());
         config.put("hotReload", true);
         config.put("connectionRetries", 3);
         config.put("retryBackoffMs", 1000);

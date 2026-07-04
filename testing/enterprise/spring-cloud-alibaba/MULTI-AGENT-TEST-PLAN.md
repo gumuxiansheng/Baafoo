@@ -88,8 +88,8 @@ java ${JAVA_OPTS} \
 | 项 | 内容 |
 |----|------|
 | **前置条件** | MULTI-001 通过；Mock 规则 `sca-provider-echo-mock-svc` 已创建 |
-| **执行步骤** | 1. `GET http://localhost:18083/echo-feign/test`<br>2. 检查响应 body<br>3. 检查 Consumer Agent 日志的 HttpOpenServerAdvice/ServiceNameDns 拦截记录<br>4. 检查 Server 端规则匹配日志 |
-| **预期结果** | 1. 响应 200，body=`hello Nacos Discovery mock via serviceName`<br>2. Agent 日志含 `HttpOpenServerAdvice redirect` 和 `ServiceNameDns redirect`<br>3. Server 端无 `No Baafoo rule matched` 日志<br>4. JaCoCo/SkyWalking 不干扰 Baafoo 的 Socket/HttpClient 拦截 |
+| **执行步骤** | 1. `GET http://localhost:18083/echo-feign/test`<br>2. 检查响应 body<br>3. 检查 Consumer Agent 日志的 HttpOpenServerAdvice/DnsResolve 拦截记录<br>4. 检查 Server 端规则匹配日志 |
+| **预期结果** | 1. 响应 200，body=`hello Nacos Discovery mock via serviceName`<br>2. Agent 日志含 `HttpOpenServerAdvice redirect` 和 `DnsResolve redirect`<br>3. Server 端无 `No Baafoo rule matched` 日志<br>4. JaCoCo/SkyWalking 不干扰 Baafoo 的 Socket/HttpClient 拦截 |
 | **通过标准** | 全部预期结果满足 |
 
 ### MULTI-003: SkyWalking 链路追踪数据生成正常 (P0)
@@ -180,7 +180,7 @@ java ${JAVA_OPTS} \
 ### 5.1 已知风险
 
 1. **Bootstrap CL 类冲突**: Baafoo 将 GlobalRouteState 注入到 Bootstrap CL，SkyWalking 也可能注入 Bootstrap 类，存在类定义冲突风险
-2. **java.net.InetAddress 增强冲突**: SkyWalking 增强 HTTP 客户端相关类，Baafoo 通过 ServiceNameDns*Advice 增强 `java.net.InetAddress`，可能冲突
+2. **java.net.InetAddress 增强冲突**: SkyWalking 增强 HTTP 客户端相关类，Baafoo 通过 DnsResolve*Advice 增强 `java.net.InetAddress`，可能冲突
 3. **JaCoCo 增强时机**: JaCoCo 在类加载时（file install）增强，Baafoo 在类加载后（retransform）增强，理论上不冲突，但需验证
 4. **内存压力**: 三 Agent 同时挂载增加约 100MB JVM metaspace，需调整容器内存上限
 

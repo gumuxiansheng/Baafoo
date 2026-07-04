@@ -9,27 +9,25 @@ import java.net.InetAddress;
  * Intercepts InetAddress.getByName (single-result variant) for service-name
  * (or host-based) redirection.
  *
- * <p>Activated when {@code serviceInterceptionEnabled: true} in the agent
- * config. Despite the legacy flag name, this advice is registry-agnostic:
- * it works with Nacos, Consul, Eureka, or any registry whose service names
- * are routed via Baafoo rules. The redirect target is the Baafoo Server
- * (which then mocks or forwards the request based on rule matching).</p>
+ * <p>Always mounted by {@code BaafooAgent.installTransforms} (no static config
+ * needed). Behavior is controlled by the runtime route table: when a rule
+ * matches the requested host (by serviceName or host), the resolved
+ * InetAddress is overridden to point at the Baafoo Server; otherwise DNS
+ * resolution proceeds natively and the result is recorded for IP-based
+ * route lookup fallback.</p>
  *
- * <p><b>CRITICAL</b>: Must be a separate class from {@link ServiceNameDnsGetAllByNameAdvice}
+ * <p><b>CRITICAL</b>: Must be a separate class from {@link DnsResolveAllAdvice}
  * because ByteBuddy's {@code Advice.to()} discovers ALL @Advice.OnMethodExit
  * methods in a class and tries to apply them to the target method, causing a
  * "Duplicate advice" error when two methods with different return types
  * (InetAddress vs InetAddress[]) are in the same class.</p>
  *
- * <p>Same separation rationale as {@link DnsGetByNameAdvice} vs
- * {@link DnsGetAllByNameAdvice}.</p>
- *
- * <p><b>Bootstrap CL constraint:</b> inlined into java.net.InetAddress by ByteBuddy;
+ * <p><b>Bootstrap CL constraint</b>: inlined into java.net.InetAddress by ByteBuddy;
  * only reference Bootstrap CL-visible classes.</p>
  */
-public final class ServiceNameDnsAdvice {
+public final class DnsResolveAdvice {
 
-    private ServiceNameDnsAdvice() {}
+    private DnsResolveAdvice() {}
 
     @Advice.OnMethodExit
     public static void onGetByName(
@@ -44,8 +42,8 @@ public final class ServiceNameDnsAdvice {
         // because this advice is inlined into java.net.InetAddress (Bootstrap CL)
         // and static field accesses are not inlined — the field must be reachable
         // from the Bootstrap CL. GlobalRouteState is in the Bootstrap JAR.
-        // Null (unset) is treated as false — see GlobalRouteState.SERVICE_NAME_DNS_REENTRY_GUARD javadoc.
-        if (Boolean.TRUE.equals(GlobalRouteState.SERVICE_NAME_DNS_REENTRY_GUARD.get())) {
+        // Null (unset) is treated as false — see GlobalRouteState.DNS_REENTRY_GUARD javadoc.
+        if (Boolean.TRUE.equals(GlobalRouteState.DNS_REENTRY_GUARD.get())) {
             return;
         }
 
@@ -71,17 +69,17 @@ public final class ServiceNameDnsAdvice {
                 target = GlobalRouteState.lookupByHost(host);
             }
             if (target != null) {
-                GlobalRouteState.logInfo("[Baafoo] ServiceNameDns redirect (getByName): " + host + " -> " + target.host);
-                GlobalRouteState.SERVICE_NAME_DNS_REENTRY_GUARD.set(Boolean.TRUE);
+                GlobalRouteState.logInfo("[Baafoo] DnsResolve redirect (getByName): " + host + " -> " + target.host);
+                GlobalRouteState.DNS_REENTRY_GUARD.set(Boolean.TRUE);
                 try {
                     result = InetAddress.getByName(target.host);
                 } finally {
-                    GlobalRouteState.SERVICE_NAME_DNS_REENTRY_GUARD.set(Boolean.FALSE);
+                    GlobalRouteState.DNS_REENTRY_GUARD.set(Boolean.FALSE);
                 }
             }
         } catch (Throwable t) {
-            GlobalRouteState.SERVICE_NAME_DNS_REENTRY_GUARD.set(Boolean.FALSE);
-            GlobalRouteState.logInfo("[Baafoo] ServiceNameDns (getByName) error: " + t.getMessage());
+            GlobalRouteState.DNS_REENTRY_GUARD.set(Boolean.FALSE);
+            GlobalRouteState.logInfo("[Baafoo] DnsResolve (getByName) error: " + t.getMessage());
         }
     }
 }

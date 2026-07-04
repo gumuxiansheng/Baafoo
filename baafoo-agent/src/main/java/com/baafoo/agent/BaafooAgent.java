@@ -1,29 +1,56 @@
 package com.baafoo.agent;
 
-import com.baafoo.agent.advice.*;
+import java.io.File;
+import java.lang.instrument.Instrumentation;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
+import java.util.jar.JarFile;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.baafoo.agent.advice.DnsResolveAdvice;
+import com.baafoo.agent.advice.DnsResolveAllAdvice;
+import com.baafoo.agent.advice.GrpcChannelAdvice;
+import com.baafoo.agent.advice.HttpOpenServerAdvice;
+import com.baafoo.agent.advice.JmsConnectionFactoryAdvice;
+import com.baafoo.agent.advice.KafkaConsumerAdvice;
+import com.baafoo.agent.advice.KafkaProducerAdvice;
+import com.baafoo.agent.advice.NioSocketConnectAdvice;
+import com.baafoo.agent.advice.NioSocketFinishConnectAdvice;
+import com.baafoo.agent.advice.PulsarClientAdvice;
+import com.baafoo.agent.advice.RecordingBuffer;
+import com.baafoo.agent.advice.RecordingInputStream;
+import com.baafoo.agent.advice.RecordingOutputStream;
+import com.baafoo.agent.advice.RouteManager;
+import com.baafoo.agent.advice.SocketChannelReadAdvice;
+import com.baafoo.agent.advice.SocketChannelWriteAdvice;
+import com.baafoo.agent.advice.SocketCloseAdvice;
+import com.baafoo.agent.advice.SocketConnectAdvice;
+import com.baafoo.agent.advice.SocketInputStreamAdvice;
+import com.baafoo.agent.advice.SocketOutputStreamAdvice;
 import com.baafoo.agent.channel.ControlChannel;
 import com.baafoo.agent.plugin.PluginManager;
 import com.baafoo.agent.transform.TransformRegistry;
 import com.baafoo.core.config.AgentConfig;
 import com.baafoo.core.config.ConfigLoader;
 import com.baafoo.core.model.RecordingEntry;
+
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.dynamic.DynamicType;
+import static net.bytebuddy.matcher.ElementMatchers.isConstructor;
+import static net.bytebuddy.matcher.ElementMatchers.isSynthetic;
+import static net.bytebuddy.matcher.ElementMatchers.nameContains;
+import static net.bytebuddy.matcher.ElementMatchers.nameEndsWith;
+import static net.bytebuddy.matcher.ElementMatchers.nameStartsWith;
+import static net.bytebuddy.matcher.ElementMatchers.named;
+import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
+import static net.bytebuddy.matcher.ElementMatchers.takesArguments;
 import net.bytebuddy.utility.JavaModule;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.File;
-import java.lang.instrument.Instrumentation;
-import java.util.Arrays;
-import java.util.Map;
-import java.util.jar.JarFile;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
-
-import static net.bytebuddy.matcher.ElementMatchers.*;
 
 public class BaafooAgent {
 
@@ -79,7 +106,7 @@ public class BaafooAgent {
             Runtime.getRuntime().addShutdownHook(new Thread(BaafooAgent::shutdown, "baafoo-shutdown"));
 
             // IMPORTANT: setupBootstrapClassPath MUST run before installTransforms.
-            // Advice code (e.g., DnsGetByNameAdvice) references GlobalRouteState,
+            // Advice code (e.g., DnsResolveAdvice) references GlobalRouteState,
             // which must be on the Bootstrap CL search path before ByteBuddy tries
             // to inline the advice into target classes like InetAddress.
             setupBootstrapClassPath(inst);
@@ -348,30 +375,22 @@ public class BaafooAgent {
                         .or(nameStartsWith("com.baafoo.agent.shaded."))
                         .or(isSynthetic()));
 
-        // DNS resolution interception — records domain-to-IP mappings so that
-        // SocketConnectAdvice can look up domain-based routes when socket connects
-        // using a resolved IP address instead of the original hostname.
-        // When serviceInterceptionEnabled, ServiceNameDnsAdvice also handles
-        // service-name redirection (registry-agnostic: Nacos/Consul/Eureka).
-        if (cfg.isServiceInterceptionEnabled()) {
-            agentBuilder = agentBuilder
-                    .type(named("java.net.InetAddress"))
-                    .transform((builder, typeDesc, classLoader, module, pd) ->
-                            builder.visit(Advice.to(ServiceNameDnsAdvice.class)
-                                    .on(named("getByName").and(takesArguments(1))))
-                            .visit(Advice.to(ServiceNameDnsGetAllByNameAdvice.class)
-                                    .on(named("getAllByName").and(takesArguments(1)))));
-            registry.register("java.net.InetAddress", "ServiceNameDnsAdvice/GetAllByNameAdvice", "dns+serviceName");
-        } else {
-            agentBuilder = agentBuilder
-                    .type(named("java.net.InetAddress"))
-                    .transform((builder, typeDesc, classLoader, module, pd) ->
-                            builder.visit(Advice.to(DnsGetByNameAdvice.class)
-                                    .on(named("getByName").and(takesArguments(1))))
-                            .visit(Advice.to(DnsGetAllByNameAdvice.class)
-                                    .on(named("getAllByName").and(takesArguments(1)))));
-            registry.register("java.net.InetAddress", "DnsResolutionAdvice", "dns");
-        }
+        // DNS resolution interception — always mounted. Records domain-to-IP
+        // mappings so that SocketConnectAdvice can look up domain-based routes
+        // when socket connects using a resolved IP address instead of the
+        // original hostname. Also handles service-name and host-based redirection
+        // (registry-agnostic: Nacos/Consul/Eureka) — when a route matches, the
+        // resolved InetAddress is overridden to point at the Baafoo Server.
+        // Behavior is fully controlled by the runtime route table; no static
+        // config needed.
+        agentBuilder = agentBuilder
+                .type(named("java.net.InetAddress"))
+                .transform((builder, typeDesc, classLoader, module, pd) ->
+                        builder.visit(Advice.to(DnsResolveAdvice.class)
+                                .on(named("getByName").and(takesArguments(1))))
+                        .visit(Advice.to(DnsResolveAllAdvice.class)
+                                .on(named("getAllByName").and(takesArguments(1)))));
+        registry.register("java.net.InetAddress", "DnsResolveAdvice/DnsResolveAllAdvice", "dns");
 
         agentBuilder = agentBuilder
                 .type(named("java.net.Socket"))
@@ -387,7 +406,8 @@ public class BaafooAgent {
                         .visit(Advice.to(SocketCloseAdvice.class)
                                 .on(named("close").and(takesArguments(0)))));
         registry.register("java.net.Socket", "SocketConnectAdvice", "tcp");
-        registry.register("java.net.Socket", "SocketGetStreamAdvice", "tcp-recording");
+        registry.register("java.net.Socket", "SocketInputStreamAdvice", "tcp-recording");
+        registry.register("java.net.Socket", "SocketOutputStreamAdvice", "tcp-recording");
         registry.register("java.net.Socket", "SocketCloseAdvice", "tcp-recording");
 
         agentBuilder = agentBuilder
@@ -408,14 +428,17 @@ public class BaafooAgent {
         registry.register("sun.nio.ch.SocketChannelImpl", "SocketChannelReadAdvice", "tcp-recording");
         registry.register("sun.nio.ch.SocketChannelImpl", "SocketChannelWriteAdvice", "tcp-recording");
 
-        if (cfg.isServiceInterceptionEnabled()) {
-            agentBuilder = agentBuilder
-                    .type(named("sun.net.www.http.HttpClient"))
-                    .transform((builder, typeDesc, classLoader, module, pd) ->
-                            builder.visit(Advice.to(HttpOpenServerAdvice.class)
-                                    .on(named("openServer").and(takesArguments(2)))));
-            registry.register("sun.net.www.http.HttpClient", "HttpOpenServerAdvice", "http");
-        }
+        // HttpClient.openServer interception — always mounted. Redirects HTTP
+        // traffic targeting a service-name (or hostname) that matches a Baafoo
+        // rule. Only modifies the port (preserving the Host header); the actual
+        // IP redirect is handled by DnsResolveAdvice above. Behavior is
+        // fully controlled by the runtime route table; no static config needed.
+        agentBuilder = agentBuilder
+                .type(named("sun.net.www.http.HttpClient"))
+                .transform((builder, typeDesc, classLoader, module, pd) ->
+                        builder.visit(Advice.to(HttpOpenServerAdvice.class)
+                                .on(named("openServer").and(takesArguments(2)))));
+        registry.register("sun.net.www.http.HttpClient", "HttpOpenServerAdvice", "http");
 
         agentBuilder = agentBuilder
                 .type(named("org.apache.kafka.clients.producer.KafkaProducer"))

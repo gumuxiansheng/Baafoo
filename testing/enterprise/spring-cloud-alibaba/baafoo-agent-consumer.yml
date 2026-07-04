@@ -14,15 +14,12 @@ environment: "enterprise-sca-consumer"
 heartbeatIntervalSec: 30
 pollIntervalSec: 10
 
-# Enable service-name based interception (ServiceNameDnsAdvice + HttpOpenServerAdvice).
-# Registry-agnostic: works with Nacos, Consul, Eureka, or any registry whose
-# service names are routed via Baafoo rules. When true:
-#   - InetAddress.getByName("service-provider") is intercepted
-#   - lookupService("service-provider") is called
-#   - If a rule with serviceName=service-provider exists, DNS is redirected to Baafoo Server
-#   - Result: Feign call to http://service-provider/echo/* is mocked at the DNS layer
-serviceInterceptionEnabled: true
-consulAddress: "baafoo-server:8084"
+# Service-name interception is always enabled (mounted by default in BaafooAgent).
+# DnsResolveAdvice intercepts InetAddress.getByName("service-provider") and
+# redirects to Baafoo Server when a rule with serviceName=service-provider exists.
+# HttpOpenServerAdvice intercepts HttpClient.openServer to redirect port (preserving Host header).
+# Registry-agnostic: works with Nacos, Consul, Eureka, or any registry.
+# Result: Feign call to http://service-provider/echo/* is mocked at the DNS layer.
 
 protocols:
   - http

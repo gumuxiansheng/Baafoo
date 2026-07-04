@@ -9,19 +9,18 @@ import java.net.InetAddress;
  * Intercepts InetAddress.getAllByName (multi-result variant) for service-name
  * (or host-based) redirection.
  *
- * <p>Activated when {@code serviceInterceptionEnabled: true} in the agent
- * config. Registry-agnostic: works with Nacos, Consul, Eureka, or any
- * registry whose service names are routed via Baafoo rules.</p>
+ * <p>Always mounted by {@code BaafooAgent.installTransforms} (no static config
+ * needed). Behavior is controlled by the runtime route table.</p>
  *
- * <p><b>CRITICAL</b>: Must be a separate class from {@link ServiceNameDnsAdvice}
+ * <p><b>CRITICAL</b>: Must be a separate class from {@link DnsResolveAdvice}
  * because ByteBuddy's {@code Advice.to()} discovers ALL @Advice.OnMethodExit
  * methods in a class and tries to apply them to the target method, causing a
  * "Duplicate advice" error when two methods with different return types
  * (InetAddress vs InetAddress[]) are in the same class.</p>
  */
-public final class ServiceNameDnsGetAllByNameAdvice {
+public final class DnsResolveAllAdvice {
 
-    private ServiceNameDnsGetAllByNameAdvice() {}
+    private DnsResolveAllAdvice() {}
 
     @Advice.OnMethodExit
     public static void onGetAllByName(
@@ -32,10 +31,10 @@ public final class ServiceNameDnsGetAllByNameAdvice {
             return;
         }
 
-        // Re-entry guard lives in GlobalRouteState — see ServiceNameDnsAdvice
+        // Re-entry guard lives in GlobalRouteState — see DnsResolveAdvice
         // for rationale (Bootstrap CL visibility for inlined advice).
         // Null (unset) is treated as false.
-        if (Boolean.TRUE.equals(GlobalRouteState.SERVICE_NAME_DNS_REENTRY_GUARD.get())) {
+        if (Boolean.TRUE.equals(GlobalRouteState.DNS_REENTRY_GUARD.get())) {
             return;
         }
 
@@ -57,7 +56,7 @@ public final class ServiceNameDnsGetAllByNameAdvice {
             }
 
             // Service-name / host redirection: check serviceName first, then
-            // fall back to host-based lookup (parity with ServiceNameDnsAdvice).
+            // fall back to host-based lookup (parity with DnsResolveAdvice).
             // Some HTTP clients use getAllByName instead of getByName, so
             // host-based routes must work for both call paths.
             GlobalRouteState.HostPort target = GlobalRouteState.lookupService(host);
@@ -65,18 +64,18 @@ public final class ServiceNameDnsGetAllByNameAdvice {
                 target = GlobalRouteState.lookupByHost(host);
             }
             if (target != null) {
-                GlobalRouteState.logInfo("[Baafoo] ServiceNameDns redirect (getAllByName): " + host + " -> " + target.host);
-                GlobalRouteState.SERVICE_NAME_DNS_REENTRY_GUARD.set(Boolean.TRUE);
+                GlobalRouteState.logInfo("[Baafoo] DnsResolve redirect (getAllByName): " + host + " -> " + target.host);
+                GlobalRouteState.DNS_REENTRY_GUARD.set(Boolean.TRUE);
                 try {
                     InetAddress stubAddr = InetAddress.getByName(target.host);
                     result = new InetAddress[]{stubAddr};
                 } finally {
-                    GlobalRouteState.SERVICE_NAME_DNS_REENTRY_GUARD.set(Boolean.FALSE);
+                    GlobalRouteState.DNS_REENTRY_GUARD.set(Boolean.FALSE);
                 }
             }
         } catch (Throwable t) {
-            GlobalRouteState.SERVICE_NAME_DNS_REENTRY_GUARD.set(Boolean.FALSE);
-            GlobalRouteState.logInfo("[Baafoo] ServiceNameDns (getAllByName) error: " + t.getMessage());
+            GlobalRouteState.DNS_REENTRY_GUARD.set(Boolean.FALSE);
+            GlobalRouteState.logInfo("[Baafoo] DnsResolve (getAllByName) error: " + t.getMessage());
         }
     }
 }

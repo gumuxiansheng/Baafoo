@@ -14,9 +14,6 @@ environment: "enterprise-kafka"
 heartbeatIntervalSec: 30
 pollIntervalSec: 10
 
-serviceInterceptionEnabled: false
-consulAddress: "localhost:8500"
-
 protocols:
   - kafka
 

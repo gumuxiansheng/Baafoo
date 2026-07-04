@@ -7,15 +7,14 @@ import net.bytebuddy.asm.Advice;
  * Intercepts sun.net.www.http.HttpClient.openServer to redirect HTTP traffic
  * targeting a service-name (or hostname) that matches a Baafoo rule.
  *
- * <p>Activated when {@code serviceInterceptionEnabled: true} in the agent
- * config. Registry-agnostic: works with Nacos, Consul, Eureka, or any
- * registry whose service names are routed via Baafoo rules.</p>
+ * <p>Always mounted by {@code BaafooAgent.installTransforms} (no static config
+ * needed). Behavior is controlled by the runtime route table.</p>
  *
  * <p>Strategy: only modify the <b>port</b>, keep the original <b>server</b>
  * (hostname). This preserves the original Host HTTP header so the Baafoo
  * Server's MatchEngine can match the rule using the host field. The DNS
  * resolution of the original hostname is handled separately by
- * {@link ServiceNameDnsAdvice} which overrides the resolved InetAddress
+ * {@link DnsResolveAdvice} which overrides the resolved InetAddress
  * to point at the Baafoo Server when the hostname matches a rule.</p>
  *
  * <p>Lookup order: try host:port exact match first (via {@code lookup}),
@@ -60,7 +59,7 @@ public class HttpOpenServerAdvice {
 
             // IMPORTANT: only modify port, keep original server (hostname).
             // This preserves the Host HTTP header for server-side rule matching.
-            // The actual IP redirect happens in ServiceNameDnsAdvice.
+            // The actual IP redirect happens in DnsResolveAdvice.
             GlobalRouteState.logInfo("[Baafoo] HttpOpenServerAdvice redirect: " + server + ":" + port + " -> " + server + ":" + targetPort + " (DNS will resolve to " + targetHost + ")");
             port = targetPort;
         } catch (Throwable t) {
