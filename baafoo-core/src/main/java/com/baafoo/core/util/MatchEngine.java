@@ -187,12 +187,18 @@ public class MatchEngine {
     }
 
     private boolean matchesTarget(Rule rule, String host, int port, String serviceName) {
-        // Service name match (Consul)
+        // Service name match (Consul). When the request carries a serviceName
+        // (e.g. MQ protocols), match strictly by serviceName. When the request
+        // has no serviceName (e.g. HTTP requests where only the Host header is
+        // available), fall through to host-based matching instead of failing —
+        // the agent already used serviceName for routing, so by the time the
+        // request reaches the server the host header still identifies the
+        // original target.
         if (rule.getServiceName() != null && !rule.getServiceName().isEmpty()) {
             if (serviceName != null) {
                 return rule.getServiceName().equalsIgnoreCase(serviceName);
             }
-            return false;
+            // fall through to host matching
         }
 
         // Host match — null host means caller doesn't know target host (e.g. MQ broker),

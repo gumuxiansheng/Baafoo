@@ -141,6 +141,31 @@ public final class GlobalRouteState {
      */
     public static final ThreadLocal<String> DNS_REDIRECT_TARGET = new ThreadLocal<String>();
 
+    /**
+     * Re-entry guard for ConsulDnsGetByNameAdvice / ConsulDnsGetAllByNameAdvice.
+     *
+     * <p>Set to {@code Boolean.TRUE} while the advice is in the middle of
+     * resolving a redirect target via {@link InetAddress#getByName(String)}.
+     * Without this guard, if the redirect target host (typically
+     * {@link #SERVER_HOST}) also matches a Consul service route, the advice
+     * would re-enter itself recursively until StackOverflowError.</p>
+     *
+     * <p><b>Must live here (GlobalRouteState) rather than in the advice class</b>:
+     * the advice is inlined by ByteBuddy into {@link java.net.InetAddress}
+     * (a Bootstrap ClassLoader class). Static field accesses are not inlined,
+     * so the field must be reachable from the Bootstrap CL. GlobalRouteState
+     * is packaged into the Bootstrap JAR by {@code BaafooAgent.createBootstrapJar()},
+     * making it visible from both CLs.</p>
+     *
+     * <p><b>No anonymous subclass</b>: written as a plain {@code new ThreadLocal<>()}
+     * (no {@code initialValue} override) so the compiler does not synthesize a
+     * separate {@code GlobalRouteState$1} class — that synthetic class is not in
+     * the Bootstrap JAR's classResources list, so referencing it from inlined
+     * advice would throw {@code NoClassDefFoundError}. Callers must treat
+     * {@code null} as {@code false} via {@code Boolean.TRUE.equals(guard.get())}.</p>
+     */
+    public static final ThreadLocal<Boolean> CONSUL_DNS_REENTRY_GUARD = new ThreadLocal<Boolean>();
+
     // ---- Recording session tracking ----
     // Maps socket identity (System.identityHashCode) to session info:
     // String[] { sessionId, host, portString }

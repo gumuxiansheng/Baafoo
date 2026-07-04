@@ -1,0 +1,22 @@
+server:
+  port: 18081
+
+spring:
+  application:
+    name: service-provider
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        username: ${NACOS_USER:nacos}
+        password: ${NACOS_PASS:nacos}
+        # Register with the Spring application name so the Baafoo Agent on Consumer
+        # can match the outbound HttpClient.openServer(server="service-provider")
+        # against the serviceName-based rule (ConsulHttpAdvice interception).
+        ip: ${NACOS_REGISTER_HOST:service-provider}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"

@@ -356,11 +356,11 @@ public class BaafooAgent {
             agentBuilder = agentBuilder
                     .type(named("java.net.InetAddress"))
                     .transform((builder, typeDesc, classLoader, module, pd) ->
-                            builder.visit(Advice.to(ConsulDnsAdvice.class)
+                            builder.visit(Advice.to(ConsulDnsGetByNameAdvice.class)
                                     .on(named("getByName").and(takesArguments(1))))
-                            .visit(Advice.to(ConsulDnsAdvice.class)
+                            .visit(Advice.to(ConsulDnsGetAllByNameAdvice.class)
                                     .on(named("getAllByName").and(takesArguments(1)))));
-            registry.register("java.net.InetAddress", "ConsulDnsAdvice", "dns+consul");
+            registry.register("java.net.InetAddress", "ConsulDnsGetByNameAdvice/GetAllByNameAdvice", "dns+consul");
         } else {
             agentBuilder = agentBuilder
                     .type(named("java.net.InetAddress"))

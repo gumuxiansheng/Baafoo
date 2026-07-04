@@ -1,0 +1,45 @@
+# =============================================================================
+# Spring Cloud Alibaba Provider Dockerfile (独立 Maven 项目版本)
+# Build context: c:\Dev\Projects\Baafoo
+# =============================================================================
+
+FROM eclipse-temurin:17-jre-alpine
+
+LABEL maintainer="Baafoo SCA Test"
+
+RUN apk add --no-cache tzdata wget && \
+    cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone && \
+    apk del tzdata
+
+RUN addgroup -S baafoo && adduser -S baafoo -G baafoo
+
+WORKDIR /app
+
+COPY testing/enterprise/spring-cloud-alibaba/baafoo-sca-test/baafoo-sca-provider/target/baafoo-sca-provider.jar ./app.jar
+COPY baafoo-agent/target/baafoo-agent-*.jar ./baafoo-agent.jar
+COPY testing/enterprise/spring-cloud-alibaba/baafoo-agent-provider.yml ./baafoo-agent.yml
+
+RUN mkdir -p /home/baafoo/.baafoo/data && \
+    chown -R baafoo:baafoo /app /home/baafoo/.baafoo
+
+USER baafoo
+
+EXPOSE 18081
+
+ENV JAVA_OPTS="-XX:-UseContainerSupport -Xms128m -Xmx256m" \
+    BAAFOO_SERVER_HOST="baafoo-server" \
+    BAAFOO_ENV="enterprise-sca-provider" \
+    SERVER_PORT=18081 \
+    NACOS_ADDR="nacos:8848" \
+    NACOS_USER="nacos" \
+    NACOS_PASS="nacos"
+
+ENTRYPOINT ["sh", "-c", \
+    "java ${JAVA_OPTS} \
+     -javaagent:/app/baafoo-agent.jar=config=/app/baafoo-agent.yml \
+     -jar /app/app.jar \
+     --server.port=${SERVER_PORT} \
+     --spring.cloud.nacos.discovery.server-addr=${NACOS_ADDR} \
+     --spring.cloud.nacos.discovery.username=${NACOS_USER} \
+     --spring.cloud.nacos.discovery.password=${NACOS_PASS}"]

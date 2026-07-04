@@ -1,0 +1,43 @@
+server:
+  host: "baafoo-server"
+  useSsl: false
+  apiPort: 8084
+  httpPort: 9000
+  tcpPort: 9001
+  kafkaPort: 9002
+  pulsarPort: 9003
+  jmsPort: 9004
+  apiKey: "enterprise-admin-key"
+
+environment: "enterprise-sca-consumer"
+
+heartbeatIntervalSec: 30
+pollIntervalSec: 10
+
+# Enable service-name based interception (ConsulDnsAdvice + ConsulHttpAdvice).
+# Despite the legacy name, this flag enables generic service-name interception
+# for any registry (Nacos, Consul, Eureka). When true:
+#   - InetAddress.getByName("service-provider") is intercepted
+#   - lookupService("service-provider") is called
+#   - If a rule with serviceName=service-provider exists, DNS is redirected to Baafoo Server
+#   - Result: Feign call to http://service-provider/echo/* is mocked at the DNS layer
+consulEnabled: true
+consulAddress: "baafoo-server:8084"
+
+protocols:
+  - http
+
+maxRecordingSize: 10485760
+
+rulesFilePath: ""
+hotReload: true
+
+failOpen: false
+
+connectionRetries: 5
+retryBackoffMs: 2000
+
+plugins:
+  enabled: true
+  directory: "./plugins"
+  configs: {}

@@ -1049,20 +1049,111 @@ mvnw test -pl baafoo-server -Dtest=*Containerized*
 | **gRPC 微服务示例** | latest | gRPC + HTTP | gRPC Unary 调用、服务间通信 | Docker Compose | P1 |
 
 **Spring Cloud Alibaba 测试场景**：
-- EG-INT-001: Nacos 服务注册与发现拦截
-- EG-INT-002: Sentinel 流量控制场景下 Agent 兼容性
-- EG-INT-003: Seata 分布式事务场景下 Agent 兼容性
-- EG-INT-004: Dubbo / Feign 混合调用拦截
-- EG-INT-005: RocketMQ 消息生产消费拦截
-- EG-INT-006: 微服务全链路 Mock 验证
+
+Spring Cloud Alibaba 是框架而非单个应用，需要通过**搭建一个最小化的微服务 Demo 应用**来作为测试靶机。建议构建 3 个微服务 + 网关 + Nacos 的典型架构：
+
+```
+                    ┌─────────────────────────────────────────────────────┐
+                    │                  Nacos Server (:8848)                │
+                    │          服务注册/发现 + 配置中心 (gRPC + HTTP)       │
+                    └─────────────────────────────────────────────────────┘
+                                           ↑ 注册/发现
+                                           │
+  ┌──────────┐   HTTP    ┌──────────────┐   Feign    ┌──────────────────┐
+  │  Gateway  │ ───────→ │ order-service│ ────────→ │ inventory-service│
+  │  (:8080)  │          │   (:8081)    │           │    (:8082)       │
+  │  Gateway  │          │              │           │                  │
+  └──────────┘          │  ┌─────────┐ │           │  ┌─────────────┐ │
+                        │  │ RocketMQ│ │           │  │  Sentinel   │ │
+                        │  │ Producer│ │           │  │  @Sentinel  │ │
+                        │  └─────────┘ │           │  └─────────────┘ │
+                        └──────────────┘           └──────────────────┘
+                                │
+                                │ RocketMQ
+                                ▼
+                        ┌──────────────┐
+                        │  RocketMQ    │
+                        │  NameServer  │
+                        └──────────────┘
+```
+
+**各服务与 Baafoo 协议的对应关系**：
+
+| 服务 | 端口 | 协议 | Baafoo 拦截方式 | 关键测试点 |
+|------|------|------|----------------|-----------|
+| Nacos Server | 8848/9848 | HTTP + gRPC | 服务注册 HTTP API + gRPC 长连接 | gRPC 长连接拦截、配置拉取 Mock |
+| Gateway | 8080 | HTTP | HTTP 路由转发拦截 | 网关层拦截、过滤器链兼容 |
+| order-service | 8081 | HTTP + RocketMQ | HTTP 调用 + MQ 消息 | Feign 调用拦截、RocketMQ 拦截 |
+| inventory-service | 8082 | HTTP | HTTP 调用 | Sentinel 降级场景兼容 |
+
+**测试场景细化**：
+
+| 用例ID | 测试场景 | 具体操作 | 验证点 | 协议 |
+|--------|---------|---------|--------|------|
+| EG-INT-001 | 服务注册拦截 | order-service 启动时向 Nacos 注册，Agent 重定向到 Baafoo Server | Nacos 注册请求被 Mock，服务仍正常启动 | HTTP |
+| EG-INT-002 | 配置拉取 Mock | 在 Baafoo 中配置规则 Mock Nacos 配置中心响应 | 服务使用 Mock 配置启动，功能正常 | gRPC |
+| EG-INT-003 | Feign 调用拦截 | Gateway → order-service → inventory-service 全链路 Feign 调用 | 中间任一环节可 Mock，下游服务不感知 | HTTP |
+| EG-INT-004 | Sentinel 降级兼容 | 对 inventory-service 配置 Sentinel 降级规则，同时挂载 Agent | Agent 不干扰 Sentinel 流量控制逻辑 | HTTP |
+| EG-INT-005 | RocketMQ 消息拦截 | order-service 发送订单消息，Agent 截获 RocketMQ 通信 | Producer 消息被 Mock，Consumer 收到 Mock 消息 | TCP |
+| EG-INT-006 | 全链路 Mock 验证 | 对 inventory-service 的 Feign 调用配置 Mock 规则 | Gateway 调用成功，返回 Mock 数据，inventory-service 未被实际调用 | HTTP |
+| EG-INT-007 | 服务发现 Mock | Mock Nacos 服务发现响应，返回自定义服务实例列表 | 应用按 Mock 的实例列表进行负载均衡 | gRPC |
+| EG-INT-008 | 多服务同时挂载 Agent | 3 个服务全部挂载 Agent，各自配置独立规则 | 各服务拦截互不干扰，符合环境隔离预期 | 混合 |
+
+**推荐 Demo 项目来源**：
+
+| 来源 | 说明 | 推荐度 |
+|------|------|--------|
+| `alibaba/spring-cloud-alibaba-examples` | 官方示例，含 Nacos/Sentinel/Seata/RocketMQ 各组件独立 Demo | ⭐⭐⭐⭐⭐ |
+| 自建 3 服务电商 Demo | 最小化 custom demo，仅包含上述架构中的核心调用链 | ⭐⭐⭐⭐ |
+| `alibaba/spring-cloud-alibaba` 集成测试 | 项目自身的集成测试用例，复杂度较高 | ⭐⭐⭐ |
+
+**Docker Compose 搭建要点**：
+
+```yaml
+# testing/enterprise/internet/spring-cloud-alibaba/docker-compose.yml
+services:
+  nacos:
+    image: nacos/nacos-server:v2.2.3
+    ports: ["8848:8848", "9848:9848"]
+    environment:
+      - MODE=standalone
+
+  gateway:
+    build: ./gateway  # 基于 spring-cloud-alibaba 的 Gateway 服务
+    ports: ["8080:8080"]
+    environment:
+      - JAVA_OPTS=-javaagent:/agent/baafoo-agent.jar=config=/agent/baafoo-agent.yml
+      - SPRING_CLOUD_NACOS_SERVER_ADDR=nacos:8848
+
+  order-service:
+    build: ./order-service
+    ports: ["8081:8081"]
+    environment:
+      - JAVA_OPTS=-javaagent:/agent/baafoo-agent.jar=config=/agent/baafoo-agent.yml
+    depends_on: [nacos]
+
+  inventory-service:
+    build: ./inventory-service
+    ports: ["8082:8082"]
+    depends_on: [nacos]
+```
+
+**执行步骤**：
+
+1. 从 `spring-cloud-alibaba-examples` 选取 nacos-discovery、sentinel、rocketmq 三个 example
+2. 改造为包含调用链的 3 服务 Demo（Gateway → order → inventory）
+3. 为每个服务编写 Dockerfile，注入 `baafoo-agent.jar`
+4. `docker compose up -d` 启动全套环境
+5. 在 Baafoo Web 控制台创建各服务的 Mock 规则
+6. 通过 Gateway 发起请求，验证全链路 Mock 效果
 
 **多 Agent 共存测试场景（Takin / AREX）**：
-- EG-INT-007: Baafoo Agent + Takin Agent 同时挂载，功能不冲突
-- EG-INT-008: Baafoo Agent + AREX Agent 同时挂载，录制回放协同
-- EG-INT-009: Agent 加载顺序对功能的影响（Baafoo 在前/在后）
-- EG-INT-010: 多 Agent 下类转换冲突检测与解决
-- EG-INT-011: 多 Agent 下性能叠加影响评估
-- EG-INT-012: Bootstrap ClassLoader 注入类冲突检测
+- EG-INT-009: Baafoo Agent + Takin Agent 同时挂载，功能不冲突
+- EG-INT-010: Baafoo Agent + AREX Agent 同时挂载，录制回放协同
+- EG-INT-011: Agent 加载顺序对功能的影响（Baafoo 在前/在后）
+- EG-INT-012: 多 Agent 下类转换冲突检测与解决
+- EG-INT-013: 多 Agent 下性能叠加影响评估
+- EG-INT-014: Bootstrap ClassLoader 注入类冲突检测
 
 #### 8.3.3 政务与信创行业
 

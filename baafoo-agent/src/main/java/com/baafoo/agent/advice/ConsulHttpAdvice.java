@@ -3,6 +3,21 @@ package com.baafoo.agent.advice;
 import com.baafoo.agent.GlobalRouteState;
 import net.bytebuddy.asm.Advice;
 
+/**
+ * Intercepts sun.net.www.http.HttpClient.openServer to redirect HTTP traffic
+ * targeting a service-name (or hostname) that matches a Baafoo rule.
+ *
+ * <p>Strategy: only modify the <b>port</b>, keep the original <b>server</b>
+ * (hostname). This preserves the original Host HTTP header so the Baafoo
+ * Server's MatchEngine can match the rule using the host field. The DNS
+ * resolution of the original hostname is handled separately by
+ * {@link ConsulDnsGetByNameAdvice} which overrides the resolved InetAddress
+ * to point at the Baafoo Server when the hostname matches a rule.</p>
+ *
+ * <p>Lookup order: try host:port exact match first (via {@code lookup}),
+ * then fall back to serviceName lookup (via {@code lookupService}). This
+ * supports both host-based and serviceName-based rules.</p>
+ */
 public class ConsulHttpAdvice {
 
     @Advice.OnMethodEnter
@@ -19,15 +34,33 @@ public class ConsulHttpAdvice {
                 return;
             }
 
-            GlobalRouteState.HostPort target = GlobalRouteState.lookupService(server);
-
-            if (target != null) {
-                server = target.host;
-                port = target.port;
-                GlobalRouteState.logDebug("[Baafoo] ConsulHttpAdvice: would redirect to " + target.host + ":" + target.port + " (note: String arg mutation may not propagate to caller)");
+            // Try host:port exact match first (supports host-based rules).
+            // GlobalRouteState.lookup returns String[]{targetHost, targetPortStr}
+            // or null if no match.
+            String[] route = GlobalRouteState.lookup(server, port);
+            String targetHost;
+            int targetPort;
+            if (route != null) {
+                targetHost = route[0];
+                targetPort = Integer.parseInt(route[1]);
+            } else {
+                // Fall back to serviceName lookup (supports serviceName-based rules).
+                // GlobalRouteState.lookupService returns HostPort or null.
+                GlobalRouteState.HostPort svcTarget = GlobalRouteState.lookupService(server);
+                if (svcTarget == null) {
+                    return;
+                }
+                targetHost = svcTarget.host;
+                targetPort = svcTarget.port;
             }
+
+            // IMPORTANT: only modify port, keep original server (hostname).
+            // This preserves the Host HTTP header for server-side rule matching.
+            // The actual IP redirect happens in ConsulDnsGetByNameAdvice.
+            GlobalRouteState.logInfo("[Baafoo] ConsulHttpAdvice redirect: " + server + ":" + port + " -> " + server + ":" + targetPort + " (DNS will resolve to " + targetHost + ")");
+            port = targetPort;
         } catch (Throwable t) {
-            GlobalRouteState.logDebug("[Baafoo] ConsulHttpAdvice error: " + t.getMessage());
+            GlobalRouteState.logInfo("[Baafoo] ConsulHttpAdvice error: " + t.getMessage());
         }
     }
 }
