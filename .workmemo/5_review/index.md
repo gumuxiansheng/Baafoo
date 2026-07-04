@@ -18,17 +18,17 @@
 
 | 文件 | 内容 |
 |------|------|
-| [00-summary.md](./00-summary.md) | 全局汇总与优先级建议 |
-| [01-core-review.md](./01-core-review.md) | baafoo-core 详细发现 |
-| [02-server-review.md](./02-server-review.md) | baafoo-server 详细发现 |
-| [03-agent-review.md](./03-agent-review.md) | baafoo-agent 详细发现 |
-| [04-plugin-cli-test-review.md](./04-plugin-cli-test-review.md) | plugin-api/cli/test-app/test-spring/plugin 详细发现 |
-| [05-web-review.md](./05-web-review.md) | Web 前端详细发现 |
-| [06-build-config-review.md](./06-build-config-review.md) | 构建与配置详细发现 |
-| [07-combined-critical.md](./07-combined-critical.md) | 所有 Critical 级别问题汇总 |
-| [08-mapper-review.md](./08-mapper-review.md) | MyBatis Mapper XML 详细发现 |
-| [09-test-review.md](./09-test-review.md) | 测试代码详细发现 |
-| [10-cicd-review.md](./10-cicd-review.md) | CI/CD 与构建脚本详细发现 |
+| [00-summary.md](./archive/00-summary.md) | 全局汇总与优先级建议 |
+| [01-core-review.md](./archive/01-core-review.md) | baafoo-core 详细发现 |
+| [02-server-review.md](./archive/02-server-review.md) | baafoo-server 详细发现 |
+| [03-agent-review.md](./archive/03-agent-review.md) | baafoo-agent 详细发现 |
+| [04-plugin-cli-test-review.md](./archive/04-plugin-cli-test-review.md) | plugin-api/cli/test-app/test-spring/plugin 详细发现 |
+| [05-web-review.md](./archive/05-web-review.md) | Web 前端详细发现 |
+| [06-build-config-review.md](./archive/06-build-config-review.md) | 构建与配置详细发现 |
+| [07-combined-critical.md](./archive/07-combined-critical.md) | 所有 Critical 级别问题汇总 |
+| [08-mapper-review.md](./archive/08-mapper-review.md) | MyBatis Mapper XML 详细发现 |
+| [09-test-review.md](./archive/09-test-review.md) | 测试代码详细发现 |
+| [10-cicd-review.md](./archive/10-cicd-review.md) | CI/CD 与构建脚本详细发现 |
 
 ---
 

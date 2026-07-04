@@ -2,6 +2,11 @@
 
 Baafoo 的插件系统允许你通过 Java SPI 机制扩展 Agent 的协议拦截行为，而无需修改 Agent Core 代码。每个插件是一个独立的 JAR 文件，通过 `plugins/` 目录热加载，运行在隔离的 ClassLoader 中。
 
+Baafoo 的插件系统分为两端：
+
+- **Agent 端插件**：通过 SPI 加载，拦截网络请求（`onConnect`/`onRequest`/`onResponse`）
+- **Server 端插件服务**：通过 `PluginServices` 接口注入，允许插件访问规则存储、录制存储和管理 API（仅 Server 模式下可用）
+
 ---
 
 ### 1. 架构概览
@@ -23,9 +28,16 @@ AppClassLoader
   │     └── GlobalRouteState (App CL 副本，通过反射与 Bootstrap CL 副本同步)
   │
   └── baafoo-plugin-api.jar    ← SPI 接口，App CL 加载
-        └── AgentPlugin, PluginContext, InterceptTarget, InterceptResult,
-            ConnectContext/ConnectAdvice, RequestContext/RequestAdvice,
-            ResponseContext/ResponseAdvice, PluginEvent
+        ├── AgentPlugin, PluginContext, InterceptTarget, InterceptResult,
+        │   ConnectContext/ConnectAdvice, RequestContext/RequestAdvice,
+        │   ResponseContext/ResponseAdvice, PluginEvent, PluginHealth
+        └── service/            ← Server 端插件服务接口
+              ├── PluginServices   (统一入口：RuleStore + RecordingStore + ServerAdmin)
+              ├── RuleStore         (只读规则查询)
+              ├── RecordingStore    (录制数据存取)
+              ├── ServerAdmin       (注册自定义端点、重载规则、读取配置)
+              ├── AdminHandler      (自定义端点处理器)
+              └── RuleChangeListener (规则变更监听)
 
 Plugin ClassLoader (URLClassLoader, parent=null)  ← 每个 plugin JAR 独立
   └── your-plugin.jar
@@ -44,6 +56,7 @@ Plugin ClassLoader (URLClassLoader, parent=null)  ← 每个 plugin JAR 独立
 - SPI 接口（`AgentPlugin` 等）由 `PluginClassLoader.spiLoader`（即 App CL）加载，Core 和 Plugin 都能访问
 - 插件内的协议依赖（如 feign-core）只在插件 ClassLoader 内可见，与应用的同名依赖完全隔离
 - Bootstrap CL 仅承载 `GlobalRouteState` 及其 6 个状态管理类（P1-2 拆分后），用于 JDK 类（Socket/InetAddress）的内联 Advice；`PluginManager` 和绝大多数 Advice 都在 App CL
+- **Server 端插件服务**（`PluginServices`）仅在 Server 上下文中可用，Agent-only 模式下为 null，插件必须 null-check
 
 ---
 
@@ -133,6 +146,7 @@ public enum InterceptTarget {
 | `ruleId` / `ruleName` | String | 匹配到的规则 ID/名称 |
 | `pluginConfig` | Map<String, Object> | 插件级配置（从 baafoo-agent.yml 注入） |
 | `recording` | boolean | 是否为录制会话 |
+| `services` | PluginServices | Server 端插件服务（仅 Server 模式，Agent-only 时为 null） |
 
 #### 协议特有字段（均为可选，默认 null）
 
@@ -349,12 +363,66 @@ plugins:
 
 ### 10. 事件总线（EventBus）
 
-插件通过 `onEvent(PluginEvent)` 接收生命周期事件。插件加载时 `PluginManager` 会自动将其注册为 `EventBus` 监听器，无需手动注册。
+插件通过 `onEvent(PluginEvent)` 接收生命周期和请求流事件。插件加载时 `PluginManager` 会自动将其注册为 `EventBus` 监听器，无需手动注册。
 
-| 事件类型 | 触发时机 |
-|----------|----------|
-| `PLUGIN_LOADED` | 插件加载完成（`init()` 之后） |
-| `PLUGIN_UNLOADED` | 插件卸载（`destroy()` 之后） |
+#### 事件类型
+
+| 类别 | 事件类型 | 触发时机 |
+|------|----------|----------|
+| **请求生命周期** | `REQUEST_RECEIVED` | 请求到达并被解析 |
+| | `RULE_MATCHED` | 请求匹配到规则 |
+| | `RULE_NOT_MATCHED` | 请求未匹配任何规则 |
+| | `RESPONSE_SENT` | 响应已发送给客户端 |
+| **录制** | `RECORDING_SAVED` | 录制条目已保存 |
+| | `RECORDING_STARTED` | 录制会话开始 |
+| | `RECORDING_ENDED` | 录制会话结束 |
+| **连接** | `CONNECTION_REDIRECTED` | 连接被拦截并重定向 |
+| | `CONNECTION_PASSTHROUGH` | 连接被放行（透传） |
+| **规则生命周期** | `RULES_RELOADED` | 规则从存储重新加载 |
+| | `RULE_CHANGED` | 特定规则被创建/更新/删除 |
+| **插件生命周期** | `PLUGIN_LOADED` | 插件加载完成（`init()` 之后） |
+| | `PLUGIN_UNLOADED` | 插件卸载（`destroy()` 之后） |
+| | `PLUGIN_ERROR` | 插件遇到错误 |
+| **系统** | `AGENT_STARTED` | Agent 启动 |
+| | `AGENT_SHUTDOWN` | Agent 关闭中 |
+
+#### 事件属性
+
+每个 `PluginEvent` 包含：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `type` | `PluginEvent.Type` | 事件类型 |
+| `timestamp` | `long` | 事件时间戳（毫秒） |
+| `environmentId` | `String` | 所属环境 ID（可为 null） |
+| `attributes` | `Map<String, Object>` | 事件属性（如 ruleId、protocol、statusCode 等） |
+
+通过 `event.getAttribute("ruleId")` 等方式获取具体属性。
+
+#### 使用示例
+
+```java
+@Override
+public void onEvent(PluginEvent event) {
+    switch (event.getType()) {
+        case RULE_MATCHED:
+            String ruleId = event.getAttribute("ruleId");
+            System.out.println("Rule matched: " + ruleId);
+            break;
+        case RECORDING_SAVED:
+            String recId = event.getAttribute("recordingId");
+            metricsService.increment("baafoo.recording.saved");
+            break;
+        case RULE_CHANGED:
+            String action = event.getAttribute("action");
+            // 可以缓存规则变更
+            break;
+        case AGENT_STARTED:
+            // 初始化插件资源
+            break;
+    }
+}
+```
 
 > **注意**：`onEvent` 是观察性质的钩子，不参与请求流。实现中不可抛异常——异常会被 `EventBus` 捕获并记录日志。插件之间通过事件实现松耦合通信（如 Metrics 插件监听其他插件的生命周期）。
 
@@ -362,7 +430,137 @@ plugins:
 
 ---
 
-### 11. 最佳实践
+### 11. Server 端插件服务
+
+除了 Agent 端的拦截钩子，Baafoo 还提供了 Server 端的插件服务接口，允许插件访问规则存储、录制存储和管理 API。
+
+> **重要**：`PluginServices` 仅在 Server 上下文中可用。Agent-only 模式下为 `null`，插件必须 null-check 后使用。
+
+#### 11.1 PluginServices 接口
+
+```java
+package com.baafoo.plugin.service;
+
+public interface PluginServices {
+    RuleStore getRuleStore();        // 规则查询
+    RecordingStore getRecordingStore(); // 录制存取
+    ServerAdmin getServerAdmin();    // 管理 API
+}
+```
+
+通过 `PluginContext.getServices()` 获取（需 null-check）。
+
+#### 11.2 RuleStore — 只读规则查询
+
+```java
+// 列出环境下的所有规则
+List<Map<String, Object>> rules = ruleStore.listRules("env-001");
+
+// 按 ID 查询规则
+Map<String, Object> rule = ruleStore.getRule("rule-abc");
+```
+
+规则 Map 包含字段：`id`, `name`, `protocol`, `host`, `port`, `serviceName`, `priority`, `enabled`, `environments`, `conditions`, `responses`。
+
+> 使用 `Map<String,Object>` 而非领域模型，确保 `baafoo-plugin-api` 零依赖、可被 Bootstrap CL 加载。
+
+#### 11.3 RecordingStore — 录制数据存取
+
+```java
+// 保存录制
+Map<String, Object> recording = new HashMap<>();
+recording.put("protocol", "http");
+recording.put("method", "GET");
+recording.put("path", "/api/users");
+recording.put("responseBody", responseBytes);
+recordingStore.save(recording);
+
+// 查询环境下的录制
+List<Map<String, Object>> recordings = 
+    recordingStore.listByEnvironment("env-001", 100);
+```
+
+录制 Map 包含字段：`id`, `ruleId`, `protocol`, `host`, `port`, `method`, `path`, `requestBody`, `responseBody`, `responseStatusCode`, `recordedAt`, `environmentId`。
+
+#### 11.4 ServerAdmin — 管理 API
+
+```java
+// 注册自定义管理端点
+serverAdmin.registerEndpoint("/api/plugins/metrics", (method, path, headers, body) -> {
+    return "{\"requests\": " + requestCount + "}";
+});
+
+// 触发规则重载
+serverAdmin.reloadRules();
+
+// 读取 Server 配置
+String corsOrigins = serverAdmin.getConfig("corsOrigins");
+```
+
+`AdminHandler` 是 `@FunctionalInterface`，可用 Lambda 实现。
+
+#### 11.5 RuleChangeListener — 规则变更监听
+
+```java
+public class MyPlugin implements AgentPlugin, RuleChangeListener {
+    @Override
+    public void onRuleChanged(String ruleId, String action, String environmentId) {
+        // action: "created", "updated", "deleted"
+        System.out.println("Rule " + action + ": " + ruleId);
+        // 可以清除本地缓存
+    }
+}
+```
+
+也可通过 `onEvent` 监听 `RULE_CHANGED` 事件达到同样效果。
+
+#### 11.6 使用示例：请求指标统计插件
+
+```java
+public class MetricsPlugin implements AgentPlugin {
+    private AtomicInteger requestCount = new AtomicInteger(0);
+    private PluginServices services;
+
+    @Override
+    public void init() {
+        // 注册自定义管理端点
+        if (services != null && services.getServerAdmin() != null) {
+            services.getServerAdmin().registerEndpoint(
+                "/api/plugins/metrics",
+                (method, path, headers, body) -> {
+                    return "{\"totalRequests\": " + requestCount.get() + "}";
+                }
+            );
+        }
+    }
+
+    @Override
+    public InterceptResult intercept(PluginContext ctx) {
+        // 获取 PluginServices
+        this.services = ctx.getServices();
+        requestCount.incrementAndGet();
+        return InterceptResult.passthrough();
+    }
+
+    @Override
+    public void onEvent(PluginEvent event) {
+        if (event.getType() == PluginEvent.Type.RULE_CHANGED) {
+            // 规则变更，可以查询最新规则
+            if (services != null && services.getRuleStore() != null) {
+                List<Map<String, Object>> rules = 
+                    services.getRuleStore().listRules(null);
+                System.out.println("Current rules: " + rules.size());
+            }
+        }
+    }
+
+    // ... 其他方法
+}
+```
+
+---
+
+### 12. 最佳实践
 
 1. **`getName()` 保持稳定**：配置索引和日志都依赖此名称，不要随意修改
 2. **`onConnect`/`intercept()` 不要抛异常**：用 `ConnectAdvice.passthrough()` / `InterceptResult.passthrough()` 代替异常来放行
@@ -371,10 +569,12 @@ plugins:
 5. **二进制协议用 `redirect`**：Kafka/Pulsar/JMS 的连接建立阶段只能返回重定向地址
 6. **HTTP 协议可用 `stub`**：在 Socket 拦截点上可以直接返回 Mock 响应体
 7. **新插件优先用分阶段钩子**：`onConnect`/`onRequest`/`onResponse` 比 `intercept()` 语义更清晰，控制粒度更细
+8. **使用 Server 端插件服务前先 null-check**：`PluginContext.getServices()` 在 Agent-only 模式下返回 null
+9. **自定义管理端点用 Lambda**：`AdminHandler` 是 `@FunctionalInterface`，可用 Lambda 简化代码
 
 ---
 
-### 12. 扩展新协议 Checklist
+### 13. 扩展新协议 Checklist
 
 如果需要支持一种全新协议（如 Redis、AMQP），按以下清单执行：
 
@@ -388,5 +588,7 @@ plugins:
 - [ ] 编写单元测试
 - [ ] `mvn package` 构建 JAR，部署到 `plugins/` 目录
 - [ ] 集成测试验证拦截效果
+- [ ] （可选）实现 `RuleChangeListener` 或 `onEvent(RULE_CHANGED)` 响应规则变更
+- [ ] （可选）通过 `ServerAdmin.registerEndpoint()` 注册自定义管理端点
 
 > **注意**：添加新协议需要修改 Agent Core（编写 Advice + 注册 Transform），这不是纯外部插件能完成的。外部插件只能定制已有 Advice 的处理逻辑。

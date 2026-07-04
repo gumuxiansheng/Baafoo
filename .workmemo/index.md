@@ -1,7 +1,7 @@
 # Baafoo 工作文档索引
 
 > 按产品生命周期阶段组织，仅保留"为什么这么做"的有效文档。
-> 最后更新：2026-06-28（目录结构同步）
+> 最后更新：2026-07-05（补充遗漏文档 + 更新审查报告路径）
 
 ---
 
@@ -22,6 +22,11 @@
 | [2_prd/baafoo-prd.md](2_prd/baafoo-prd.md) | 核心需求基线 v2.4 | 2026-06-15 |
 | [2_prd/baafoo-feature-extension-prd.md](2_prd/baafoo-feature-extension-prd.md) | 功能扩展 PRD v1.1 | 2026-06-13 |
 | [5_review/index.md](5_review/index.md) | 全量审查索引 | 2026-06-22 |
+| [5_review/baafoo_architecture_improvement_todo.md](5_review/baafoo_architecture_improvement_todo.md) | 架构改进 TODO（P0-P3） | 2026-07-01 |
+| [5_review/baafoo_architecture_improvement_todo.md](5_review/baafoo_architecture_improvement_todo.md) | 架构改进 TODO（P0-P3） | 2026-07-01 |
+| [5_review/baafoo_architecture_improvement_todo.md](5_review/baafoo_architecture_improvement_todo.md) | 架构改进 TODO（P0-P3） | 2026-07-01 |
+| [5_review/baafoo_architecture_improvement_todo.md](5_review/baafoo_architecture_improvement_todo.md) | 架构改进 TODO（P0-P3） | 2026-07-01 |
+| [5_review/baafoo_architecture_improvement_todo.md](5_review/baafoo_architecture_improvement_todo.md) | 架构改进 TODO（P0-P3） | 2026-07-01 |
 | [5_review/plugin-arch-advice.md](5_review/plugin-arch-advice.md) | 插件架构决策 & 状态跟踪 | 2026-06-22 |
 | [5_review/plugin-analysis-report.md](5_review/plugin-analysis-report.md) | 插件完整性分析报告 | 2026-06-20 |
 | [5_review/product-advice.md](5_review/product-advice.md) | 产品方向建议 | 2026-05-31 |
@@ -63,6 +68,7 @@
 ├── 4_deliverables/                       ← （空）
 ├── 5_review/                             ← 审查与建议
 │   ├── index.md                          ← ✅ 审查索引
+│   ├── baafoo_architecture_improvement_todo.md ← ✅ 架构改进 TODO
 │   ├── plugin-arch-advice.md             ← ✅ 活跃
 │   ├── plugin-analysis-report.md         ← ✅ 活跃
 │   ├── product-advice.md                 ← ✅ 活跃
@@ -84,6 +90,14 @@
 ```
 
 ---
+
+## 清理记录（2026-07-05）
+
+| 操作 | 数量 | 范围 |
+|------|------|------|
+| 补充遗漏 | 1 个 | 5_review/baafoo_architecture_improvement_todo.md |
+| 修复链向 | 11 个 | 5_review/index.md 中审查报告路径（→ archive/） |
+| 更新日期 | 2 个 | index.md 主日期 |
 
 ## 清理记录（2026-06-28）
 

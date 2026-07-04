@@ -4,7 +4,7 @@
 
 ## When to Use
 
-- Create/update/delete Mock rules for HTTP/TCP/Kafka/Pulsar/JMS protocols
+- Create/update/delete Mock rules for HTTP/TCP/gRPC/Kafka/Pulsar/JMS protocols
 - Manage environments (STUB / PASSTHROUGH / RECORD / RECORD_AND_STUB / RECORD_ALL)
 - Query or manage scene sets
 - List/delete recordings
@@ -132,5 +132,5 @@ curl -X POST http://localhost:8084/__baafoo__/api/mcp \
 - All write operations require authentication (JWT or API Key)
 - Role hierarchy: admin > developer > tester > guest
 - Environment mode controls agent behavior (STUB/PASSTHROUGH/RECORD/etc.)
-- Rules support HTTP, TCP, Kafka, Pulsar, JMS protocols
+- Rules support HTTP, TCP, gRPC, Kafka, Pulsar, JMS protocols
 - TCP rules support advanced features: rounds, loop, pattern matching, offset matching

@@ -6,7 +6,7 @@ A Mock rule defines how Baafoo responds to incoming requests. Key fields:
 
 - **id**: Unique identifier (kebab-case recommended)
 - **name**: Human-readable name
-- **protocol**: `http`, `tcp`, `kafka`, `pulsar`, `jms`
+- **protocol**: `http`, `tcp`, `kafka`, `pulsar`, `jms`, `grpc`
 - **conditions**: List of match conditions (method, path, header, query, body, etc.)
 - **responses**: List of response entries (status, headers, body, delay)
 - **priority**: Lower number = higher priority (default 100)
