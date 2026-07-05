@@ -28,7 +28,7 @@
         <el-table-column :label="$t('environments.createdAt')" width="180">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column :label="$t('environments.actions')" width="240" fixed="right">
+        <el-table-column :label="$t('environments.actions')" min-width="280" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text @click="viewDetail(row.id)">{{ $t('environments.detail') }}</el-button>
             <el-dropdown @command="(cmd) => changeMode(row, cmd)" style="margin-left: 8px" v-if="authStore.canWriteEnvironment">

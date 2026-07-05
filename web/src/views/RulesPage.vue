@@ -77,7 +77,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="version" :label="$t('rules.version')" width="60" align="center" />
-        <el-table-column :label="$t('rules.actions')" width="240" fixed="right">
+        <el-table-column :label="$t('rules.actions')" min-width="260" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text @click="editRule(row)" v-if="authStore.canWriteRule">{{ $t('rules.edit') }}</el-button>
             <el-button size="small" text @click="undoRuleItem(row)" :disabled="row.version <= 1" v-if="authStore.canWriteRule">{{ $t('rules.undo') }}</el-button>

@@ -32,7 +32,7 @@
           {{ row.lastLoginAt ? new Date(row.lastLoginAt).toLocaleString() : '-' }}
         </template>
       </el-table-column>
-      <el-table-column :label="$t('users.columns.actions')" fixed="right" width="280">
+      <el-table-column :label="$t('users.columns.actions')" fixed="right" min-width="300">
         <template #default="{ row }">
           <el-dropdown trigger="click" @command="(cmd) => handleRoleChange(row, cmd)">
             <el-button size="small" type="warning" plain>

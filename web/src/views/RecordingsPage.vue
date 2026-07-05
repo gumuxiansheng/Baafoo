@@ -79,7 +79,7 @@
         <el-table-column prop="recordedAt" :label="$t('recordings.recordedAt')" width="170">
           <template #default="{ row }">{{ formatTime(row.recordedAt) }}</template>
         </el-table-column>
-        <el-table-column :label="$t('recordings.actions')" width="160" fixed="right">
+        <el-table-column :label="$t('recordings.actions')" min-width="180" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text @click="viewDetail(row)">{{ $t('recordings.detail') }}</el-button>
             <el-popconfirm :title="$t('recordings.confirmDelete')" @confirm="deleteItem(row.id)" v-if="authStore.canWriteRecording">
