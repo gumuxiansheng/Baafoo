@@ -337,7 +337,7 @@
             <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px" v-html="templateVarHint"></div>
             <!-- Faker Quick Insert -->
             <div v-if="showFakerRef" class="faker-ref-panel">
-              <div class="faker-ref-title">{{ $t('rules.templates.hint') }}</div>
+              <div class="faker-ref-title" v-html="$t('rules.templates.hint')"></div>
               <div class="faker-ref-group">
                 <div class="faker-ref-label">{{ $t('rules.templates.personal') }}</div>
                 <el-tag v-for="fn in fakerGroups.personal" :key="fn" size="small" class="faker-tag" @click="insertFakerVar(resp, fn)" v-text="'{{' + fn + '}}'"></el-tag>

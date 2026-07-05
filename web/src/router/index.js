@@ -10,6 +10,10 @@ const routes = [
   },
   {
     path: '/',
+    redirect: '/dashboard'
+  },
+  {
+    path: '/dashboard',
     name: 'Dashboard',
     component: () => import('@/views/DashboardPage.vue'),
     meta: { title: 'nav.dashboard' }
