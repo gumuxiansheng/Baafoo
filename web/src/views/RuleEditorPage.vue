@@ -465,14 +465,14 @@ export default {
       return inheritedEnvs.value.includes(val) ? 'warning' : ''
     }
 
-    // NOTE: templateVarHint contains {{{{...}}}} which breaks vue-i18n interpolation.
+    // NOTE: templateVarHint contains {{...}} which would break vue-i18n interpolation.
     // Keep it as a raw string, NOT an i18n key.
     const templateVarHint = computed(() => {
       const isEn = locale.value === 'en'
       const prefix = isEn ? 'Template vars supported: ' : '支持模板变量: '
       const dynamicLabel = isEn ? 'Dynamic data: ' : '动态数据: '
       const moreFn = isEn ? 'More functions...' : '更多函数...'
-      return `${prefix}<code>{{{{request.body.xxx}}}}</code> <code>{{{{request.header.xxx}}}}</code> <code>{{{{request.query.xxx}}}}</code> <code>{{{{request.path}}}}</code><br/>${dynamicLabel}<code>{{{{faker.phone}}}}</code> <code>{{{{faker.email}}}}</code> <code>{{{{faker.name}}}}</code> <code>{{{{faker.address}}}}</code> <code>{{{{faker.idCard}}}}</code> <code>{{{{faker.uuid}}}}</code> <code>{{{{faker.int.1.100}}}}</code> <a href="javascript:void(0)" onclick="document.dispatchEvent(new CustomEvent('toggle-faker-ref'))" style="color:var(--bf-accent)">${moreFn}</a>`
+      return `${prefix}<code>{{request.body.xxx}}</code> <code>{{request.header.xxx}}</code> <code>{{request.query.xxx}}</code> <code>{{request.path}}</code><br/>${dynamicLabel}<code>{{faker.phone}}</code> <code>{{faker.email}}</code> <code>{{faker.name}}</code> <code>{{faker.address}}</code> <code>{{faker.idCard}}</code> <code>{{faker.uuid}}</code> <code>{{faker.int.1.100}}</code> <a href="javascript:void(0)" onclick="document.dispatchEvent(new CustomEvent('toggle-faker-ref'))" style="color:var(--bf-accent)">${moreFn}</a>`
     })
 
     // Listen for toggle-faker-ref event from v-html link
