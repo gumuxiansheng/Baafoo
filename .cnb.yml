@@ -19,7 +19,7 @@ master:
         - name: test-all
           script: ./mvnw verify -Dnpm.skip=true
         - name: package
-          script: ./mvnw clean package -DskipTests -Dnpm.skip=true
+          script: ./mvnw package -DskipTests -Dnpm.skip=true
       endStages:
         - name: check-artifacts
           script: ls -lh baafoo-server/target/baafoo-server-*.jar baafoo-agent/target/baafoo-agent-*.jar
@@ -60,7 +60,7 @@ master:
         - name: test-agent
           script: ./mvnw test -pl baafoo-agent -am -DskipTests=false
         - name: package
-          script: ./mvnw clean package -DskipTests -Dnpm.skip=true
+          script: ./mvnw package -DskipTests -Dnpm.skip=true
       failStages:
         - name: notify-failure
           script: echo "PR checks failed for $CNB_BRANCH"
@@ -111,7 +111,7 @@ master:
         - name: test-all
           script: ./mvnw test -Dnpm.skip=true
         - name: package
-          script: ./mvnw clean package -DskipTests -Dnpm.skip=true
+          script: ./mvnw package -DskipTests -Dnpm.skip=true
 
 $:
   tag_push:
@@ -130,7 +130,7 @@ $:
         - name: test
           script: ./mvnw test -Dnpm.skip=true
         - name: package
-          script: ./mvnw clean package -DskipTests -Dnpm.skip=true
+          script: ./mvnw package -DskipTests -Dnpm.skip=true
         - name: build-and-push-image
           script: |
             docker build -t docker.cnb.cool/$CNB_REPO_SLUG/baafoo-server:$CNB_BRANCH .
@@ -148,8 +148,5 @@ $:
       stages:
         - name: log-deletion
           script: echo "Branch $CNB_BRANCH deleted"
-reports:
-  jacoco:
-    - target/site/jacoco-aggregate/jacoco.xml
 artifacts:
   - target/site/jacoco-aggregate/**/*
