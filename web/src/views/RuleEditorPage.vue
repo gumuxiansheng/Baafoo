@@ -337,7 +337,7 @@
             <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px" v-html="templateVarHint"></div>
             <!-- Faker Quick Insert -->
             <div v-if="showFakerRef" class="faker-ref-panel">
-              <div class="faker-ref-title" v-html="$t('rules.templates.hint')"></div>
+              <div class="faker-ref-title" v-html="templateVarHint"></div>
               <div class="faker-ref-group">
                 <div class="faker-ref-label">{{ $t('rules.templates.personal') }}</div>
                 <el-tag v-for="fn in fakerGroups.personal" :key="fn" size="small" class="faker-tag" @click="insertFakerVar(resp, fn)" v-text="'{{' + fn + '}}'"></el-tag>
@@ -430,7 +430,7 @@ export default {
     const router = useRouter()
     const rulesStore = useRulesStore()
     const authStore = useAuthStore()
-    const { t } = useI18n()
+    const { t, locale } = useI18n()
     const rule = ref(null)
     const loading = ref(false)
     const saving = ref(false)
@@ -465,7 +465,15 @@ export default {
       return inheritedEnvs.value.includes(val) ? 'warning' : ''
     }
 
-    const templateVarHint = t('rules.templates.hint')
+    // NOTE: templateVarHint contains {{{{...}}}} which breaks vue-i18n interpolation.
+    // Keep it as a raw string, NOT an i18n key.
+    const templateVarHint = computed(() => {
+      const isEn = locale.value === 'en'
+      const prefix = isEn ? 'Template vars supported: ' : '支持模板变量: '
+      const dynamicLabel = isEn ? 'Dynamic data: ' : '动态数据: '
+      const moreFn = isEn ? 'More functions...' : '更多函数...'
+      return `${prefix}<code>{{{{request.body.xxx}}}}</code> <code>{{{{request.header.xxx}}}}</code> <code>{{{{request.query.xxx}}}}</code> <code>{{{{request.path}}}}</code><br/>${dynamicLabel}<code>{{{{faker.phone}}}}</code> <code>{{{{faker.email}}}}</code> <code>{{{{faker.name}}}}</code> <code>{{{{faker.address}}}}</code> <code>{{{{faker.idCard}}}}</code> <code>{{{{faker.uuid}}}}</code> <code>{{{{faker.int.1.100}}}}</code> <a href="javascript:void(0)" onclick="document.dispatchEvent(new CustomEvent('toggle-faker-ref'))" style="color:var(--bf-accent)">${moreFn}</a>`
+    })
 
     // Listen for toggle-faker-ref event from v-html link
     if (typeof document !== 'undefined') {
