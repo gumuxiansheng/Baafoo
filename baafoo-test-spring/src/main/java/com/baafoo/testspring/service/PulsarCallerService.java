@@ -14,6 +14,23 @@ public class PulsarCallerService {
 
     private static final Logger log = LoggerFactory.getLogger(PulsarCallerService.class);
 
+    /**
+     * Create a PulsarClient for the given service URL.
+     *
+     * <p>Extracted as a seam so unit/integration tests can override this method
+     * (e.g. via {@code @SpyBean} + {@code doReturn(mockClient).when(spy).createPulsarClient(...)})
+     * to avoid real network I/O in CICD environments where no Pulsar broker is
+     * available. The default implementation builds a real client with short
+     * timeouts suitable for the production use case of this test app.</p>
+     */
+    public PulsarClient createPulsarClient(String serviceUrl) throws PulsarClientException {
+        return PulsarClient.builder()
+                .serviceUrl(serviceUrl)
+                .connectionTimeout(2, TimeUnit.SECONDS)
+                .operationTimeout(2, TimeUnit.SECONDS)
+                .build();
+    }
+
     public Map<String, Object> sendMessage(String serviceUrl, String topic, String message) {
         Map<String, Object> result = new LinkedHashMap<String, Object>();
         result.put("serviceUrl", serviceUrl);
@@ -21,11 +38,7 @@ public class PulsarCallerService {
 
         PulsarClient client = null;
         try {
-            client = PulsarClient.builder()
-                    .serviceUrl(serviceUrl)
-                    .connectionTimeout(2, TimeUnit.SECONDS)
-                    .operationTimeout(2, TimeUnit.SECONDS)
-                    .build();
+            client = createPulsarClient(serviceUrl);
             result.put("clientCreated", true);
 
             Producer<String> producer = client.newProducer(Schema.STRING)
@@ -55,11 +68,7 @@ public class PulsarCallerService {
 
         PulsarClient client = null;
         try {
-            client = PulsarClient.builder()
-                    .serviceUrl(serviceUrl)
-                    .connectionTimeout(2, TimeUnit.SECONDS)
-                    .operationTimeout(2, TimeUnit.SECONDS)
-                    .build();
+            client = createPulsarClient(serviceUrl);
 
             Consumer<String> consumer = client.newConsumer(Schema.STRING)
                     .topic(topic)
