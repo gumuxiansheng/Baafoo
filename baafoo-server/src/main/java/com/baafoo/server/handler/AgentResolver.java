@@ -111,27 +111,36 @@ public class AgentResolver {
         // Fallback for MQ (Kafka/Pulsar/JMS) connections: the source IP is often a
         // Docker gateway (e.g. 172.x.0.1) because the Agent redirects the client to
         // localhost:PORT, and the Server sees the gateway IP instead of the container IP.
-        if (resolved == null && channelIp != null) {
+        // Also applies when channelIp is null (e.g. JmsRecordingPlugin.afterDeliver where
+        // the connection cannot be resolved from the consumer). In that case we skip the
+        // gateway-subnet heuristic (which requires an IP) but still try the server-subnet
+        // and unique-environment fallbacks.
+        if (resolved == null) {
+            String ipLabel = channelIp != null ? channelIp : "null";
             // 1) Gateway subnet: gateway 172.19.0.1 → find agent in 172.19.0.x
-            resolved = findAgentByGatewaySubnet(agents, channelIp, onlineThreshold);
-            if (resolved != null) {
-                log.info("IP {} not matched directly; resolved via gateway subnet fallback to agent {} (env={})",
-                        channelIp, resolved.agentId, resolved.environment);
-            } else {
-                // 2) Server subnets: find agents on any /24 subnet the server is connected to.
-                //    This handles Docker deployments where the server has multiple network
-                //    interfaces and the MQ connection comes through a different network
-                //    than the agent's registered IP.
+            //    (only applicable when we have a channel IP)
+            if (channelIp != null) {
+                resolved = findAgentByGatewaySubnet(agents, channelIp, onlineThreshold);
+                if (resolved != null) {
+                    log.info("IP {} not matched directly; resolved via gateway subnet fallback to agent {} (env={})",
+                            channelIp, resolved.agentId, resolved.environment);
+                }
+            }
+            // 2) Server subnets: find agents on any /24 subnet the server is connected to.
+            //    This handles Docker deployments where the server has multiple network
+            //    interfaces and the MQ connection comes through a different network
+            //    than the agent's registered IP.
+            if (resolved == null) {
                 resolved = findAgentByServerSubnets(agents, onlineThreshold);
                 if (resolved != null) {
                     log.info("IP {} not matched; resolved via server subnet fallback to agent {} (env={})",
-                            channelIp, resolved.agentId, resolved.environment);
+                            ipLabel, resolved.agentId, resolved.environment);
                 } else {
                     // 3) Unique environment: if all online agents share the same environment, use it
                     String env = findUniqueOnlineEnvironment(agents, onlineThreshold);
                     if (env != null) {
                         log.info("IP {} not matched; all online agents share environment '{}', using as fallback",
-                                channelIp, env);
+                                ipLabel, env);
                         for (StorageService.AgentRegistration agent : agents) {
                             if (agent.lastHeartbeat > onlineThreshold && env.equals(agent.environment)) {
                                 if (resolved == null || agent.lastHeartbeat > resolved.lastHeartbeat) {

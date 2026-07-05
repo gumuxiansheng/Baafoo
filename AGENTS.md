@@ -169,6 +169,4 @@ Documentation lives in `.workmemo/`. Follow these rules when writing or updating
 See `.review/deep-code-review-report.md` for 20+ verified findings. The following P0 items have been resolved by the architecture improvement work (`.workmemo/5_review/baafoo_architecture_improvement_todo.md`):
 - ✅ Fixed (P0-6): `RouteManager.rebuildRouteTable` now uses atomic reference swap instead of clear+putAll
 - ✅ Fixed (P0-5): `PassthroughProxy` SSL verification is now secure by default; `sslVerifyDisabled` must be explicitly set to `true` to disable
-
-Still outstanding:
-- P0: `TcpStubHandler` uses `Thread.sleep` on Netty EventLoop
+- ✅ Fixed (P0): `TcpStubHandler` no longer blocks the Netty EventLoop — delay is now scheduled via `ctx.executor().schedule(...)` instead of `Thread.sleep`

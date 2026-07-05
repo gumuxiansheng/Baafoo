@@ -1,25 +1,42 @@
 package com.baafoo.testpulsar;
 
 import com.baafoo.testpulsar.controller.Pulsar274Controller;
+import com.baafoo.testpulsar.service.Pulsar274CallerService;
+import com.baafoo.testpulsar.service.Pulsar274CallerService.SamplePojo;
+import org.apache.pulsar.client.api.*;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.web.server.LocalServerPort;
 
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.*;
 
 /**
  * Smoke tests for {@code baafoo-test-pulsar}.
  *
- * <p>Run with {@link SpringBootTest.WebEnvironment#RANDOM_PORT} so they need no
- * external broker. The send/consume/json/batch endpoints are exercised with a
- * deliberately unreachable {@code serviceUrl} so the underlying Pulsar client
- * fails fast and returns an error map — mirroring the
- * {@code baafoo-test-spring} test strategy. The assertions only check that the
- * endpoints return the expected keys, not that they actually connect.</p>
+ * <p>Pulsar interactions are mocked via {@code @SpyBean} on
+ * {@link Pulsar274CallerService}: the spy overrides
+ * {@code createPulsarClient(...)} to return a mock {@link PulsarClient}, whose
+ * chained {@code newProducer}/{@code newConsumer} builders are stubbed to
+ * return mock {@link Producer}/{@link Consumer}. This prevents real TCP
+ * connections to {@code localhost:0} in CICD environments where no broker is
+ * available — previously the Pulsar client logged
+ * "Connection refused: localhost/127.0.0.1:0" WARN stack traces on every test
+ * (the full /all sweep spawned 4 clients, each retrying for ~30s), polluting
+ * CICD reports and triggering network-monitor alerts.</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class BaafooTestPulsarApplicationTests {
@@ -32,6 +49,59 @@ class BaafooTestPulsarApplicationTests {
 
     @Autowired
     private Pulsar274Controller pulsar274Controller;
+
+    @SpyBean
+    private Pulsar274CallerService pulsar274CallerService;
+
+    @BeforeEach
+    void stubPulsarClient() throws Exception {
+        PulsarClient mockClient = mock(PulsarClient.class);
+
+        // Producer chain: client.newProducer(schema).topic(t)...create() -> producer
+        // Covers STRING schema (sendMessage/sendBatch) and JSON(SamplePojo) schema
+        // (sendJsonSchema). Declared as raw Producer so it can accept both
+        // send(String) and send(SamplePojo) calls — the service code declares
+        // generic Producer<String> / Producer<SamplePojo> locals, but the mock
+        // is the same instance for both paths (Mockito doesn't care about
+        // generic types at runtime).
+        @SuppressWarnings("rawtypes")
+        Producer mockProducer = mock(Producer.class);
+        @SuppressWarnings("unchecked")
+        ProducerBuilder<String> mockProducerBuilder = mock(ProducerBuilder.class);
+        when(mockProducerBuilder.topic(anyString())).thenReturn(mockProducerBuilder);
+        when(mockProducerBuilder.enableBatching(anyBoolean())).thenReturn(mockProducerBuilder);
+        when(mockProducerBuilder.batchingMaxMessages(anyInt())).thenReturn(mockProducerBuilder);
+        when(mockProducerBuilder.batchingMaxPublishDelay(anyLong(), any(TimeUnit.class))).thenReturn(mockProducerBuilder);
+        when(mockProducerBuilder.create()).thenReturn(mockProducer);
+        when(mockClient.newProducer(any(Schema.class))).thenReturn(mockProducerBuilder);
+
+        // Producer.send(String) -> MessageId.latest (covers sendMessage)
+        when(mockProducer.send(anyString())).thenReturn(MessageId.latest);
+        // Producer.send(SamplePojo) -> MessageId.latest (covers sendJsonSchema)
+        when(mockProducer.send(any(SamplePojo.class))).thenReturn(MessageId.latest);
+        // Producer.sendAsync(String) -> completed future (covers sendBatch)
+        when(mockProducer.sendAsync(anyString()))
+                .thenReturn(CompletableFuture.completedFuture(MessageId.latest));
+        // producer.flush() is a no-op on the mock
+        doNothing().when(mockProducer).flush();
+
+        // Consumer chain: client.newConsumer(schema).topic(t).subscriptionName(s).subscribe()
+        @SuppressWarnings("unchecked")
+        Consumer<String> mockConsumer = mock(Consumer.class);
+        @SuppressWarnings("unchecked")
+        ConsumerBuilder<String> mockConsumerBuilder = mock(ConsumerBuilder.class);
+        when(mockConsumerBuilder.topic(anyString())).thenReturn(mockConsumerBuilder);
+        when(mockConsumerBuilder.subscriptionName(anyString())).thenReturn(mockConsumerBuilder);
+        when(mockConsumerBuilder.subscribe()).thenReturn(mockConsumer);
+        when(mockClient.newConsumer(any(Schema.class))).thenReturn(mockConsumerBuilder);
+
+        // Consumer.receive returns null (no messages) — matches the CICD behaviour
+        // where no broker is present, exercising the "no message" branch.
+        when(mockConsumer.receive(anyInt(), any(TimeUnit.class))).thenReturn(null);
+
+        // SpyBean seam: replace real client construction with the mock
+        doReturn(mockClient).when(pulsar274CallerService).createPulsarClient(anyString());
+    }
 
     @Test
     void contextLoads() {
@@ -51,8 +121,8 @@ class BaafooTestPulsarApplicationTests {
     @Test
     @SuppressWarnings("unchecked")
     void sendEndpointReturnsResultMap() {
-        // serviceUrl uses an invalid scheme so the client fails instantly;
-        // we only assert the endpoint returns the request echo keys.
+        // serviceUrl is irrelevant: createPulsarClient is stubbed to return a mock.
+        // We only assert the endpoint returns the request echo keys.
         Map<String, Object> result = restTemplate.getForObject(
                 "http://localhost:" + port
                         + "/api/pulsar274/send?serviceUrl=slow://localhost:0000&topic=t&message=m",
@@ -76,10 +146,9 @@ class BaafooTestPulsarApplicationTests {
     @Test
     @SuppressWarnings("unchecked")
     void jsonEndpointReturnsResultMap() {
-        // serviceUrl is unreachable, so the call fails fast into the catch
-        // branch and only echoes serviceUrl/topic (+ error). The "schema" key
-        // is only set on the success path, so we assert the always-present
-        // keys here — consistent with the other endpoint tests.
+        // serviceUrl is unreachable in raw mode, but the mock returns success.
+        // We assert both echo keys and the success-path "schema" key to confirm
+        // the JSON-schema producer path is exercised.
         Map<String, Object> result = restTemplate.getForObject(
                 "http://localhost:" + port
                         + "/api/pulsar274/json?serviceUrl=slow://localhost:0000&topic=t&name=n&value=1",

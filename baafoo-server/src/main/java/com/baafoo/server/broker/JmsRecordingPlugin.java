@@ -58,10 +58,15 @@ public class JmsRecordingPlugin implements ActiveMQServerPlugin {
     @Override
     public void afterDeliver(ServerConsumer consumer, MessageReference reference) {
         Message message = reference != null ? reference.getMessage() : null;
+        if (log.isDebugEnabled()) {
+            log.debug("afterDeliver called: consumer={}, hasMessage={}, queue={}",
+                    consumer != null ? consumer.getQueue() : null,
+                    message != null,
+                    consumer != null && consumer.getQueue() != null ? consumer.getQueue().getName() : null);
+        }
         // ServerConsumer doesn't expose ServerSession directly; resolve the
         // RemotingConnection via the broker's RemotingService using the
         // consumer's connection ID so we can still extract the client IP.
-        ServerSession session = null;
         if (consumer != null && server != null) {
             try {
                 Object connId = consumer.getConnectionID();
@@ -78,14 +83,23 @@ public class JmsRecordingPlugin implements ActiveMQServerPlugin {
                                 return;
                             }
                         }
+                        // Connection ID not found in active connections (connection may
+                        // have been closed between delivery and this callback). Fall
+                        // through to the null-IP path — resolveByIp will try the
+                        // unique-environment fallback.
+                        log.debug("afterDeliver: connection ID {} not found among {} active connections, using null-IP fallback",
+                                connId, conns.size());
                     }
                 }
             } catch (Exception e) {
                 log.debug("Failed to resolve consumer connection for afterDeliver: {}", e.getMessage());
             }
         }
-        // Fallback: record without IP resolution (environment may not resolve).
-        recordMessage(null, message, "consume");
+        // Fallback: record without IP resolution. resolveByIp(null) will use the
+        // unique-environment / server-subnet fallbacks to resolve the environment
+        // when there is exactly one online environment (common in tests and
+        // single-env deployments).
+        recordMessageWithIp(null, message, "consume");
     }
 
     /**
