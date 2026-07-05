@@ -8,9 +8,9 @@
 [![Java](https://img.shields.io/badge/Java-8%2B-orange?logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-2.7-brightgreen?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Vue](https://img.shields.io/badge/Vue-3.4-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
-[![License](https://img.shields.io/badge/License-Private-red.svg)]()
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[English](#) · [快速开始](#快速开始) · [使用指南](#使用指南) · [API 参考](#rest-api-参考) · [插件开发](#插件开发)
+[English](README_EN.md) · [快速开始](#快速开始) · [使用指南](#使用指南) · [API 参考](#rest-api-参考) · [插件开发](#插件开发)
 
 </div>
 
