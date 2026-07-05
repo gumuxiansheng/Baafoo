@@ -16,6 +16,15 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class KafkaMessageStore {
 
+    /**
+     * Maximum number of messages retained per partition (Medium 25).
+     *
+     * <p>The mock broker is intended for functional/staging testing. Without
+     * a cap, a runaway producer could exhaust heap. When the cap is exceeded
+     * the oldest message is dropped (offsets continue to advance).</p>
+     */
+    static final int MAX_MESSAGES_PER_PARTITION = 10000;
+
     private final ConcurrentHashMap<TopicPartition, PartitionLog> logs = new ConcurrentHashMap<>();
 
     /**
@@ -116,6 +125,13 @@ public class KafkaMessageStore {
         long append(byte[] key, byte[] value, byte[] rawBatch) {
             long offset = nextOffset.getAndIncrement();
             messages.add(new StoredMessage(offset, key, value, rawBatch));
+            // Cap partition log to prevent unbounded growth (Medium 25).
+            // Note: dropping messages here means subsequent fetch() calls
+            // referencing the dropped offsets will simply not return them —
+            // acceptable for a mock broker.
+            while (messages.size() > MAX_MESSAGES_PER_PARTITION) {
+                messages.remove(0);
+            }
             return offset;
         }
 
@@ -123,6 +139,11 @@ public class KafkaMessageStore {
             List<StoredMessage> result = new ArrayList<StoredMessage>();
             int totalBytes = 0;
             synchronized (messages) {
+                // Linear scan — required because the per-partition cap
+                // (MAX_MESSAGES_PER_PARTITION) may have dropped messages from
+                // the front of the list, so message[i].offset != i in general.
+                // List size is bounded by MAX_MESSAGES_PER_PARTITION (10k),
+                // so the scan is cheap (~100µs).
                 for (StoredMessage msg : messages) {
                     if (msg.offset < startOffset) continue;
                     int msgSize = 4 + 4; // offset + message size prefix

@@ -30,6 +30,15 @@ class PulsarMessageStore {
     private final ConcurrentHashMap<String, ConcurrentLinkedQueue<StoredMessage>> messagesBySubscription =
             new ConcurrentHashMap<String, ConcurrentLinkedQueue<StoredMessage>>();
 
+    /**
+     * Maximum number of messages retained per topic (Medium 26).
+     *
+     * <p>Mock broker is intended for functional testing, not long-running
+     * production traffic. Without a cap, a runaway producer could exhaust
+     * heap. When the cap is exceeded the oldest message is dropped.</p>
+     */
+    private static final int MAX_MESSAGES_PER_TOPIC = 10000;
+
     /** Monotonic ID generator for ledger IDs. */
     private final AtomicLong ledgerIdSeq = new AtomicLong(1);
 
@@ -64,19 +73,30 @@ class PulsarMessageStore {
         msg.payload = payload;
         msg.timestamp = System.currentTimeMillis();
 
-        messagesByTopic.computeIfAbsent(topic,
+        ConcurrentLinkedQueue<StoredMessage> topicQueue = messagesByTopic.computeIfAbsent(topic,
                 new java.util.function.Function<String, ConcurrentLinkedQueue<StoredMessage>>() {
                     @Override
                     public ConcurrentLinkedQueue<StoredMessage> apply(String k) {
                         return new ConcurrentLinkedQueue<StoredMessage>();
                     }
-                }).add(msg);
+                });
+        topicQueue.add(msg);
+        // Cap per-topic queue to prevent unbounded growth (Medium 26).
+        while (topicQueue.size() > MAX_MESSAGES_PER_TOPIC) {
+            topicQueue.poll();
+        }
 
         // Also add to any existing subscriptions for this topic
         for (Map.Entry<String, ConcurrentLinkedQueue<StoredMessage>> entry : messagesBySubscription.entrySet()) {
             String subKey = entry.getKey();
             if (subKey.startsWith(topic + ":")) {
-                entry.getValue().add(msg);
+                ConcurrentLinkedQueue<StoredMessage> subQueue = entry.getValue();
+                subQueue.add(msg);
+                // Cap subscription queue too — a slow consumer can otherwise
+                // pile up messages indefinitely.
+                while (subQueue.size() > MAX_MESSAGES_PER_TOPIC) {
+                    subQueue.poll();
+                }
             }
         }
 

@@ -15,6 +15,7 @@ import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.model.Rule;
 import com.baafoo.core.util.GrpcCodecUtils;
+import com.baafoo.core.util.HexUtils;
 import com.baafoo.core.util.MatchEngine;
 import com.baafoo.core.util.TemplateEngine;
 import com.baafoo.plugin.PluginEvent;
@@ -133,9 +134,17 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
         private String path;
         private Map<String, String> metadata;
         private final List<byte[]> requestMessages = new ArrayList<>();
-        private String accumulatedHex = "";
+        // StringBuilder instead of String += avoids O(n²) concatenation across
+        // multiple gRPC frames in a stream (Critical 9). Use getAccumulatedHex()
+        // when matching against rules.
+        private final StringBuilder accumulatedHex = new StringBuilder();
         private Http2FrameStream frameStream;
         private boolean clientEnded = false;
+
+        /** Snapshot the accumulated hex as a String — used by MatchEngine. */
+        private String getAccumulatedHex() {
+            return accumulatedHex.toString();
+        }
 
         GrpcStreamChildHandler(StorageService storage, ServerConfig config,
                                AgentResolver agentResolver, MatchEngine matchEngine,
@@ -202,9 +211,11 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
                 List<byte[]> messages = GrpcCodecUtils.parseGrpcFrames(allBytes);
                 for (byte[] msg : messages) {
                     requestMessages.add(msg);
-                    accumulatedHex += GrpcCodecUtils.bytesToHex(msg);
+                    // Append directly to StringBuilder — avoids O(n²) String += (Critical 9)
+                    // and avoids per-byte String.format (High 7).
+                    HexUtils.appendHex(accumulatedHex, msg);
                 }
-                
+
                 // Check for incomplete trailing data
                 int consumed = 0;
                 for (byte[] msg : messages) {
@@ -214,7 +225,7 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
                     // Partial frame header remaining — accumulate as hex
                     byte[] remaining = new byte[allBytes.length - consumed];
                     System.arraycopy(allBytes, consumed, remaining, 0, remaining.length);
-                    accumulatedHex += GrpcCodecUtils.bytesToHex(remaining);
+                    HexUtils.appendHex(accumulatedHex, remaining);
                 }
             } finally {
                 data.release();
@@ -253,7 +264,7 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
                 // 2. Match rule with port=0 fallback (gRPC handler doesn't know the original port)
                 MatchEngine.MatchResult result = matchEngine.matchWithFallback(
                         rules, "grpc", null, 0, null,
-                        "POST", path, null, metadata, null, accumulatedHex);
+                        "POST", path, null, metadata, null, getAccumulatedHex());
 
                 if (result.isMatched()) {
                     // P2: Fire RULE_MATCHED event
@@ -271,7 +282,7 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
                     // Record if needed
                     if (mode == EnvironmentMode.RECORD_AND_STUB || mode == EnvironmentMode.RECORD_ALL) {
                         RecordingEntry rec = RecordingHelper.buildFromStub(
-                                result, "grpc", null, 0, "POST", path, metadata, accumulatedHex);
+                                result, "grpc", null, 0, "POST", path, metadata, getAccumulatedHex());
                         rec.setAgentId(agentInfo.agentId);
                         rec.setAgentIp(agentInfo.agentIp);
                         rec.setEnvironmentId(agentEnv);
@@ -329,7 +340,7 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
             int requestCount = result.getRequestCount();
 
             TemplateEngine.RequestContext templateCtx = new TemplateEngine.RequestContext(
-                    "POST", path, null, metadata, null, accumulatedHex, agentInfo.environment);
+                    "POST", path, null, metadata, null, getAccumulatedHex(), agentInfo.environment);
             templateCtx.setRequestCount(requestCount);
 
             // Build response messages (handles multi-message streaming)

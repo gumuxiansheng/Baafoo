@@ -5,6 +5,7 @@ import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.RecordingEntry;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.model.Rule;
+import com.baafoo.core.util.HexUtils;
 import com.baafoo.core.util.MatchEngine;
 import com.baafoo.core.util.TemplateEngine;
 import com.baafoo.server.storage.StorageService;
@@ -350,12 +351,8 @@ public class GrpcStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
     }
 
     private static String bytesToHex(byte[] bytes) {
-        if (bytes == null) return "";
-        StringBuilder sb = new StringBuilder(bytes.length * 2);
-        for (byte b : bytes) {
-            sb.append(String.format("%02x", b));
-        }
-        return sb.toString();
+        // Lookup-table conversion — avoids String.format on hot path (High 7).
+        return HexUtils.bytesToHex(bytes);
     }
 
     private static byte[] hexToBytes(String hex) {

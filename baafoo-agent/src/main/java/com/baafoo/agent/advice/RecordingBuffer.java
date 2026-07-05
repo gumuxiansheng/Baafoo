@@ -9,7 +9,6 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -33,7 +32,16 @@ public class RecordingBuffer {
 
     private static final Logger log = LoggerFactory.getLogger(RecordingBuffer.class);
 
-    private final CopyOnWriteArrayList<RecordingEntry> buffer = new CopyOnWriteArrayList<RecordingEntry>();
+    /**
+     * Backing queue for buffered recordings.
+     *
+     * <p>Previously a {@code CopyOnWriteArrayList} — but {@code add()} is on
+     * the hot path (one call per stubbed request), and COWArrayList.add
+     * copies the entire backing array each time, making it O(n) per insert
+     * (High 15). {@link ConcurrentLinkedQueue} offers O(1) lock-free
+     * append + drain via {@code poll()}.</p>
+     */
+    private final ConcurrentLinkedQueue<RecordingEntry> buffer = new ConcurrentLinkedQueue<RecordingEntry>();
     private final int maxBufferSize;
     private final int flushIntervalSec;
     private final ScheduledExecutorService scheduler;
@@ -61,20 +69,23 @@ public class RecordingBuffer {
      */
     public void add(RecordingEntry entry) {
         buffer.add(entry);
+        // size() on ConcurrentLinkedQueue is O(n) but is only called once per
+        // add — acceptable cost for a non-copying write path.
         if (buffer.size() >= maxBufferSize) {
             flush();
         }
     }
 
     /**
-     * Drain the buffer atomically: snapshot and clear under synchronization
-     * so no entries are lost between the two operations.
+     * Drain the buffer atomically — uses poll() in a loop so concurrent
+     * add() callers cannot observe a partial drain (entries added between
+     * snapshot and clear under the previous COWArrayList design).
      */
     private List<RecordingEntry> drainBuffer() {
-        List<RecordingEntry> snapshot;
-        synchronized (this) {
-            snapshot = new ArrayList<RecordingEntry>(buffer);
-            buffer.clear();
+        List<RecordingEntry> snapshot = new ArrayList<RecordingEntry>();
+        RecordingEntry e;
+        while ((e = buffer.poll()) != null) {
+            snapshot.add(e);
         }
         return snapshot;
     }

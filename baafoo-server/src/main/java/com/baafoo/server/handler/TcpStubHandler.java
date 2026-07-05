@@ -2,6 +2,7 @@ package com.baafoo.server.handler;
 
 import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.model.*;
+import com.baafoo.core.util.HexUtils;
 import com.baafoo.core.util.MatchEngine;
 import com.baafoo.core.util.TemplateEngine;
 import com.baafoo.plugin.PluginEvent;
@@ -18,7 +19,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -54,8 +55,24 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
     /** P2: Event bus for plugin event firing */
     private final com.baafoo.core.event.EventBus eventBus;
 
-    /** Pre-compiled regex patterns (cached by pattern string) */
-    private final ConcurrentHashMap<String, Pattern> patternCache = new ConcurrentHashMap<String, Pattern>();
+    /**
+     * Pre-compiled regex patterns (cached by pattern string).
+     *
+     * <p>Bounded LRU cache (Medium 30) — replaces the previous
+     * {@link ConcurrentHashMap} with a soft 512 cap that stopped caching
+     * new patterns after the cap, causing recompilation on every request.
+     * Now uses {@link java.util.LinkedHashMap} with access-order + LRU
+     * eviction, keeping the hottest patterns resident.</p>
+     */
+    private static final int PATTERN_CACHE_MAX = 512;
+    private final Map<String, Pattern> patternCache =
+            java.util.Collections.synchronizedMap(
+                    new java.util.LinkedHashMap<String, Pattern>(64, 0.75f, true) {
+                        @Override
+                        protected boolean removeEldestEntry(Map.Entry<String, Pattern> eldest) {
+                            return size() > PATTERN_CACHE_MAX;
+                        }
+                    });
 
     public TcpStubHandler(StorageService storage, ServerConfig config) {
         this(storage, config, null);
@@ -371,21 +388,23 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
         }
         StringBuilder actualHex = new StringBuilder(byteCount * 2);
         for (int i = offsetStart; i < offsetEnd; i++) {
-            actualHex.append(String.format("%02x", data[i] & 0xFF));
+            // Lookup-table conversion — avoids String.format on hot path (Critical 4).
+            HexUtils.appendByte(actualHex, data[i] & 0xFF);
         }
         return actualHex.toString().equalsIgnoreCase(expectedHex);
     }
 
     /**
-     * Match input against a regex pattern (cached).
+     * Match input against a regex pattern (cached, LRU).
      */
     private boolean matchRegex(String input, String regex) {
         try {
-            Pattern pattern = patternCache.get(regex);
-            if (pattern == null) {
-                pattern = Pattern.compile(regex);
-                if (patternCache.size() < 512) {
-                    patternCache.putIfAbsent(regex, pattern);
+            Pattern pattern;
+            synchronized (patternCache) {
+                pattern = patternCache.get(regex);
+                if (pattern == null) {
+                    pattern = Pattern.compile(regex);
+                    patternCache.put(regex, pattern);
                 }
             }
             return pattern.matcher(input).find();
@@ -399,11 +418,8 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
      * Convert byte array to lowercase hex string.
      */
     private static String bytesToHex(byte[] bytes) {
-        StringBuilder sb = new StringBuilder(bytes.length * 2);
-        for (byte b : bytes) {
-            sb.append(String.format("%02x", b & 0xFF));
-        }
-        return sb.toString();
+        // Delegates to HexUtils — lookup table instead of String.format (Critical 4).
+        return HexUtils.bytesToHex(bytes);
     }
 
     private Rule findRuleById(String ruleId) {

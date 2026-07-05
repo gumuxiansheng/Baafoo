@@ -13,9 +13,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * File-based storage for rules, environments, scenes, and recordings.
@@ -31,8 +29,28 @@ public class FileStorage {
     private final ServerConfig config;
     private final ObjectMapper mapper;
 
-    /** ReadWriteLock for thread-safe file I/O */
-    private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    /**
+     * Per-entity write locks. Replaces the previous single {@link ReadWriteLock}
+     * that protected all entities — under that design a write to rules would
+     * block writes to environments/scenes/ruleSets even though they touch
+     * completely disjoint files (High 10). The split below lets concurrent
+     * writes to different entity types proceed in parallel.
+     *
+     * <p>Note: in-memory reads use {@link ConcurrentHashMap} and do not require
+     * these locks; the locks only serialize the disk-persistence step.</p>
+     */
+    private final ReentrantLock rulesLock = new ReentrantLock();
+    private final ReentrantLock environmentsLock = new ReentrantLock();
+    private final ReentrantLock scenesLock = new ReentrantLock();
+    private final ReentrantLock ruleSetsLock = new ReentrantLock();
+    private final ReentrantLock agentsLock = new ReentrantLock();
+
+    /**
+     * Dedicated lock for the recordings deque. Kept separate from the
+     * entity locks so that high-frequency recording appends (one per stubbed
+     * request) do not block writes of rules / environments, and vice versa.
+     */
+    private final ReentrantLock recordingsLock = new ReentrantLock();
 
     /** In-memory rule cache (rule ID → rule) */
     private final Map<String, Rule> rules = new ConcurrentHashMap<String, Rule>();
@@ -46,8 +64,21 @@ public class FileStorage {
     /** In-memory rule sets */
     private final Map<String, RuleSet> ruleSets = new ConcurrentHashMap<String, RuleSet>();
 
-    /** Recording entries (append-only, periodically flushed) */
-    private final List<RecordingEntry> recordings = new CopyOnWriteArrayList<RecordingEntry>();
+    /**
+     * Recording entries (newest-first, append-only, periodically flushed).
+     *
+     * <p>Backed by {@link ArrayDeque} (not {@code CopyOnWriteArrayList}) because:
+     * <ul>
+     *   <li>recording add is on the hot path (one call per stubbed request) —
+     *       {@code add(0, x)} on a COWArrayList copies the whole backing array
+     *       each time, making it O(n) per insert and O(n²) over a batch;</li>
+     *   <li>{@code deleteRecordingsOlderThan} calls {@code Iterator.remove()},
+     *       which COWArrayList does NOT support (throws
+     *       {@link UnsupportedOperationException}).</li>
+     * </ul>
+     * All access is serialized by {@link #recordingsLock}.</p>
+     */
+    private final Deque<RecordingEntry> recordings = new ArrayDeque<RecordingEntry>();
 
     /** Agent registrations (agentId → envId) */
     private final Map<String, AgentRegistration> agents = new ConcurrentHashMap<String, AgentRegistration>();
@@ -63,24 +94,47 @@ public class FileStorage {
 
     /**
      * Initialize storage - create directories and load existing data.
+     * Runs once at startup; acquires each entity lock in turn (no contention
+     * expected during bootstrap).
      */
     public void init() throws IOException {
-        lock.writeLock().lock();
-        try {
-            new File(config.getDataDir()).mkdirs();
-            new File(config.getRulesDir()).mkdirs();
-            new File(config.getRecordingsDir()).mkdirs();
+        new File(config.getDataDir()).mkdirs();
+        new File(config.getRulesDir()).mkdirs();
+        new File(config.getRecordingsDir()).mkdirs();
 
+        rulesLock.lock();
+        try {
             loadRules();
-            loadEnvironments();
-            loadScenes();
-            loadRuleSets();
-            loadRecordings();
-            log.info("Storage initialized: rules={}, environments={}, scenes={}, ruleSets={}",
-                    rules.size(), environments.size(), scenes.size(), ruleSets.size());
         } finally {
-            lock.writeLock().unlock();
+            rulesLock.unlock();
         }
+        environmentsLock.lock();
+        try {
+            loadEnvironments();
+        } finally {
+            environmentsLock.unlock();
+        }
+        scenesLock.lock();
+        try {
+            loadScenes();
+        } finally {
+            scenesLock.unlock();
+        }
+        ruleSetsLock.lock();
+        try {
+            loadRuleSets();
+        } finally {
+            ruleSetsLock.unlock();
+        }
+        recordingsLock.lock();
+        try {
+            loadRecordings();
+        } finally {
+            recordingsLock.unlock();
+        }
+
+        log.info("Storage initialized: rules={}, environments={}, scenes={}, ruleSets={}",
+                rules.size(), environments.size(), scenes.size(), ruleSets.size());
     }
 
     // --- Rule CRUD ---
@@ -101,7 +155,7 @@ public class FileStorage {
     }
 
     public Rule createRule(Rule rule) {
-        lock.writeLock().lock();
+        rulesLock.lock();
         try {
             if (rule.getId() == null || rule.getId().isEmpty()) {
                 rule.setId(IdGenerator.uuid());
@@ -115,12 +169,12 @@ public class FileStorage {
             saveRules();
             return rule;
         } finally {
-            lock.writeLock().unlock();
+            rulesLock.unlock();
         }
     }
 
     public Rule updateRule(String id, Rule update) {
-        lock.writeLock().lock();
+        rulesLock.lock();
         try {
             Rule existing = rules.get(id);
             if (existing == null) return null;
@@ -145,25 +199,28 @@ public class FileStorage {
             saveRules();
             return existing;
         } finally {
-            lock.writeLock().unlock();
+            rulesLock.unlock();
         }
     }
 
     public boolean deleteRule(String id) {
-        lock.writeLock().lock();
+        rulesLock.lock();
         try {
             if (rules.remove(id) != null) {
                 saveRules();
+                // Clean up per-rule counter (Medium 28) — covers all callers
+                // (ChaosApiHandler, RuleTools, etc.), not just the RuleApiHandler.
+                com.baafoo.core.util.StatefulCounterStore.global().reset(id);
                 return true;
             }
             return false;
         } finally {
-            lock.writeLock().unlock();
+            rulesLock.unlock();
         }
     }
 
     public boolean undoRule(String id) {
-        lock.writeLock().lock();
+        rulesLock.lock();
         try {
             List<Rule> history = ruleHistory.get(id);
             if (history == null || history.isEmpty()) {
@@ -174,7 +231,7 @@ public class FileStorage {
             saveRules();
             return true;
         } finally {
-            lock.writeLock().unlock();
+            rulesLock.unlock();
         }
     }
 
@@ -197,7 +254,7 @@ public class FileStorage {
     }
 
     public Environment createEnvironment(Environment env) {
-        lock.writeLock().lock();
+        environmentsLock.lock();
         try {
             if (env.getId() == null || env.getId().isEmpty()) {
                 env.setId(IdGenerator.uuid());
@@ -210,12 +267,12 @@ public class FileStorage {
             saveEnvironments();
             return env;
         } finally {
-            lock.writeLock().unlock();
+            environmentsLock.unlock();
         }
     }
 
     public Environment updateEnvironment(String id, Environment update) {
-        lock.writeLock().lock();
+        environmentsLock.lock();
         try {
             Environment existing = environments.get(id);
             if (existing == null) return null;
@@ -229,12 +286,12 @@ public class FileStorage {
             saveEnvironments();
             return existing;
         } finally {
-            lock.writeLock().unlock();
+            environmentsLock.unlock();
         }
     }
 
     public boolean deleteEnvironment(String id) {
-        lock.writeLock().lock();
+        environmentsLock.lock();
         try {
             if (environments.remove(id) != null) {
                 saveEnvironments();
@@ -242,7 +299,7 @@ public class FileStorage {
             }
             return false;
         } finally {
-            lock.writeLock().unlock();
+            environmentsLock.unlock();
         }
     }
 
@@ -253,7 +310,7 @@ public class FileStorage {
     }
 
     public SceneSet createScene(SceneSet scene) {
-        lock.writeLock().lock();
+        scenesLock.lock();
         try {
             if (scene.getId() == null || scene.getId().isEmpty()) {
                 scene.setId(IdGenerator.uuid());
@@ -265,12 +322,12 @@ public class FileStorage {
             saveScenes();
             return scene;
         } finally {
-            lock.writeLock().unlock();
+            scenesLock.unlock();
         }
     }
 
     public SceneSet updateScene(String id, SceneSet update) {
-        lock.writeLock().lock();
+        scenesLock.lock();
         try {
             SceneSet existing = scenes.get(id);
             if (existing == null) return null;
@@ -282,12 +339,12 @@ public class FileStorage {
             saveScenes();
             return existing;
         } finally {
-            lock.writeLock().unlock();
+            scenesLock.unlock();
         }
     }
 
     public boolean deleteScene(String id) {
-        lock.writeLock().lock();
+        scenesLock.lock();
         try {
             if (scenes.remove(id) != null) {
                 saveScenes();
@@ -295,7 +352,7 @@ public class FileStorage {
             }
             return false;
         } finally {
-            lock.writeLock().unlock();
+            scenesLock.unlock();
         }
     }
 
@@ -306,7 +363,7 @@ public class FileStorage {
     }
 
     public RuleSet createRuleSet(RuleSet ruleSet) {
-        lock.writeLock().lock();
+        ruleSetsLock.lock();
         try {
             if (ruleSet.getId() == null || ruleSet.getId().isEmpty()) {
                 ruleSet.setId(IdGenerator.uuid());
@@ -318,12 +375,12 @@ public class FileStorage {
             saveRuleSets();
             return ruleSet;
         } finally {
-            lock.writeLock().unlock();
+            ruleSetsLock.unlock();
         }
     }
 
     public boolean deleteRuleSet(String id) {
-        lock.writeLock().lock();
+        ruleSetsLock.lock();
         try {
             if (ruleSets.remove(id) != null) {
                 saveRuleSets();
@@ -331,7 +388,7 @@ public class FileStorage {
             }
             return false;
         } finally {
-            lock.writeLock().unlock();
+            ruleSetsLock.unlock();
         }
     }
 
@@ -339,11 +396,16 @@ public class FileStorage {
 
     public List<RecordingEntry> listRecordings(String ruleId, int limit) {
         List<RecordingEntry> result = new ArrayList<RecordingEntry>();
-        for (RecordingEntry r : recordings) {
-            if (ruleId == null || ruleId.equals(r.getRuleId())) {
-                result.add(r);
-                if (result.size() >= limit) break;
+        recordingsLock.lock();
+        try {
+            for (RecordingEntry r : recordings) {
+                if (ruleId == null || ruleId.equals(r.getRuleId())) {
+                    result.add(r);
+                    if (result.size() >= limit) break;
+                }
             }
+        } finally {
+            recordingsLock.unlock();
         }
         return result;
     }
@@ -353,71 +415,116 @@ public class FileStorage {
             recording.setId(IdGenerator.uuid());
         }
         recording.setRecordedAt(System.currentTimeMillis());
-        recordings.add(0, recording); // newest first
+        recordingsLock.lock();
+        try {
+            // ArrayDeque.addFirst is O(1) — no array copy (unlike COWArrayList.add(0, ..)).
+            recordings.addFirst(recording); // newest first
 
-        // Prune old recordings
-        while (recordings.size() > 10000) {
-            recordings.remove(recordings.size() - 1);
+            // Prune oldest entries beyond the retention cap.
+            while (recordings.size() > 10000) {
+                recordings.removeLast();
+            }
+        } finally {
+            recordingsLock.unlock();
         }
     }
 
     public void addRecordings(List<RecordingEntry> batch) {
-        lock.writeLock().lock();
+        recordingsLock.lock();
         try {
             for (RecordingEntry r : batch) {
-                addRecording(r);
+                if (r.getId() == null) {
+                    r.setId(IdGenerator.uuid());
+                }
+                r.setRecordedAt(System.currentTimeMillis());
+                recordings.addFirst(r); // newest first
             }
-            saveRecordings();
+            // Prune oldest entries beyond the retention cap.
+            while (recordings.size() > 10000) {
+                recordings.removeLast();
+            }
         } finally {
-            lock.writeLock().unlock();
+            recordingsLock.unlock();
         }
+        // Persist outside the deque lock so reads of recordings are not blocked
+        // during the (slow) JSON serialization + disk write.
+        saveRecordings();
     }
 
     public boolean deleteRecording(String id) {
-        for (int i = 0; i < recordings.size(); i++) {
-            if (recordings.get(i).getId().equals(id)) {
-                recordings.remove(i);
-                return true;
+        recordingsLock.lock();
+        try {
+            // ArrayDeque iterator supports remove() — no array copy on remove
+            // (unlike COWArrayList.remove(index) which copies the backing array).
+            for (Iterator<RecordingEntry> it = recordings.iterator(); it.hasNext(); ) {
+                RecordingEntry r = it.next();
+                if (r.getId().equals(id)) {
+                    it.remove();
+                    return true;
+                }
             }
+            return false;
+        } finally {
+            recordingsLock.unlock();
         }
-        return false;
     }
 
     public int deleteRecordingsOlderThan(int retentionDays) {
         long cutoffTime = System.currentTimeMillis() - (long) retentionDays * 24 * 60 * 60 * 1000;
         int deleted = 0;
-        java.util.Iterator<RecordingEntry> it = recordings.iterator();
-        while (it.hasNext()) {
-            RecordingEntry r = it.next();
-            if (r.getRecordedAt() < cutoffTime) {
-                it.remove();
-                deleted++;
+        recordingsLock.lock();
+        try {
+            // ArrayDeque iterator supports remove() (COWArrayList's did NOT —
+            // this was a latent bug that would throw UnsupportedOperationException).
+            Iterator<RecordingEntry> it = recordings.iterator();
+            while (it.hasNext()) {
+                RecordingEntry r = it.next();
+                if (r.getRecordedAt() < cutoffTime) {
+                    it.remove();
+                    deleted++;
+                }
             }
+        } finally {
+            recordingsLock.unlock();
         }
         return deleted;
     }
 
     public long getRecordingCount() {
-        return recordings.size();
+        recordingsLock.lock();
+        try {
+            return recordings.size();
+        } finally {
+            recordingsLock.unlock();
+        }
     }
 
     public long getRecordingTotalSizeBytes() {
-        // Sum actual body byte lengths instead of a fixed 2KB-per-recording estimate.
         long total = 0;
-        for (RecordingEntry r : recordings) {
-            if (r.getResponseBody() != null) total += r.getResponseBody().length();
-            if (r.getRequestBody() != null) total += r.getRequestBody().length();
+        recordingsLock.lock();
+        try {
+            for (RecordingEntry r : recordings) {
+                if (r.getResponseBody() != null) total += r.getResponseBody().length();
+                if (r.getRequestBody() != null) total += r.getRequestBody().length();
+            }
+        } finally {
+            recordingsLock.unlock();
         }
         return total;
     }
 
     public List<Map<String, Object>> getRecordingCountsByDay(long startTime) {
         Map<Long, Long> dayCounts = new java.util.TreeMap<>();
-        for (RecordingEntry r : recordings) {
-            if (r.getRecordedAt() >= startTime) {
-                long day = r.getRecordedAt() / 86400000L * 86400000L;
-                dayCounts.merge(day, 1L, Long::sum);
+        recordingsLock.lock();
+        try {
+            for (RecordingEntry r : recordings) {
+                if (r.getRecordedAt() >= startTime) {
+                    long day = r.getRecordedAt() / 86400000L * 86400000L;
+                    dayCounts.merge(day, 1L, Long::sum);
+                }
             }
+        } finally {
+            recordingsLock.unlock();
         }
         List<Map<String, Object>> result = new java.util.ArrayList<>();
         for (Map.Entry<Long, Long> entry : dayCounts.entrySet()) {
@@ -432,31 +539,39 @@ public class FileStorage {
     // --- Agent Management ---
 
     public AgentRegistration registerAgent(String agentId, String environment, String hostname, String version, List<String> protocols, String agentIp) {
-        lock.writeLock().lock();
+        AgentRegistration reg = new AgentRegistration();
+        reg.agentId = agentId;
+        reg.environment = environment;
+        reg.hostname = hostname;
+        reg.version = version;
+        reg.protocols = protocols;
+        reg.agentIp = agentIp;
+        reg.registeredAt = System.currentTimeMillis();
+        reg.lastHeartbeat = System.currentTimeMillis();
+
+        agentsLock.lock();
         try {
-            AgentRegistration reg = new AgentRegistration();
-            reg.agentId = agentId;
-            reg.environment = environment;
-            reg.hostname = hostname;
-            reg.version = version;
-            reg.protocols = protocols;
-            reg.agentIp = agentIp;
-            reg.registeredAt = System.currentTimeMillis();
-            reg.lastHeartbeat = System.currentTimeMillis();
-
             agents.put(agentId, reg);
-
-            // Associate agent with environment
-            Environment env = getEnvironmentByName(environment);
-            if (env != null && !env.getAgentIds().contains(agentId)) {
-                env.getAgentIds().add(agentId);
-                saveEnvironments();
-            }
-
-            return reg;
         } finally {
-            lock.writeLock().unlock();
+            agentsLock.unlock();
         }
+
+        // Associate agent with environment (separate lock — doesn't need to be
+        // atomic with the agents.put above).
+        Environment env = getEnvironmentByName(environment);
+        if (env != null && !env.getAgentIds().contains(agentId)) {
+            environmentsLock.lock();
+            try {
+                if (!env.getAgentIds().contains(agentId)) {
+                    env.getAgentIds().add(agentId);
+                    saveEnvironments();
+                }
+            } finally {
+                environmentsLock.unlock();
+            }
+        }
+
+        return reg;
     }
 
     public void agentHeartbeat(String agentId, String agentIp) {
@@ -578,9 +693,19 @@ public class FileStorage {
     }
 
     private void saveRecordings() {
+        // Take a snapshot under recordingsLock, then release the lock before
+        // performing the (slow) JSON serialization + disk write so that
+        // recording appends from other threads are not blocked during I/O.
+        List<RecordingEntry> snapshot;
+        recordingsLock.lock();
+        try {
+            snapshot = new ArrayList<RecordingEntry>(recordings);
+        } finally {
+            recordingsLock.unlock();
+        }
         try {
             File file = new File(config.getRecordingsDir(), "recordings.json");
-            mapper.writeValue(file, new ArrayList<RecordingEntry>(recordings));
+            mapper.writeValue(file, snapshot);
         } catch (IOException e) {
             log.error("Failed to save recordings: {}", e.getMessage());
         }
@@ -591,8 +716,15 @@ public class FileStorage {
             File file = new File(config.getRecordingsDir(), "recordings.json");
             if (!file.exists()) return;
             List<RecordingEntry> loaded = mapper.readValue(file, new TypeReference<List<RecordingEntry>>() {});
-            for (RecordingEntry r : loaded) {
-                recordings.add(r);
+            recordingsLock.lock();
+            try {
+                // File is saved newest-first (matches addFirst semantics).
+                // Append each entry to the tail to preserve newest-first order.
+                for (RecordingEntry r : loaded) {
+                    recordings.addLast(r);
+                }
+            } finally {
+                recordingsLock.unlock();
             }
             log.info("Loaded {} recordings", recordings.size());
         } catch (IOException e) {

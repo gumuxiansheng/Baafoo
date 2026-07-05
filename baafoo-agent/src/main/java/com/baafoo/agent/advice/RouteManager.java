@@ -12,8 +12,8 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class RouteManager {
 
@@ -29,7 +29,14 @@ public final class RouteManager {
 
     private static volatile boolean recording = false;
 
-    private static final List<RecordingEntry> RECORDING_BUFFER = new CopyOnWriteArrayList<RecordingEntry>();
+    /**
+     * Legacy fallback buffer — used only when {@link BaafooAgent#getRecordingBuffer()}
+     * returns null (i.e., during early agent bootstrap before RecordingBuffer is
+     * constructed). Replaced COWArrayList with {@link ConcurrentLinkedQueue} to
+     * match {@link RecordingBuffer}'s queue semantics and avoid the O(n) per-add
+     * array copy that COWArrayList imposes on the hot recording path (High 16).
+     */
+    private static final ConcurrentLinkedQueue<RecordingEntry> RECORDING_BUFFER = new ConcurrentLinkedQueue<RecordingEntry>();
 
     private RouteManager() {}
 
@@ -230,6 +237,8 @@ public final class RouteManager {
         } else {
             // Fallback to legacy buffer if RecordingBuffer not initialized
             RECORDING_BUFFER.add(recording);
+            // size() on ConcurrentLinkedQueue is O(n) — only called on the
+            // rare bootstrap fallback path, not on the main hot path.
             if (RECORDING_BUFFER.size() >= 100) {
                 flushRecordings();
             }
@@ -241,15 +250,18 @@ public final class RouteManager {
         if (buffer != null) {
             buffer.flush();
         }
-        // Also flush any remaining entries in the legacy buffer
-        if (!RECORDING_BUFFER.isEmpty()) {
-            List<RecordingEntry> batch = new ArrayList<RecordingEntry>(RECORDING_BUFFER);
-            RECORDING_BUFFER.clear();
-            if (!batch.isEmpty()) {
-                ControlChannel channel = BaafooAgent.getControlChannel();
-                if (channel != null) {
-                    channel.uploadRecordings(batch);
-                }
+        // Also drain any remaining entries in the legacy buffer via poll() —
+        // snapshot+clear under COWArrayList had a race where entries added
+        // between snapshot and clear would be lost.
+        RecordingEntry e;
+        List<RecordingEntry> batch = new ArrayList<RecordingEntry>();
+        while ((e = RECORDING_BUFFER.poll()) != null) {
+            batch.add(e);
+        }
+        if (!batch.isEmpty()) {
+            ControlChannel channel = BaafooAgent.getControlChannel();
+            if (channel != null) {
+                channel.uploadRecordings(batch);
             }
         }
     }

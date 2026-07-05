@@ -127,12 +127,16 @@ public class JdbcSceneService implements SceneService {
             if (scene.isActive()) {
                 List<String> envs = scene.getEnvironments() != null ? scene.getEnvironments() : Collections.<String>emptyList();
                 List<String> itemIds = scene.getItemIds() != null ? scene.getItemIds() : Collections.<String>emptyList();
+                // Cache listScenes() once — previously this issued a fresh
+                // SELECT for every (ruleId, env) pair, causing O(rules × envs)
+                // queries each scanning the entire scenes table (High 13).
+                List<SceneSet> allScenes = sm.listScenes();
                 for (String ruleId : itemIds) {
                     Rule rule = rm.getRule(ruleId);
                     if (rule == null) continue;
                     List<String> ruleEnvs = new ArrayList<>(rule.getEnvironments() != null ? rule.getEnvironments() : Collections.<String>emptyList());
                     for (String env : envs) {
-                        boolean stillInherited = isEnvironmentInheritedFromOtherScene(sm, ruleId, env, id);
+                        boolean stillInherited = isEnvironmentInheritedFromOtherScene(allScenes, ruleId, env, id);
                         if (!stillInherited) {
                             ruleEnvs.remove(env);
                         }
@@ -186,6 +190,11 @@ public class JdbcSceneService implements SceneService {
         Set<String> removedRuleIds = new HashSet<>(oldItemIds);
         removedRuleIds.removeAll(currentItemIds);
 
+        // Cache listScenes() once — previously this issued a SELECT inside
+        // isEnvironmentInheritedFromOtherScene for every (ruleId, env) pair,
+        // causing O(rules × envs × scenes) queries (High 12).
+        List<SceneSet> allScenes = sm.listScenes();
+
         for (String ruleId : allRuleIds) {
             Rule rule = rm.getRule(ruleId);
             if (rule == null) continue;
@@ -194,7 +203,7 @@ public class JdbcSceneService implements SceneService {
 
             if (wasActive && !isActive) {
                 for (String env : oldEnvironments) {
-                    boolean stillInherited = isEnvironmentInheritedFromOtherScene(sm, ruleId, env, scene.getId());
+                    boolean stillInherited = isEnvironmentInheritedFromOtherScene(allScenes, ruleId, env, scene.getId());
                     if (!stillInherited) {
                         ruleEnvs.remove(env);
                     }
@@ -202,7 +211,7 @@ public class JdbcSceneService implements SceneService {
             } else if (removedRuleIds.contains(ruleId)) {
                 if (wasActive) {
                     for (String env : oldEnvironments) {
-                        boolean stillInherited = isEnvironmentInheritedFromOtherScene(sm, ruleId, env, scene.getId());
+                        boolean stillInherited = isEnvironmentInheritedFromOtherScene(allScenes, ruleId, env, scene.getId());
                         if (!stillInherited) {
                             ruleEnvs.remove(env);
                         }
@@ -211,7 +220,7 @@ public class JdbcSceneService implements SceneService {
             } else {
                 for (String oldEnv : oldEnvironments) {
                     if (!newEnvironments.contains(oldEnv)) {
-                        boolean stillInherited = isEnvironmentInheritedFromOtherScene(sm, ruleId, oldEnv, scene.getId());
+                        boolean stillInherited = isEnvironmentInheritedFromOtherScene(allScenes, ruleId, oldEnv, scene.getId());
                         if (!stillInherited) {
                             ruleEnvs.remove(oldEnv);
                         }
@@ -233,8 +242,8 @@ public class JdbcSceneService implements SceneService {
         invalidateCaches();
     }
 
-    private boolean isEnvironmentInheritedFromOtherScene(SceneMapper sm, String ruleId, String envName, String excludeSceneId) {
-        for (SceneSet otherScene : sm.listScenes()) {
+    private boolean isEnvironmentInheritedFromOtherScene(List<SceneSet> allScenes, String ruleId, String envName, String excludeSceneId) {
+        for (SceneSet otherScene : allScenes) {
             if (otherScene.getId().equals(excludeSceneId)) continue;
             if (!otherScene.isActive()) continue;
             List<String> envs = otherScene.getEnvironments();

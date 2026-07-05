@@ -419,12 +419,13 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
     }
 
     private Map<String, String> parseQueryParams(String uri) {
-        Map<String, String> params = new java.util.HashMap<>();
         int queryIdx = uri.indexOf('?');
-        if (queryIdx < 0) return params;
-
+        if (queryIdx < 0) return new java.util.HashMap<>(2);
         String query = uri.substring(queryIdx + 1);
-        for (String pair : query.split("&")) {
+        // Low 37: pre-size HashMap to avoid resize on typical small query strings.
+        String[] pairs = query.split("&");
+        Map<String, String> params = new java.util.HashMap<>(pairs.length + 1);
+        for (String pair : pairs) {
             int eqIdx = pair.indexOf('=');
             if (eqIdx > 0) {
                 try {
@@ -441,7 +442,10 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
     }
 
     private Map<String, String> extractHeaders(HttpRequest request) {
-        Map<String, String> headers = new java.util.HashMap<>();
+        // Low 37: pre-size to header count to avoid resize on typical requests
+        // with multiple headers.
+        int n = request.headers().size();
+        Map<String, String> headers = new java.util.HashMap<>(n + 1);
         for (Map.Entry<String, String> entry : request.headers()) {
             headers.put(entry.getKey(), entry.getValue());
         }

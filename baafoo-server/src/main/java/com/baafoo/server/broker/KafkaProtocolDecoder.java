@@ -6,6 +6,7 @@ import com.baafoo.core.model.MqRelationship;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.model.Rule;
 import com.baafoo.core.util.FaultInjector;
+import com.baafoo.core.util.HexUtils;
 import com.baafoo.core.util.MatchEngine;
 import com.baafoo.server.handler.AgentResolver;
 import com.baafoo.server.storage.StorageService;
@@ -127,17 +128,23 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         short apiVersion = msg.readShort();
         int correlationId = msg.readInt();
 
-        // Debug: log raw bytes for protocol version negotiation troubleshooting
-        int remainingBytes = msg.readableBytes();
-        int peekLen = Math.min(remainingBytes, 16);
-        byte[] peekBytes = new byte[peekLen];
-        msg.getBytes(msg.readerIndex(), peekBytes);
-        StringBuilder hexSb = new StringBuilder();
-        for (byte b : peekBytes) {
-            hexSb.append(String.format("%02x ", b & 0xFF));
+        // Debug: log raw bytes for protocol version negotiation troubleshooting.
+        // Guard with isDebugEnabled() so the hex conversion is skipped entirely
+        // when debug logging is disabled (Low 43) — the previous code allocated
+        // a byte[] and built a hex string on every request regardless of log level.
+        if (log.isDebugEnabled()) {
+            int remainingBytes = msg.readableBytes();
+            int peekLen = Math.min(remainingBytes, 16);
+            byte[] peekBytes = new byte[peekLen];
+            msg.getBytes(msg.readerIndex(), peekBytes);
+            StringBuilder hexSb = new StringBuilder();
+            for (byte b : peekBytes) {
+                HexUtils.appendByte(hexSb, b);
+                hexSb.append(' ');
+            }
+            log.debug("Kafka raw header: apiKey={}, apiVersion={}, correlationId={}, ridx={}, widx={}, nextBytes=[{}]",
+                    apiKey, apiVersion, correlationId, msg.readerIndex(), msg.writerIndex(), hexSb.toString().trim());
         }
-        log.debug("Kafka raw header: apiKey={}, apiVersion={}, correlationId={}, ridx={}, widx={}, nextBytes=[{}]",
-                apiKey, apiVersion, correlationId, msg.readerIndex(), msg.writerIndex(), hexSb.toString().trim());
 
         // Request Header v1 (non-flexible): int16-prefixed nullable string for clientId
         // Request Header v2 (flexible, KIP-482): compact string + tag buffer
@@ -225,15 +232,19 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             log.debug("Kafka response: apiKey={}, apiVersion={}, correlationId={}, responseBytes={}",
                     apiKey, apiVersion, correlationId, response.readableBytes());
             if (apiKey == API_VERSIONS) {
-                // Hex dump for ApiVersions response troubleshooting
-                byte[] dumpBytes = new byte[Math.min(response.readableBytes(), 64)];
-                response.getBytes(response.readerIndex(), dumpBytes);
-                StringBuilder hexResp = new StringBuilder();
-                for (byte b : dumpBytes) {
-                    hexResp.append(String.format("%02x ", b & 0xFF));
+                // Hex dump for ApiVersions response troubleshooting.
+                // Guard with isDebugEnabled() (Low 43).
+                if (log.isDebugEnabled()) {
+                    byte[] dumpBytes = new byte[Math.min(response.readableBytes(), 64)];
+                    response.getBytes(response.readerIndex(), dumpBytes);
+                    StringBuilder hexResp = new StringBuilder();
+                    for (byte b : dumpBytes) {
+                        HexUtils.appendByte(hexResp, b);
+                        hexResp.append(' ');
+                    }
+                    log.debug("ApiVersions v{} response hex (first {} bytes): [{}]",
+                            apiVersion, dumpBytes.length, hexResp.toString().trim());
                 }
-                log.debug("ApiVersions v{} response hex (first {} bytes): [{}]",
-                        apiVersion, dumpBytes.length, hexResp.toString().trim());
             }
             ctx.writeAndFlush(response);
         }

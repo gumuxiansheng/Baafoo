@@ -12,7 +12,6 @@ import com.baafoo.server.storage.mybatis.JsonTypeHandler;
 import com.baafoo.server.storage.mybatis.MatchConditionListHandler;
 import com.baafoo.server.storage.mybatis.ResponseEntryListHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.apache.ibatis.mapping.DatabaseIdProvider;
@@ -53,12 +52,24 @@ public class JdbcStorageService implements StorageService {
     private JdbcSceneService sceneService;
 
     // --- Local caches for high-frequency reads ---
-    private final AtomicReference<List<Rule>> rulesCache = new AtomicReference<List<Rule>>();
-    private volatile long rulesCacheTime;
-    private final AtomicReference<List<Environment>> environmentsCache = new AtomicReference<List<Environment>>();
-    private volatile long environmentsCacheTime;
-    private final AtomicReference<List<AgentRegistration>> agentsCache = new AtomicReference<List<AgentRegistration>>();
-    private volatile long agentsCacheTime;
+    //
+    // Cache value + timestamp are bundled in an immutable CacheEntry and
+    // published atomically via a single AtomicReference (Medium 19).
+    // Previously the value (rulesCache.set) and timestamp (rulesCacheTime=)
+    // were updated as two separate volatile writes — readers could observe
+    // a fresh value with a stale timestamp and treat the cache as expired,
+    // then redundantly reload from the DB.
+    private static final class CacheEntry<T> {
+        final T value;
+        final long timestamp;
+        CacheEntry(T value, long timestamp) {
+            this.value = value;
+            this.timestamp = timestamp;
+        }
+    }
+    private final AtomicReference<CacheEntry<List<Rule>>> rulesCache = new AtomicReference<>();
+    private final AtomicReference<CacheEntry<List<Environment>>> environmentsCache = new AtomicReference<>();
+    private final AtomicReference<CacheEntry<List<AgentRegistration>>> agentsCache = new AtomicReference<>();
     private static final long CACHE_TTL_MS = 2000; // 2 seconds
     private static final long AGENTS_CACHE_TTL_MS = 5000; // 5 seconds (heartbeat frequent)
 
@@ -68,8 +79,10 @@ public class JdbcStorageService implements StorageService {
 
     public JdbcStorageService(ServerConfig config) {
         this.config = config;
+        // ObjectMapper is used only for deep-cloning Rule snapshots (serialize
+        // → deserialize). INDENT_OUTPUT would waste CPU/bytes on formatting
+        // that is immediately discarded (Low 42).
         this.mapper = new ObjectMapper();
-        this.mapper.enable(SerializationFeature.INDENT_OUTPUT);
         ServerConfig.DatabaseConfig dbConfig = config.getDatabase();
         this.dialect = DatabaseDialect.fromConfig(dbConfig != null ? dbConfig.getType() : null);
     }
@@ -199,20 +212,20 @@ public class JdbcStorageService implements StorageService {
 
     private void invalidateRulesCache() {
         rulesCache.set(null);
-        rulesCacheTime = 0;
     }
 
     @Override
     public List<Rule> listRules() {
         long now = System.currentTimeMillis();
-        List<Rule> cached = rulesCache.get();
-        if (cached != null && (now - rulesCacheTime) < CACHE_TTL_MS) {
-            return cached;
+        CacheEntry<List<Rule>> cached = rulesCache.get();
+        if (cached != null && (now - cached.timestamp) < CACHE_TTL_MS) {
+            return cached.value;
         }
         try (SqlSession session = openSession()) {
             List<Rule> result = session.getMapper(RuleMapper.class).listRules();
-            rulesCache.set(result);
-            rulesCacheTime = System.currentTimeMillis();
+            // Atomic publish: a single set() makes both value and timestamp
+            // visible to other threads (Medium 19).
+            rulesCache.set(new CacheEntry<>(result, System.currentTimeMillis()));
             return result;
         }
     }
@@ -328,7 +341,14 @@ public class JdbcStorageService implements StorageService {
             RuleMapper rm = session.getMapper(RuleMapper.class);
             rm.deleteRuleHistoryByRuleId(id);
             boolean deleted = rm.deleteRule(id) > 0;
-            if (deleted) invalidateRulesCache();
+            if (deleted) {
+                invalidateRulesCache();
+                // Clean up the per-rule counter to prevent unbounded map growth
+                // (Medium 28). Previously only the RuleApiHandler did this, leaving
+                // leaks when rules were deleted via ChaosApiHandler / RuleTools /
+                // direct storage calls.
+                com.baafoo.core.util.StatefulCounterStore.global().reset(id);
+            }
             return deleted;
         } catch (Exception e) {
             log.error("Failed to delete rule {}: {}", id, e.getMessage());
@@ -366,20 +386,18 @@ public class JdbcStorageService implements StorageService {
 
     private void invalidateEnvironmentsCache() {
         environmentsCache.set(null);
-        environmentsCacheTime = 0;
     }
 
     @Override
     public List<Environment> listEnvironments() {
         long now = System.currentTimeMillis();
-        List<Environment> cached = environmentsCache.get();
-        if (cached != null && (now - environmentsCacheTime) < CACHE_TTL_MS) {
-            return cached;
+        CacheEntry<List<Environment>> cached = environmentsCache.get();
+        if (cached != null && (now - cached.timestamp) < CACHE_TTL_MS) {
+            return cached.value;
         }
         try (SqlSession session = openSession()) {
             List<Environment> result = session.getMapper(EnvironmentMapper.class).listEnvironments();
-            environmentsCache.set(result);
-            environmentsCacheTime = System.currentTimeMillis();
+            environmentsCache.set(new CacheEntry<>(result, System.currentTimeMillis()));
             return result;
         }
     }
@@ -755,7 +773,6 @@ public class JdbcStorageService implements StorageService {
 
     private void invalidateAgentsCache() {
         agentsCache.set(null);
-        agentsCacheTime = 0;
     }
 
     @Override
@@ -781,9 +798,9 @@ public class JdbcStorageService implements StorageService {
     @Override
     public List<AgentRegistration> listAgents() {
         long now = System.currentTimeMillis();
-        List<AgentRegistration> cached = agentsCache.get();
-        if (cached != null && (now - agentsCacheTime) < AGENTS_CACHE_TTL_MS) {
-            return cached;
+        CacheEntry<List<AgentRegistration>> cached = agentsCache.get();
+        if (cached != null && (now - cached.timestamp) < AGENTS_CACHE_TTL_MS) {
+            return cached.value;
         }
         try (SqlSession session = openSession()) {
             List<AgentRegistration> result = session.getMapper(AgentMapper.class).listAgents();
@@ -791,8 +808,7 @@ public class JdbcStorageService implements StorageService {
             for (AgentRegistration reg : result) {
                 reg.pluginStatuses = agentPluginStatuses.get(reg.agentId);
             }
-            agentsCache.set(result);
-            agentsCacheTime = System.currentTimeMillis();
+            agentsCache.set(new CacheEntry<>(result, System.currentTimeMillis()));
             return result;
         }
     }
@@ -808,28 +824,53 @@ public class JdbcStorageService implements StorageService {
 
     @Override
     public void associateRulesToEnvironment(String envName, List<String> ruleIds) {
-        for (String ruleId : ruleIds) {
-            Rule rule = getRule(ruleId);
-            if (rule == null) continue;
-            List<String> envs = new ArrayList<>(rule.getEnvironments() != null ? rule.getEnvironments() : Collections.<String>emptyList());
-            if (!envs.contains(envName)) {
-                envs.add(envName);
-                rule.setEnvironments(envs);
-                updateRule(ruleId, rule);
+        if (ruleIds == null || ruleIds.isEmpty() || envName == null) return;
+        // Batched into a single SqlSession — previously this opened 2 sessions
+        // per ruleId (getRule + updateRule), causing 2N database round-trips
+        // (High 11). All N rules are now processed with 2 queries total per rule
+        // (SELECT + UPDATE) inside one shared session.
+        try (SqlSession session = openSession()) {
+            RuleMapper rm = session.getMapper(RuleMapper.class);
+            for (String ruleId : ruleIds) {
+                Rule rule = rm.getRule(ruleId);
+                if (rule == null) continue;
+                List<String> envs = new ArrayList<>(rule.getEnvironments() != null
+                        ? rule.getEnvironments() : Collections.<String>emptyList());
+                if (!envs.contains(envName)) {
+                    envs.add(envName);
+                    rule.setEnvironments(envs);
+                    rule.setVersion(rule.getVersion() + 1);
+                    rule.setUpdatedAt(System.currentTimeMillis());
+                    rm.updateRule(rule);
+                }
             }
+            invalidateRulesCache();
+        } catch (Exception e) {
+            log.error("Failed to associate rules to environment {}: {}", envName, e.getMessage());
         }
     }
 
     @Override
     public void dissociateRulesFromEnvironment(String envName, List<String> ruleIds) {
-        for (String ruleId : ruleIds) {
-            Rule rule = getRule(ruleId);
-            if (rule == null) continue;
-            List<String> envs = new ArrayList<>(rule.getEnvironments() != null ? rule.getEnvironments() : Collections.<String>emptyList());
-            if (envs.remove(envName)) {
-                rule.setEnvironments(envs);
-                updateRule(ruleId, rule);
+        if (ruleIds == null || ruleIds.isEmpty() || envName == null) return;
+        // Same batching pattern as associateRulesToEnvironment (High 11).
+        try (SqlSession session = openSession()) {
+            RuleMapper rm = session.getMapper(RuleMapper.class);
+            for (String ruleId : ruleIds) {
+                Rule rule = rm.getRule(ruleId);
+                if (rule == null) continue;
+                List<String> envs = new ArrayList<>(rule.getEnvironments() != null
+                        ? rule.getEnvironments() : Collections.<String>emptyList());
+                if (envs.remove(envName)) {
+                    rule.setEnvironments(envs);
+                    rule.setVersion(rule.getVersion() + 1);
+                    rule.setUpdatedAt(System.currentTimeMillis());
+                    rm.updateRule(rule);
+                }
             }
+            invalidateRulesCache();
+        } catch (Exception e) {
+            log.error("Failed to dissociate rules from environment {}: {}", envName, e.getMessage());
         }
     }
 

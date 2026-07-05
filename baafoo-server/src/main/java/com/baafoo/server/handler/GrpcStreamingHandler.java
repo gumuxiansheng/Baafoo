@@ -2,6 +2,7 @@ package com.baafoo.server.handler;
 
 import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.model.*;
+import com.baafoo.core.util.HexUtils;
 import com.baafoo.core.util.MatchEngine;
 import com.baafoo.core.util.TemplateEngine;
 import com.baafoo.server.storage.StorageService;
@@ -174,13 +175,10 @@ public class GrpcStreamingHandler extends ChannelInitializer<Channel> {
                 // Add to accumulated messages
                 streamContext.addMessage(messageBytes);
 
-                // Calculate request body hex for matching
-                String messageHex = bytesToHex(messageBytes);
-                if (streamContext.accumulatedHex == null) {
-                    streamContext.accumulatedHex = messageHex;
-                } else {
-                    streamContext.accumulatedHex += messageHex;
-                }
+                // Calculate request body hex for matching — append directly to the
+                // StringBuilder to avoid O(n²) String concatenation across frames
+                // (Critical 8) and to avoid per-byte String.format (High 7).
+                HexUtils.appendHex(streamContext.accumulatedHex, messageBytes);
 
                 log.debug("gRPC message received: streamId={}, length={}, totalMessages={}",
                         streamId, length, streamContext.getMessageCount());
@@ -248,14 +246,14 @@ public class GrpcStreamingHandler extends ChannelInitializer<Channel> {
                 rules, "grpc", null, 0, null,
                 "POST", streamContext.path,
                 streamContext.metadata, null,
-                streamContext.accumulatedHex);
+                streamContext.getAccumulatedHex());
 
         if (!result.isMatched()) {
             result = matchEngine.match(
                     rules, "grpc", null, 0, null,
                     "POST", streamContext.path,
                     streamContext.metadata, null,
-                    streamContext.accumulatedHex);
+                    streamContext.getAccumulatedHex());
         }
 
         if (result.isMatched()) {
@@ -279,14 +277,14 @@ public class GrpcStreamingHandler extends ChannelInitializer<Channel> {
                 rules, "grpc", null, 0, null,
                 "POST", streamContext.path,
                 streamContext.metadata, null,
-                streamContext.accumulatedHex);
+                streamContext.getAccumulatedHex());
 
         if (!result.isMatched()) {
             result = matchEngine.match(
                     rules, "grpc", null, 0, null,
                     "POST", streamContext.path,
                     streamContext.metadata, null,
-                    streamContext.accumulatedHex);
+                    streamContext.getAccumulatedHex());
         }
 
         if (result.isMatched()) {
@@ -336,7 +334,7 @@ public class GrpcStreamingHandler extends ChannelInitializer<Channel> {
 
             TemplateEngine.RequestContext templateCtx = new TemplateEngine.RequestContext(
                     "POST", streamContext.path, null, streamContext.metadata, null,
-                    streamContext.accumulatedHex, resolveEnvironment(streamContext));
+                    streamContext.getAccumulatedHex(), resolveEnvironment(streamContext));
             templateCtx.setRequestCount(requestCount);
 
             // Send each message with delay
@@ -401,7 +399,7 @@ public class GrpcStreamingHandler extends ChannelInitializer<Channel> {
             if (rawBody.contains("{{")) {
                 TemplateEngine.RequestContext templateCtx = new TemplateEngine.RequestContext(
                         "POST", streamContext.path, null, streamContext.metadata, null,
-                        streamContext.accumulatedHex, resolveEnvironment(streamContext));
+                        streamContext.getAccumulatedHex(), resolveEnvironment(streamContext));
                 templateCtx.setRequestCount(requestCount);
                 responseBody = TemplateEngine.render(rawBody, templateCtx, fakerSeed);
             }
@@ -525,12 +523,8 @@ public class GrpcStreamingHandler extends ChannelInitializer<Channel> {
     }
 
     private static String bytesToHex(byte[] bytes) {
-        if (bytes == null) return "";
-        StringBuilder sb = new StringBuilder(bytes.length * 2);
-        for (byte b : bytes) {
-            sb.append(String.format("%02x", b));
-        }
-        return sb.toString();
+        // Lookup-table conversion — avoids String.format on hot path (High 7).
+        return HexUtils.bytesToHex(bytes);
     }
 
     private static byte[] hexToBytes(String hex) {
@@ -579,7 +573,10 @@ public class GrpcStreamingHandler extends ChannelInitializer<Channel> {
         final List<byte[]> messages;
         Http2Headers headers;
         ByteBuf accumulatedBuffer;
-        String accumulatedHex;
+        // StringBuilder instead of String += avoids O(n²) concatenation across
+        // multiple gRPC frames in a stream (Critical 8). Snapshots are obtained
+        // via getAccumulatedHex() when matching against rules.
+        StringBuilder accumulatedHex;
         boolean clientEnded;
 
         GrpcStreamContext(ChannelHandlerContext ctx, Http2FrameStream frameStream, int streamId, String path,
@@ -592,6 +589,12 @@ public class GrpcStreamingHandler extends ChannelInitializer<Channel> {
             this.metadata = metadata;
             this.messages = new ArrayList<>();
             this.accumulatedBuffer = Unpooled.buffer();
+            this.accumulatedHex = new StringBuilder();
+        }
+
+        /** Snapshot the accumulated hex as a String — used by MatchEngine. */
+        String getAccumulatedHex() {
+            return accumulatedHex.toString();
         }
 
         void addMessage(byte[] message) {

@@ -24,8 +24,28 @@ public class MatchEngine {
 
     private static final Logger log = LoggerFactory.getLogger(MatchEngine.class);
 
-    /** Pre-compiled regex patterns (cached by rule ID + condition index) */
-    private final Map<String, Pattern> patternCache = new ConcurrentHashMap<String, Pattern>();
+    /**
+     * Pre-compiled regex patterns (cached by regex string).
+     *
+     * <p>Bounded LRU cache — replaces the previous ConcurrentHashMap with a
+     * soft size cap of 256 (Medium 29). The old design stopped caching new
+     * patterns once 256 were stored, causing repeated recompilation of new
+     * patterns on every request. The LRU policy now evicts the
+     * least-recently-used pattern when the cap is reached, keeping the
+     * hottest patterns cached.</p>
+     *
+     * <p>Access is synchronized on the map instance — pattern compile is rare
+     * relative to pattern lookup, so the lock is uncontended in practice.</p>
+     */
+    private static final int PATTERN_CACHE_MAX = 512;
+    private final Map<String, Pattern> patternCache =
+            java.util.Collections.synchronizedMap(
+                    new java.util.LinkedHashMap<String, Pattern>(64, 0.75f, true) {
+                        @Override
+                        protected boolean removeEldestEntry(Map.Entry<String, Pattern> eldest) {
+                            return size() > PATTERN_CACHE_MAX;
+                        }
+                    });
 
     /**
      * Per-rule request counter store. P2-6: decoupled from the global static
@@ -625,19 +645,30 @@ public class MatchEngine {
                 return caseSensitive ? expected.equals(actual) : expected.equalsIgnoreCase(actual);
 
             case "contains":
-                String act1 = caseSensitive ? actual : actual.toLowerCase();
-                String exp1 = caseSensitive ? expected : expected.toLowerCase();
-                return act1.contains(exp1);
+                // Medium 24: use regionMatches(true, ...) for case-insensitive
+                // comparison instead of allocating two lowercased String copies
+                // per call. This is the hot path — every condition on every
+                // request flows through here.
+                if (caseSensitive) {
+                    return actual.contains(expected);
+                }
+                return containsIgnoreCase(actual, expected);
 
             case "startsWith":
-                String act2 = caseSensitive ? actual : actual.toLowerCase();
-                String exp2 = caseSensitive ? expected : expected.toLowerCase();
-                return act2.startsWith(exp2);
+                if (caseSensitive) {
+                    return actual.startsWith(expected);
+                }
+                // regionMatches(true, ...) — zero allocation.
+                if (expected.length() > actual.length()) return false;
+                return actual.regionMatches(true, 0, expected, 0, expected.length());
 
             case "endsWith":
-                String act3 = caseSensitive ? actual : actual.toLowerCase();
-                String exp3 = caseSensitive ? expected : expected.toLowerCase();
-                return act3.endsWith(exp3);
+                if (caseSensitive) {
+                    return actual.endsWith(expected);
+                }
+                int offset = actual.length() - expected.length();
+                if (offset < 0) return false;
+                return actual.regionMatches(true, offset, expected, 0, expected.length());
 
             case "regex":
                 return matchRegex(actual, expected);
@@ -649,6 +680,22 @@ public class MatchEngine {
                 log.warn("Unknown operator: {}", operator);
                 return false;
         }
+    }
+
+    /**
+     * Case-insensitive {@code contains} using {@link String#regionMatches} —
+     * zero allocation, no lowercased String copies (Medium 24).
+     */
+    private static boolean containsIgnoreCase(String actual, String expected) {
+        if (expected.isEmpty()) return true;
+        int max = actual.length() - expected.length();
+        if (max < 0) return false;
+        for (int i = 0; i <= max; i++) {
+            if (actual.regionMatches(true, i, expected, 0, expected.length())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -666,11 +713,15 @@ public class MatchEngine {
      */
     private boolean matchRegex(String input, String regex) {
         try {
-            Pattern pattern = patternCache.get(regex);
-            if (pattern == null) {
-                pattern = Pattern.compile(regex);
-                if (patternCache.size() < 256) {
-                    patternCache.putIfAbsent(regex, pattern);
+            Pattern pattern;
+            // Synchronized block required for LinkedHashMap + removeEldestEntry
+            // (Medium 29). Contention is low because Pattern.compile is rare
+            // relative to cache hits.
+            synchronized (patternCache) {
+                pattern = patternCache.get(regex);
+                if (pattern == null) {
+                    pattern = Pattern.compile(regex);
+                    patternCache.put(regex, pattern);
                 }
             }
             return matchWithTimeout(pattern, input);
@@ -680,17 +731,46 @@ public class MatchEngine {
         }
     }
 
+    /**
+     * Bounded thread pool for regex matching with timeout (ReDoS protection).
+     *
+     * <p>Replaces the previous {@link java.util.concurrent.Executors#newCachedThreadPool()}
+     * which created threads without bound — under load (e.g., a burst of long-input
+     * requests) this could spawn unlimited threads and exhaust memory (Critical 5).</p>
+     *
+     * <p>Configuration:</p>
+     * <ul>
+     *   <li>Core = max = {@value} threads — pool size is fixed (no unbounded growth)</li>
+     *   <li>{@link java.util.concurrent.SynchronousQueue} — no queueing; if no thread
+     *       is free, the submission is rejected immediately</li>
+     *   <li>{@link java.util.concurrent.ThreadPoolExecutor.AbortPolicy} — rejection
+     *       throws {@link java.util.concurrent.RejectedExecutionException}, caught
+     *       in {@link #matchWithTimeout} and treated as "no match"</li>
+     * </ul>
+     *
+     * <p>The pool size is intentionally modest: regex evaluation is CPU-bound, so
+     * more threads than ~2x CPU cores would just thrash the scheduler. When all
+     * threads are busy, new long-input matches fail fast (return false) rather
+     * than queueing and piling up memory.</p>
+     */
+    private static final int REGEX_POOL_SIZE = Math.max(4,
+            Runtime.getRuntime().availableProcessors() * 2);
     private static final java.util.concurrent.ExecutorService REGEX_EXECUTOR =
-            java.util.concurrent.Executors.newCachedThreadPool(
+            new java.util.concurrent.ThreadPoolExecutor(
+                    REGEX_POOL_SIZE, REGEX_POOL_SIZE,
+                    60L, java.util.concurrent.TimeUnit.SECONDS,
+                    new java.util.concurrent.SynchronousQueue<Runnable>(),
                     new java.util.concurrent.ThreadFactory() {
-                        final java.util.concurrent.atomic.AtomicInteger seq = new java.util.concurrent.atomic.AtomicInteger();
+                        final java.util.concurrent.atomic.AtomicInteger seq =
+                                new java.util.concurrent.atomic.AtomicInteger();
                         @Override
                         public Thread newThread(Runnable r) {
                             Thread t = new Thread(r, "baafoo-regex-" + seq.incrementAndGet());
                             t.setDaemon(true);
                             return t;
                         }
-                    });
+                    },
+                    new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
 
     private boolean matchWithTimeout(Pattern pattern, String input) {
         // Fast path: for short inputs and simple patterns, run inline to avoid
@@ -701,8 +781,18 @@ public class MatchEngine {
             return pattern.matcher(input).matches();
         }
 
-        java.util.concurrent.Future<Boolean> future = REGEX_EXECUTOR.submit(
-                () -> pattern.matcher(input).matches());
+        java.util.concurrent.Future<Boolean> future;
+        try {
+            future = REGEX_EXECUTOR.submit(
+                    () -> pattern.matcher(input).matches());
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            // Pool saturated — fail fast rather than queueing (Critical 5).
+            // The request will fall through to the next matcher / no-match,
+            // which is preferable to OOM or unbounded latency.
+            log.debug("Regex executor saturated, skipping timed match: pattern={}",
+                    pattern.pattern());
+            return false;
+        }
         try {
             return future.get(regexTimeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
         } catch (java.util.concurrent.TimeoutException e) {
