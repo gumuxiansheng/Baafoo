@@ -42,7 +42,14 @@ import static org.mockito.Mockito.*;
  */
 public class JmsMockBrokerTest {
 
-    private static final int TEST_PORT = 19004;
+    // Port 19004 collides with the Docker Compose staging environment
+    // (testing/enterprise/common/docker-compose.base.yml maps host 19004 →
+    // container 9004, the JMS broker port). When Docker staging is running,
+    // JmsMockBroker.start() fails with "AMQ229230: Failed to bind acceptor
+    // jms-tcp to 0.0.0.0:19004", and every consumer.receive() then times out
+    // because the broker never actually started. Using a port outside the
+    // Docker staging range (19000-19005) avoids the conflict.
+    private static final int TEST_PORT = 29604;
 
     private JmsMockBroker broker;
     private Connection connection;
@@ -346,12 +353,12 @@ public class JmsMockBrokerTest {
 
     @Test
     public void testBrokerStartAndStop() throws Exception {
-        JmsMockBroker localBroker = new JmsMockBroker(19005);
+        JmsMockBroker localBroker = new JmsMockBroker(29605);
         assertFalse(localBroker.isStarted());
 
         localBroker.start();
         assertTrue(localBroker.isStarted());
-        assertEquals(19005, localBroker.getPort());
+        assertEquals(29605, localBroker.getPort());
         assertEquals(3, localBroker.getMaxDeliveryAttempts());
 
         localBroker.stop();
@@ -360,7 +367,7 @@ public class JmsMockBrokerTest {
 
     @Test
     public void testBrokerCustomMaxDeliveryAttempts() throws Exception {
-        JmsMockBroker localBroker = new JmsMockBroker(19006, 5);
+        JmsMockBroker localBroker = new JmsMockBroker(29606, 5);
         assertEquals(5, localBroker.getMaxDeliveryAttempts());
         localBroker.start();
         localBroker.stop();
@@ -368,7 +375,7 @@ public class JmsMockBrokerTest {
 
     @Test(expected = java.lang.IllegalStateException.class)
     public void testCreateQueueBeforeStartThrows() throws Exception {
-        JmsMockBroker localBroker = new JmsMockBroker(19007);
+        JmsMockBroker localBroker = new JmsMockBroker(29607);
         localBroker.createQueue("shouldFail");
     }
 
