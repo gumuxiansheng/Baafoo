@@ -285,16 +285,16 @@ public class AuthService {
             else hasSpecial = true;
         }
         if (!hasUpper) {
-            return new PasswordValidation(false, "密码必须包含至少一个大写字母");
+            return new PasswordValidation(false, "密码必须包含至少一个大写字母", "user.password_uppercase");
         }
         if (!hasLower) {
-            return new PasswordValidation(false, "密码必须包含至少一个小写字母");
+            return new PasswordValidation(false, "密码必须包含至少一个小写字母", "user.password_lowercase");
         }
         if (!hasDigit) {
-            return new PasswordValidation(false, "密码必须包含至少一个数字");
+            return new PasswordValidation(false, "密码必须包含至少一个数字", "user.password_digit");
         }
         if (!hasSpecial) {
-            return new PasswordValidation(false, "密码必须包含至少一个特殊字符");
+            return new PasswordValidation(false, "密码必须包含至少一个特殊字符", "user.password_special");
         }
         return new PasswordValidation(true, null);
     }
@@ -449,13 +449,20 @@ public class AuthService {
     public static class PasswordValidation {
         public final boolean valid;
         public final String message;
+        public final String errorCode;
 
         public PasswordValidation(boolean valid, String message) {
+            this(valid, message, null);
+        }
+
+        public PasswordValidation(boolean valid, String message, String errorCode) {
             this.valid = valid;
             this.message = message;
+            this.errorCode = errorCode;
         }
 
         public String getMessage() { return message; }
         public boolean isValid() { return valid; }
+        public String getErrorCode() { return errorCode; }
     }
 }

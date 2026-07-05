@@ -1,16 +1,16 @@
 <template>
   <div class="environments-page">
     <div class="page-header">
-      <h2>环境管理</h2>
+      <h2>{{ $t('environments.title') }}</h2>
       <el-button type="primary" @click="showCreateDialog" v-if="authStore.canWriteEnvironment">
-        <el-icon><Plus /></el-icon> 新建环境
+        <el-icon><Plus /></el-icon> {{ $t('environments.newEnv') }}
       </el-button>
     </div>
 
     <el-card shadow="never" style="margin-top: 16px" v-loading="loading">
-      <el-table :data="environments" stripe size="small" empty-text="暂无环境">
-        <el-table-column prop="name" label="名称" min-width="150" />
-        <el-table-column label="模式" width="160" align="center">
+      <el-table :data="environments" stripe size="small" :empty-text="$t('environments.noEnvs')">
+        <el-table-column prop="name" :label="$t('environments.name')" min-width="150" />
+        <el-table-column :label="$t('environments.mode')" width="160" align="center">
           <template #default="{ row }">
             <el-tag :type="modeTagType(row.mode) || undefined" effect="dark">
               {{ modeLabel(row) }}
@@ -20,31 +20,31 @@
         <el-table-column label="Agents" width="80" align="center">
           <template #default="{ row }">{{ (row.agentIds || []).length }}</template>
         </el-table-column>
-        <el-table-column label="关联规则" width="100" align="center">
+        <el-table-column :label="$t('environments.associatedRules')" width="100" align="center">
           <template #default="{ row }">
             <el-link type="primary" @click="showAssociateDialog(row)">{{ getRuleCountForEnv(row.name) }}</el-link>
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" width="180">
+        <el-table-column :label="$t('environments.createdAt')" width="180">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="240" fixed="right">
+        <el-table-column :label="$t('environments.actions')" width="240" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" text @click="viewDetail(row.id)">详情</el-button>
+            <el-button size="small" text @click="viewDetail(row.id)">{{ $t('environments.detail') }}</el-button>
             <el-dropdown @command="(cmd) => changeMode(row, cmd)" style="margin-left: 8px" v-if="authStore.canWriteEnvironment">
-              <el-button size="small" text>切换模式 <el-icon><ArrowDown /></el-icon></el-button>
+              <el-button size="small" text>{{ $t('environments.switchMode') }} <el-icon><ArrowDown /></el-icon></el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="stub" :disabled="row.mode === 'stub'">Stub 模式</el-dropdown-item>
-                  <el-dropdown-item command="passthrough" :disabled="row.mode === 'passthrough'">Passthrough</el-dropdown-item>
-                  <el-dropdown-item command="record" :disabled="row.mode === 'record'">Record</el-dropdown-item>
+                  <el-dropdown-item command="stub" :disabled="row.mode === 'stub'">{{ $t('environments.modes.stub') }}</el-dropdown-item>
+                  <el-dropdown-item command="passthrough" :disabled="row.mode === 'passthrough'">{{ $t('environments.modes.passthrough') }}</el-dropdown-item>
+                  <el-dropdown-item command="record" :disabled="row.mode === 'record'">{{ $t('environments.modes.record') }}</el-dropdown-item>
                   <el-dropdown-item command="record-and-stub" :disabled="row.mode === 'record-and-stub'">Record+Stub</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-            <el-popconfirm title="确定删除？" @confirm="deleteEnv(row.id)" v-if="authStore.canWriteEnvironment">
+            <el-popconfirm :title="$t('environments.confirmDelete')" @confirm="deleteEnv(row.id)" v-if="authStore.canWriteEnvironment">
               <template #reference>
-                <el-button size="small" text type="danger">删除</el-button>
+                <el-button size="small" text type="danger">{{ $t('environments.delete') }}</el-button>
               </template>
             </el-popconfirm>
           </template>
@@ -52,54 +52,54 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" title="新建环境" width="500px">
+    <el-dialog v-model="dialogVisible" :title="$t('environments.newEnv')" width="500px">
       <el-form :model="form" label-width="80px">
-        <el-form-item label="名称" required>
-          <el-input v-model="form.name" placeholder="如: dev, staging" />
+        <el-form-item :label="$t('environments.name')" required>
+          <el-input v-model="form.name" :placeholder="$t('environments.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="默认模式">
+        <el-form-item :label="$t('environments.defaultMode')">
           <el-select v-model="form.mode" style="width: 100%">
-            <el-option label="Stub（挡板）" value="stub" />
-            <el-option label="Passthrough（透传）" value="passthrough" />
-            <el-option label="Record（录制）" value="record" />
+            <el-option :label="$t('environments.modes.stub')" value="stub" />
+            <el-option :label="$t('environments.modes.passthrough')" value="passthrough" />
+            <el-option :label="$t('environments.modes.record')" value="record" />
             <el-option label="Record+Stub" value="record-and-stub" />
           </el-select>
         </el-form-item>
-        <el-form-item label="环境变量">
+        <el-form-item :label="$t('environments.envVariables')">
           <div style="width: 100%">
             <div v-for="(v, idx) in form.variables" :key="idx" style="display: flex; gap: 8px; margin-bottom: 8px">
-              <el-input v-model="v.key" placeholder="变量名" style="flex: 1" />
-              <el-input v-model="v.value" placeholder="值" style="flex: 1" />
+              <el-input v-model="v.key" :placeholder="$t('environments.variableName')" style="flex: 1" />
+              <el-input v-model="v.value" :placeholder="$t('environments.value')" style="flex: 1" />
               <el-button text type="danger" @click="removeCreateVariable(idx)">
                 <el-icon><Delete /></el-icon>
               </el-button>
             </div>
             <el-button size="small" type="primary" plain @click="addCreateVariable">
-              <el-icon><Plus /></el-icon> 新增变量
+              <el-icon><Plus /></el-icon> {{ $t('environments.addVariable') }}
             </el-button>
           </div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="createEnv">创建</el-button>
+        <el-button @click="dialogVisible = false">{{ $t('environments.cancel') }}</el-button>
+        <el-button type="primary" @click="createEnv">{{ $t('environments.create') }}</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="associateVisible" :title="`关联规则 - ${currentEnv.name || ''}`" width="600px">
+    <el-dialog v-model="associateVisible" :title="`${$t('environments.associateRules')} - ${currentEnv.name || ''}`" width="600px">
       <el-form label-width="80px">
-        <el-form-item label="当前环境">
+        <el-form-item :label="$t('environments.currentEnv')">
           <el-tag>{{ currentEnv.name }}</el-tag>
         </el-form-item>
-        <el-form-item label="关联规则">
-          <el-select v-model="selectedRuleIds" multiple filterable placeholder="选择要关联的规则" style="width: 100%">
+        <el-form-item :label="$t('environments.associateRules')">
+          <el-select v-model="selectedRuleIds" multiple filterable :placeholder="$t('environments.selectRulesPlaceholder')" style="width: 100%">
             <el-option v-for="r in allRules" :key="r.id" :label="r.name" :value="r.id" />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="associateVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveAssociation" :loading="saving" v-if="authStore.canWriteEnvironment">保存关联</el-button>
+        <el-button @click="associateVisible = false">{{ $t('environments.cancel') }}</el-button>
+        <el-button type="primary" @click="saveAssociation" :loading="saving" v-if="authStore.canWriteEnvironment">{{ $t('environments.saveAssociation') }}</el-button>
       </template>
     </el-dialog>
   </div>

@@ -1,49 +1,49 @@
-<template>
+﻿<template>
   <div class="users-page">
     <div class="page-header">
-      <h2>用户管理</h2>
+      <h2>{{ $t('users.title') }}</h2>
       <div class="header-actions">
         <el-button type="success" @click="showImportDialog = true">
-          <el-icon><Upload /></el-icon> CSV导入
+          <el-icon><Upload /></el-icon> {{ $t('users.csvImport') }}
         </el-button>
         <el-button type="primary" @click="showAddDialog = true">
-          <el-icon><Plus /></el-icon> 新增用户
+          <el-icon><Plus /></el-icon> {{ $t('users.addUser') }}
         </el-button>
       </div>
     </div>
 
     <el-table :data="users" v-loading="loading" stripe>
-      <el-table-column prop="username" label="用户名" width="140" />
-      <el-table-column prop="displayName" label="显示名称" width="140" />
-      <el-table-column prop="email" label="邮箱" width="200" />
-      <el-table-column prop="role" label="角色" width="120">
+      <el-table-column prop="username" :label="$t('users.columns.username')" width="140" />
+      <el-table-column prop="displayName" :label="$t('users.columns.displayName')" width="140" />
+      <el-table-column prop="email" :label="$t('users.columns.email')" width="200" />
+      <el-table-column prop="role" :label="$t('users.columns.role')" width="120">
         <template #default="{ row }">
-          <el-tag :type="roleTagType(row.role)" size="small">{{ roleLabel(row.role) }}</el-tag>
+          <el-tag :type="roleTagType(row.role)" size="small">{{ $t(roleLabel(row.role)) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="API Key" width="100">
+      <el-table-column :label="$t('users.columns.apiKey')" width="100">
         <template #default="{ row }">
-          <el-tag v-if="row.apiKey" type="success" size="small">有</el-tag>
-          <el-tag v-else type="info" size="small">无</el-tag>
+          <el-tag v-if="row.apiKey" type="success" size="small">{{ $t('users.hasKey') }}</el-tag>
+          <el-tag v-else type="info" size="small">{{ $t('users.noKey') }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="最后登录" width="180">
+      <el-table-column :label="$t('users.columns.lastLogin')" width="180">
         <template #default="{ row }">
           {{ row.lastLoginAt ? new Date(row.lastLoginAt).toLocaleString() : '-' }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" fixed="right" width="280">
+      <el-table-column :label="$t('users.columns.actions')" fixed="right" width="280">
         <template #default="{ row }">
           <el-dropdown trigger="click" @command="(cmd) => handleRoleChange(row, cmd)">
             <el-button size="small" type="warning" plain>
-              角色 <el-icon><ArrowDown /></el-icon>
+              {{ $t('users.changeRole') }} <el-icon><ArrowDown /></el-icon>
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="admin">管理员</el-dropdown-item>
-                <el-dropdown-item command="developer">开发</el-dropdown-item>
-                <el-dropdown-item command="tester">测试</el-dropdown-item>
-                <el-dropdown-item command="guest">游客</el-dropdown-item>
+                <el-dropdown-item command="admin">{{ $t('users.roles.admin') }}</el-dropdown-item>
+                <el-dropdown-item command="developer">{{ $t('users.roles.developer') }}</el-dropdown-item>
+                <el-dropdown-item command="tester">{{ $t('users.roles.tester') }}</el-dropdown-item>
+                <el-dropdown-item command="guest">{{ $t('users.roles.guest') }}</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -54,7 +54,7 @@
             plain
             @click="handleGenerateApiKey(row)"
           >
-            生成Key
+            {{ $t('users.generateKey') }}
           </el-button>
           <el-button
             v-else
@@ -63,7 +63,7 @@
             plain
             @click="handleRevokeApiKey(row)"
           >
-            吊销Key
+            {{ $t('users.revokeKey') }}
           </el-button>
           <el-button
             size="small"
@@ -72,76 +72,74 @@
             :disabled="row.username === currentUsername"
             @click="handleDelete(row)"
           >
-            删除
+            {{ $t('users.delete') }}
           </el-button>
         </template>
       </el-table-column>
     </el-table>
 
-    <!-- 新增用户 -->
-    <el-dialog v-model="showAddDialog" title="新增用户" width="520px" destroy-on-close>
+    <!-- Add User -->
+    <el-dialog v-model="showAddDialog" :title="$t('users.addDialogTitle')" width="520px" destroy-on-close>
       <el-form :model="addForm" :rules="addRules" ref="addFormRef" label-width="80px" autocomplete="off">
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="addForm.username" placeholder="登录用户名" autocomplete="off" />
+        <el-form-item :label="$t('users.columns.username')" prop="username">
+          <el-input v-model="addForm.username" :placeholder="$t('users.usernamePlaceholder')" autocomplete="off" />
         </el-form-item>
-        <el-form-item label="密码" prop="password">
-          <el-input v-model="addForm.password" type="password" placeholder="8-64位，含大小写字母、数字、特殊字符" show-password autocomplete="new-password" />
+        <el-form-item :label="$t('login.passwordLabel')" prop="password">
+          <el-input v-model="addForm.password" type="password" :placeholder="$t('users.passwordPlaceholder')" show-password autocomplete="new-password" />
         </el-form-item>
-        <el-form-item label="显示名称" prop="displayName">
-          <el-input v-model="addForm.displayName" placeholder="可选，默认同用户名" />
+        <el-form-item :label="$t('users.columns.displayName')" prop="displayName">
+          <el-input v-model="addForm.displayName" :placeholder="$t('users.displayNamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="邮箱" prop="email">
-          <el-input v-model="addForm.email" placeholder="可选" />
+        <el-form-item :label="$t('users.columns.email')" prop="email">
+          <el-input v-model="addForm.email" :placeholder="$t('users.emailPlaceholder')" />
         </el-form-item>
-        <el-form-item label="角色" prop="role">
-          <el-select v-model="addForm.role" placeholder="请选择角色" style="width: 100%">
-            <el-option label="管理员 (Admin)" value="admin" />
-            <el-option label="开发 (Developer)" value="developer" />
-            <el-option label="测试 (Tester)" value="tester" />
-            <el-option label="游客 (Guest)" value="guest" />
+        <el-form-item :label="$t('users.columns.role')" prop="role">
+          <el-select v-model="addForm.role" :placeholder="$t('users.rolePlaceholder')" style="width: 100%">
+            <el-option :label="$t('users.roles.admin') + ' (Admin)'" value="admin" />
+            <el-option :label="$t('users.roles.developer') + ' (Developer)'" value="developer" />
+            <el-option :label="$t('users.roles.tester') + ' (Tester)'" value="tester" />
+            <el-option :label="$t('users.roles.guest') + ' (Guest)'" value="guest" />
           </el-select>
         </el-form-item>
       </el-form>
       <div v-if="addForm.role" class="permission-preview">
-        <p class="preview-title">角色权限预览:</p>
+        <p class="preview-title">{{ $t('users.rolePreview') }}</p>
         <el-descriptions :column="1" size="small" border>
-          <el-descriptions-item label="规则查看">✅</el-descriptions-item>
-          <el-descriptions-item label="规则新建/编辑">
+          <el-descriptions-item :label="$t('users.ruleView')">✅</el-descriptions-item>
+          <el-descriptions-item :label="$t('users.ruleWrite')">
             {{ canRole(addForm.role, 'rule') ? '✅' : '❌' }}
           </el-descriptions-item>
-          <el-descriptions-item label="场景集新建/编辑">
+          <el-descriptions-item :label="$t('users.sceneWrite')">
             {{ canRole(addForm.role, 'scene') ? '✅' : '❌' }}
           </el-descriptions-item>
-          <el-descriptions-item label="环境配置">
+          <el-descriptions-item :label="$t('users.envConfig')">
             {{ canRole(addForm.role, 'environment') ? '✅' : '❌' }}
           </el-descriptions-item>
-          <el-descriptions-item label="用户管理">
+          <el-descriptions-item :label="$t('users.userMgmt')">
             {{ addForm.role === 'admin' ? '✅' : '❌' }}
           </el-descriptions-item>
         </el-descriptions>
       </div>
       <template #footer>
-        <el-button @click="showAddDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleAddUser" :loading="addLoading">确认</el-button>
+        <el-button @click="showAddDialog = false">{{ $t('users.cancel') }}</el-button>
+        <el-button type="primary" @click="handleAddUser" :loading="addLoading">{{ $t('users.confirm') }}</el-button>
       </template>
     </el-dialog>
 
-    <!-- CSV导入 -->
-    <el-dialog v-model="showImportDialog" title="CSV批量导入用户" width="640px" destroy-on-close>
+    <!-- CSV Import -->
+    <el-dialog v-model="showImportDialog" :title="$t('users.importTitle')" width="640px" destroy-on-close>
       <el-alert
         type="info"
         :closable="false"
         style="margin-bottom: 16px"
       >
         <template #title>
-          CSV格式要求：第一行为标题，必须包含"用户名"和"密码"列，可选"显示名称"、"邮箱"、"角色代码"
+          {{ $t('users.csvFormatHint') }}
         </template>
       </el-alert>
       <div class="csv-template">
-        <p class="preview-title">CSV模板:</p>
-        <pre class="csv-sample">用户名,密码,显示名称,邮箱,角色代码
-zhangsan,Zs@2026!,张三,zhangsan@example.com,developer
-lisi,Ls#2026!,李四,lisi@example.com,tester</pre>
+        <p class="preview-title">{{ $t('users.csvTemplate') }}</p>
+        <pre class="csv-sample">{{ $t('users.csvTemplateContent') }}</pre>
       </div>
       <el-upload
         ref="csvUploadRef"
@@ -151,51 +149,51 @@ lisi,Ls#2026!,李四,lisi@example.com,tester</pre>
         :on-change="handleCsvFileChange"
         :on-remove="() => csvFile = null"
       >
-        <el-button type="primary" plain>选择CSV文件</el-button>
+        <el-button type="primary" plain>{{ $t('users.selectFile') }}</el-button>
       </el-upload>
       <div v-if="importResult" class="import-result">
         <el-descriptions :column="3" size="small" border style="margin-top: 16px">
-          <el-descriptions-item label="成功创建">
+          <el-descriptions-item :label="$t('users.created')">
             <span style="color: var(--bf-success); font-weight: bold">{{ importResult.created }}</span>
           </el-descriptions-item>
-          <el-descriptions-item label="跳过(已存在)">
+          <el-descriptions-item :label="$t('users.skipped')">
             <span style="color: var(--bf-warning); font-weight: bold">{{ importResult.skipped }}</span>
           </el-descriptions-item>
-          <el-descriptions-item label="失败">
+          <el-descriptions-item :label="$t('users.failed')">
             <span style="color: var(--bf-danger); font-weight: bold">{{ importResult.failed }}</span>
           </el-descriptions-item>
         </el-descriptions>
         <div v-if="importResult.errors && importResult.errors.length" style="margin-top: 8px">
-          <p class="preview-title">错误详情:</p>
+          <p class="preview-title">{{ $t('users.errorDetails') }}</p>
           <ul class="error-list">
             <li v-for="(err, idx) in importResult.errors" :key="idx">{{ err }}</li>
           </ul>
         </div>
       </div>
       <template #footer>
-        <el-button @click="showImportDialog = false; importResult = null">关闭</el-button>
+        <el-button @click="showImportDialog = false; importResult = null">{{ $t('users.close') }}</el-button>
         <el-button type="primary" @click="handleCsvImport" :loading="importLoading" :disabled="!csvFile">
-          导入
+          {{ $t('users.import') }}
         </el-button>
       </template>
     </el-dialog>
 
-    <!-- API Key 展示 -->
-    <el-dialog v-model="showApiKeyDialog" title="API Key 已生成" width="480px">
+    <!-- API Key Display -->
+    <el-dialog v-model="showApiKeyDialog" :title="$t('users.apiKeyTitle')" width="480px">
       <el-alert
         type="warning"
-        title="请立即复制并保存此 API Key，关闭后将无法再次查看明文"
+        :title="$t('users.apiKeyHint')"
         :closable="false"
         show-icon
         style="margin-bottom: 16px"
       />
       <el-input :model-value="generatedApiKey" readonly>
         <template #append>
-          <el-button @click="copyApiKey">复制</el-button>
+          <el-button @click="copyApiKey">{{ $t('users.copy') }}</el-button>
         </template>
       </el-input>
       <template #footer>
-        <el-button type="primary" @click="showApiKeyDialog = false">我已保存</el-button>
+        <el-button type="primary" @click="showApiKeyDialog = false">{{ $t('users.saved') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -203,6 +201,7 @@ lisi,Ls#2026!,李四,lisi@example.com,tester</pre>
 
 <script>
 import { ref, reactive, onMounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/store'
 import api from '@/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -211,6 +210,7 @@ export default {
   name: 'UsersPage',
   setup() {
     const authStore = useAuthStore()
+    const { t } = useI18n()
     const users = ref([])
     const loading = ref(false)
     const showAddDialog = ref(false)
@@ -236,32 +236,32 @@ export default {
 
     const validateStrongPassword = (rule, value, callback) => {
       if (!value) {
-        callback(new Error('请输入密码'))
+        callback(new Error(t('users.validation.passwordRequired')))
       } else if (value.length < 8) {
-        callback(new Error('密码长度不能少于8位'))
+        callback(new Error(t('users.validation.passwordMinLength')))
       } else if (value.length > 64) {
-        callback(new Error('密码长度不能超过64位'))
+        callback(new Error(t('users.validation.passwordMaxLength')))
       } else if (!/[A-Z]/.test(value)) {
-        callback(new Error('密码必须包含至少一个大写字母'))
+        callback(new Error(t('users.validation.passwordUppercase')))
       } else if (!/[a-z]/.test(value)) {
-        callback(new Error('密码必须包含至少一个小写字母'))
+        callback(new Error(t('users.validation.passwordLowercase')))
       } else if (!/[0-9]/.test(value)) {
-        callback(new Error('密码必须包含至少一个数字'))
+        callback(new Error(t('users.validation.passwordDigit')))
       } else if (!/[^A-Za-z0-9]/.test(value)) {
-        callback(new Error('密码必须包含至少一个特殊字符'))
+        callback(new Error(t('users.validation.passwordSpecial')))
       } else {
         callback()
       }
     }
 
     const addRules = {
-      username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+      username: [{ required: true, message: t('users.validation.usernameRequired'), trigger: 'blur' }],
       password: [{ required: true, validator: validateStrongPassword, trigger: 'blur' }],
-      role: [{ required: true, message: '请选择角色', trigger: 'change' }]
+      role: [{ required: true, message: t('users.validation.roleRequired'), trigger: 'change' }]
     }
 
     const roleLabel = (role) => {
-      const map = { admin: '管理员', developer: '开发', tester: '测试', guest: '游客' }
+      const map = { admin: 'users.roles.admin', developer: 'users.roles.developer', tester: 'users.roles.tester', guest: 'users.roles.guest' }
       return map[role] || role
     }
 
@@ -296,7 +296,7 @@ export default {
         try {
           const res = await api.createUser(addForm)
           if (res.success) {
-            ElMessage.success('用户创建成功')
+            ElMessage.success(t('users.userCreateSuccess'))
             showAddDialog.value = false
             addForm.username = ''
             addForm.password = ''
@@ -305,7 +305,7 @@ export default {
             addForm.role = 'developer'
             await fetchUsers()
           } else {
-            ElMessage.error(res.message || '创建失败')
+            ElMessage.error(res.message || t('users.failed'))
           }
         } finally {
           addLoading.value = false
@@ -317,16 +317,16 @@ export default {
       if (row.role === newRole) return
       try {
         await ElMessageBox.confirm(
-          `确认将用户 "${row.username}" 的角色从 ${roleLabel(row.role)} 修改为 ${roleLabel(newRole)}?`,
-          '修改角色',
+          t('users.roleChangeConfirm', { 0: row.username, 1: t(roleLabel(row.role)), 2: t(roleLabel(newRole)) }),
+          t('users.roleChangeTitle'),
           { type: 'warning' }
         )
         const res = await api.updateUserRole(row.username, newRole)
         if (res.success) {
-          ElMessage.success('角色修改成功')
+          ElMessage.success(t('users.roleChangeSuccess'))
           await fetchUsers()
         } else {
-          ElMessage.error(res.message || '修改失败')
+          ElMessage.error(res.message || t('common.unknownError'))
         }
       } catch (e) {
         // cancelled
@@ -342,20 +342,20 @@ export default {
           await fetchUsers()
         }
       } catch (e) {
-        ElMessage.error('生成 API Key 失败')
+        ElMessage.error(t('users.apiKeyGenFailed'))
       }
     }
 
     const handleRevokeApiKey = async (row) => {
       try {
         await ElMessageBox.confirm(
-          `确认吊销用户 "${row.username}" 的 API Key?`,
-          '吊销 API Key',
+          t('users.revokeKeyConfirm', { 0: row.username }),
+          t('users.revokeKeyTitle'),
           { type: 'warning' }
         )
         const res = await api.revokeApiKey(row.username)
         if (res.success) {
-          ElMessage.success('API Key 已吊销')
+          ElMessage.success(t('users.revokeKeySuccess'))
           await fetchUsers()
         }
       } catch (e) {
@@ -366,16 +366,16 @@ export default {
     const handleDelete = async (row) => {
       try {
         await ElMessageBox.confirm(
-          `确认删除用户 "${row.username}"? 此操作不可恢复。`,
-          '删除用户',
+          t('users.deleteConfirm', { 0: row.username }),
+          t('users.deleteTitle'),
           { type: 'danger' }
         )
         const res = await api.deleteUser(row.username)
         if (res.success) {
-          ElMessage.success('用户已删除')
+          ElMessage.success(t('users.deleteSuccess'))
           await fetchUsers()
         } else {
-          ElMessage.error(res.message || '删除失败')
+          ElMessage.error(res.message || t('common.unknownError'))
         }
       } catch (e) {
         // cancelled
@@ -384,9 +384,9 @@ export default {
 
     const copyApiKey = () => {
       navigator.clipboard.writeText(generatedApiKey.value).then(() => {
-        ElMessage.success('已复制到剪贴板')
+        ElMessage.success(t('users.copied'))
       }).catch(() => {
-        ElMessage.warning('复制失败，请手动复制')
+        ElMessage.warning(t('users.copyFailed'))
       })
     }
 
@@ -406,12 +406,12 @@ export default {
           if (res.data.created > 0) {
             await fetchUsers()
           }
-          ElMessage.success(`导入完成: 成功${res.data.created}条, 跳过${res.data.skipped}条, 失败${res.data.failed}条`)
+          ElMessage.success(t('users.importSuccess', { 0: res.data.created, 1: res.data.skipped, 2: res.data.failed }))
         } else {
-          ElMessage.error(res.message || '导入失败')
+          ElMessage.error(res.message || t('users.importFailed'))
         }
       } catch (e) {
-        ElMessage.error('导入失败: ' + (e.message || '未知错误'))
+        ElMessage.error(t('users.importFailed') + ': ' + (e.message || t('common.unknownError')))
       } finally {
         importLoading.value = false
       }
@@ -454,3 +454,5 @@ export default {
 .error-list { font-size: 12px; color: var(--bf-danger); padding-left: 16px; margin: 4px 0; }
 .error-list li { margin-bottom: 2px; }
 </style>
+
+

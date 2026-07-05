@@ -1,75 +1,72 @@
-import { createRouter, createWebHashHistory } from 'vue-router'
+﻿import { createRouter, createWebHashHistory } from 'vue-router'
+import LoginPage from '@/views/LoginPage.vue'
 
 const routes = [
   {
-    path: '/',
-    redirect: '/dashboard'
-  },
-  {
     path: '/login',
     name: 'Login',
-    component: () => import('@/views/LoginPage.vue'),
-    meta: { title: '登录', public: true }
+    component: LoginPage,
+    meta: { title: 'login.title', public: true }
   },
   {
-    path: '/dashboard',
+    path: '/',
     name: 'Dashboard',
     component: () => import('@/views/DashboardPage.vue'),
-    meta: { title: '仪表盘' }
+    meta: { title: 'nav.dashboard' }
   },
   {
     path: '/rules',
     name: 'Rules',
     component: () => import('@/views/RulesPage.vue'),
-    meta: { title: '规则管理' }
+    meta: { title: 'nav.rules' }
   },
   {
     path: '/rules/:id',
     name: 'RuleEditor',
     component: () => import('@/views/RuleEditorPage.vue'),
-    meta: { title: '规则编辑' }
+    meta: { title: 'nav.ruleEditor' }
   },
   {
     path: '/scenes',
     name: 'Scenes',
     component: () => import('@/views/ScenesPage.vue'),
-    meta: { title: '场景集' }
+    meta: { title: 'nav.scenes' }
   },
   {
     path: '/logs',
     name: 'Logs',
     component: () => import('@/views/LogsPage.vue'),
-    meta: { title: '请求日志' }
+    meta: { title: 'nav.logs' }
   },
   {
     path: '/recordings',
     name: 'Recordings',
     component: () => import('@/views/RecordingsPage.vue'),
-    meta: { title: '录制管理' }
+    meta: { title: 'nav.recordings' }
   },
   {
     path: '/environments',
     name: 'Environments',
     component: () => import('@/views/EnvironmentsPage.vue'),
-    meta: { title: '环境管理' }
+    meta: { title: 'nav.environments' }
   },
   {
     path: '/environments/:id',
     name: 'EnvironmentDetail',
     component: () => import('@/views/EnvironmentDetailPage.vue'),
-    meta: { title: '环境详情' }
+    meta: { title: 'nav.environmentDetail' }
   },
   {
     path: '/users',
     name: 'Users',
     component: () => import('@/views/UsersPage.vue'),
-    meta: { title: '用户管理', requireAdmin: true }
+    meta: { title: 'nav.users', requireAdmin: true }
   },
   {
     path: '/status',
     name: 'Status',
     component: () => import('@/views/StatusPage.vue'),
-    meta: { title: '系统状态' }
+    meta: { title: 'nav.status' }
   }
 ]
 
@@ -78,18 +75,28 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to, from, next) => {
-  document.title = (to.meta.title ? to.meta.title + ' - ' : '') + 'Baafoo'
+// Auth guard
+import { useAuthStore } from '@/store'
 
-  if (to.meta.requireAdmin) {
-    const role = localStorage.getItem('baafoo_role')
-    if (role !== 'admin') {
-      next('/')
-      return
-    }
+router.beforeEach((to, from, next) => {
+  const authStore = useAuthStore()
+  // Allow public pages
+  if (to.meta.public) {
+    return next()
+  }
+
+  // Check if logged in
+  if (!authStore.token) {
+    return next('/login')
+  }
+
+  // Check admin requirement
+  if (to.meta.requireAdmin && authStore.role !== 'admin') {
+    return next('/')
   }
 
   next()
 })
 
 export default router
+

@@ -1,29 +1,29 @@
 <template>
   <div class="dashboard-page">
-    <h2>仪表盘</h2>
+    <h2>{{ $t('dashboard.title') }}</h2>
     <el-row :gutter="20" style="margin-top: 20px">
       <el-col :span="6">
         <el-card shadow="hover" class="stat-card">
           <div class="stat-value">{{ stats.rules }}</div>
-          <div class="stat-label">规则总数</div>
+          <div class="stat-label">{{ $t('dashboard.totalRules') }}</div>
         </el-card>
       </el-col>
       <el-col :span="6">
         <el-card shadow="hover" class="stat-card">
           <div class="stat-value">{{ stats.environments }}</div>
-          <div class="stat-label">环境数</div>
+          <div class="stat-label">{{ $t('dashboard.totalEnvs') }}</div>
         </el-card>
       </el-col>
       <el-col :span="6">
         <el-card shadow="hover" class="stat-card">
           <div class="stat-value">{{ stats.agents }}</div>
-          <div class="stat-label">在线 Agents</div>
+          <div class="stat-label">{{ $t('dashboard.onlineAgents') }}</div>
         </el-card>
       </el-col>
       <el-col :span="6">
         <el-card shadow="hover" class="stat-card">
           <div class="stat-value">{{ stats.scenes }}</div>
-          <div class="stat-label">场景集</div>
+          <div class="stat-label">{{ $t('dashboard.totalScenes') }}</div>
         </el-card>
       </el-col>
     </el-row>
@@ -31,13 +31,13 @@
     <el-row :gutter="20" style="margin-top: 20px">
       <el-col :span="12">
         <el-card shadow="never">
-          <template #header><span>规则概览</span></template>
+          <template #header><span>{{ $t('dashboard.ruleOverview') }}</span></template>
           <div ref="rulesChart" style="height: 300px"></div>
         </el-card>
       </el-col>
       <el-col :span="12">
         <el-card shadow="never">
-          <template #header><span>请求趋势</span></template>
+          <template #header><span>{{ $t('dashboard.requestTrend') }}</span></template>
           <div ref="trendChart" style="height: 300px"></div>
         </el-card>
       </el-col>
@@ -46,26 +46,26 @@
     <el-row :gutter="20" style="margin-top: 20px">
       <el-col :span="24">
         <el-card shadow="never">
-          <template #header><span>最近录制的响应</span></template>
+          <template #header><span>{{ $t('dashboard.recentRecordings') }}</span></template>
           <el-table :data="recentRecordings" stripe size="small" max-height="300">
-            <el-table-column prop="ruleName" label="规则" width="180" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.ruleName || (row.ruleId ? row.ruleId : '未匹配') }}</template>
+            <el-table-column prop="ruleName" :label="$t('dashboard.rule')" width="180" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.ruleName || (row.ruleId ? row.ruleId : $t('dashboard.unmatched')) }}</template>
             </el-table-column>
-            <el-table-column prop="protocol" label="协议" width="105">
+            <el-table-column prop="protocol" :label="$t('dashboard.protocol')" width="105">
               <template #default="{ row }"><el-tag size="small">{{ (row.protocol || '').toUpperCase() }}</el-tag></template>
             </el-table-column>
-            <el-table-column prop="method" label="方法" width="80">
+            <el-table-column prop="method" :label="$t('dashboard.method')" width="80">
               <template #default="{ row }">
                 <template v-if="isMqProtocol(row.protocol)">
-                  <el-tag v-if="row.direction" size="small" :type="directionType(row.direction)">{{ directionLabel(row.direction) }}</el-tag>
+                  <el-tag v-if="row.direction" size="small" :type="directionType(row.direction)">{{ $t(directionLabel(row.direction)) }}</el-tag>
                   <el-tag v-else size="small" type="info">{{ row.method }}</el-tag>
                 </template>
                 <el-tag v-else size="small" type="info">{{ row.method }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="path" label="路径" min-width="200" />
-            <el-table-column prop="responseStatusCode" label="状态码" width="80" />
-            <el-table-column prop="recordedAt" label="时间" width="180">
+            <el-table-column prop="path" :label="$t('dashboard.path')" min-width="200" />
+            <el-table-column prop="responseStatusCode" :label="$t('dashboard.statusCode')" width="80" />
+            <el-table-column prop="recordedAt" :label="$t('dashboard.time')" width="180">
               <template #default="{ row }">
                 {{ formatTime(row.recordedAt) }}
               </template>
@@ -79,12 +79,14 @@
 
 <script>
 import { ref, reactive, onMounted, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import api from '@/api'
 import * as echarts from 'echarts'
 
 export default {
   name: 'DashboardPage',
   setup() {
+    const { t } = useI18n()
     const stats = reactive({ rules: 0, environments: 0, agents: 0, scenes: 0 })
     const recentRecordings = ref([])
     const rulesChart = ref(null)
@@ -98,8 +100,8 @@ export default {
     }
 
     const directionLabel = (d) => {
-      if (d === 'produce' || d === 'request') return '发送'
-      if (d === 'consume' || d === 'response') return '接收'
+      if (d === 'produce' || d === 'request') return 'dashboard.send'
+      if (d === 'consume' || d === 'response') return 'dashboard.receive'
       return d
     }
     const directionType = (d) => {

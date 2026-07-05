@@ -2,6 +2,7 @@ package com.baafoo.server.api;
 
 import com.baafoo.core.api.ApiResponse;
 import com.baafoo.core.config.ServerConfig;
+import com.baafoo.core.i18n.I18n;
 import com.baafoo.core.util.ChaosManager;
 import com.baafoo.server.auth.AuthService;
 import com.baafoo.server.mcp.McpApiHandler;
@@ -125,7 +126,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
             throw new ApiException(401, "Authentication failed: " + auth.getMessage());
         }
 
-        ApiContext apiCtx = new ApiContext(storage, authService, mapper, uri, auth, remoteAddr, eventBus);
+        ApiContext apiCtx = new ApiContext(storage, authService, mapper, uri, auth, remoteAddr, eventBus, resolveI18n(request));
         String body = request.content().toString(StandardCharsets.UTF_8);
 
         for (ResourceHandler handler : handlers) {
@@ -154,6 +155,16 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         String authHeader = request.headers().get("Authorization");
         String apiKeyHeader = request.headers().get("X-Api-Key");
         return authService.authenticate(authHeader, apiKeyHeader, remoteAddr);
+    }
+
+    private I18n resolveI18n(FullHttpRequest request) {
+        String acceptLanguage = request.headers().get("Accept-Language");
+        if (acceptLanguage == null || acceptLanguage.isEmpty()) {
+            return I18n.defaultInstance();
+        }
+        // Parse the first locale tag: e.g. "zh-CN,zh;q=0.9,en;q=0.8" → "zh-CN"
+        String firstTag = acceptLanguage.split(",")[0].split(";")[0].trim();
+        return I18n.of(firstTag);
     }
 
     private void sendJson(ChannelHandlerContext ctx, int statusCode, Object data) {

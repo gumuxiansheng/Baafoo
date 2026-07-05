@@ -1,6 +1,7 @@
 package com.baafoo.server.api;
 
 import com.baafoo.core.event.EventBus;
+import com.baafoo.core.i18n.I18n;
 import com.baafoo.server.auth.AuthService;
 import com.baafoo.server.storage.JdbcStorageService;
 import com.baafoo.server.storage.SceneService;
@@ -16,14 +17,21 @@ public class ApiContext {
     final String remoteAddr;
     /** P2: Event bus for firing plugin events from API handlers */
     final EventBus eventBus;
+    /** i18n message resolver for the request locale */
+    final I18n i18n;
 
     ApiContext(StorageService storage, AuthService authService, ObjectMapper mapper, String uri,
                AuthService.AuthResult auth, String remoteAddr) {
-        this(storage, authService, mapper, uri, auth, remoteAddr, null);
+        this(storage, authService, mapper, uri, auth, remoteAddr, null, I18n.defaultInstance());
     }
 
     ApiContext(StorageService storage, AuthService authService, ObjectMapper mapper, String uri,
                AuthService.AuthResult auth, String remoteAddr, EventBus eventBus) {
+        this(storage, authService, mapper, uri, auth, remoteAddr, eventBus, I18n.defaultInstance());
+    }
+
+    ApiContext(StorageService storage, AuthService authService, ObjectMapper mapper, String uri,
+               AuthService.AuthResult auth, String remoteAddr, EventBus eventBus, I18n i18n) {
         this.storage = storage;
         this.authService = authService;
         this.mapper = mapper;
@@ -31,6 +39,7 @@ public class ApiContext {
         this.auth = auth;
         this.remoteAddr = remoteAddr;
         this.eventBus = eventBus;
+        this.i18n = i18n;
     }
 
     String queryParam(String key) {
@@ -47,6 +56,11 @@ public class ApiContext {
                     ApiUtils.getRequiredRoleForAction(resource, action), auth.getRole());
         }
     }
+
+    /**
+     * Get the i18n message resolver for the current request locale.
+     */
+    public I18n getI18n() { return i18n; }
 
     public StorageService getStorage() { return storage; }
 

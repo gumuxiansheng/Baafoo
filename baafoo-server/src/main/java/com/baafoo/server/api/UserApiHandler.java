@@ -1,6 +1,7 @@
 package com.baafoo.server.api;
 
 import com.baafoo.core.api.ApiResponse;
+import com.baafoo.core.i18n.I18n;
 import com.baafoo.core.model.User;
 import com.baafoo.server.api.dto.ApiKeyResponse;
 import com.baafoo.server.api.dto.CsvImportResponse;
@@ -15,6 +16,7 @@ class UserApiHandler implements ResourceHandler {
     @Override
     public Object handle(String method, String path, String body, ApiContext ctx) throws Exception {
         String API_PREFIX = "/__baafoo__/api/";
+        I18n i18n = ctx.getI18n();
 
         if (path.equals(API_PREFIX + "users") && "GET".equals(method)) {
             ctx.requirePermission("user", "read");
@@ -35,17 +37,18 @@ class UserApiHandler implements ResourceHandler {
             String email = (String) reqBody.get("email");
             String role = (String) reqBody.get("role");
             if (username == null || username.isEmpty()) {
-                return ApiResponse.fail(400, "Username is required");
+                return ApiResponse.fail(400, i18n.get("user.username_required"));
             }
             AuthService.PasswordValidation pv = AuthService.validatePassword(password);
             if (!pv.isValid()) {
-                return ApiResponse.fail(400, pv.getMessage());
+                String errMsg = pv.getErrorCode() != null ? i18n.get(pv.getErrorCode()) : pv.getMessage();
+                return ApiResponse.fail(400, errMsg);
             }
             if (role == null || !ApiUtils.isValidRole(role)) {
-                return ApiResponse.fail(400, "Invalid role. Must be one of: admin, developer, tester, guest");
+                return ApiResponse.fail(400, i18n.get("user.invalid_role"));
             }
             if (ctx.storage.getUserByUsername(username) != null) {
-                return ApiResponse.fail(409, "User already exists: " + username);
+                return ApiResponse.fail(409, i18n.get("user.already_exists", username));
             }
             User user = new User();
             user.setUsername(username);
@@ -59,7 +62,7 @@ class UserApiHandler implements ResourceHandler {
 
         if (path.equals(API_PREFIX + "users/import") && "POST".equals(method)) {
             ctx.requirePermission("user", "create");
-            return handleCsvImport(body, ctx);
+            return handleCsvImport(body, ctx, i18n);
         }
 
         if (path.startsWith(API_PREFIX + "users/") && path.endsWith("/role") && "PUT".equals(method)) {
@@ -68,10 +71,11 @@ class UserApiHandler implements ResourceHandler {
             Map<String, Object> reqBody = ctx.mapper.readValue(body, Map.class);
             String newRole = (String) reqBody.get("role");
             if (newRole == null || !ApiUtils.isValidRole(newRole)) {
-                return ApiResponse.fail(400, "Invalid role. Must be one of: admin, developer, tester, guest");
+                return ApiResponse.fail(400, i18n.get("user.invalid_role"));
             }
             boolean updated = ctx.storage.updateUserRole(username, newRole);
-            return updated ? ApiResponse.ok("Role updated", null) : ApiResponse.notFound("User not found");
+            return updated ? ApiResponse.ok(i18n.get("user.role_updated"), null)
+                    : ApiResponse.notFound(i18n.get("user.not_found", username));
         }
 
         if (path.startsWith(API_PREFIX + "users/") && path.endsWith("/api-key") && "POST".equals(method)) {
@@ -79,7 +83,7 @@ class UserApiHandler implements ResourceHandler {
             String username = ApiUtils.extractId(path, API_PREFIX + "users/", "/api-key");
             String newApiKey = ctx.authService.generateApiKey();
             boolean updated = ctx.storage.updateUserApiKey(username, newApiKey);
-            if (!updated) return ApiResponse.notFound("User not found");
+            if (!updated) return ApiResponse.notFound(i18n.get("user.not_found", username));
             ApiKeyResponse result = new ApiKeyResponse().apiKey(newApiKey);
             return ApiResponse.ok(result);
         }
@@ -88,17 +92,19 @@ class UserApiHandler implements ResourceHandler {
             ctx.requirePermission("user", "update");
             String username = ApiUtils.extractId(path, API_PREFIX + "users/", "/api-key");
             boolean updated = ctx.storage.updateUserApiKey(username, null);
-            return updated ? ApiResponse.ok("API key revoked", null) : ApiResponse.notFound("User not found");
+            return updated ? ApiResponse.ok("API key revoked", null)
+                    : ApiResponse.notFound(i18n.get("user.not_found", username));
         }
 
         if (path.startsWith(API_PREFIX + "users/") && "DELETE".equals(method)) {
             ctx.requirePermission("user", "delete");
             String username = ApiUtils.extractId(path, API_PREFIX + "users/", null);
             if (username.equals(ctx.auth.getUsername())) {
-                return ApiResponse.fail(400, "Cannot delete yourself");
+                return ApiResponse.fail(400, i18n.get("user.cannot_delete_self"));
             }
             boolean deleted = ctx.storage.deleteUser(username);
-            return deleted ? ApiResponse.ok("Deleted", null) : ApiResponse.notFound("User not found");
+            return deleted ? ApiResponse.ok(i18n.get("user.deleted"), null)
+                    : ApiResponse.notFound(i18n.get("user.not_found", username));
         }
 
         return null;
@@ -118,10 +124,10 @@ class UserApiHandler implements ResourceHandler {
         return safe;
     }
 
-    private Object handleCsvImport(String csv, ApiContext ctx) {
+    private Object handleCsvImport(String csv, ApiContext ctx, I18n i18n) {
         String[] lines = csv.split("\r?\n");
         if (lines.length < 2) {
-            return ApiResponse.fail(400, "CSV文件至少需要包含标题行和一行数据");
+            return ApiResponse.fail(400, i18n.get("user.csv_need_header_and_data"));
         }
         String[] headers = lines[0].split(",");
         for (int i = 0; i < headers.length; i++) {
@@ -137,7 +143,7 @@ class UserApiHandler implements ResourceHandler {
             else if ("角色代码".equals(h) || "role".equalsIgnoreCase(h) || "roleCode".equalsIgnoreCase(h)) roleIdx = i;
         }
         if (usernameIdx < 0 || passwordIdx < 0) {
-            return ApiResponse.fail(400, "CSV必须包含\"用户名\"和\"密码\"列");
+            return ApiResponse.fail(400, i18n.get("user.csv_header_required"));
         }
         CsvImportResponse summary = new CsvImportResponse();
         List<String> errors = new ArrayList<String>();
@@ -152,7 +158,7 @@ class UserApiHandler implements ResourceHandler {
             String role = roleIdx >= 0 && roleIdx < cols.length ? cols[roleIdx].trim() : "guest";
             if (username.isEmpty() || password.isEmpty()) {
                 summary.failed++;
-                errors.add("第" + (i + 1) + "行: 用户名或密码为空");
+                errors.add(i18n.get("user.csv_row_empty", i + 1));
                 continue;
             }
             if (ctx.storage.getUserByUsername(username) != null) {
@@ -162,12 +168,12 @@ class UserApiHandler implements ResourceHandler {
             AuthService.PasswordValidation pv = AuthService.validatePassword(password);
             if (!pv.isValid()) {
                 summary.failed++;
-                errors.add("第" + (i + 1) + "行(" + username + "): " + pv.getMessage());
+                errors.add(i18n.get("user.csv_row_invalid_pw", i + 1, username, pv.getMessage()));
                 continue;
             }
             if (!ApiUtils.isValidRole(role)) {
                 summary.failed++;
-                errors.add("第" + (i + 1) + "行(" + username + "): 无效角色代码 '" + role + "'");
+                errors.add(i18n.get("user.csv_row_invalid_role", i + 1, username, role));
                 continue;
             }
             User user = new User();
@@ -181,7 +187,7 @@ class UserApiHandler implements ResourceHandler {
                 summary.created++;
             } else {
                 summary.failed++;
-                errors.add("第" + (i + 1) + "行(" + username + "): 创建失败");
+                errors.add(i18n.get("user.csv_row_create_failed", i + 1, username));
             }
         }
         summary.errors = errors;

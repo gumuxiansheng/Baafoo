@@ -10,6 +10,8 @@ http.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  const locale = localStorage.getItem('baafoo_locale') || 'zh-CN'
+  config.headers['Accept-Language'] = locale
   return config
 })
 
@@ -26,7 +28,13 @@ http.interceptors.response.use(
     }
     if (!error.response) {
       console.error('Network Error: backend server may not be running')
-      return { success: false, code: 0, message: '无法连接到服务器，请确认后端服务已启动', data: null }
+      // Try to use i18n if available, with English fallback
+      let msg = 'Unable to connect to server. Please verify that the backend service is running.'
+      try {
+        const { i18n } = require('@/main')
+        if (i18n) msg = i18n.global.t('notConnected')
+      } catch (_) {}
+      return { success: false, code: 0, message: msg, data: null }
     }
     const msg = error.response?.data?.message || error.message
     console.error('API Error:', msg)

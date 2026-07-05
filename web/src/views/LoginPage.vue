@@ -1,16 +1,16 @@
-<template>
+﻿<template>
   <div class="login-container">
     <div class="login-card">
       <div class="login-header">
         <BaafooLogo class="login-logo" variant="login" />
         <h1 class="logo">Baafoo</h1>
-        <p class="subtitle">挡板系统控制台</p>
+        <p class="subtitle">{{ $t('login.subtitle') }}</p>
       </div>
       <el-form :model="form" :rules="rules" ref="formRef" @submit.prevent="handleLogin" autocomplete="off">
         <el-form-item prop="username">
           <el-input
             v-model="form.username"
-            placeholder="用户名"
+            :placeholder="$t('login.usernamePlaceholder')"
             prefix-icon="User"
             size="large"
             autocomplete="off"
@@ -20,7 +20,7 @@
           <el-input
             v-model="form.password"
             type="password"
-            placeholder="密码"
+            :placeholder="$t('login.passwordPlaceholder')"
             prefix-icon="Lock"
             size="large"
             show-password
@@ -36,13 +36,13 @@
             style="width: 100%"
             @click="handleLogin"
           >
-            登 录
+            {{ $t('login.loginButton') }}
           </el-button>
         </el-form-item>
       </el-form>
       <div class="login-footer">
         <el-button type="info" text size="small" @click="enterAsGuest">
-          以游客身份浏览
+          {{ $t('login.guestBrowse') }}
         </el-button>
       </div>
     </div>
@@ -52,6 +52,7 @@
 <script>
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/store'
 import { ElMessage } from 'element-plus'
 import BaafooLogo from '@/components/BaafooLogo.vue'
@@ -62,6 +63,7 @@ export default {
   setup() {
     const router = useRouter()
     const authStore = useAuthStore()
+    const { t } = useI18n()
     const formRef = ref(null)
     const loading = ref(false)
 
@@ -71,8 +73,8 @@ export default {
     })
 
     const rules = {
-      username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-      password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+      username: [{ required: true, message: t('login.validation.usernameRequired'), trigger: 'blur' }],
+      password: [{ required: true, message: t('login.validation.passwordRequired'), trigger: 'blur' }]
     }
 
     const handleLogin = async () => {
@@ -83,13 +85,13 @@ export default {
         try {
           const success = await authStore.login(form.username, form.password)
           if (success) {
-            ElMessage.success({ message: '登录成功', duration: 3000 })
+            ElMessage.success(t('login.loginSuccess'))
             router.push('/')
           } else {
-            ElMessage.error('用户名或密码错误')
+            ElMessage.error(t('login.loginFailed'))
           }
         } catch (e) {
-          ElMessage.error('登录失败: ' + (e.message || '未知错误'))
+          ElMessage.error(t('login.loginError', { 0: e.message || t('common.unknownError') }))
         } finally {
           loading.value = false
         }

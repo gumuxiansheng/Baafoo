@@ -2,23 +2,23 @@
   <div class="rule-editor-page">
     <div class="page-header">
       <el-button text @click="$router.back()">
-        <el-icon><ArrowLeft /></el-icon> 返回
+        <el-icon><ArrowLeft /></el-icon> {{ $t('rules.back') }}
       </el-button>
-      <h2>{{ isNew ? '新建规则' : '编辑规则' }}</h2>
+      <h2>{{ isNew ? $t('rules.newRuleTitle') : $t('rules.editRuleTitle') }}</h2>
     </div>
 
     <el-card shadow="never" style="margin-top: 16px" v-if="isNew || rule" v-loading="loading">
       <el-form :model="form" label-width="100px" size="small">
         <!-- Basic Info -->
-        <el-divider content-position="left">基本信息</el-divider>
+        <el-divider content-position="left">{{ $t('rules.basicInfo') }}</el-divider>
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="规则名称" required>
+            <el-form-item :label="$t('rules.ruleNameLabel')" required>
               <el-input v-model="form.name" />
             </el-form-item>
           </el-col>
           <el-col :span="6">
-            <el-form-item label="协议" required>
+            <el-form-item :label="$t('rules.protocolLabel')" required>
               <el-select v-model="form.protocol" style="width: 100%">
                 <el-option label="HTTP" value="http" />
                 <el-option label="TCP" value="tcp" />
@@ -30,176 +30,176 @@
             </el-form-item>
           </el-col>
           <el-col :span="6">
-            <el-form-item label="优先级">
+            <el-form-item :label="$t('rules.priorityLabel')">
               <el-input-number v-model="form.priority" :min="1" :max="1000" />
             </el-form-item>
           </el-col>
         </el-row>
         <el-row :gutter="20">
           <el-col :span="8">
-            <el-form-item label="目标主机">
-              <el-input v-model="form.host" placeholder="留空匹配所有" />
+            <el-form-item :label="$t('rules.targetHostLabel')">
+              <el-input v-model="form.host" :placeholder="$t('rules.targetHostPlaceholder')" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="目标端口">
+            <el-form-item :label="$t('rules.targetPort')">
               <el-input-number v-model="form.port" :min="0" :max="65535" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="服务名(Consul)">
+            <el-form-item :label="$t('rules.serviceName')">
               <el-input v-model="form.serviceName" />
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="启用">
+        <el-form-item :label="$t('rules.enabled')">
           <el-switch v-model="form.enabled" />
         </el-form-item>
         <el-row :gutter="20">
           <el-col :span="8">
-            <el-form-item label="Faker Seed">
-              <el-input-number v-model="form.fakerSeed" :min="0" :step="1" placeholder="留空随机" />
-              <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px">设置后该规则所有 Faker 函数使用相同种子，可复现数据</div>
+            <el-form-item :label="$t('rules.fakerSeed')">
+              <el-input-number v-model="form.fakerSeed" :min="0" :step="1" :placeholder="$t('rules.fakerSeedPlaceholder')" />
+              <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px">{{ $t('rules.fakerSeedHint') }}</div>
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="计数器重置">
-              <el-input-number v-model="form.requestCountReset" :min="0" :step="1" placeholder="不重置" />
-              <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px">达到该次数后计数器归零（循环模式），0 表示不重置</div>
+            <el-form-item :label="$t('rules.counterReset')">
+              <el-input-number v-model="form.requestCountReset" :min="0" :step="1" :placeholder="$t('rules.counterResetPlaceholder')" />
+              <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px">{{ $t('rules.counterResetHint') }}</div>
             </el-form-item>
           </el-col>
           <el-col :span="8" v-if="!isNew && form.protocol === 'http'">
-            <el-form-item label="状态重置">
-              <el-button size="small" @click="resetRuleState" v-if="authStore.canWriteRule">重置请求计数器</el-button>
-              <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px">清空该规则的 requestCount 计数器</div>
+            <el-form-item :label="$t('rules.stateReset')">
+              <el-button size="small" @click="resetRuleState" v-if="authStore.canWriteRule">{{ $t('rules.stateResetAction') }}</el-button>
+              <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px">{{ $t('rules.stateResetHint') }}</div>
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="标签">
-          <el-input v-model="form.tagsStr" placeholder="逗号分隔" />
+        <el-form-item :label="$t('rules.tags')">
+          <el-input v-model="form.tagsStr" :placeholder="$t('rules.tagsPlaceholder')" />
         </el-form-item>
-        <el-form-item label="生效环境">
+        <el-form-item :label="$t('rules.effectiveEnvLabel')">
           <div v-if="inheritedEnvs.length > 0" style="margin-bottom: 6px">
             <el-tag v-for="env in inheritedEnvs" :key="env" size="small" type="warning" closable disable-transitions style="margin-right: 4px; margin-bottom: 2px">
-              {{ env }} (场景集继承)
+              {{ env }} {{ $t('rules.sceneInherited') }}
             </el-tag>
           </div>
-          <el-select v-model="form.environments" multiple filterable allow-create default-first-option placeholder="选择或输入环境名" style="width: 100%">
+          <el-select v-model="form.environments" multiple filterable allow-create default-first-option :placeholder="$t('rules.effectiveEnvPlaceholder')" style="width: 100%">
             <el-option v-for="env in allEnvironments" :key="env.name" :label="env.name" :value="env.name" />
           </el-select>
           <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px">
-            未选择环境时规则不生效，需显式关联环境后才参与匹配
-            <span v-if="inheritedEnvs.length > 0" style="color: var(--bf-warning)">；橙色标签为场景集继承的环境，不可删除</span>
+            {{ $t('rules.envNoEffect') }}
+            <span v-if="inheritedEnvs.length > 0" style="color: var(--bf-warning)">；{{ $t('rules.envInherited') }}</span>
           </div>
         </el-form-item>
 
         <!-- Match Conditions -->
-        <el-divider content-position="left">匹配条件
-          <el-button size="small" @click="addCondition" v-if="authStore.canWriteRule">+ 添加条件</el-button>
-          <el-button size="small" @click="addGraphqlHelper" v-if="authStore.canWriteRule && isGraphqlPath">+ GraphQL 快捷</el-button>
+        <el-divider content-position="left">{{ $t('rules.matchConditions') }}
+          <el-button size="small" @click="addCondition" v-if="authStore.canWriteRule">{{ $t('rules.addCondition') }}</el-button>
+          <el-button size="small" @click="addGraphqlHelper" v-if="authStore.canWriteRule && isGraphqlPath">{{ $t('rules.graphqlHelper') }}</el-button>
         </el-divider>
         <div v-if="isGraphqlPath" class="graphql-hint">
           <el-alert type="info" :closable="false" show-icon>
             <template #title>
-              检测到 GraphQL 路径，可使用"GraphQL 快捷"按钮快速添加 operationName / operationType 匹配条件
+              {{ $t('rules.graphqlDetected') }}
             </template>
           </el-alert>
         </div>
         <div v-if="form.conditions.length === 0" style="color: var(--bf-text-muted); font-size: 12px; margin-bottom: 8px">
-          未添加条件时，该规则对所有请求生效（受主机/端口/环境约束）
+          {{ $t('rules.noConditionMatch') }}
         </div>
         <div v-for="(cond, idx) in form.conditions" :key="'cond-' + idx" style="margin-bottom: 8px">
           <el-row :gutter="10">
             <el-col :span="4">
               <el-select v-model="cond.type" size="small" @change="onConditionTypeChange(cond)">
                 <template v-if="isMqProtocol">
-                  <el-option label="Topic" value="topic" v-if="form.protocol === 'kafka' || form.protocol === 'pulsar'" />
-                  <el-option label="消息Key" value="key" v-if="form.protocol === 'kafka'" />
-                  <el-option label="Destination" value="destination" v-if="form.protocol === 'jms'" />
-                  <el-option label="消息内容" value="body" />
-                  <el-option label="消息包含" value="bodyContains" />
-                  <el-option label="请求次数" value="requestCount" />
+                  <el-option :label="$t('rules.conditionFields.topic')" value="topic" v-if="form.protocol === 'kafka' || form.protocol === 'pulsar'" />
+                  <el-option :label="$t('rules.conditionFields.key')" value="key" v-if="form.protocol === 'kafka'" />
+                  <el-option :label="$t('rules.conditionFields.destination')" value="destination" v-if="form.protocol === 'jms'" />
+                  <el-option :label="$t('rules.conditionFields.messageContent')" value="body" />
+                  <el-option :label="$t('rules.conditionFields.messageContains')" value="bodyContains" />
+                  <el-option :label="$t('rules.conditionFields.requestCount')" value="requestCount" />
                 </template>
                 <template v-else-if="isGrpcProtocol">
-                  <el-option label="gRPC Service" value="grpcService" />
-                  <el-option label="gRPC Method" value="grpcMethod" />
-                  <el-option label="Path" value="path" />
-                  <el-option label="Metadata" value="header" />
+                  <el-option :label="$t('rules.conditionFields.grpcService')" value="grpcService" />
+                  <el-option :label="$t('rules.conditionFields.grpcMethod')" value="grpcMethod" />
+                  <el-option :label="$t('rules.conditionFields.path')" value="path" />
+                  <el-option :label="$t('rules.conditionFields.header')" value="header" />
                   <el-option label="Body(hex)" value="body" />
-                  <el-option label="Body包含" value="bodyContains" />
-                  <el-option label="请求次数" value="requestCount" />
+                  <el-option :label="$t('rules.conditionFields.bodyContains')" value="bodyContains" />
+                  <el-option :label="$t('rules.conditionFields.requestCount')" value="requestCount" />
                 </template>
                 <template v-else>
-                  <el-option label="Method" value="method" />
-                  <el-option label="Path" value="path" />
-                  <el-option label="Header" value="header" />
-                  <el-option label="Query" value="query" />
-                  <el-option label="Body" value="body" />
-                  <el-option label="Body包含" value="bodyContains" />
-                  <el-option label="JSONPath" value="bodyJsonPath" />
-                  <el-option label="请求次数" value="requestCount" />
-                  <el-option label="GraphQL OpName" value="graphqlOperationName" />
-                  <el-option label="GraphQL OpType" value="graphqlOperationType" />
+                  <el-option :label="$t('rules.conditionFields.method')" value="method" />
+                  <el-option :label="$t('rules.conditionFields.path')" value="path" />
+                  <el-option :label="$t('rules.conditionFields.header')" value="header" />
+                  <el-option :label="$t('rules.conditionFields.query')" value="query" />
+                  <el-option :label="$t('rules.conditionFields.body')" value="body" />
+                  <el-option :label="$t('rules.conditionFields.bodyContains')" value="bodyContains" />
+                  <el-option :label="$t('rules.conditionFields.bodyJsonPath')" value="bodyJsonPath" />
+                  <el-option :label="$t('rules.conditionFields.requestCount')" value="requestCount" />
+                  <el-option :label="$t('rules.conditionFields.graphqlOperationName')" value="graphqlOperationName" />
+                  <el-option :label="$t('rules.conditionFields.graphqlOperationType')" value="graphqlOperationType" />
                 </template>
               </el-select>
             </el-col>
             <el-col :span="3">
               <el-select v-model="cond.operator" size="small">
-                <el-option label="等于" value="equals" />
-                <el-option label="包含" value="contains" />
-                <el-option label="开头" value="startsWith" />
-                <el-option label="结尾" value="endsWith" />
-                <el-option label="正则" value="regex" />
-                <el-option label="存在" value="exists" />
-                <el-option label="大于" value="greaterThan" v-if="cond.type === 'requestCount'" />
-                <el-option label="小于" value="lessThan" v-if="cond.type === 'requestCount'" />
-                <el-option label="区间" value="range" v-if="cond.type === 'requestCount'" />
-                <el-option label="取模" value="mod" v-if="cond.type === 'requestCount'" />
+                <el-option :label="$t('rules.operators.equals')" value="equals" />
+                <el-option :label="$t('rules.operators.contains')" value="contains" />
+                <el-option :label="$t('rules.operators.startsWith')" value="startsWith" />
+                <el-option :label="$t('rules.operators.endsWith')" value="endsWith" />
+                <el-option :label="$t('rules.operators.regex')" value="regex" />
+                <el-option :label="$t('rules.operators.exists')" value="exists" />
+                <el-option :label="$t('rules.operators.greaterThan')" value="greaterThan" v-if="cond.type === 'requestCount'" />
+                <el-option :label="$t('rules.operators.lessThan')" value="lessThan" v-if="cond.type === 'requestCount'" />
+                <el-option :label="$t('rules.operators.range')" value="range" v-if="cond.type === 'requestCount'" />
+                <el-option :label="$t('rules.operators.mod')" value="mod" v-if="cond.type === 'requestCount'" />
               </el-select>
             </el-col>
             <el-col :span="4" v-if="cond.type === 'header' || cond.type === 'query'">
               <el-input v-model="cond.key" size="small" placeholder="Key" />
             </el-col>
             <el-col :span="cond.type === 'header' || cond.type === 'query' ? 8 : 12" v-if="cond.operator !== 'exists'">
-              <el-input v-model="cond.value" size="small" :placeholder="getValuePlaceholder(cond)" />
+              <el-input v-model="cond.value" size="small" :placeholder="$t(getValuePlaceholder(cond))" />
             </el-col>
             <el-col :span="4">
-              <el-button size="small" type="danger" text @click="removeCondition(idx)" v-if="authStore.canWriteRule">删除</el-button>
+              <el-button size="small" type="danger" text @click="removeCondition(idx)" v-if="authStore.canWriteRule">{{ $t('rules.deleteCondition') }}</el-button>
             </el-col>
           </el-row>
         </div>
 
         <!-- Responses -->
-        <el-divider content-position="left">响应分支
-          <el-button size="small" @click="addResponse" v-if="authStore.canWriteRule">+ 添加响应分支</el-button>
+        <el-divider content-position="left">{{ $t('rules.responseBranches') }}
+          <el-button size="small" @click="addResponse" v-if="authStore.canWriteRule">{{ $t('rules.addResponse') }}</el-button>
         </el-divider>
         <div v-if="form.responses.length === 0" style="color: var(--bf-text-muted); font-size: 12px; margin-bottom: 8px">
-          请至少添加一个响应分支，第一个无条件的响应将作为默认响应
+          {{ $t('rules.addAtLeastOne') }}
         </div>
         <div v-for="(resp, idx) in form.responses" :key="'resp-' + idx"
              class="response-card">
           <div class="response-card-header">
-            <span class="response-card-title">响应 #{{ idx + 1 }}{{ resp.name ? ' - ' + resp.name : '' }}</span>
+            <span class="response-card-title">{{ $t('rules.responseName') }} #{{ idx + 1 }}{{ resp.name ? ' - ' + resp.name : '' }}</span>
             <div>
-              <el-tag v-if="!resp.condition" size="small" type="info">默认响应</el-tag>
-              <el-tag v-else size="small" type="warning">条件响应</el-tag>
-              <el-button size="small" type="danger" text @click="removeResponse(idx)" style="margin-left: 8px" v-if="authStore.canWriteRule">删除</el-button>
+              <el-tag v-if="!resp.condition" size="small" type="info">{{ $t('rules.responseDefault') }}</el-tag>
+              <el-tag v-else size="small" type="warning">{{ $t('rules.responseConditional') }}</el-tag>
+              <el-button size="small" type="danger" text @click="removeResponse(idx)" style="margin-left: 8px" v-if="authStore.canWriteRule">{{ $t('rules.deleteResponse') }}</el-button>
             </div>
           </div>
 
           <el-row :gutter="10">
             <el-col :span="8">
-              <el-form-item label="响应名称" size="small">
-                <el-input v-model="resp.name" size="small" placeholder="如: 成功返回" />
+              <el-form-item :label="$t('rules.responseNameLabel')" size="small">
+                <el-input v-model="resp.name" size="small" :placeholder="$t('rules.responseNamePlaceholder')" />
               </el-form-item>
             </el-col>
             <el-col :span="4">
-              <el-form-item label="状态码" size="small">
+              <el-form-item :label="$t('rules.statusCodeLabel')" size="small">
                 <el-input-number v-model="resp.statusCode" :min="100" :max="599" size="small" />
               </el-form-item>
             </el-col>
             <el-col :span="4" v-if="isGrpcProtocol">
-              <el-form-item label="gRPC状态" size="small">
+              <el-form-item :label="$t('rules.grpcStatusLabel')" size="small">
                 <el-select v-model="resp.grpcStatus" size="small" style="width: 100%">
                   <el-option label="OK" :value="0" />
                   <el-option label="NOT_FOUND" :value="5" />
@@ -213,12 +213,12 @@
               </el-form-item>
             </el-col>
             <el-col :span="4">
-              <el-form-item label="延迟ms" size="small">
+              <el-form-item :label="$t('rules.delayMs')" size="small">
                 <el-input-number v-model="resp.delayMs" :min="0" :max="60000" size="small" />
               </el-form-item>
             </el-col>
             <el-col :span="4">
-              <el-form-item label="编码" size="small">
+              <el-form-item :label="$t('rules.encoding')" size="small">
                 <el-select v-model="resp.charset" size="small" clearable placeholder="UTF-8" style="width: 100%">
                   <el-option label="UTF-8" value="UTF-8" />
                   <el-option label="GBK" value="GBK" />
@@ -237,13 +237,13 @@
           <div class="response-condition-section">
             <el-row :gutter="10" align="middle">
               <el-col :span="4">
-                <span style="font-size: 12px; color: var(--bf-text-secondary); font-weight: 500">响应匹配条件</span>
+                <span style="font-size: 12px; color: var(--bf-text-secondary); font-weight: 500">{{ $t('rules.responseMatchCondition') }}</span>
               </el-col>
               <el-col :span="20">
-                <el-button v-if="!resp.condition" size="small" @click="addResponseCondition(resp)">+ 添加匹配条件</el-button>
-                <el-button v-else size="small" type="danger" text @click="resp.condition = null">移除条件</el-button>
+                <el-button v-if="!resp.condition" size="small" @click="addResponseCondition(resp)">{{ $t('rules.addMatchCondition') }}</el-button>
+                <el-button v-else size="small" type="danger" text @click="resp.condition = null">{{ $t('rules.removeCondition') }}</el-button>
                 <span v-if="!resp.condition" style="font-size: 12px; color: var(--bf-text-muted); margin-left: 8px">
-                  无条件时作为默认响应，当其他响应分支均不匹配时使用
+                  {{ $t('rules.defaultResponseHint') }}
                 </span>
               </el-col>
             </el-row>
@@ -252,55 +252,55 @@
                 <el-col :span="4">
                   <el-select v-model="resp.condition.type" size="small" @change="onConditionTypeChange(resp.condition)">
                     <template v-if="isMqProtocol">
-                      <el-option label="Topic" value="topic" v-if="form.protocol === 'kafka' || form.protocol === 'pulsar'" />
-                      <el-option label="消息Key" value="key" v-if="form.protocol === 'kafka'" />
-                      <el-option label="Destination" value="destination" v-if="form.protocol === 'jms'" />
-                      <el-option label="消息内容" value="body" />
-                      <el-option label="消息包含" value="bodyContains" />
-                      <el-option label="请求次数" value="requestCount" />
+                      <el-option :label="$t('rules.conditionFields.topic')" value="topic" v-if="form.protocol === 'kafka' || form.protocol === 'pulsar'" />
+                      <el-option :label="$t('rules.conditionFields.key')" value="key" v-if="form.protocol === 'kafka'" />
+                      <el-option :label="$t('rules.conditionFields.destination')" value="destination" v-if="form.protocol === 'jms'" />
+                      <el-option :label="$t('rules.conditionFields.messageContent')" value="body" />
+                      <el-option :label="$t('rules.conditionFields.messageContains')" value="bodyContains" />
+                      <el-option :label="$t('rules.conditionFields.requestCount')" value="requestCount" />
                     </template>
                     <template v-else-if="isGrpcProtocol">
-                      <el-option label="gRPC Service" value="grpcService" />
-                      <el-option label="gRPC Method" value="grpcMethod" />
-                      <el-option label="Path" value="path" />
-                      <el-option label="Metadata" value="header" />
+                      <el-option :label="$t('rules.conditionFields.grpcService')" value="grpcService" />
+                      <el-option :label="$t('rules.conditionFields.grpcMethod')" value="grpcMethod" />
+                      <el-option :label="$t('rules.conditionFields.path')" value="path" />
+                      <el-option :label="$t('rules.conditionFields.header')" value="header" />
                       <el-option label="Body(hex)" value="body" />
-                      <el-option label="Body包含" value="bodyContains" />
-                      <el-option label="请求次数" value="requestCount" />
+                      <el-option :label="$t('rules.conditionFields.bodyContains')" value="bodyContains" />
+                      <el-option :label="$t('rules.conditionFields.requestCount')" value="requestCount" />
                     </template>
                     <template v-else>
-                      <el-option label="Method" value="method" />
-                      <el-option label="Path" value="path" />
-                      <el-option label="Header" value="header" />
-                      <el-option label="Query" value="query" />
-                      <el-option label="Body" value="body" />
-                      <el-option label="Body包含" value="bodyContains" />
-                      <el-option label="JSONPath" value="bodyJsonPath" />
-                      <el-option label="请求次数" value="requestCount" />
-                      <el-option label="GraphQL OpName" value="graphqlOperationName" />
-                      <el-option label="GraphQL OpType" value="graphqlOperationType" />
+                      <el-option :label="$t('rules.conditionFields.method')" value="method" />
+                      <el-option :label="$t('rules.conditionFields.path')" value="path" />
+                      <el-option :label="$t('rules.conditionFields.header')" value="header" />
+                      <el-option :label="$t('rules.conditionFields.query')" value="query" />
+                      <el-option :label="$t('rules.conditionFields.body')" value="body" />
+                      <el-option :label="$t('rules.conditionFields.bodyContains')" value="bodyContains" />
+                      <el-option :label="$t('rules.conditionFields.bodyJsonPath')" value="bodyJsonPath" />
+                      <el-option :label="$t('rules.conditionFields.requestCount')" value="requestCount" />
+                      <el-option :label="$t('rules.conditionFields.graphqlOperationName')" value="graphqlOperationName" />
+                      <el-option :label="$t('rules.conditionFields.graphqlOperationType')" value="graphqlOperationType" />
                     </template>
                   </el-select>
                 </el-col>
                 <el-col :span="3">
                   <el-select v-model="resp.condition.operator" size="small">
-                    <el-option label="等于" value="equals" />
-                    <el-option label="包含" value="contains" />
-                    <el-option label="开头" value="startsWith" />
-                    <el-option label="结尾" value="endsWith" />
-                    <el-option label="正则" value="regex" />
-                    <el-option label="存在" value="exists" />
-                    <el-option label="大于" value="greaterThan" v-if="resp.condition.type === 'requestCount'" />
-                    <el-option label="小于" value="lessThan" v-if="resp.condition.type === 'requestCount'" />
-                    <el-option label="区间" value="range" v-if="resp.condition.type === 'requestCount'" />
-                    <el-option label="取模" value="mod" v-if="resp.condition.type === 'requestCount'" />
+                    <el-option :label="$t('rules.operators.equals')" value="equals" />
+                    <el-option :label="$t('rules.operators.contains')" value="contains" />
+                    <el-option :label="$t('rules.operators.startsWith')" value="startsWith" />
+                    <el-option :label="$t('rules.operators.endsWith')" value="endsWith" />
+                    <el-option :label="$t('rules.operators.regex')" value="regex" />
+                    <el-option :label="$t('rules.operators.exists')" value="exists" />
+                    <el-option :label="$t('rules.operators.greaterThan')" value="greaterThan" v-if="resp.condition.type === 'requestCount'" />
+                    <el-option :label="$t('rules.operators.lessThan')" value="lessThan" v-if="resp.condition.type === 'requestCount'" />
+                    <el-option :label="$t('rules.operators.range')" value="range" v-if="resp.condition.type === 'requestCount'" />
+                    <el-option :label="$t('rules.operators.mod')" value="mod" v-if="resp.condition.type === 'requestCount'" />
                   </el-select>
                 </el-col>
                 <el-col :span="4" v-if="resp.condition.type === 'header' || resp.condition.type === 'query'">
                   <el-input v-model="resp.condition.key" size="small" placeholder="Key" />
                 </el-col>
                 <el-col :span="resp.condition.type === 'header' || resp.condition.type === 'query' ? 8 : 12" v-if="resp.condition.operator !== 'exists'">
-                  <el-input v-model="resp.condition.value" size="small" :placeholder="getValuePlaceholder(resp.condition)" />
+                  <el-input v-model="resp.condition.value" size="small" :placeholder="$t(getValuePlaceholder(resp.condition))" />
                 </el-col>
               </el-row>
             </div>
@@ -310,52 +310,52 @@
           <div class="response-headers-section">
             <el-row :gutter="10" align="middle">
               <el-col :span="4">
-                <span style="font-size: 12px; color: var(--bf-text-secondary); font-weight: 500">响应头</span>
+                <span style="font-size: 12px; color: var(--bf-text-secondary); font-weight: 500">{{ $t('rules.responseHeaders') }}</span>
               </el-col>
               <el-col :span="20">
-                <el-button size="small" @click="addResponseHeader(resp)">+ 添加响应头</el-button>
+                <el-button size="small" @click="addResponseHeader(resp)">{{ $t('rules.addHeader') }}</el-button>
               </el-col>
             </el-row>
             <div v-for="(h, hIdx) in getResponseHeaders(resp)" :key="'h-' + hIdx" style="margin-top: 6px">
               <el-row :gutter="10">
                 <el-col :span="6">
-                  <el-input v-model="h.key" size="small" placeholder="Header名称" />
+                  <el-input v-model="h.key" size="small" :placeholder="$t('rules.headerName')" />
                 </el-col>
                 <el-col :span="10">
-                  <el-input v-model="h.value" size="small" placeholder="Header值 (支持模板变量)" />
+                  <el-input v-model="h.value" size="small" :placeholder="$t('rules.headerValue')" />
                 </el-col>
                 <el-col :span="4">
-                  <el-button size="small" type="danger" text @click="removeResponseHeader(resp, hIdx)">删除</el-button>
+                  <el-button size="small" type="danger" text @click="removeResponseHeader(resp, hIdx)">{{ $t('rules.deleteHeader') }}</el-button>
                 </el-col>
               </el-row>
             </div>
           </div>
 
           <!-- Response Body -->
-          <el-form-item label="响应体" size="small">
+          <el-form-item :label="$t('rules.responseBody')" size="small">
             <el-input v-model="resp.body" type="textarea" :rows="6" :placeholder="bodyPlaceholder" />
             <div style="font-size: 12px; color: var(--bf-text-muted); margin-top: 4px" v-html="templateVarHint"></div>
             <!-- Faker Quick Insert -->
             <div v-if="showFakerRef" class="faker-ref-panel">
-              <div class="faker-ref-title">动态数据函数 — 点击插入</div>
+              <div class="faker-ref-title">{{ $t('rules.templates.hint') }}</div>
               <div class="faker-ref-group">
-                <div class="faker-ref-label">个人信息</div>
+                <div class="faker-ref-label">{{ $t('rules.templates.personal') }}</div>
                 <el-tag v-for="fn in fakerGroups.personal" :key="fn" size="small" class="faker-tag" @click="insertFakerVar(resp, fn)" v-text="'{{' + fn + '}}'"></el-tag>
               </div>
               <div class="faker-ref-group">
-                <div class="faker-ref-label">地址</div>
+                <div class="faker-ref-label">{{ $t('rules.templates.address') }}</div>
                 <el-tag v-for="fn in fakerGroups.address" :key="fn" size="small" class="faker-tag" @click="insertFakerVar(resp, fn)" v-text="'{{' + fn + '}}'"></el-tag>
               </div>
               <div class="faker-ref-group">
-                <div class="faker-ref-label">公司/网络</div>
+                <div class="faker-ref-label">{{ $t('rules.templates.company') }}</div>
                 <el-tag v-for="fn in fakerGroups.network" :key="fn" size="small" class="faker-tag" @click="insertFakerVar(resp, fn)" v-text="'{{' + fn + '}}'"></el-tag>
               </div>
               <div class="faker-ref-group">
-                <div class="faker-ref-label">数字/时间</div>
+                <div class="faker-ref-label">{{ $t('rules.templates.number') }}</div>
                 <el-tag v-for="fn in fakerGroups.numeric" :key="fn" size="small" class="faker-tag" @click="insertFakerVar(resp, fn)" v-text="'{{' + fn + '}}'"></el-tag>
               </div>
               <div class="faker-ref-group">
-                <div class="faker-ref-label">其他</div>
+                <div class="faker-ref-label">{{ $t('rules.templates.other') }}</div>
                 <el-tag v-for="fn in fakerGroups.misc" :key="fn" size="small" class="faker-tag" @click="insertFakerVar(resp, fn)" v-text="'{{' + fn + '}}'"></el-tag>
               </div>
             </div>
@@ -363,52 +363,52 @@
         </div>
 
         <!-- Fault Injection -->
-        <el-divider content-position="left">故障注入
+        <el-divider content-position="left">{{ $t('rules.faultInjection') }}
           <el-switch v-model="form.faultInjectionEnabled" size="small" v-if="authStore.canWriteRule" />
         </el-divider>
         <div v-if="form.faultInjectionEnabled" class="fault-injection-panel">
           <div style="font-size: 12px; color: var(--bf-text-muted); margin-bottom: 8px">
-            按 declaration 顺序评估，首个 probability 命中的 fault 生效；全部未命中则走正常响应
+            {{ $t('rules.faultHint') }}
           </div>
           <div v-for="(fault, fIdx) in form.faults" :key="'fault-' + fIdx" class="fault-card">
             <el-row :gutter="10" align="middle">
               <el-col :span="5">
-                <el-select v-model="fault.type" size="small" placeholder="故障类型">
-                  <el-option label="HTTP 错误" value="HTTP_ERROR" />
-                  <el-option label="延迟" value="DELAY" />
-                  <el-option label="连接重置" value="CONNECTION_RESET" />
-                  <el-option label="读超时" value="READ_TIMEOUT" />
+                <el-select v-model="fault.type" size="small" :placeholder="$t('rules.faultType')">
+                  <el-option :label="$t('rules.faultTypes.HTTP_ERROR')" value="HTTP_ERROR" />
+                  <el-option :label="$t('rules.faultTypes.DELAY')" value="DELAY" />
+                  <el-option :label="$t('rules.faultTypes.CONNECTION_RESET')" value="CONNECTION_RESET" />
+                  <el-option :label="$t('rules.faultTypes.READ_TIMEOUT')" value="READ_TIMEOUT" />
                 </el-select>
               </el-col>
               <el-col :span="4">
-                <el-input-number v-model="fault.probability" :min="0" :max="1" :step="0.1" :precision="2" size="small" placeholder="概率" />
-                <div style="font-size: 11px; color: var(--bf-text-muted)">概率 (0-1)</div>
+                <el-input-number v-model="fault.probability" :min="0" :max="1" :step="0.1" :precision="2" size="small" :placeholder="$t('rules.probability')" />
+                <div style="font-size: 11px; color: var(--bf-text-muted)">{{ $t('rules.probabilityHint') }}</div>
               </el-col>
               <el-col :span="6" v-if="fault.type === 'HTTP_ERROR'">
-                <el-input v-model="fault.statusCodesStr" size="small" placeholder="如: 503,504" />
-                <div style="font-size: 11px; color: var(--bf-text-muted)">状态码列表（逗号分隔，等概率分配）</div>
+                <el-input v-model="fault.statusCodesStr" size="small" :placeholder="$t('rules.statusCodeList')" />
+                <div style="font-size: 11px; color: var(--bf-text-muted)">{{ $t('rules.statusCodeList') }}</div>
               </el-col>
               <el-col :span="6" v-if="fault.type === 'DELAY'">
                 <el-input-number v-model="fault.delayMs" :min="0" :max="60000" size="small" />
-                <div style="font-size: 11px; color: var(--bf-text-muted)">延迟毫秒</div>
+                <div style="font-size: 11px; color: var(--bf-text-muted)">{{ $t('rules.delayMsHint') }}</div>
               </el-col>
               <el-col :span="6" v-if="fault.type === 'CONNECTION_RESET' || fault.type === 'READ_TIMEOUT'">
                 <span style="font-size: 12px; color: var(--bf-text-muted)">
-                  {{ fault.type === 'CONNECTION_RESET' ? '响应前关闭连接 (RST)' : '收到请求后不响应，等待客户端超时' }}
+                  {{ fault.type === 'CONNECTION_RESET' ? $t('rules.faultConnectionReset') : $t('rules.faultReadTimeout') }}
                 </span>
               </el-col>
               <el-col :span="4" style="text-align: right">
-                <el-button size="small" type="danger" text @click="removeFault(fIdx)" v-if="authStore.canWriteRule">删除</el-button>
+                <el-button size="small" type="danger" text @click="removeFault(fIdx)" v-if="authStore.canWriteRule">{{ $t('rules.deleteFault') }}</el-button>
               </el-col>
             </el-row>
           </div>
-          <el-button size="small" @click="addFault" v-if="authStore.canWriteRule" style="margin-top: 8px">+ 添加故障</el-button>
+          <el-button size="small" @click="addFault" v-if="authStore.canWriteRule" style="margin-top: 8px">{{ $t('rules.addFault') }}</el-button>
         </div>
 
         <div style="margin-top: 24px; text-align: right">
-          <el-button @click="$router.back()">取消</el-button>
-          <el-button type="primary" @click="saveRule" :loading="saving" v-if="authStore.canWriteRule">保存规则</el-button>
-          <span v-if="!authStore.canWriteRule" style="color: var(--bf-text-muted); font-size: 14px; margin-left: 12px">当前角色无编辑权限</span>
+          <el-button @click="$router.back()">{{ $t('rules.cancel') }}</el-button>
+          <el-button type="primary" @click="saveRule" :loading="saving" v-if="authStore.canWriteRule">{{ $t('rules.saveRule') }}</el-button>
+          <span v-if="!authStore.canWriteRule" style="color: var(--bf-text-muted); font-size: 14px; margin-left: 12px">{{ $t('rules.noPermission') }}</span>
         </div>
       </el-form>
     </el-card>
@@ -418,6 +418,7 @@
 <script>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useRulesStore, useAuthStore } from '@/store'
 import { ElMessage } from 'element-plus'
 import api from '@/api'
@@ -429,6 +430,7 @@ export default {
     const router = useRouter()
     const rulesStore = useRulesStore()
     const authStore = useAuthStore()
+    const { t } = useI18n()
     const rule = ref(null)
     const loading = ref(false)
     const saving = ref(false)
@@ -463,7 +465,7 @@ export default {
       return inheritedEnvs.value.includes(val) ? 'warning' : ''
     }
 
-    const templateVarHint = '支持模板变量: <code>{{request.body.xxx}}</code> <code>{{request.header.xxx}}</code> <code>{{request.query.xxx}}</code> <code>{{request.path}}</code><br/>动态数据: <code>{{faker.phone}}</code> <code>{{faker.email}}</code> <code>{{faker.name}}</code> <code>{{faker.address}}</code> <code>{{faker.idCard}}</code> <code>{{faker.uuid}}</code> <code>{{faker.int.1.100}}</code> <a href="javascript:void(0)" onclick="document.dispatchEvent(new CustomEvent(\'toggle-faker-ref\'))" style="color:var(--bf-accent)">更多函数...</a>'
+    const templateVarHint = t('rules.templates.hint')
 
     // Listen for toggle-faker-ref event from v-html link
     if (typeof document !== 'undefined') {
@@ -484,7 +486,7 @@ export default {
 
     onMounted(async () => {
       if (isNew.value) {
-        form.responses.push({ name: '默认', statusCode: 200, delayMs: 0, body: '', headers: {}, condition: null })
+        form.responses.push({ name: `${t('rules.responseDefault')}`, statusCode: 200, delayMs: 0, body: '', headers: {}, condition: null })
         loading.value = false
         return
       }
@@ -522,7 +524,7 @@ export default {
           form.faults = []
         }
         if (form.responses.length === 0) {
-          form.responses.push({ name: '默认', statusCode: 200, delayMs: 0, body: '', headers: {}, condition: null })
+          form.responses.push({ name: `${t('rules.responseDefault')}`, statusCode: 200, delayMs: 0, body: '', headers: {}, condition: null })
         }
         const res = await api.getInheritedEnvironments(id)
         if (res.success && res.data) {
@@ -561,27 +563,27 @@ export default {
     }
 
     function getValuePlaceholder(cond) {
-      if (!cond) return '值'
+      if (!cond) return 'rules.value'
       switch (cond.type) {
-        case 'method': return '如: GET, POST'
-        case 'path': return '如: /api/users'
-        case 'header': return 'Header值'
-        case 'query': return '参数值'
-        case 'body': return '请求体内容'
-        case 'bodyContains': return '包含的文本'
-        case 'bodyJsonPath': return '如: $.user.id'
-        case 'topic': return '如: baafoo-test-topic'
-        case 'key': return '如: message-key'
-        case 'destination': return '如: BAAFOO.TEST.QUEUE'
-        case 'grpcService': return '如: helloworld.Greeter'
-        case 'grpcMethod': return '如: SayHello'
+        case 'method': return 'rules.methodPlaceholder'
+        case 'path': return 'rules.pathPlaceholder'
+        case 'header': return 'rules.headerPlaceholder'
+        case 'query': return 'rules.queryPlaceholder'
+        case 'body': return 'rules.bodyPlaceholder'
+        case 'bodyContains': return 'rules.bodyContainsPlaceholder'
+        case 'bodyJsonPath': return 'rules.bodyJsonPathPlaceholder'
+        case 'topic': return 'rules.topicPlaceholder'
+        case 'key': return 'rules.keyPlaceholder'
+        case 'destination': return 'rules.destinationPlaceholder'
+        case 'grpcService': return 'rules.grpcServicePlaceholder'
+        case 'grpcMethod': return 'rules.grpcMethodPlaceholder'
         case 'requestCount':
-          if (cond.operator === 'range') return '如: 1,3 (第1到3次)'
-          if (cond.operator === 'mod') return '如: 3,0 (每3次,余0触发)'
-          return '如: 3'
-        case 'graphqlOperationName': return '如: GetUser'
-        case 'graphqlOperationType': return '如: query / mutation / subscription'
-        default: return '值'
+          if (cond.operator === 'range') return 'rules.requestCountRangeHint'
+          if (cond.operator === 'mod') return 'rules.requestCountModHint'
+          return 'rules.requestCountSingleHint'
+        case 'graphqlOperationName': return 'rules.graphqlOpNamePlaceholder'
+        case 'graphqlOperationType': return 'rules.graphqlOpTypePlaceholder'
+        default: return 'rules.value'
       }
     }
 
@@ -610,12 +612,12 @@ export default {
       try {
         const res = await api.resetRuleState(route.params.id)
         if (res.success) {
-          ElMessage.success('请求计数器已重置')
+          ElMessage.success(t('rules.stateResetSuccess'))
         } else {
-          ElMessage.error(res.message || '重置失败')
+          ElMessage.error(res.message || t('rules.stateResetFailed'))
         }
       } catch (e) {
-        ElMessage.error('重置失败: ' + (e.message || e))
+        ElMessage.error(t('rules.stateResetFailed') + ': ' + (e.message || e))
       }
     }
 

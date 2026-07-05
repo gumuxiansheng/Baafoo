@@ -1,57 +1,57 @@
-<template>
+﻿<template>
   <div class="env-detail-page">
     <div class="page-header">
-      <el-button text @click="$router.back()"><el-icon><ArrowLeft /></el-icon> 返回</el-button>
-      <h2>{{ env ? env.name : '加载中...' }}</h2>
+      <el-button text @click="$router.back()"><el-icon><ArrowLeft /></el-icon> {{ $t('environments.back') }}</el-button>
+      <h2>{{ env ? env.name : $t('environments.loading') }}</h2>
     </div>
 
     <el-card shadow="never" style="margin-top: 16px" v-if="env" v-loading="loading">
       <el-descriptions :column="2" border size="small">
-        <el-descriptions-item label="环境ID">{{ env.id }}</el-descriptions-item>
-        <el-descriptions-item label="名称">{{ env.name }}</el-descriptions-item>
-        <el-descriptions-item label="当前模式">
+        <el-descriptions-item :label="$t('environments.envId')">{{ env.id }}</el-descriptions-item>
+        <el-descriptions-item :label="$t('environments.name')">{{ env.name }}</el-descriptions-item>
+        <el-descriptions-item :label="$t('environments.currentMode')">
           <el-tag :type="modeTagType(env.mode) || undefined" effect="dark">{{ modeDisplayName(env.mode) }}</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="创建时间">{{ formatTime(env.createdAt) }}</el-descriptions-item>
+        <el-descriptions-item :label="$t('environments.createdAt')">{{ formatTime(env.createdAt) }}</el-descriptions-item>
       </el-descriptions>
 
-      <h3 style="margin-top: 24px">模式切换</h3>
+      <h3 style="margin-top: 24px">{{ $t('environments.modeSwitch') }}</h3>
       <el-radio-group v-model="selectedMode" @change="switchMode" style="margin-top: 12px" v-if="authStore.canWriteEnvironment">
         <el-radio-button value="STUB">Stub</el-radio-button>
         <el-radio-button value="PASSTHROUGH">Passthrough</el-radio-button>
         <el-radio-button value="RECORD">Record</el-radio-button>
         <el-radio-button value="RECORD_AND_STUB">Record+Stub</el-radio-button>
       </el-radio-group>
-      <span v-else style="color: var(--bf-text-muted); font-size: 14px; margin-top: 12px; display: inline-block">当前模式: {{ env ? modeDisplayName(env.mode) : '' }}（无切换权限）</span>
+      <span v-else style="color: var(--bf-text-muted); font-size: 14px; margin-top: 12px; display: inline-block">{{ $t('environments.noSwitchPermission', { 0: env ? modeDisplayName(env.mode) : '' }) }}</span>
 
-      <h3 style="margin-top: 24px">关联 Agents ({{ (env.agentIds || []).length }})</h3>
-      <el-table :data="env.agentIds || []" size="small" style="margin-top: 12px" empty-text="暂无 Agent">
+      <h3 style="margin-top: 24px">{{ $t('environments.associatedAgents', { 0: (env.agentIds || []).length }) }}</h3>
+      <el-table :data="env.agentIds || []" size="small" style="margin-top: 12px" :empty-text="$t('environments.noAgent')">
         <el-table-column label="Agent ID" min-width="200">
           <template #default="{ row }">{{ row }}</template>
         </el-table-column>
       </el-table>
 
-      <h3 style="margin-top: 24px">环境变量
+      <h3 style="margin-top: 24px">{{ $t('environments.envVariables') }}
         <el-button size="small" text @click="showEditVariables" v-if="authStore.canWriteEnvironment" style="margin-left: 8px">
-          <el-icon><Edit /></el-icon> 编辑
+          <el-icon><Edit /></el-icon> {{ $t('environments.edit') }}
         </el-button>
       </h3>
-      <el-table :data="variableList" size="small" style="margin-top: 12px" empty-text="无变量">
-        <el-table-column prop="key" label="变量名" />
-        <el-table-column prop="value" label="值" />
+      <el-table :data="variableList" size="small" style="margin-top: 12px" :empty-text="$t('environments.noVariables')">
+        <el-table-column prop="key" :label="$t('environments.variableName')" />
+        <el-table-column prop="value" :label="$t('environments.value')" />
       </el-table>
     </el-card>
 
-    <el-dialog v-model="editVariablesVisible" title="编辑环境变量" width="600px">
+    <el-dialog v-model="editVariablesVisible" :title="$t('environments.editVariables')" width="600px">
       <el-table :data="editVariables" size="small" border>
-        <el-table-column label="变量名" min-width="200">
+        <el-table-column :label="$t('environments.variableName')" min-width="200">
           <template #default="{ row }">
-            <el-input v-model="row.key" placeholder="变量名" />
+            <el-input v-model="row.key" :placeholder="$t('environments.variableName')" />
           </template>
         </el-table-column>
-        <el-table-column label="值" min-width="200">
+        <el-table-column :label="$t('environments.value')" min-width="200">
           <template #default="{ row }">
-            <el-input v-model="row.value" placeholder="值" />
+            <el-input v-model="row.value" :placeholder="$t('environments.value')" />
           </template>
         </el-table-column>
         <el-table-column width="60" align="center">
@@ -63,11 +63,11 @@
         </el-table-column>
       </el-table>
       <el-button size="small" type="primary" plain @click="addVariable" style="margin-top: 8px">
-        <el-icon><Plus /></el-icon> 新增变量
+        <el-icon><Plus /></el-icon> {{ $t('environments.addVariable') }}
       </el-button>
       <template #footer>
-        <el-button @click="editVariablesVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveVariables" :loading="savingVariables">保存</el-button>
+        <el-button @click="editVariablesVisible = false">{{ $t('environments.cancel') }}</el-button>
+        <el-button type="primary" @click="saveVariables" :loading="savingVariables">{{ $t('environments.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -76,6 +76,7 @@
 <script>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/store'
 import api from '@/api'
 import { ElMessage } from 'element-plus'
@@ -85,6 +86,7 @@ export default {
   setup() {
     const route = useRoute()
     const authStore = useAuthStore()
+    const { t } = useI18n()
     const env = ref(null)
     const loading = ref(true)
     const selectedMode = ref('')
@@ -151,12 +153,12 @@ export default {
         if (res.success) {
           env.value.variables = variables
           editVariablesVisible.value = false
-          ElMessage.success('环境变量保存成功')
+          ElMessage.success(t('environments.varSaveSuccess'))
         } else {
-          ElMessage.error(res.message || '保存失败')
+          ElMessage.error(res.message || t('environments.varSaveFailed'))
         }
       } catch (e) {
-        ElMessage.error('保存失败: ' + (e.message || '未知错误'))
+        ElMessage.error(t('environments.varSaveFailed') + ': ' + (e.message || t('common.unknownError')))
       } finally {
         savingVariables.value = false
       }

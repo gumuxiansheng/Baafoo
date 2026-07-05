@@ -1,29 +1,29 @@
 <template>
   <div class="logs-page">
-    <h2>请求日志</h2>
+    <h2>{{ $t('logs.title') }}</h2>
     <el-card shadow="never" style="margin-top: 16px" v-loading="loading">
-      <el-table :data="logs" stripe size="small" max-height="500" empty-text="暂无日志记录">
-        <el-table-column prop="ruleName" label="规则" width="140" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.ruleName || (row.ruleId ? row.ruleId : '未匹配') }}</template>
+      <el-table :data="logs" stripe size="small" max-height="500" :empty-text="$t('logs.noData')">
+        <el-table-column prop="ruleName" :label="$t('logs.rule')" width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.ruleName || (row.ruleId ? row.ruleId : $t('logs.unmatched')) }}</template>
         </el-table-column>
         <el-table-column prop="agentId" label="Agent ID" width="140" show-overflow-tooltip />
         <el-table-column prop="agentIp" label="Agent IP" width="140" show-overflow-tooltip />
-        <el-table-column prop="protocol" label="协议" width="105">
+        <el-table-column prop="protocol" :label="$t('logs.protocol')" width="105">
           <template #default="{ row }"><el-tag size="small">{{ (row.protocol || '').toUpperCase() }}</el-tag></template>
         </el-table-column>
-        <el-table-column prop="method" label="方法" width="80">
+        <el-table-column prop="method" :label="$t('logs.method')" width="80">
           <template #default="{ row }">
             <template v-if="isMqProtocol(row.protocol)">
-              <el-tag v-if="row.direction" size="small" :type="directionType(row.direction)">{{ directionLabel(row.direction) }}</el-tag>
+              <el-tag v-if="row.direction" size="small" :type="directionType(row.direction)">{{ $t(directionLabel(row.direction)) }}</el-tag>
               <el-tag v-else size="small" type="info">{{ row.method }}</el-tag>
             </template>
             <el-tag v-else size="small" type="info">{{ row.method }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="path" label="路径" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="responseStatusCode" label="状态码" width="80" align="center" />
-        <el-table-column prop="responseTimeMs" label="耗时(ms)" width="90" align="center" />
-        <el-table-column prop="recordedAt" label="时间" width="180">
+        <el-table-column prop="path" :label="$t('logs.path')" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="responseStatusCode" :label="$t('logs.statusCode')" width="80" align="center" />
+        <el-table-column prop="responseTimeMs" :label="$t('logs.latencyMs')" width="90" align="center" />
+        <el-table-column prop="recordedAt" :label="$t('logs.time')" width="180">
           <template #default="{ row }">{{ formatTime(row.recordedAt) }}</template>
         </el-table-column>
       </el-table>
@@ -45,11 +45,13 @@
 
 <script>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import api from '@/api'
 
 export default {
   name: 'LogsPage',
   setup() {
+    const { t } = useI18n()
     const logs = ref([])
     const loading = ref(false)
     const currentPage = ref(1)
@@ -85,8 +87,8 @@ export default {
     }
 
     const directionLabel = (d) => {
-      if (d === 'produce' || d === 'request') return '发送'
-      if (d === 'consume' || d === 'response') return '接收'
+      if (d === 'produce' || d === 'request') return 'logs.send'
+      if (d === 'consume' || d === 'response') return 'logs.receive'
       return d
     }
     const directionType = (d) => {

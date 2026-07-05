@@ -6,21 +6,22 @@
         <div class="header-left">
           <BaafooLogo class="logo-icon" />
           <span class="logo">Baafoo</span>
-          <el-tag size="small" type="info" effect="plain">v1.0</el-tag>
+          <el-tag size="small" type="info" effect="plain">{{ $t('app.version') }}</el-tag>
         </div>
         <div class="header-right">
           <span class="header-badge">
             <span class="connection-dot" :class="statusConnected ? 'success' : 'danger'"></span>
-            {{ statusConnected ? '已连接' : '已断开' }}
+            {{ statusConnected ? $t('app.connected') : $t('app.disconnected') }}
           </span>
           <template v-if="authStore.isLoggedIn">
+            <LocaleSwitcher />
             <span class="header-badge badge-role">{{ roleLabel }}</span>
             <span class="user-name">{{ authStore.username }}</span>
-            <el-button class="btn-header-logout" text size="small" @click="handleLogout">退出</el-button>
+            <el-button class="btn-header-logout" text size="small" @click="handleLogout">{{ $t('app.logout') }}</el-button>
           </template>
           <template v-else>
-            <span class="header-badge badge-guest">游客</span>
-            <el-button class="btn-header-login" text size="small" @click="$router.push('/login')">登录</el-button>
+            <span class="header-badge badge-guest">{{ $t('app.guest') }}</span>
+            <el-button class="btn-header-login" text size="small" @click="$router.push('/login')">{{ $t('app.login') }}</el-button>
           </template>
         </div>
       </el-header>
@@ -36,35 +37,35 @@
           >
             <el-menu-item index="/dashboard">
               <el-icon><DataBoard /></el-icon>
-              <span>仪表盘</span>
+              <span>{{ $t('nav.dashboard') }}</span>
             </el-menu-item>
             <el-menu-item index="/rules">
               <el-icon><List /></el-icon>
-              <span>规则管理</span>
+              <span>{{ $t('nav.rules') }}</span>
             </el-menu-item>
             <el-menu-item index="/scenes">
               <el-icon><Collection /></el-icon>
-              <span>场景集</span>
+              <span>{{ $t('nav.scenes') }}</span>
             </el-menu-item>
             <el-menu-item index="/logs">
               <el-icon><Document /></el-icon>
-              <span>请求日志</span>
+              <span>{{ $t('nav.logs') }}</span>
             </el-menu-item>
             <el-menu-item index="/recordings">
               <el-icon><VideoCamera /></el-icon>
-              <span>录制管理</span>
+              <span>{{ $t('nav.recordings') }}</span>
             </el-menu-item>
             <el-menu-item index="/environments">
               <el-icon><Setting /></el-icon>
-              <span>环境管理</span>
+              <span>{{ $t('nav.environments') }}</span>
             </el-menu-item>
             <el-menu-item v-if="authStore.canManageUsers" index="/users">
               <el-icon><User /></el-icon>
-              <span>用户管理</span>
+              <span>{{ $t('nav.users') }}</span>
             </el-menu-item>
             <el-menu-item index="/status">
               <el-icon><Monitor /></el-icon>
-              <span>系统状态</span>
+              <span>{{ $t('nav.status') }}</span>
             </el-menu-item>
           </el-menu>
         </el-aside>
@@ -77,7 +78,7 @@
 
       <!-- Status Bar -->
       <el-footer height="24px" class="baafoo-footer">
-        <span>规则: {{ ruleCount }} | 环境: {{ envCount }} | Agents: {{ agentCount }}</span>
+        <span>{{ $t('footer.rules') }}: {{ ruleCount }} | {{ $t('footer.environments') }}: {{ envCount }} | {{ $t('footer.agents') }}: {{ agentCount }}</span>
         <span class="footer-right">Baafoo v1.0.0</span>
       </el-footer>
     </el-container>
@@ -88,14 +89,17 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStatusStore, useAuthStore } from '@/store'
+import { useI18n } from 'vue-i18n'
 import BaafooLogo from '@/components/BaafooLogo.vue'
+import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 
 export default {
   name: 'App',
-  components: { BaafooLogo },
+  components: { BaafooLogo, LocaleSwitcher },
   setup() {
     const route = useRoute()
     const router = useRouter()
+    const { t } = useI18n()
     const statusStore = useStatusStore()
     const authStore = useAuthStore()
     const statusConnected = ref(true)
@@ -107,7 +111,7 @@ export default {
     const agentCount = computed(() => statusStore.status?.agents ?? 0)
 
     const roleLabel = computed(() => {
-      const map = { admin: '管理员', developer: '开发', tester: '测试', guest: '游客' }
+      const map = { admin: t('roles.admin'), developer: t('roles.developer'), tester: t('roles.tester'), guest: t('roles.guest') }
       return map[authStore.role] || authStore.role
     })
 
@@ -160,7 +164,7 @@ export default {
 
     return {
       activeMenu, statusConnected, ruleCount, envCount, agentCount,
-      authStore, roleLabel, handleLogout
+      authStore, roleLabel, handleLogout, t
     }
   }
 }
