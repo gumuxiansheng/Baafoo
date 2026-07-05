@@ -28,12 +28,7 @@ http.interceptors.response.use(
     }
     if (!error.response) {
       console.error('Network Error: backend server may not be running')
-      // Try to use i18n if available, with English fallback
-      let msg = 'Unable to connect to server. Please verify that the backend service is running.'
-      try {
-        const { i18n } = require('@/main')
-        if (i18n) msg = i18n.global.t('notConnected')
-      } catch (_) {}
+      const msg = 'Unable to connect to server. Please verify that the backend service is running.'
       return { success: false, code: 0, message: msg, data: null }
     }
     const msg = error.response?.data?.message || error.message
@@ -75,7 +70,7 @@ export default {
   undoRule: (id) => http.post(`/rules/${id}/undo`),
   getInheritedEnvironments: (id) => http.get(`/rules/${id}/inherited-environments`),
 
-  // OpenAPI Import (R-S10 / R-W8)
+  // OpenAPI Import
   importOpenApi: (jsonContent, { environment, save, prefix } = {}) => {
     const params = new URLSearchParams()
     if (environment) params.set('environment', environment)
@@ -87,7 +82,7 @@ export default {
     })
   },
 
-  // Stateful Mock — counter reset (R-S2 AC-13 AC-04)
+  // Stateful Mock — counter reset
   resetRuleState: (id) => http.post(`/rules/${id}/reset-state`),
   resetAllRuleState: () => http.post('/rules/reset-all-state'),
 
@@ -134,7 +129,7 @@ export default {
   // --- Status ---
   getStatus: () => http.get('/status'),
 
-  // --- Chaos Engineering (R-S13) ---
+  // --- Chaos Engineering ---
   chaosActivate: (profileName) => http.post('/chaos/profiles/activate', { profileName }),
   chaosDeactivate: (profileName) => http.post('/chaos/profiles/deactivate', { profileName }),
   chaosStatus: () => http.get('/chaos/profiles/status'),

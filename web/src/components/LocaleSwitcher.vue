@@ -19,18 +19,27 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, getCurrentInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { locale } = useI18n()
+const instance = getCurrentInstance()
 
 const currentLocale = computed(() => locale.value)
 const currentLabel = computed(() => locale.value === 'zh-CN' ? '中文' : 'EN')
 
 function switchLocale(lang) {
+  if (lang === locale.value) return
   locale.value = lang
   localStorage.setItem('baafoo_locale', lang)
-  // Reload to apply Element Plus locale change
+
+  // Update Element Plus locale via the global config
+  const elLocales = instance?.appContext?.config?.globalProperties?.$elLocales
+  if (elLocales && elLocales[lang] && instance?.appContext?.config?.globalProperties?.$ELEMENT) {
+    instance.appContext.config.globalProperties.$ELEMENT.locale = elLocales[lang]
+  }
+
+  // Reload to ensure all components pick up the new locale cleanly
   window.location.reload()
 }
 </script>

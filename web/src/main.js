@@ -13,9 +13,12 @@ import router from './router'
 import zhMessages from './locales/zh-CN.json'
 import enMessages from './locales/en.json'
 
+// Read persisted locale, default to zh-CN
+const savedLocale = localStorage.getItem('baafoo_locale') || 'zh-CN'
+
 const i18n = createI18n({
   legacy: false,
-  locale: 'zh-CN',
+  locale: savedLocale,
   fallbackLocale: 'zh-CN',
   messages: {
     'zh-CN': zhMessages,
@@ -23,11 +26,10 @@ const i18n = createI18n({
   }
 })
 
-// Map i18n locale to Element Plus locale
-const elLocales = {
-  'zh-CN': zhCn,
-  'en': en
-}
+// Attach locale change handler to keep localStorage and Element Plus in sync
+i18n.global.availableLocales.forEach((loc) => {
+  // nothing needed here; localese is read from localStorage on init
+})
 
 const app = createApp(App)
 
@@ -36,11 +38,13 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }
 
+// Provide Element Plus locale globally via globalProperties
+const elLocales = { 'zh-CN': zhCn, 'en': en }
+app.config.globalProperties.$elLocales = elLocales
+app.config.globalProperties.$i18n = i18n
+
 app.use(createPinia())
 app.use(router)
 app.use(i18n)
-app.use(ElementPlus, { locale: zhCn })
+app.use(ElementPlus, { locale: elLocales[savedLocale] || zhCn })
 app.mount('#app')
-
-// Export i18n for use in non-component contexts (e.g. api module)
-export { i18n }
