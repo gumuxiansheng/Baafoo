@@ -17,7 +17,7 @@ master:
         - name: test-server
           script: ./mvnw test -pl baafoo-server -am -DskipTests=false -Dnpm.skip=true
         - name: test-all
-          script: ./mvnw test -Dnpm.skip=true
+          script: ./mvnw verify -Dnpm.skip=true
         - name: package
           script: ./mvnw clean package -DskipTests -Dnpm.skip=true
       endStages:
@@ -148,3 +148,8 @@ $:
       stages:
         - name: log-deletion
           script: echo "Branch $CNB_BRANCH deleted"
+reports:
+  jacoco:
+    - target/site/jacoco-aggregate/jacoco.xml
+artifacts:
+  - target/site/jacoco-aggregate/**/*
