@@ -37,6 +37,7 @@ public class DdlBuilder {
             addColumnIfMissing(stmt, "recordings", "session_id", "VARCHAR(36)");
             addColumnIfMissing(stmt, "recordings", "data_hex", dialect == DatabaseDialect.POSTGRESQL ? "TEXT" : "CLOB");
             addColumnIfMissing(stmt, "recordings", "duration_ms", "BIGINT");
+            addColumnIfMissing(stmt, "recordings", "response_source", "VARCHAR(20)");
             alterRecordingsPathToVarchar(stmt);
             createAgentsTable(stmt);
             addColumnIfMissing(stmt, "agents", "agent_ip", "VARCHAR(45)");

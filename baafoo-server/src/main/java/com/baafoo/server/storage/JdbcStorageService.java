@@ -790,6 +790,7 @@ public class JdbcStorageService implements StorageService {
             if (env != null && !env.getAgentIds().contains(agentId)) {
                 env.getAgentIds().add(agentId);
                 session.getMapper(EnvironmentMapper.class).updateEnvironment(env);
+                invalidateEnvironmentsCache();
             }
         } catch (Exception e) {
             log.warn("Failed to update environment agent list: {}", e.getMessage());

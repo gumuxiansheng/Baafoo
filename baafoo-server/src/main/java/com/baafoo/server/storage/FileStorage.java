@@ -238,7 +238,9 @@ public class FileStorage {
     // --- Environment CRUD ---
 
     public List<Environment> listEnvironments() {
-        return new ArrayList<Environment>(environments.values());
+        List<Environment> list = new ArrayList<Environment>(environments.values());
+        list.sort((a, b) -> Long.compare(a.getCreatedAt(), b.getCreatedAt()));
+        return list;
     }
 
     public Environment getEnvironment(String id) {
@@ -306,7 +308,9 @@ public class FileStorage {
     // --- Scene Set CRUD ---
 
     public List<SceneSet> listScenes() {
-        return new ArrayList<SceneSet>(scenes.values());
+        List<SceneSet> list = new ArrayList<SceneSet>(scenes.values());
+        list.sort((a, b) -> Long.compare(a.getCreatedAt(), b.getCreatedAt()));
+        return list;
     }
 
     public SceneSet createScene(SceneSet scene) {
@@ -359,7 +363,9 @@ public class FileStorage {
     // --- Rule Set CRUD ---
 
     public List<RuleSet> listRuleSets() {
-        return new ArrayList<RuleSet>(ruleSets.values());
+        List<RuleSet> list = new ArrayList<RuleSet>(ruleSets.values());
+        list.sort((a, b) -> Long.compare(a.getCreatedAt(), b.getCreatedAt()));
+        return list;
     }
 
     public RuleSet createRuleSet(RuleSet ruleSet) {
@@ -585,7 +591,9 @@ public class FileStorage {
     }
 
     public List<AgentRegistration> listAgents() {
-        return new ArrayList<AgentRegistration>(agents.values());
+        List<AgentRegistration> list = new ArrayList<AgentRegistration>(agents.values());
+        list.sort((a, b) -> Long.compare(a.registeredAt, b.registeredAt));
+        return list;
     }
 
     public List<AgentRegistration> getAgentsForEnvironment(String envName) {

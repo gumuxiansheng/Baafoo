@@ -1,4 +1,4 @@
-﻿{
+{
   "app": {
     "title": "Baafoo",
     "subtitle": "Mock Service Console",
@@ -126,7 +126,9 @@
       "address": "Address",
       "company": "Company/Web",
       "number": "Number/Time",
-      "other": "Other"
+      "other": "Other",
+      "expand": "Expand Faker templates",
+      "collapse": "Collapse Faker templates"
     },
     "faultInjection": "Fault Injection",
     "faultHint": "Evaluated in declaration order; the first fault whose probability hits takes effect. If none hit, normal response is served.",
@@ -301,7 +303,29 @@
     "responseTitle": "Response ({0})",
     "unmatched": "Unmatched",
     "send": "Send",
-    "receive": "Receive"
+    "receive": "Receive",
+    "detailRequest": "Request",
+    "detailResponse": "Response",
+    "requestHeaders": "Request Headers",
+    "requestBody": "Request Body",
+    "responseHeaders": "Response Headers",
+    "responseBody": "Response Body",
+    "host": "Host",
+    "grpcService": "gRPC Service",
+    "grpcMethod": "gRPC Method",
+    "grpcStatus": "gRPC Status",
+    "grpcContentType": "gRPC Content-Type",
+    "topic": "Topic",
+    "destination": "Destination",
+    "direction": "Direction",
+    "rawData": "Raw Data",
+    "noHeaders": "No headers",
+    "noBody": "No body",
+    "produce": "Produce",
+    "consume": "Consume",
+    "sourceStub": "Stubbed",
+    "sourcePassthrough": "Real Response",
+    "sourceError": "Passthrough Error"
   },
   "logs": {
     "title": "Request Logs",

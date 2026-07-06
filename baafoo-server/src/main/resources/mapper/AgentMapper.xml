@@ -46,11 +46,11 @@
     </update>
 
     <select id="listAgents" resultMap="agentResultMap">
-        SELECT * FROM agents
+        SELECT * FROM agents ORDER BY registered_at ASC
     </select>
 
     <select id="getAgentsForEnvironment" resultMap="agentResultMap">
-        SELECT * FROM agents WHERE environment = #{environment}
+        SELECT * FROM agents WHERE environment = #{environment} ORDER BY registered_at ASC
     </select>
 
 </mapper>

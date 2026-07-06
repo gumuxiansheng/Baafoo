@@ -19,7 +19,7 @@
     </resultMap>
 
     <select id="listMqRelationships" resultMap="mqRelationshipResultMap">
-        SELECT * FROM mq_relationships
+        SELECT * FROM mq_relationships ORDER BY created_at ASC
     </select>
 
     <select id="listMqRelationshipsByFrom" resultMap="mqRelationshipResultMap">

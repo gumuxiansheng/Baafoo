@@ -22,7 +22,7 @@
     </resultMap>
 
     <select id="listScenes" resultMap="sceneSetResultMap">
-        SELECT * FROM scene_sets
+        SELECT * FROM scene_sets ORDER BY created_at ASC
     </select>
 
     <select id="getScene" resultMap="sceneSetResultMap">

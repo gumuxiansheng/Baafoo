@@ -204,7 +204,7 @@
 
     <!-- List rule sets -->
     <select id="listRuleSets" resultMap="ruleSetResultMap">
-        SELECT * FROM rule_sets
+        SELECT * FROM rule_sets ORDER BY created_at ASC
     </select>
 
     <!-- Create rule set -->

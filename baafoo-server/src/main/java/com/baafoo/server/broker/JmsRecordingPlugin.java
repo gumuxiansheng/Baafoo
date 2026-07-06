@@ -164,6 +164,7 @@ public class JmsRecordingPlugin implements ActiveMQServerPlugin {
             rec.setRequestHeaders(Collections.<String, String>emptyMap());
             rec.setResponseHeaders(Collections.<String, String>emptyMap());
             rec.setDirection(direction);
+            rec.setResponseSource("STUB");
             if (info != null) {
                 rec.setEnvironmentId(info.environment);
                 rec.setAgentId(info.agentId);

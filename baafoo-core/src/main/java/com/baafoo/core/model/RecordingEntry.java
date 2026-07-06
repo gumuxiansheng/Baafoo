@@ -102,6 +102,17 @@ public class RecordingEntry {
     /** gRPC content type (e.g., "application/grpc", "application/grpc+proto") */
     private String grpcContentType;
 
+    /**
+     * Source of the recorded response.
+     * <ul>
+     *   <li>{@code "STUB"} —挡板 mock 返回</li>
+     *   <li>{@code "PASSTHROUGH"} — 透传真实下游返回</li>
+     *   <li>{@code "ERROR"} — 透传失败/错误</li>
+     * </ul>
+     * Null for legacy recordings created before this field was added.
+     */
+    private String responseSource;
+
     public RecordingEntry() {
         this.requestHeaders = Collections.emptyMap();
         this.responseHeaders = Collections.emptyMap();
@@ -197,6 +208,9 @@ public class RecordingEntry {
     public String getGrpcContentType() { return grpcContentType; }
     public void setGrpcContentType(String grpcContentType) { this.grpcContentType = grpcContentType; }
 
+    public String getResponseSource() { return responseSource; }
+    public void setResponseSource(String responseSource) { this.responseSource = responseSource; }
+
     @Override
     public String toString() {
         return "RecordingEntry{" +
@@ -208,6 +222,7 @@ public class RecordingEntry {
                 ", grpcService='" + grpcService + '\'' +
                 ", grpcMethod='" + grpcMethod + '\'' +
                 ", grpcStatus=" + grpcStatus +
+                ", responseSource='" + responseSource + '\'' +
                 ", direction='" + direction + '\'' +
                 ", sessionId='" + sessionId + '\'' +
                 '}';

@@ -105,27 +105,162 @@
     </el-card>
 
     <!-- Detail Dialog -->
-    <el-dialog v-model="detailVisible" :title="$t('recordings.detailTitle')" width="700px">
-      <div v-if="currentRecording">
+    <el-dialog v-model="detailVisible" :title="$t('recordings.detailTitle')" width="760px" class="recording-detail-dialog">
+      <div v-if="currentRecording" class="detail-body">
         <div class="detail-meta">
-          <span v-if="currentRecording.ruleName || currentRecording.ruleId">{{ $t('recordings.rule') }}: {{ currentRecording.ruleName || currentRecording.ruleId }}</span>
-          <span v-if="currentRecording.direction">{{ $t('recordings.method') }}: {{ $t(directionLabel(currentRecording.direction)) }}</span>
-          <span v-if="currentRecording.agentId">Agent: {{ currentRecording.agentId }}</span>
-          <span v-if="currentRecording.agentIp">Agent IP: {{ currentRecording.agentIp }}</span>
-          <span v-if="currentRecording.host">Target: {{ currentRecording.host }}<span v-if="currentRecording.port">:{{ currentRecording.port }}</span></span>
+          <el-tag size="large" effect="dark" class="protocol-tag" :type="protocolTagType">{{ protocolLabel }}</el-tag>
+          <el-tag v-if="responseSourceLabel" size="small" effect="plain" :type="responseSourceTagType" class="source-tag">{{ $t(responseSourceLabel) }}</el-tag>
+          <span class="meta-id">ID: {{ currentRecording.id }}</span>
+          <span class="meta-time">{{ formatTime(currentRecording.recordedAt) }}</span>
         </div>
-        <el-input :model-value="formatHeaders(currentRecording.requestHeaders)" type="textarea" :rows="3" readonly />
-        <el-input :model-value="currentRecording.requestBody" type="textarea" :rows="6" readonly style="margin-top: 8px" />
-        <h4 style="margin-top: 16px">{{ $t('recordings.responseTitle', { 0: currentRecording.responseStatusCode }) }}</h4>
-        <el-input :model-value="formatHeaders(currentRecording.responseHeaders)" type="textarea" :rows="3" readonly />
-        <el-input :model-value="currentRecording.responseBody" type="textarea" :rows="10" readonly style="margin-top: 8px" />
+
+        <el-descriptions :column="2" size="small" border class="meta-desc">
+          <el-descriptions-item v-if="currentRecording.ruleName || currentRecording.ruleId" :label="$t('recordings.rule')">
+            {{ currentRecording.ruleName || currentRecording.ruleId }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="currentRecording.agentId" label="Agent ID">{{ currentRecording.agentId }}</el-descriptions-item>
+          <el-descriptions-item v-if="currentRecording.agentIp" label="Agent IP">{{ currentRecording.agentIp }}</el-descriptions-item>
+          <el-descriptions-item v-if="currentRecording.host" :label="$t('recordings.host')">
+            {{ currentRecording.host }}<span v-if="currentRecording.port">:{{ currentRecording.port }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="currentRecording.serviceName" :label="$t('rules.serviceName')">{{ currentRecording.serviceName }}</el-descriptions-item>
+        </el-descriptions>
+
+        <!-- HTTP/HTTPS -->
+        <template v-if="isHttpProtocol(currentRecording.protocol)">
+          <div class="detail-section">
+            <div class="section-header">
+              <span class="section-title">{{ $t('recordings.detailRequest') }}</span>
+              <el-tag size="small" type="info">{{ currentRecording.method }}</el-tag>
+              <span v-if="currentRecording.path" class="section-sub">{{ currentRecording.path }}</span>
+            </div>
+            <div v-if="hasRequestHeaders" class="readonly-field">
+              <div class="field-label">{{ $t('recordings.requestHeaders') }}</div>
+              <pre class="readonly-pre">{{ formatHeaders(currentRecording.requestHeaders) }}</pre>
+            </div>
+            <div v-else class="empty-field">{{ $t('recordings.noHeaders') }}</div>
+            <div v-if="currentRecording.requestBody" class="readonly-field">
+              <div class="field-label">{{ $t('recordings.requestBody') }}</div>
+              <pre class="readonly-pre">{{ currentRecording.requestBody }}</pre>
+            </div>
+            <div v-else class="empty-field">{{ $t('recordings.noBody') }}</div>
+          </div>
+          <div class="detail-section">
+            <div class="section-header">
+              <span class="section-title">{{ $t('recordings.detailResponse') }}</span>
+              <el-tag size="small" :type="statusTagType">{{ currentRecording.responseStatusCode }}</el-tag>
+            </div>
+            <div v-if="hasResponseHeaders" class="readonly-field">
+              <div class="field-label">{{ $t('recordings.responseHeaders') }}</div>
+              <pre class="readonly-pre">{{ formatHeaders(currentRecording.responseHeaders) }}</pre>
+            </div>
+            <div v-else class="empty-field">{{ $t('recordings.noHeaders') }}</div>
+            <div v-if="currentRecording.responseBody" class="readonly-field">
+              <div class="field-label">{{ $t('recordings.responseBody') }}</div>
+              <pre class="readonly-pre">{{ currentRecording.responseBody }}</pre>
+            </div>
+            <div v-else class="empty-field">{{ $t('recordings.noBody') }}</div>
+          </div>
+        </template>
+
+        <!-- gRPC -->
+        <template v-else-if="isGrpcProtocol(currentRecording.protocol)">
+          <div class="detail-section">
+            <div class="section-header">
+              <span class="section-title">{{ $t('recordings.detailRequest') }}</span>
+              <span v-if="currentRecording.path" class="section-sub">{{ currentRecording.path }}</span>
+            </div>
+            <el-descriptions :column="2" size="small" border class="meta-desc">
+              <el-descriptions-item v-if="currentRecording.grpcService" :label="$t('recordings.grpcService')">{{ currentRecording.grpcService }}</el-descriptions-item>
+              <el-descriptions-item v-if="currentRecording.grpcMethod" :label="$t('recordings.grpcMethod')">{{ currentRecording.grpcMethod }}</el-descriptions-item>
+              <el-descriptions-item v-if="currentRecording.grpcContentType" :label="$t('recordings.grpcContentType')">{{ currentRecording.grpcContentType }}</el-descriptions-item>
+            </el-descriptions>
+            <div v-if="currentRecording.requestBody" class="readonly-field">
+              <div class="field-label">{{ $t('recordings.requestBody') }}</div>
+              <pre class="readonly-pre">{{ currentRecording.requestBody }}</pre>
+            </div>
+            <div v-else class="empty-field">{{ $t('recordings.noBody') }}</div>
+          </div>
+          <div class="detail-section">
+            <div class="section-header">
+              <span class="section-title">{{ $t('recordings.detailResponse') }}</span>
+              <el-tag size="small" :type="statusTagType">{{ $t('recordings.grpcStatus') }} {{ currentRecording.grpcStatus }}</el-tag>
+            </div>
+            <div v-if="currentRecording.responseBody" class="readonly-field">
+              <div class="field-label">{{ $t('recordings.responseBody') }}</div>
+              <pre class="readonly-pre">{{ currentRecording.responseBody }}</pre>
+            </div>
+            <div v-else class="empty-field">{{ $t('recordings.noBody') }}</div>
+          </div>
+        </template>
+
+        <!-- TCP / UDP -->
+        <template v-else-if="isTcpUdpProtocol(currentRecording.protocol)">
+          <div class="detail-section">
+            <div class="section-header">
+              <span class="section-title">{{ directionLabel(currentRecording.direction) }}</span>
+              <el-tag size="small" :type="directionType(currentRecording.direction)">{{ $t(directionLabel(currentRecording.direction)) }}</el-tag>
+            </div>
+            <div v-if="currentRecording.host" class="readonly-field">
+              <div class="field-label">{{ $t('recordings.host') }}</div>
+              <pre class="readonly-pre">{{ currentRecording.host }}<span v-if="currentRecording.port">:{{ currentRecording.port }}</span></pre>
+            </div>
+            <div v-if="currentRecording.dataHex" class="readonly-field">
+              <div class="field-label">{{ $t('recordings.rawData') }}</div>
+              <pre class="readonly-pre raw-hex">{{ currentRecording.dataHex }}</pre>
+            </div>
+            <div v-else-if="currentRecording.requestBody" class="readonly-field">
+              <div class="field-label">{{ $t('recordings.requestBody') }}</div>
+              <pre class="readonly-pre">{{ currentRecording.requestBody }}</pre>
+            </div>
+            <div v-else class="empty-field">{{ $t('recordings.noBody') }}</div>
+          </div>
+        </template>
+
+        <!-- MQ: Kafka / Pulsar / JMS -->
+        <template v-else-if="isMqProtocol(currentRecording.protocol)">
+          <div class="detail-section">
+            <div class="section-header">
+              <span class="section-title">{{ $t('recordings.direction') }}</span>
+              <el-tag size="small" :type="directionType(currentRecording.direction)">{{ $t(directionLabel(currentRecording.direction)) }}</el-tag>
+            </div>
+            <div class="readonly-field">
+              <div class="field-label">{{ isJmsProtocol(currentRecording.protocol) ? $t('recordings.destination') : $t('recordings.topic') }}</div>
+              <pre class="readonly-pre">{{ currentRecording.path || '-' }}</pre>
+            </div>
+            <div v-if="currentRecording.requestBody" class="readonly-field">
+              <div class="field-label">{{ isJmsProtocol(currentRecording.protocol) ? $t('recordings.requestBody') : $t('recordings.produce') + ' Body' }}</div>
+              <pre class="readonly-pre">{{ currentRecording.requestBody }}</pre>
+            </div>
+            <div v-if="currentRecording.responseBody" class="readonly-field">
+              <div class="field-label">{{ isJmsProtocol(currentRecording.protocol) ? $t('recordings.responseBody') : $t('recordings.consume') + ' Body' }}</div>
+              <pre class="readonly-pre">{{ currentRecording.responseBody }}</pre>
+            </div>
+            <div v-if="!currentRecording.requestBody && !currentRecording.responseBody" class="empty-field">{{ $t('recordings.noBody') }}</div>
+          </div>
+        </template>
+
+        <!-- Unknown fallback -->
+        <template v-else>
+          <div class="detail-section">
+            <div v-if="currentRecording.requestBody" class="readonly-field">
+              <div class="field-label">{{ $t('recordings.requestBody') }}</div>
+              <pre class="readonly-pre">{{ currentRecording.requestBody }}</pre>
+            </div>
+            <div v-if="currentRecording.responseBody" class="readonly-field">
+              <div class="field-label">{{ $t('recordings.responseBody') }}</div>
+              <pre class="readonly-pre">{{ currentRecording.responseBody }}</pre>
+            </div>
+            <div v-if="!currentRecording.requestBody && !currentRecording.responseBody" class="empty-field">{{ $t('recordings.noBody') }}</div>
+          </div>
+        </template>
       </div>
     </el-dialog>
   </div>
 </template>
 
 <script>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/store'
 import api from '@/api'
@@ -223,9 +358,27 @@ export default {
 
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
 
+    const isHttpProtocol = (protocol) => {
+      const p = (protocol || '').toLowerCase()
+      return p === 'http' || p === 'https'
+    }
+
+    const isGrpcProtocol = (protocol) => {
+      return (protocol || '').toLowerCase() === 'grpc'
+    }
+
+    const isTcpUdpProtocol = (protocol) => {
+      const p = (protocol || '').toLowerCase()
+      return p === 'tcp' || p === 'udp'
+    }
+
+    const isJmsProtocol = (protocol) => {
+      return (protocol || '').toLowerCase() === 'jms'
+    }
+
     const isMqProtocol = (protocol) => {
-      const mqProtocols = ['kafka', 'pulsar', 'jms', 'tcp', 'udp', 'grpc', 'dubbo']
-      return mqProtocols.includes((protocol || '').toLowerCase())
+      const p = (protocol || '').toLowerCase()
+      return p === 'kafka' || p === 'pulsar' || p === 'jms'
     }
 
     const directionLabel = (d) => {
@@ -239,12 +392,67 @@ export default {
       return 'info'
     }
 
+    const protocolLabel = computed(() => {
+      const p = (currentRecording.value?.protocol || '').toUpperCase()
+      return p || 'UNKNOWN'
+    })
+
+    const protocolTagType = computed(() => {
+      const p = (currentRecording.value?.protocol || '').toLowerCase()
+      if (p === 'http' || p === 'https') return 'success'
+      if (p === 'grpc') return 'warning'
+      if (p === 'kafka' || p === 'pulsar' || p === 'jms') return 'danger'
+      if (p === 'tcp' || p === 'udp') return 'info'
+      return ''
+    })
+
+    const statusTagType = computed(() => {
+      const code = currentRecording.value?.responseStatusCode || 0
+      const status = currentRecording.value?.grpcStatus
+      const effective = code || status || 0
+      if (effective >= 200 && effective < 300) return 'success'
+      if (effective >= 300 && effective < 400) return 'warning'
+      if (effective >= 400) return 'danger'
+      return 'info'
+    })
+
+    const hasRequestHeaders = computed(() => {
+      const h = currentRecording.value?.requestHeaders
+      return h && Object.keys(h).length > 0
+    })
+
+    const hasResponseHeaders = computed(() => {
+      const h = currentRecording.value?.responseHeaders
+      return h && Object.keys(h).length > 0
+    })
+
+    const responseSourceLabel = computed(() => {
+      const s = currentRecording.value?.responseSource
+      if (!s) return ''
+      const map = { STUB: 'recordings.sourceStub', PASSTHROUGH: 'recordings.sourcePassthrough', ERROR: 'recordings.sourceError' }
+      return map[s] || ''
+    })
+
+    const responseSourceTagType = computed(() => {
+      const s = currentRecording.value?.responseSource
+      if (s === 'STUB') return 'warning'
+      if (s === 'PASSTHROUGH') return 'success'
+      if (s === 'ERROR') return 'danger'
+      return 'info'
+    })
+
     onMounted(loadRecordings)
     return {
       recordings, loading, detailVisible, currentRecording,
       currentPage, pageSize, total, searchParams,
       loadRecordings, onSearch, onReset, onPageChange, onSizeChange,
-      viewDetail, deleteItem, formatHeaders, formatTime, isMqProtocol, directionLabel, directionType, authStore
+      viewDetail, deleteItem, formatHeaders, formatTime,
+      isHttpProtocol, isGrpcProtocol, isTcpUdpProtocol, isMqProtocol, isJmsProtocol,
+      directionLabel, directionType,
+      protocolLabel, protocolTagType, statusTagType,
+      hasRequestHeaders, hasResponseHeaders,
+      responseSourceLabel, responseSourceTagType,
+      authStore
     }
   }
 }
@@ -262,7 +470,25 @@ h4 { margin: 8px 0; color: var(--bf-text-secondary); }
 :deep(.el-pagination .btn-prev) { font-size: 12px; min-width: 24px; height: 24px; line-height: 24px; }
 :deep(.el-pagination .btn-next) { font-size: 12px; min-width: 24px; height: 24px; line-height: 24px; }
 :deep(.el-pagination .el-pager li) { font-size: 12px; min-width: 24px; height: 24px; line-height: 24px; }
-.detail-meta { margin-bottom: 8px; font-size: 13px; color: var(--bf-text-muted); }
-.detail-meta span { margin-right: 16px; }
+.detail-meta { margin-bottom: 12px; font-size: 13px; color: var(--bf-text-muted); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.detail-meta .protocol-tag { font-weight: 600; text-transform: uppercase; }
+.detail-meta .source-tag { font-weight: 600; }
+.detail-meta .meta-id { font-family: monospace; }
+.detail-meta .meta-time { margin-left: auto; }
+.meta-desc { margin-bottom: 16px; }
+.detail-section { background: var(--bf-bg-secondary); border: 1px solid var(--bf-border); border-radius: var(--bf-radius); padding: 12px; margin-bottom: 12px; }
+.detail-section:last-child { margin-bottom: 0; }
+.section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-weight: 600; color: var(--bf-text-primary); }
+.section-title { font-size: 15px; }
+.section-sub { color: var(--bf-text-secondary); font-weight: 400; font-size: 13px; }
+.readonly-field { margin-bottom: 12px; }
+.readonly-field:last-child { margin-bottom: 0; }
+.field-label { font-size: 12px; color: var(--bf-text-secondary); margin-bottom: 4px; }
+.readonly-pre { margin: 0; padding: 8px 12px; background: var(--bf-bg); border: 1px solid var(--bf-border); border-radius: var(--bf-radius); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; color: var(--bf-text-primary); white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; }
+.readonly-pre.raw-hex { word-break: break-all; }
+.empty-field { padding: 8px 12px; background: var(--bf-bg); border: 1px dashed var(--bf-border); border-radius: var(--bf-radius); color: var(--bf-text-muted); font-size: 12px; text-align: center; margin-bottom: 12px; }
+.empty-field:last-child { margin-bottom: 0; }
+:deep(.recording-detail-dialog .el-dialog__body) { padding-top: 8px; }
+:deep(.el-descriptions__label) { width: 110px; }
 :deep(.el-form--inline .el-form-item) { margin-right: 12px; margin-bottom: 8px; }
 </style>

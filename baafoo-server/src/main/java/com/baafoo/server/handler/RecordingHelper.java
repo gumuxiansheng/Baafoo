@@ -44,6 +44,7 @@ public final class RecordingHelper {
         }
         rec.setResponseTimeMs(0);
         rec.setDirection("request");
+        rec.setResponseSource("STUB");
         return rec;
     }
 
@@ -71,6 +72,7 @@ public final class RecordingHelper {
         recording.setAgentId(agentId);
         recording.setAgentIp(agentIp);
         recording.setDirection("request");
+        recording.setResponseSource("PASSTHROUGH");
         return recording;
     }
 
@@ -96,6 +98,7 @@ public final class RecordingHelper {
         recording.setAgentId(agentId);
         recording.setAgentIp(agentIp);
         recording.setDirection("request");
+        recording.setResponseSource("ERROR");
         return recording;
     }
 }

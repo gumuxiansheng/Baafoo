@@ -22,7 +22,7 @@
     </resultMap>
 
     <select id="listEnvironments" resultMap="environmentResultMap">
-        SELECT * FROM environments
+        SELECT * FROM environments ORDER BY created_at ASC
     </select>
 
     <select id="getEnvironment" resultMap="environmentResultMap">

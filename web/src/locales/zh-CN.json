@@ -1,4 +1,4 @@
-﻿{
+{
   "app": {
     "title": "Baafoo",
     "subtitle": "挡板系统控制台",
@@ -126,7 +126,9 @@
       "address": "地址",
       "company": "公司/网络",
       "number": "数字/时间",
-      "other": "其他"
+      "other": "其他",
+      "expand": "展开 Faker 模板",
+      "collapse": "收起 Faker 模板"
     },
     "faultInjection": "故障注入",
     "faultHint": "按 declaration 顺序评估，首个 probability 命中的 fault 生效；全部未命中则走正常响应",
@@ -301,7 +303,29 @@
     "responseTitle": "响应 ({0})",
     "unmatched": "未匹配",
     "send": "发送",
-    "receive": "接收"
+    "receive": "接收",
+    "detailRequest": "请求",
+    "detailResponse": "响应",
+    "requestHeaders": "请求头",
+    "requestBody": "请求体",
+    "responseHeaders": "响应头",
+    "responseBody": "响应体",
+    "host": "主机",
+    "grpcService": "gRPC Service",
+    "grpcMethod": "gRPC Method",
+    "grpcStatus": "gRPC 状态",
+    "grpcContentType": "gRPC Content-Type",
+    "topic": "Topic",
+    "destination": "Destination",
+    "direction": "方向",
+    "rawData": "原始数据",
+    "noHeaders": "无头信息",
+    "noBody": "无内容",
+    "produce": "生产",
+    "consume": "消费",
+    "sourceStub": "挡板返回",
+    "sourcePassthrough": "真实返回",
+    "sourceError": "透传失败"
   },
   "logs": {
     "title": "请求日志",

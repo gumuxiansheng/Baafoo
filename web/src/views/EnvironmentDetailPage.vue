@@ -17,17 +17,21 @@
 
       <h3 style="margin-top: 24px">{{ $t('environments.modeSwitch') }}</h3>
       <el-radio-group v-model="selectedMode" @change="switchMode" style="margin-top: 12px" v-if="authStore.canWriteEnvironment">
-        <el-radio-button value="STUB">Stub</el-radio-button>
-        <el-radio-button value="PASSTHROUGH">Passthrough</el-radio-button>
-        <el-radio-button value="RECORD">Record</el-radio-button>
-        <el-radio-button value="RECORD_AND_STUB">Record+Stub</el-radio-button>
+        <el-radio-button value="stub">Stub</el-radio-button>
+        <el-radio-button value="passthrough">Passthrough</el-radio-button>
+        <el-radio-button value="record">Record</el-radio-button>
+        <el-radio-button value="record-and-stub">Record+Stub</el-radio-button>
+        <el-radio-button value="record-all">Record All</el-radio-button>
       </el-radio-group>
       <span v-else style="color: var(--bf-text-muted); font-size: 14px; margin-top: 12px; display: inline-block">{{ $t('environments.noSwitchPermission', { 0: env ? modeDisplayName(env.mode) : '' }) }}</span>
 
       <h3 style="margin-top: 24px">{{ $t('environments.associatedAgents', { 0: (env.agentIds || []).length }) }}</h3>
-      <el-table :data="env.agentIds || []" size="small" style="margin-top: 12px" :empty-text="$t('environments.noAgent')">
-        <el-table-column label="Agent ID" min-width="200">
-          <template #default="{ row }">{{ row }}</template>
+      <el-table :data="agentRows" size="small" style="margin-top: 12px" :empty-text="$t('environments.noAgent')">
+        <el-table-column prop="agentId" label="Agent ID" min-width="200" />
+        <el-table-column prop="environment" :label="$t('environments.name')" width="150" />
+        <el-table-column prop="hostname" label="Hostname" min-width="150" />
+        <el-table-column :label="$t('environments.createdAt')" width="180">
+          <template #default="{ row }">{{ formatTime(row.registeredAt) }}</template>
         </el-table-column>
       </el-table>
 
@@ -99,6 +103,15 @@ export default {
       return Object.entries(env.value.variables).map(([key, value]) => ({ key, value }))
     })
 
+    const agents = ref([])
+    const agentRows = computed(() => {
+      const ids = env.value?.agentIds || []
+      return ids.map(id => {
+        const found = agents.value.find(a => a.agentId === id)
+        return found || { agentId: id, environment: env.value?.name || '', hostname: '-', registeredAt: null }
+      })
+    })
+
     onMounted(async () => {
       const res = await api.getEnvironment(route.params.id)
       if (res.success) {
@@ -106,6 +119,11 @@ export default {
         selectedMode.value = res.data.mode
       }
       loading.value = false
+      // Load agent details for richer display
+      try {
+        const agentRes = await api.getAgents()
+        if (agentRes.success) agents.value = agentRes.data || []
+      } catch { /* ignore */ }
     })
 
     async function switchMode(mode) {
@@ -114,12 +132,12 @@ export default {
     }
 
     function modeTagType(mode) {
-      const map = { stub: '', passthrough: 'info', record: 'warning', 'record-and-stub': 'success' }
+      const map = { 'stub': '', 'passthrough': 'info', 'record': 'warning', 'record-and-stub': 'success', 'record-all': 'danger' }
       return map[mode] || ''
     }
 
     function modeDisplayName(mode) {
-      const map = { stub: 'Stub', passthrough: 'Passthrough', record: 'Record', 'record-and-stub': 'Record+Stub' }
+      const map = { 'stub': 'Stub', 'passthrough': 'Passthrough', 'record': 'Record', 'record-and-stub': 'Record+Stub', 'record-all': 'Record All' }
       return map[mode] || mode
     }
 
@@ -165,7 +183,7 @@ export default {
     }
 
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
-    return { env, loading, selectedMode, variableList, switchMode, modeTagType, modeDisplayName, formatTime, authStore,
+    return { env, loading, selectedMode, variableList, agentRows, switchMode, modeTagType, modeDisplayName, formatTime, authStore,
              editVariablesVisible, editVariables, savingVariables, showEditVariables, addVariable, removeVariable, saveVariables }
   }
 }

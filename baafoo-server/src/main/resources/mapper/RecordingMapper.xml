@@ -33,6 +33,7 @@
         <result property="sessionId" column="session_id"/>
         <result property="dataHex" column="data_hex"/>
         <result property="durationMs" column="duration_ms"/>
+        <result property="responseSource" column="response_source"/>
     </resultMap>
 
     <sql id="searchConditions">
@@ -100,7 +101,7 @@
         INSERT INTO recordings (id, rule_id, environment_id, agent_id, agent_ip, protocol,
             host, port, service_name, method, path, request_headers_json, request_body,
             response_status_code, response_headers_json, response_body, response_time_ms,
-            recorded_at, tags_json, direction, session_id, data_hex, duration_ms)
+            recorded_at, tags_json, direction, session_id, data_hex, duration_ms, response_source)
         VALUES (#{id}, #{ruleId}, #{environmentId}, #{agentId}, #{agentIp}, #{protocol},
             #{host}, #{port}, #{serviceName}, #{method}, #{path},
             #{requestHeaders, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
@@ -109,7 +110,7 @@
             #{responseHeaders, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
             #{responseBody}, #{responseTimeMs}, #{recordedAt},
             #{tags, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
-            #{direction}, #{sessionId}, #{dataHex}, #{durationMs})
+            #{direction}, #{sessionId}, #{dataHex}, #{durationMs}, #{responseSource})
     </insert>
 
     <!-- Trim recordings - H2 dialect -->

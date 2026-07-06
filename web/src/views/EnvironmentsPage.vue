@@ -39,6 +39,7 @@
                   <el-dropdown-item command="passthrough" :disabled="row.mode === 'passthrough'">{{ $t('environments.modes.passthrough') }}</el-dropdown-item>
                   <el-dropdown-item command="record" :disabled="row.mode === 'record'">{{ $t('environments.modes.record') }}</el-dropdown-item>
                   <el-dropdown-item command="record-and-stub" :disabled="row.mode === 'record-and-stub'">Record+Stub</el-dropdown-item>
+                  <el-dropdown-item command="record-all" :disabled="row.mode === 'record-all'">{{ $t('environments.modes.recordAll') }}</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -63,6 +64,7 @@
             <el-option :label="$t('environments.modes.passthrough')" value="passthrough" />
             <el-option :label="$t('environments.modes.record')" value="record" />
             <el-option label="Record+Stub" value="record-and-stub" />
+            <el-option :label="$t('environments.modes.recordAll')" value="record-all" />
           </el-select>
         </el-form-item>
         <el-form-item :label="$t('environments.envVariables')">
@@ -171,12 +173,12 @@ export default {
     }
 
     function modeTagType(mode) {
-      const map = { 'stub': '', 'passthrough': 'info', 'record': 'warning', 'record-and-stub': 'success' }
+      const map = { 'stub': '', 'passthrough': 'info', 'record': 'warning', 'record-and-stub': 'success', 'record-all': 'danger' }
       return map[mode] || ''
     }
 
     function modeLabel(row) {
-      const map = { 'stub': 'Stub', 'passthrough': 'Passthrough', 'record': 'Record', 'record-and-stub': 'Record+Stub' }
+      const map = { 'stub': 'Stub', 'passthrough': 'Passthrough', 'record': 'Record', 'record-and-stub': 'Record+Stub', 'record-all': 'Record All' }
       return map[row.mode] || row.mode
     }
 
