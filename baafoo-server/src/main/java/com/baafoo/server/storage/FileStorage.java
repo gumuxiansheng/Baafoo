@@ -265,6 +265,13 @@ public class FileStorage {
             env.setCreatedAt(now);
             env.setUpdatedAt(now);
 
+            // Backfill agentIds from already-registered agents for this environment
+            for (AgentRegistration a : agents.values()) {
+                if (env.getName().equals(a.environment) && !env.getAgentIds().contains(a.agentId)) {
+                    env.getAgentIds().add(a.agentId);
+                }
+            }
+
             environments.put(env.getId(), env);
             saveEnvironments();
             return env;

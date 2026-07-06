@@ -107,7 +107,8 @@ export default {
     const agentRows = computed(() => {
       const envName = env.value?.name
       if (!envName) return []
-      return agents.value.filter(a => a.environment === envName)
+      const ids = new Set(env.value?.agentIds || [])
+      return agents.value.filter(a => a.environment === envName || ids.has(a.agentId))
     })
 
     onMounted(async () => {
@@ -121,7 +122,7 @@ export default {
       try {
         const agentRes = await api.getAgents()
         if (agentRes.success) agents.value = agentRes.data || []
-      } catch { /* ignore */ }
+      } catch (e) { console.error('Failed to load agents:', e) }
     })
 
     async function switchMode(mode) {

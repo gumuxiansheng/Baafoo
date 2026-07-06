@@ -465,6 +465,16 @@ public class JdbcStorageService implements StorageService {
 
         try (SqlSession session = openSession()) {
             session.getMapper(EnvironmentMapper.class).createEnvironment(env);
+            // Backfill agentIds from already-registered agents for this environment
+            List<AgentRegistration> existingAgents = session.getMapper(AgentMapper.class).getAgentsForEnvironment(env.getName());
+            if (existingAgents != null && !existingAgents.isEmpty()) {
+                for (AgentRegistration a : existingAgents) {
+                    if (!env.getAgentIds().contains(a.agentId)) {
+                        env.getAgentIds().add(a.agentId);
+                    }
+                }
+                session.getMapper(EnvironmentMapper.class).updateEnvironment(env);
+            }
             invalidateEnvironmentsCache();
             return env;
         } catch (Exception e) {

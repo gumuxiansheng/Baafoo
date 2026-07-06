@@ -18,7 +18,7 @@
           </template>
         </el-table-column>
         <el-table-column label="Agents" width="80" align="center">
-          <template #default="{ row }">{{ getAgentCountForEnv(row.name) }}</template>
+          <template #default="{ row }">{{ getAgentCountForEnv(row) }}</template>
         </el-table-column>
         <el-table-column :label="$t('environments.associatedRules')" width="100" align="center">
           <template #default="{ row }">
@@ -146,8 +146,9 @@ export default {
       if (res.success) allAgents.value = res.data || []
     }
 
-    function getAgentCountForEnv(envName) {
-      return allAgents.value.filter(a => a.environment === envName).length
+    function getAgentCountForEnv(env) {
+      const ids = new Set(env.agentIds || [])
+      return allAgents.value.filter(a => a.environment === env.name || ids.has(a.agentId)).length
     }
 
     function getRuleCountForEnv(envName) {
