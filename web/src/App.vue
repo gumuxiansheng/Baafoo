@@ -13,8 +13,8 @@
             <span class="connection-dot" :class="statusConnected ? 'success' : 'danger'"></span>
             {{ statusConnected ? $t('app.connected') : $t('app.disconnected') }}
           </span>
+          <LocaleSwitcher />
           <template v-if="authStore.isLoggedIn">
-            <LocaleSwitcher />
             <span class="header-badge badge-role">{{ roleLabel }}</span>
             <span class="user-name">{{ authStore.username }}</span>
             <el-button class="btn-header-logout" text size="small" @click="handleLogout">{{ $t('app.logout') }}</el-button>
