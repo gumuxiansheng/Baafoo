@@ -18,7 +18,7 @@
           </template>
         </el-table-column>
         <el-table-column label="Agents" width="80" align="center">
-          <template #default="{ row }">{{ (row.agentIds || []).length }}</template>
+          <template #default="{ row }">{{ getAgentCountForEnv(row.name) }}</template>
         </el-table-column>
         <el-table-column :label="$t('environments.associatedRules')" width="100" align="center">
           <template #default="{ row }">
@@ -120,6 +120,7 @@ export default {
     const authStore = useAuthStore()
     const environments = ref([])
     const allRules = ref([])
+    const allAgents = ref([])
     const loading = ref(false)
     const saving = ref(false)
     const dialogVisible = ref(false)
@@ -138,6 +139,15 @@ export default {
     async function loadRules() {
       const res = await api.getRules()
       if (res.success) allRules.value = res.data
+    }
+
+    async function loadAgents() {
+      const res = await api.getAgents()
+      if (res.success) allAgents.value = res.data || []
+    }
+
+    function getAgentCountForEnv(envName) {
+      return allAgents.value.filter(a => a.environment === envName).length
     }
 
     function getRuleCountForEnv(envName) {
@@ -229,8 +239,8 @@ export default {
 
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
 
-    onMounted(() => { loadEnvs(); loadRules() })
-    return { environments, allRules, loading, saving, dialogVisible, associateVisible, currentEnv, selectedRuleIds, form, showCreateDialog, createEnv, addCreateVariable, removeCreateVariable, changeMode, viewDetail, deleteEnv, modeTagType, modeLabel, formatTime, getRuleCountForEnv, showAssociateDialog, saveAssociation, authStore }
+    onMounted(() => { loadEnvs(); loadRules(); loadAgents() })
+    return { environments, allRules, allAgents, loading, saving, dialogVisible, associateVisible, currentEnv, selectedRuleIds, form, showCreateDialog, createEnv, addCreateVariable, removeCreateVariable, changeMode, viewDetail, deleteEnv, modeTagType, modeLabel, formatTime, getRuleCountForEnv, getAgentCountForEnv, showAssociateDialog, saveAssociation, authStore }
   }
 }
 </script>
