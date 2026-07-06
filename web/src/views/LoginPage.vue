@@ -41,6 +41,9 @@
         </el-form-item>
       </el-form>
       <div class="login-footer">
+        <div class="locale-row">
+          <LocaleSwitcher />
+        </div>
         <el-button type="info" text size="small" @click="enterAsGuest">
           {{ $t('login.guestBrowse') }}
         </el-button>
@@ -56,10 +59,11 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/store'
 import { ElMessage } from 'element-plus'
 import BaafooLogo from '@/components/BaafooLogo.vue'
+import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 
 export default {
   name: 'LoginPage',
-  components: { BaafooLogo },
+  components: { BaafooLogo, LocaleSwitcher },
   setup() {
     const router = useRouter()
     const authStore = useAuthStore()
@@ -159,5 +163,10 @@ export default {
 .login-footer {
   text-align: center;
   margin-top: 12px;
+}
+.locale-row {
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: center;
 }
 </style>

@@ -130,13 +130,24 @@ public class PluginManager {
 
     /**
      * P3: Intercept with health monitoring. Wraps plugin.intercept() with
-     * timing and success/error tracking. Advice classes should prefer this
-     * method over calling plugin.intercept() directly.
+     * timing and success/error tracking.
+     *
+     * @deprecated No production Advice calls this method anymore — all four
+     * App-CL Advice classes (KafkaProducer, KafkaConsumer, JmsConnectionFactory,
+     * GrpcChannel, PulsarClient) now use the phase-specific
+     * {@link #connectWithMonitor(InterceptTarget, ConnectContext)},
+     * {@link #requestWithMonitor(InterceptTarget, RequestContext)} or
+     * {@link #responseWithMonitor(InterceptTarget, ResponseContext)} hooks,
+     * which align with the plugin lifecycle ({@code onConnect/onRequest/onResponse})
+     * and emit {@link PluginEvent}s on redirect/passthrough. Retained only
+     * for {@code PluginHealthCheckTest} which exercises the underlying
+     * health-tracking wrapper. New code MUST NOT call this method.
      *
      * @param target intercept target
      * @param ctx plugin context
      * @return intercept result, or null if plugin unavailable
      */
+    @Deprecated
     public InterceptResult interceptWithMonitor(InterceptTarget target, PluginContext ctx) {
         AgentPlugin plugin = getPlugin(target);
         if (plugin == null) return null;

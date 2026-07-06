@@ -31,6 +31,16 @@ public class PassthroughProxy {
 
     private static final Logger log = LoggerFactory.getLogger(PassthroughProxy.class);
 
+    /**
+     * Max aggregated response body size for the outbound passthrough pipeline.
+     * Must match the inbound {@code HttpObjectAggregator} limit configured in
+     * {@code BaafooServer} (10 MiB) — otherwise downstream responses larger
+     * than 64 KiB would fail with {@code TooLongFrameException} and surface
+     * to the client as 502 BAD_GATEWAY. Previously hardcoded to 65536, which
+     * silently broke PASSTHROUGH/RECORD modes for any non-trivial response.
+     */
+    private static final int MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+
     static final Set<String> HOP_BY_HOP_HEADERS = new HashSet<String>();
     static {
         HOP_BY_HOP_HEADERS.add("connection");
@@ -124,7 +134,7 @@ public class PassthroughProxy {
                         p.addLast(new SslHandler(getSslContext().newEngine(ch.alloc(), host, targetPort)));
                     }
                     p.addLast(new HttpClientCodec());
-                    p.addLast(new HttpObjectAggregator(65536));
+                    p.addLast(new HttpObjectAggregator(MAX_RESPONSE_BYTES));
                     p.addLast(new ReadTimeoutHandler(10, TimeUnit.SECONDS));
                     p.addLast(new PassthroughResponseHandler(promise));
                 }

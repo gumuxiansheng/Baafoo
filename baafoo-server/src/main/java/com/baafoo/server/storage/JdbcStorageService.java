@@ -73,6 +73,19 @@ public class JdbcStorageService implements StorageService {
     private static final long CACHE_TTL_MS = 2000; // 2 seconds
     private static final long AGENTS_CACHE_TTL_MS = 5000; // 5 seconds (heartbeat frequent)
 
+    /**
+     * Per-cache load locks to prevent cache stampede. Under high throughput,
+     * when the TTL expires many concurrent threads could simultaneously
+     * observe the stale cache, all fire the same SQL, and waste DB
+     * connections (HikariCP max=10). Double-checked locking (DCL) on these
+     * monitors ensures only one thread reloads the cache while others wait
+     * and then read the freshly-published entry. Each cache has its own
+     * monitor so listRules() and listAgents() never block each other.
+     */
+    private final Object rulesCacheLock = new Object();
+    private final Object environmentsCacheLock = new Object();
+    private final Object agentsCacheLock = new Object();
+
     /** P3: In-memory plugin health statuses per agent (refreshed via heartbeat, not persisted). */
     private final ConcurrentHashMap<String, Map<String, Object>> agentPluginStatuses =
             new ConcurrentHashMap<String, Map<String, Object>>();
@@ -221,12 +234,20 @@ public class JdbcStorageService implements StorageService {
         if (cached != null && (now - cached.timestamp) < CACHE_TTL_MS) {
             return cached.value;
         }
-        try (SqlSession session = openSession()) {
-            List<Rule> result = session.getMapper(RuleMapper.class).listRules();
-            // Atomic publish: a single set() makes both value and timestamp
-            // visible to other threads (Medium 19).
-            rulesCache.set(new CacheEntry<>(result, System.currentTimeMillis()));
-            return result;
+        // DCL: prevent cache stampede — when TTL expires under high RPS,
+        // many threads would otherwise all fire the same SQL concurrently.
+        synchronized (rulesCacheLock) {
+            cached = rulesCache.get();
+            if (cached != null && (System.currentTimeMillis() - cached.timestamp) < CACHE_TTL_MS) {
+                return cached.value;
+            }
+            try (SqlSession session = openSession()) {
+                List<Rule> result = session.getMapper(RuleMapper.class).listRules();
+                // Atomic publish: a single set() makes both value and timestamp
+                // visible to other threads (Medium 19).
+                rulesCache.set(new CacheEntry<>(result, System.currentTimeMillis()));
+                return result;
+            }
         }
     }
 
@@ -395,10 +416,16 @@ public class JdbcStorageService implements StorageService {
         if (cached != null && (now - cached.timestamp) < CACHE_TTL_MS) {
             return cached.value;
         }
-        try (SqlSession session = openSession()) {
-            List<Environment> result = session.getMapper(EnvironmentMapper.class).listEnvironments();
-            environmentsCache.set(new CacheEntry<>(result, System.currentTimeMillis()));
-            return result;
+        synchronized (environmentsCacheLock) {
+            cached = environmentsCache.get();
+            if (cached != null && (System.currentTimeMillis() - cached.timestamp) < CACHE_TTL_MS) {
+                return cached.value;
+            }
+            try (SqlSession session = openSession()) {
+                List<Environment> result = session.getMapper(EnvironmentMapper.class).listEnvironments();
+                environmentsCache.set(new CacheEntry<>(result, System.currentTimeMillis()));
+                return result;
+            }
         }
     }
 
@@ -802,14 +829,20 @@ public class JdbcStorageService implements StorageService {
         if (cached != null && (now - cached.timestamp) < AGENTS_CACHE_TTL_MS) {
             return cached.value;
         }
-        try (SqlSession session = openSession()) {
-            List<AgentRegistration> result = session.getMapper(AgentMapper.class).listAgents();
-            // P3: Populate in-memory plugin statuses into AgentRegistration
-            for (AgentRegistration reg : result) {
-                reg.pluginStatuses = agentPluginStatuses.get(reg.agentId);
+        synchronized (agentsCacheLock) {
+            cached = agentsCache.get();
+            if (cached != null && (System.currentTimeMillis() - cached.timestamp) < AGENTS_CACHE_TTL_MS) {
+                return cached.value;
             }
-            agentsCache.set(new CacheEntry<>(result, System.currentTimeMillis()));
-            return result;
+            try (SqlSession session = openSession()) {
+                List<AgentRegistration> result = session.getMapper(AgentMapper.class).listAgents();
+                // P3: Populate in-memory plugin statuses into AgentRegistration
+                for (AgentRegistration reg : result) {
+                    reg.pluginStatuses = agentPluginStatuses.get(reg.agentId);
+                }
+                agentsCache.set(new CacheEntry<>(result, System.currentTimeMillis()));
+                return result;
+            }
         }
     }
 

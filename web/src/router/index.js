@@ -89,12 +89,12 @@ router.beforeEach((to, from, next) => {
     return next()
   }
 
-  // Check if logged in
-  if (!authStore.token) {
-    return next('/login')
+  // Allow guest browsing for non-admin pages
+  if (!authStore.token && !to.meta.requireAdmin) {
+    return next()
   }
 
-  // Check admin requirement
+  // Check if logged in for admin pages
   if (to.meta.requireAdmin && authStore.role !== 'admin') {
     return next('/')
   }

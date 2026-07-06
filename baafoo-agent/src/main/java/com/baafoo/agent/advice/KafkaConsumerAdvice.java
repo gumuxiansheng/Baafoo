@@ -4,10 +4,10 @@ import com.baafoo.agent.BaafooAgent;
 import com.baafoo.agent.GlobalRouteState;
 import com.baafoo.agent.plugin.PluginManager;
 import com.baafoo.core.model.EnvironmentMode;
-import com.baafoo.plugin.AgentPlugin;
-import com.baafoo.plugin.InterceptResult;
+import com.baafoo.plugin.ConnectAdvice;
+import com.baafoo.plugin.ConnectContext;
 import com.baafoo.plugin.InterceptTarget;
-import com.baafoo.plugin.PluginContext;
+import com.baafoo.plugin.PluginEvent;
 import net.bytebuddy.asm.Advice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +22,7 @@ import java.util.Map;
  * address (port 9002 by default).</p>
  *
  * <p>Before rewriting, it consults the registered Kafka plugin (if any) via the
- * {@link PluginManager} SPI. A plugin may return an {@link InterceptResult#redirect}
+ * {@link PluginManager} SPI. A plugin may return a {@link ConnectAdvice#isRedirect}
  * to override the default stub target.</p>
  *
  * <p><b>CRITICAL</b>: This advice is inlined into KafkaConsumer by ByteBuddy.
@@ -70,20 +70,28 @@ public class KafkaConsumerAdvice {
             try {
                 PluginManager pm = BaafooAgent.getPluginManager();
                 if (pm != null) {
-                    AgentPlugin plugin = pm.getPlugin(InterceptTarget.KAFKA);
-                    if (plugin != null) {
-                        PluginContext ctx = new PluginContext();
-                        ctx.setProtocol("kafka");
-                        ctx.setHost(extractHost(originalServers));
-                        ctx.setPort(extractPort(originalServers));
-                        // P1: inject per-plugin config
-                        ctx.setPluginConfig(pm.getPluginConfig(plugin.getName()));
-                        InterceptResult result = plugin.intercept(ctx);
-                        if (result != null && result.isRedirect()) {
-                            stubHost = result.getRedirectHost();
-                            stubPort = result.getRedirectPort();
-                            log.info("[Baafoo] KafkaConsumer plugin redirected to {}:{}", stubHost, stubPort);
-                        }
+                    // Use connectWithMonitor (same as KafkaProducerAdvice) for health
+                    // monitoring and PluginEvent emission. ConnectContext requires
+                    // (protocol, host, port, topic, group, username, password); only
+                    // protocol/host/port are meaningful here, others are null.
+                    ConnectContext ctx = new ConnectContext(
+                        "kafka",
+                        extractHost(originalServers),
+                        extractPort(originalServers),
+                        null,
+                        null,
+                        null,
+                        null
+                    );
+                    ConnectAdvice advice = pm.connectWithMonitor(InterceptTarget.KAFKA, ctx);
+                    if (advice != null && advice.isRedirect()) {
+                        stubHost = advice.getRedirectHost();
+                        stubPort = advice.getRedirectPort();
+                        log.info("[Baafoo] KafkaConsumer plugin redirected to {}:{}", stubHost, stubPort);
+                        pm.fireEvent(PluginEvent.connectionRedirected(
+                                "kafka", originalServers, stubHost + ":" + stubPort));
+                    } else if (advice != null && advice.isPassthrough()) {
+                        pm.fireEvent(PluginEvent.connectionPassthrough("kafka", originalServers));
                     }
                 }
             } catch (Throwable t) {

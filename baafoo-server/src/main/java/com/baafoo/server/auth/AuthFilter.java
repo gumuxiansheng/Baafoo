@@ -35,7 +35,17 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
 
     private final AuthService authService;
     private final ServerConfig config;
-    private final ObjectMapper mapper = new ObjectMapper();
+
+    /**
+     * Shared {@link ObjectMapper} instance. {@code AuthFilter} is instantiated
+     * per Netty channel (see {@code BaafooServer.initChannel}), and
+     * ObjectMapper construction is relatively expensive (builds TypeFactory,
+     * serializer/deserializer caches). Jackson documents ObjectMapper as
+     * thread-safe after configuration in 2.x+, so a single shared static
+     * instance is the recommended pattern — previously a new mapper was
+     * created for every connection.
+     */
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     public AuthFilter(AuthService authService, ServerConfig config) {
         this.authService = authService;
@@ -177,7 +187,7 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
 
     private void sendJson(ChannelHandlerContext ctx, int statusCode, Object data) {
         try {
-            String json = mapper.writeValueAsString(data);
+            String json = MAPPER.writeValueAsString(data);
             FullHttpResponse response = new DefaultFullHttpResponse(
                     HttpVersion.HTTP_1_1, HttpResponseStatus.valueOf(statusCode),
                     Unpooled.copiedBuffer(json, StandardCharsets.UTF_8));
