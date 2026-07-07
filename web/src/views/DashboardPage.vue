@@ -38,7 +38,7 @@
       <el-col :span="12">
         <el-card shadow="never">
           <template #header><span>{{ $t('dashboard.requestTrend') }}</span></template>
-          <div ref="trendChart" style="height: 300px"></div>
+          <div ref="trendChart" style="height: 300px; width: 100%"></div>
         </el-card>
       </el-col>
     </el-row>
@@ -156,6 +156,7 @@ export default {
       const chart = echarts.init(trendChart.value)
 
       // Process trend data - fill in missing days with 0
+      // Use YYYY-MM-DD string comparison to avoid UTC vs local timezone mismatch
       const days = []
       const counts = []
       const now = new Date()
@@ -163,13 +164,13 @@ export default {
         const date = new Date(now)
         date.setDate(date.getDate() - i)
         date.setHours(0, 0, 0, 0)
-        const dayTimestamp = date.getTime()
+        const ymd = formatDateYMD(date)
         days.push(date.toLocaleDateString('zh-CN', { weekday: 'short' }))
 
-        // Find count for this day
+        // Find count for this day (compare by YYYY-MM-DD in local timezone)
         const dayData = trendData.find(d => {
-          const dDay = Math.floor(d.day / 86400000) * 86400000
-          return dDay === Math.floor(dayTimestamp / 86400000) * 86400000
+          const dDate = new Date(d.day)
+          return formatDateYMD(dDate) === ymd
         })
         counts.push(dayData ? dayData.count : 0)
       }
@@ -187,6 +188,13 @@ export default {
           itemStyle: { color: 'var(--bf-accent)' }
         }]
       })
+    }
+
+    function formatDateYMD(d) {
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${y}-${m}-${day}`
     }
 
     return { stats, recentRecordings, rulesChart, trendChart, formatTime, isMqProtocol, directionLabel, directionType }
