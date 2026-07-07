@@ -25,7 +25,7 @@
       </el-radio-group>
       <span v-else style="color: var(--bf-text-muted); font-size: 14px; margin-top: 12px; display: inline-block">{{ $t('environments.noSwitchPermission', { 0: env ? modeDisplayName(env.mode) : '' }) }}</span>
 
-      <h3 style="margin-top: 24px">{{ $t('environments.associatedAgents', { 0: agentRows.length }) }}</h3>
+      <h3 style="margin-top: 24px">{{ $t('environments.associatedAgents') }} ({{ agentRows.length }})</h3>
       <el-table :data="agentRows" size="small" style="margin-top: 12px" :empty-text="$t('environments.noAgent')">
         <el-table-column prop="agentId" label="Agent ID" min-width="200" />
         <el-table-column prop="environment" :label="$t('environments.name')" width="150" />

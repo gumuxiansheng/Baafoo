@@ -253,7 +253,7 @@
     "modeLabel": "Mode",
     "modeSwitch": "Mode Switch",
     "noSwitchPermission": "Current mode: {0} (no switch permission)",
-    "associatedAgents": "Associated Agents ({0})",
+    "associatedAgents": "Associated Agents",
     "noAgent": "No Agent",
     "editVariables": "Edit Environment Variables",
     "edit": "Edit",

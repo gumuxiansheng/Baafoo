@@ -253,7 +253,7 @@
     "modeLabel": "模式",
     "modeSwitch": "模式切换",
     "noSwitchPermission": "当前模式: {0}（无切换权限）",
-    "associatedAgents": "关联 Agents ({0})",
+    "associatedAgents": "关联 Agents",
     "noAgent": "暂无 Agent",
     "editVariables": "编辑环境变量",
     "edit": "编辑",
