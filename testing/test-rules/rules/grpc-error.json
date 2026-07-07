@@ -1,4 +1,5 @@
 {
+  "id": "grpc-error",
   "name": "gRPC Error NotFound",
   "protocol": "grpc",
   "host": "greeter.example.com",

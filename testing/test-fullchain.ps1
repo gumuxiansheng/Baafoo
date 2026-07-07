@@ -6,9 +6,19 @@
 #   2. Copy Feign plugin JAR to ./plugins/
 #   3. Start Docker Staging environment (server + postgres + app-env-a + app-env-b)
 #   4. Wait for all services to be healthy
-#   5. Register all 31 test rules
-#   6. Run full-chain test cases (~60 cases covering HTTP/TCP/Kafka/Pulsar/JMS + Plugin + Env isolation + Recording + MQ direction + Condition types + Env modes + API security & CRUD)
+#   5. Register all test rules (HTTP/TCP/Kafka/Pulsar/JMS + gRPC placeholders)
+#   6. Run full-chain test cases covering:
+#      F core / A API security & CRUD / H HTTP / T TCP / K Kafka / P Pulsar / J JMS
+#      E env isolation / PL plugin / R+D recording & MQ direction / C condition types
+#      M env modes / AS RuleSet CRUD / REC recording mgmt / RU+RST undo & reset
+#      OAPI OpenAPI import / G gRPC (gap) / MX protocol x mode matrix gaps
 #   7. Summary report and cleanup
+#
+# Assertion red lines (see PROJECT-TEST-PLAN.md §6.4.1):
+#   - Condition tests assert precise `matchedBy` (no `|mocked` fallback)
+#   - MQ error/timeout/null must FAIL, not pass
+#   - requestCount tests reset counter before run
+#   - mode switches wait $MODE_SETTLE_WAIT (>= pollIntervalSec)
 #
 # Usage:
 #   .\testing\test-fullchain.ps1              # Build + test + cleanup
@@ -107,6 +117,22 @@ function Get-JsonBody($json) {
     return $null
 }
 
+# Extract the matchedBy value from a stubbed HTTP response.
+# The stub response body (a string field in the app response) carries
+# "matchedBy":"<condition-type>" for condition-specific rules. Asserting this
+# precisely (instead of the loose `|mocked` fallback) is what makes a condition
+# test prove the TARGET condition matched, not just "any rule matched".
+function Get-MatchedBy($json) {
+    $body = Get-JsonBody $json
+    if ($body -and $body -match '"matchedBy"\s*:\s*"([^"]*)"') { return $matches[1] }
+    return $null
+}
+
+# Parse a JSON object via ConvertFrom-Json, returning $null on failure.
+function Get-JsonObject($jsonString) {
+    try { return ($jsonString | ConvertFrom-Json) } catch { return $null }
+}
+
 # Extract an environment ID by name from the server API response (robust JSON parse)
 function Get-EnvironmentId($jsonString, $envName) {
     try {
@@ -121,9 +147,14 @@ function Get-EnvironmentId($jsonString, $envName) {
     return $null
 }
 
-# ==================== 1. Build all JARs ====================
+# ==================== 1. Clean old Docker environment (release file locks) ====================
+Write-Step "1/6: Clean old Docker environment"
+& docker compose @COMPOSE_FILES down -v --remove-orphans 2>&1 | Out-Null
+Write-OK "Old environment cleaned"
+
+# ==================== 2. Build all JARs ====================
 if (-not $SkipBuild) {
-    Write-Step "1/6: Build all JAR files"
+    Write-Step "2/6: Build all JAR files"
 
     Write-Host "  Building project (mvnw clean package -DskipTests)..."
     & .\mvnw.cmd clean package -DskipTests -q 2>&1 | Out-Null
@@ -153,13 +184,8 @@ if (-not $SkipBuild) {
         }
     }
 } else {
-    Write-Step "1/6: Skip build (-SkipBuild)"
+    Write-Step "2/6: Skip build (-SkipBuild)"
 }
-
-# ==================== 2. Clean old environment ====================
-Write-Step "2/6: Clean old Docker environment"
-& docker compose @COMPOSE_FILES down -v --remove-orphans 2>&1 | Out-Null
-Write-OK "Old environment cleaned"
 
 # ==================== 3. Start Docker Staging environment ====================
 Write-Step "3/6: Start Docker Staging environment"
@@ -260,7 +286,11 @@ $ruleFiles = @(
     "kafka-topic.json", "kafka-wildcard.json", "kafka-header.json",
     "pulsar-topic.json", "pulsar-wildcard.json",
     "jms-queue.json", "jms-topic.json",
-    "tcp-hex.json", "tcp-regex.json", "tcp-multiround.json"
+    "tcp-hex.json", "tcp-regex.json", "tcp-multiround.json",
+    # gRPC rules are registered so the server holds them; they are exercised only
+    # once baafoo-test-spring gains a gRPC client (see G section below).
+    "grpc-greeter.json", "grpc-error.json", "grpc-delay.json",
+    "grpc-server-streaming.json", "grpc-client-streaming.json", "grpc-bidirectional-streaming.json"
 )
 
 $registered = 0
@@ -282,6 +312,21 @@ foreach ($ruleFile in $ruleFiles) {
             Write-Warn "Register failed: $ruleFile -> $($result.message)"
         }
     } catch {
+        # Idempotency guard: a stale DB (PostgreSQL volume not fully reset by
+        # `docker compose down -v`) may already hold a rule with this id, causing
+        # a duplicate-key 500. Treat "already exists" as a successful registration
+        # instead of a failure, so residue never produces a false WARN.
+        try {
+            $rid = ($ruleJson | ConvertFrom-Json -ErrorAction SilentlyContinue).id
+            if ($rid) {
+                $existing = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/$rid" -Method Get -Headers $headers -ErrorAction Stop
+                if ($existing.success -eq $true -or $existing.data.id -eq $rid) {
+                    $registered++
+                    Write-Host "  [OK] $ruleFile already registered (idempotent)" -ForegroundColor Gray
+                    continue
+                }
+            }
+        } catch {}
         $failed++
         $errMsg = $_.Exception.Message
         if ($errMsg.Length -gt 80) { $errMsg = $errMsg.Substring(0, 80) + "..." }
@@ -485,20 +530,25 @@ $statusCode = Get-JsonValue $resp "statusCode"
 if ($statusCode -eq "500") { Test-Pass "H06: HTTP error code returns 500" }
 else { Test-Fail "H06: HTTP error code returns 500 (statusCode=$statusCode)" }
 
-# H07: HTTP GraphQL rule (POST body via test-spring)
-$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://httpbin.org/graphql&body=%7B%22query%22%3A%22query%20GetUser%7Buser%7Bid%20name%7D%7D%22%7D"
-if ($resp -match "Baafoo Mock User|mocked") {
-    Test-Pass "H07: HTTP GraphQL rule matched"
+# H07: HTTP GraphQL rule — body must carry operationName so the server matches
+# graphqlOperationName / graphqlOperationType conditions (MatchEngine reads $.operationName).
+$graphqlBody = [System.Uri]::EscapeDataString('{"operationName":"GetUser","query":"query GetUser { user { id name } }"}')
+$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://httpbin.org/graphql&body=$graphqlBody"
+if ($resp -match "Baafoo Mock User") {
+    Test-Pass "H07: HTTP GraphQL rule matched (operationName=GetUser)"
 } else {
-    Test-Skip "H07: HTTP GraphQL rule (response: $resp)"
+    Test-Fail "H07: HTTP GraphQL rule not matched (response: $resp)"
 }
 
-# H08: HTTP request-count rule (first request should match requestCount=1)
+# H08: HTTP request-count rule. Reset the per-rule counter BEFORE the assertion so
+# repeated runs always see count=1 (eliminates the latent flaky reported in the review).
+$null = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/staging-a-http-request-count/reset-state" -Method Post -Headers $headers -ErrorAction SilentlyContinue
 $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/counted"
-if ($resp -match "requestCount|matchedBy.*requestCount|mocked") {
-    Test-Pass "H08: HTTP request-count rule matched"
+$mb = Get-MatchedBy $resp
+if ($mb -eq "requestCount") {
+    Test-Pass "H08: HTTP request-count rule matched (counter reset before run)"
 } else {
-    Test-Skip "H08: HTTP request-count rule (response: $resp)"
+    Test-Fail "H08: HTTP request-count rule (matchedBy=$mb, resp=$resp)"
 }
 
 # H09: HTTP Consul rule (service discovery stub)
@@ -551,24 +601,24 @@ Write-Host "--- K: Kafka ---" -ForegroundColor White
 
 # K01: Kafka Produce
 $resp = Invoke-AppGet "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=baafoo-test-topic&message=hello-baafoo-kafka"
-if ($resp -match "success|stubbed|mocked|baafoo") {
-    Test-Pass "K01: Kafka Produce stub"
+if ($resp -match '"success"\s*:\s*true' -and $resp -notmatch '"error"') {
+    Test-Pass "K01: Kafka Produce stub (success)"
 } else {
     Test-Fail "K01: Kafka Produce stub (response: $resp)"
 }
 
 # K02: Kafka Consume
 $resp = Invoke-AppGet "$APP_A/api/kafka/consume?bootstrapServers=kafka-broker:9092&topic=baafoo-test-topic"
-if ($resp -match "success|stubbed|mocked|baafoo|message") {
-    Test-Pass "K02: Kafka Consume stub"
+if ($resp -match '"success"\s*:\s*true' -and $resp -notmatch '"error"') {
+    Test-Pass "K02: Kafka Consume stub (success)"
 } else {
     Test-Fail "K02: Kafka Consume stub (response: $resp)"
 }
 
 # K03: Kafka wildcard topic
 $resp = Invoke-AppGet "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=baafoo-wildcard-topic&message=test"
-if ($resp -match "success|stubbed|mocked|baafoo") {
-    Test-Pass "K03: Kafka wildcard topic stub"
+if ($resp -match '"success"\s*:\s*true' -and $resp -notmatch '"error"') {
+    Test-Pass "K03: Kafka wildcard topic stub (success)"
 } else {
     Test-Skip "K03: Kafka wildcard topic (response: $resp)"
 }
@@ -577,26 +627,26 @@ if ($resp -match "success|stubbed|mocked|baafoo") {
 Write-Host ""
 Write-Host "--- P: Pulsar ---" -ForegroundColor White
 
-# P01: Pulsar Produce
+# P01: Pulsar Produce — must succeed (MockBroker stub). error/timeout is a FAIL, not a pass.
 $resp = Invoke-AppGet "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-test-topic&message=hello-baafoo-pulsar"
-if ($resp -match "success|stubbed|mocked|baafoo|error|timeout") {
-    Test-Pass "P01: Pulsar Produce (has response)"
+if ($resp -match '"success"\s*:\s*true' -and $resp -notmatch '"error"') {
+    Test-Pass "P01: Pulsar Produce stub (success)"
 } else {
-    Test-Skip "P01: Pulsar Produce (response: $resp)"
+    Test-Fail "P01: Pulsar Produce (response: $resp)"
 }
 
-# P02: Pulsar Consume
+# P02: Pulsar Consume — must succeed (MockBroker stub). error/timeout is a FAIL.
 $resp = Invoke-AppGet "$APP_A/api/pulsar/consume?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-test-topic"
-if ($resp -match "success|stubbed|mocked|baafoo|error|timeout") {
-    Test-Pass "P02: Pulsar Consume (has response)"
+if ($resp -match '"success"\s*:\s*true' -and $resp -notmatch '"error"') {
+    Test-Pass "P02: Pulsar Consume stub (success)"
 } else {
-    Test-Skip "P02: Pulsar Consume (response: $resp)"
+    Test-Fail "P02: Pulsar Consume (response: $resp)"
 }
 
 # P03: Pulsar wildcard topic
 $resp = Invoke-AppGet "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-wildcard-topic&message=test"
-if ($resp -match "success|stubbed|mocked|baafoo|topicPattern") {
-    Test-Pass "P03: Pulsar wildcard topic stub"
+if ($resp -match '"success"\s*:\s*true' -and $resp -notmatch '"error"') {
+    Test-Pass "P03: Pulsar wildcard topic stub (success)"
 } else {
     Test-Skip "P03: Pulsar wildcard topic (response: $resp)"
 }
@@ -605,18 +655,18 @@ Write-Host "--- J: JMS ---" -ForegroundColor White
 
 # J01: JMS Queue send
 $resp = Invoke-AppGet "$APP_A/api/jms/send?brokerUrl=tcp://jms-broker:61616&queueName=BAAFOO.TEST.QUEUE&message=hello-baafoo-jms"
-if ($resp -match "success|stubbed|mocked|baafoo|sent") {
-    Test-Pass "J01: JMS Queue send stub"
+if ($resp -match '"success"\s*:\s*true' -and $resp -notmatch '"error"') {
+    Test-Pass "J01: JMS Queue send stub (success)"
 } else {
     Test-Fail "J01: JMS Queue send stub (response: $resp)"
 }
 
-# J02: JMS Queue receive
+# J02: JMS Queue receive — must succeed (MockBroker stub). error/null is a FAIL.
 $resp = Invoke-AppGet "$APP_A/api/jms/receive?brokerUrl=tcp://jms-broker:61616&queueName=BAAFOO.TEST.QUEUE"
-if ($resp -match "success|stubbed|mocked|baafoo|message|null") {
-    Test-Pass "J02: JMS Queue receive stub"
+if ($resp -match '"success"\s*:\s*true' -and $resp -notmatch '"error"') {
+    Test-Pass "J02: JMS Queue receive stub (success)"
 } else {
-    Test-Fail "J02: JMS Queue receive stub (response: $resp)"
+    Test-Fail "J02: JMS Queue receive (response: $resp)"
 }
 
 # -------------------- E: Environment isolation --------------------
@@ -761,7 +811,7 @@ if ($envAId) {
     # Restore staging-a to STUB mode before the mode-specific M section
     try {
         Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
     } catch {}
 } else {
     Test-Skip "D: MQ Direction (cannot find staging-a environment ID)"
@@ -771,76 +821,88 @@ if ($envAId) {
 Write-Host ""
 Write-Host "--- C: Condition Types ---" -ForegroundColor White
 
-# C01: Header condition match
-$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/headers"
-if ($resp -match "matchedBy.*header|mocked") {
-    Test-Pass "C01: Header condition match"
+# C01: Header condition match. The test app must actually send X-Test-Header so the
+# http-header rule (path /headers + header equals) is the one that matches.
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/headers&headerName=X-Test-Header&headerValue=baafoo-test"
+$mb = Get-MatchedBy $resp
+if ($mb -eq "header") {
+    Test-Pass "C01: Header condition match (matchedBy=header)"
 } else {
-    Test-Skip "C01: Header condition (response: $resp)"
+    Test-Fail "C01: Header condition not matched (matchedBy=$mb, resp=$resp)"
 }
 
 # C02: Query param condition match
 $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get?baafoo=test"
-if ($resp -match "matchedBy.*query|mocked") {
-    Test-Pass "C02: Query param condition match"
+$mb = Get-MatchedBy $resp
+if ($mb -eq "query") {
+    Test-Pass "C02: Query param condition match (matchedBy=query)"
 } else {
-    Test-Skip "C02: Query param condition (response: $resp)"
+    Test-Fail "C02: Query param condition not matched (matchedBy=$mb, resp=$resp)"
 }
 
 # C03: Body contains condition match
-$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://httpbin.org/post&body=%7B%22data%22%3A%22baafoo-body-test%22%7D"
-if ($resp -match "matchedBy.*body|mocked") {
-    Test-Pass "C03: Body contains condition match"
+$bodyC03 = [System.Uri]::EscapeDataString('{"data":"baafoo-body-test"}')
+$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://httpbin.org/post&body=$bodyC03"
+$mb = Get-MatchedBy $resp
+if ($mb -eq "body") {
+    Test-Pass "C03: Body contains condition match (matchedBy=body)"
 } else {
-    Test-Skip "C03: Body contains condition (response: $resp)"
+    Test-Fail "C03: Body contains condition not matched (matchedBy=$mb, resp=$resp)"
 }
 
 # C04: BodyJsonPath condition match
-$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://httpbin.org/post&body=%7B%22action%22%3A%22submit%22%7D"
-if ($resp -match "matchedBy.*jsonPath|mocked") {
-    Test-Pass "C04: BodyJsonPath condition match"
+$bodyC04 = [System.Uri]::EscapeDataString('{"action":"submit"}')
+$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://httpbin.org/post&body=$bodyC04"
+$mb = Get-MatchedBy $resp
+if ($mb -eq "jsonPath") {
+    Test-Pass "C04: BodyJsonPath condition match (matchedBy=jsonPath)"
 } else {
-    Test-Skip "C04: BodyJsonPath condition (response: $resp)"
+    Test-Fail "C04: BodyJsonPath condition not matched (matchedBy=$mb, resp=$resp)"
 }
 
 # C05: Path contains operator
 $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/baafoo/anything"
-if ($resp -match "matchedBy.*path-contains|mocked") {
-    Test-Pass "C05: Path contains operator"
+$mb = Get-MatchedBy $resp
+if ($mb -eq "path-contains") {
+    Test-Pass "C05: Path contains operator (matchedBy=path-contains)"
 } else {
-    Test-Skip "C05: Path contains operator (response: $resp)"
+    Test-Fail "C05: Path contains operator not matched (matchedBy=$mb, resp=$resp)"
 }
 
 # C06: Path endsWith operator
 $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/suffix"
-if ($resp -match "matchedBy.*path-endswith|mocked") {
-    Test-Pass "C06: Path endsWith operator"
+$mb = Get-MatchedBy $resp
+if ($mb -eq "path-endswith") {
+    Test-Pass "C06: Path endsWith operator (matchedBy=path-endswith)"
 } else {
-    Test-Skip "C06: Path endsWith operator (response: $resp)"
+    Test-Fail "C06: Path endsWith operator not matched (matchedBy=$mb, resp=$resp)"
 }
 
 # C07: Path regex operator
 $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/api/v1/users"
-if ($resp -match "matchedBy.*path-regex|mocked") {
-    Test-Pass "C07: Path regex operator"
+$mb = Get-MatchedBy $resp
+if ($mb -eq "path-regex") {
+    Test-Pass "C07: Path regex operator (matchedBy=path-regex)"
 } else {
-    Test-Skip "C07: Path regex operator (response: $resp)"
+    Test-Fail "C07: Path regex operator not matched (matchedBy=$mb, resp=$resp)"
 }
 
-# C08: Header exists operator
-$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get"
-if ($resp -match "matchedBy.*header-exists|mocked") {
-    Test-Pass "C08: Header exists operator"
+# C08: Header exists operator. Send a header the http-header-exists rule keys on.
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get&headerName=X-Baafoo-Test&headerValue=1"
+$mb = Get-MatchedBy $resp
+if ($mb -eq "header-exists") {
+    Test-Pass "C08: Header exists operator (matchedBy=header-exists)"
 } else {
-    Test-Skip "C08: Header exists operator (response: $resp)"
+    Test-Fail "C08: Header exists operator not matched (matchedBy=$mb, resp=$resp)"
 }
 
-# C09: Case insensitive match
+# C09: Case insensitive match (rule path equals /CASE-TEST, caseInsensitive=true)
 $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/case-test"
-if ($resp -match "matchedBy.*case-insensitive|mocked") {
-    Test-Pass "C09: Case insensitive match"
+$mb = Get-MatchedBy $resp
+if ($mb -eq "case-insensitive") {
+    Test-Pass "C09: Case insensitive match (matchedBy=case-insensitive)"
 } else {
-    Test-Skip "C09: Case insensitive match (response: $resp)"
+    Test-Fail "C09: Case insensitive match not matched (matchedBy=$mb, resp=$resp)"
 }
 
 # C10: Disabled rule should NOT match
@@ -916,7 +978,7 @@ if ($envAId) {
 if ($envAId) {
     try {
         Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"record"}' -ErrorAction Stop | Out-Null
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
         $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get"
         # RECORD mode should passthrough (not stubbed) and create recording
         $recAfter = Invoke-ApiGet "recordings?limit=5"
@@ -931,7 +993,7 @@ if ($envAId) {
     # Restore staging-a to STUB mode
     try {
         Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
     } catch {}
 } else {
     Test-Skip "M04: RECORD mode (cannot find staging-a environment ID)"
@@ -941,7 +1003,7 @@ if ($envAId) {
 if ($envAId) {
     try {
         Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"record-all"}' -ErrorAction Stop | Out-Null
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
         # Send request to unmatched path
         $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/status/200"
         $recAfter = Invoke-ApiGet "recordings?limit=10"
@@ -956,10 +1018,194 @@ if ($envAId) {
     # Restore staging-a to STUB mode
     try {
         Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
     } catch {}
 } else {
     Test-Skip "M05: RECORD_ALL mode (cannot find staging-a environment ID)"
+}
+
+# -------------------- AS: RuleSet CRUD --------------------
+Write-Host ""
+Write-Host "--- AS: RuleSet ---" -ForegroundColor White
+
+# AS01: Create a rule set
+$testSetId = "test-ruleset-" + (Get-Random -Minimum 1000 -Maximum 9999)
+$setBody = @{
+    id = $testSetId
+    name = "Test RuleSet"
+    description = "Full-chain RuleSet CRUD test"
+    ruleIds = @("staging-a-http-get")
+    enabled = $true
+} | ConvertTo-Json -Depth 4
+try {
+    $createSet = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rulesets" -Method Post -ContentType "application/json" -Headers $headers -Body $setBody -ErrorAction Stop
+    if ($createSet.success -eq $true -or $createSet.data.id) {
+        Test-Pass "AS01: RuleSet created"
+    } else {
+        Test-Skip "AS01: RuleSet create (response: $createSet)"
+    }
+} catch {
+    Test-Skip "AS01: RuleSet create (error: $_)"
+}
+
+# AS02: List rule sets and verify presence
+try {
+    $setsJson = Invoke-ApiGet "rulesets"
+    if ($setsJson -match $testSetId) {
+        Test-Pass "AS02: RuleSet listed"
+    } else {
+        Test-Fail "AS02: RuleSet not found in list (resp: $setsJson)"
+    }
+} catch {
+    Test-Skip "AS02: RuleSet list (error: $_)"
+}
+
+# AS03: Delete rule set and verify removal (DELETE /rulesets/{id} wired in RuleApiHandler)
+try {
+    Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rulesets/$testSetId" -Method Delete -Headers $headers -ErrorAction Stop | Out-Null
+    $setsJsonAfter = Invoke-ApiGet "rulesets"
+    if ($setsJsonAfter -notmatch $testSetId) {
+        Test-Pass "AS03: RuleSet deleted"
+    } else {
+        Test-Fail "AS03: RuleSet still present after delete (resp: $setsJsonAfter)"
+    }
+} catch {
+    Test-Skip "AS03: RuleSet delete (error: $_)"
+}
+
+# -------------------- REC: Recording management --------------------
+Write-Host ""
+Write-Host "--- REC: Recording Management ---" -ForegroundColor White
+# Recordings are produced by the D (MQ direction) and M04/M05 (mode) sections above.
+
+# REC-PAGE: paginated listing returns a paginated structure (total / items)
+$recPageJson = Invoke-ApiGet "recordings?page=1&size=5"
+$recPageObj = Get-JsonObject $recPageJson
+# ApiResponse wraps payload in `data`; paginated recordings live at data.total / data.items
+$recPageData = if ($recPageObj -and $recPageObj.data) { $recPageObj.data } else { $recPageObj }
+if ($recPageData -and ($recPageData.total -ne $null -or ($recPageData.PSObject.Properties.Name -contains "items"))) {
+    Test-Pass "REC-PAGE: recordings pagination supported (total=$($recPageData.total))"
+} else {
+    Test-Fail "REC-PAGE: recordings pagination not structured (resp: $recPageJson)"
+}
+
+# REC-DEL: delete one recording and confirm it is gone
+$recListJson = Invoke-ApiGet "recordings?page=1&size=10"
+$recListObj = Get-JsonObject $recListJson
+# ApiResponse wraps payload in `data`; recordings list lives at data.items
+$recListItems = if ($recListObj -and $recListObj.data) { $recListObj.data.items } else { $null }
+if ($recListItems -and $recListItems.Count -gt 0) {
+    $delId = $recListItems[0].id
+    try {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/recordings/$delId" -Method Delete -Headers $headers -ErrorAction Stop | Out-Null
+        $afterObj = Get-JsonObject (Invoke-ApiGet "recordings?page=1&size=50")
+        $afterItems = if ($afterObj -and $afterObj.data) { $afterObj.data.items } else { $null }
+        $stillThere = $false
+        if ($afterItems) { foreach ($it in $afterItems) { if ($it.id -eq $delId) { $stillThere = $true } } }
+        if (-not $stillThere) {
+            Test-Pass "REC-DEL: recording deleted (id=$delId)"
+        } else {
+            Test-Fail "REC-DEL: recording still present after delete (id=$delId)"
+        }
+    } catch {
+        Test-Fail "REC-DEL: delete error: $_"
+    }
+} else {
+    Test-Skip "REC-DEL: no recordings available to delete"
+}
+
+# -------------------- RU / RST: Undo & counter reset --------------------
+Write-Host ""
+Write-Host "--- RU/RST: Undo & Reset ---" -ForegroundColor White
+
+# RU01: rule undo — modify a rule then revert via undo
+$ruRuleId = "staging-a-http-get"
+try {
+    $orig = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/$ruRuleId" -Method Get -Headers $headers -ErrorAction Stop
+    $updated = $orig.data
+    $updated.description = "temp-edited-for-undo-test"
+    Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/$ruRuleId" -Method Put -ContentType "application/json" -Headers $headers -Body ($updated | ConvertTo-Json -Depth 10) -ErrorAction Stop | Out-Null
+    $undo = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/$ruRuleId/undo" -Method Post -Headers $headers -ErrorAction Stop
+    if ($undo.success -eq $true) { Test-Pass "RU01: rule undo successful" }
+    else { Test-Skip "RU01: rule undo (resp: $undo)" }
+} catch {
+    Test-Skip "RU01: rule undo (error: $_)"
+}
+
+# RST01: reset all rule state counters
+try {
+    $rst = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/reset-all-state" -Method Post -Headers $headers -ErrorAction Stop
+    if ($rst.success -eq $true) { Test-Pass "RST01: reset-all-state successful" }
+    else { Test-Skip "RST01: reset-all-state (resp: $rst)" }
+} catch {
+    Test-Skip "RST01: reset-all-state (error: $_)"
+}
+
+# -------------------- OAPI: OpenAPI import --------------------
+Write-Host ""
+Write-Host "--- OAPI: OpenAPI Import ---" -ForegroundColor White
+
+$oapiSpecPath = Join-Path $rulesDir "openapi-sample.json"
+if (-not (Test-Path $oapiSpecPath)) {
+    Test-Skip "OAPI01: OpenAPI sample spec not found"
+} else {
+    $oapiSpec = Get-Content $oapiSpecPath -Raw
+    # OAPI01: preview import (no persist)
+    try {
+        $preview = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/import-openapi" -Method Post -ContentType "application/json" -Headers $headers -Body $oapiSpec -ErrorAction Stop
+        if ($preview.success -eq $true -and $preview.data.generatedCount -gt 0) {
+            Test-Pass "OAPI01: OpenAPI import preview generated $($preview.data.generatedCount) rules"
+        } else {
+            Test-Fail "OAPI01: OpenAPI import preview (resp: $preview)"
+        }
+    } catch {
+        Test-Fail "OAPI01: OpenAPI import preview (error: $_)"
+    }
+
+    # OAPI02: import + persist, then clean up the imported rules
+    try {
+        $save = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/import-openapi?save=true&environment=staging-a" -Method Post -ContentType "application/json" -Headers $headers -Body $oapiSpec -ErrorAction Stop
+        if ($save.success -eq $true -and $save.data.savedCount -gt 0) {
+            Test-Pass "OAPI02: OpenAPI import persisted $($save.data.savedCount) rules"
+            foreach ($rid in $save.data.savedIds) {
+                try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/$rid" -Method Delete -Headers $headers -ErrorAction SilentlyContinue | Out-Null } catch {}
+            }
+        } else {
+            Test-Fail "OAPI02: OpenAPI import persist (resp: $save)"
+        }
+    } catch {
+        Test-Fail "OAPI02: OpenAPI import persist (error: $_)"
+    }
+}
+
+# -------------------- G: gRPC (no test-spring client yet) --------------------
+Write-Host ""
+Write-Host "--- G: gRPC ---" -ForegroundColor White
+# gRPC is NOT covered end-to-end: baafoo-test-spring has no gRPC client endpoint,
+# so the 6 grpc-*.json rules cannot be driven. These are explicit SKIPs (not failures)
+# until a gRPC client is added to test-spring (see plan §6.4.2).
+$gGrpcRules = @("grpc-greeter","grpc-error","grpc-delay","grpc-server-streaming","grpc-client-streaming","grpc-bidirectional-streaming")
+foreach ($g in $gGrpcRules) {
+    Test-Skip "G: gRPC rule $g not exercised (no gRPC client in test-spring)"
+}
+
+# -------------------- MX: Protocol x Mode coverage gaps --------------------
+Write-Host ""
+Write-Host "--- MX: Protocol x Mode Matrix (gap markers) ---" -ForegroundColor White
+# HTTP is fully covered across all 5 modes (see H*/M* sections). The combinations
+# below cannot be exercised in Docker Staging because there is no real TCP/Kafka/
+# Pulsar/JMS broker — only the MockBroker STUB / RECORD_AND_STUB redirect paths are
+# driven (see T*/K*/P*/J* and D sections). Marked SKIP (not failure) to make the
+# coverage gap explicit and runnable.
+$mxGaps = @(
+    @{p="tcp";    m="passthrough"},      @{p="tcp";    m="record"},
+    @{p="tcp";    m="record-and-stub"},  @{p="tcp";    m="record-all"},
+    @{p="kafka";  m="passthrough"},      @{p="kafka";  m="record"},      @{p="kafka";  m="record-all"},
+    @{p="pulsar"; m="passthrough"},      @{p="pulsar"; m="record"},      @{p="pulsar"; m="record-all"},
+    @{p="jms";    m="passthrough"},      @{p="jms";    m="record"},      @{p="jms";    m="record-all"}
+)
+foreach ($gap in $mxGaps) {
+    Test-Skip "MX: $($gap.p) x $($gap.m) not exercised (no real $($gap.p) broker in staging; only MockBroker STUB / RECORD_AND_STUB path driven)"
 }
 
 # ==================== 6. Summary report ====================

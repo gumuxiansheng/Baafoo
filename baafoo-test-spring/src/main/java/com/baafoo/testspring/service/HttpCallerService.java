@@ -21,8 +21,15 @@ public class HttpCallerService {
     private static final int TIMEOUT = 3000;
 
     public Map<String, Object> doGet(String targetUrl) throws Exception {
+        return doGet(targetUrl, null, null);
+    }
+
+    public Map<String, Object> doGet(String targetUrl, String headerName, String headerValue) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(targetUrl).openConnection();
         conn.setRequestMethod("GET");
+        if (headerName != null && !headerName.isEmpty()) {
+            conn.setRequestProperty(headerName, headerValue != null ? headerValue : "");
+        }
         conn.setConnectTimeout(TIMEOUT);
         conn.setReadTimeout(TIMEOUT);
         return parseResponse(conn);

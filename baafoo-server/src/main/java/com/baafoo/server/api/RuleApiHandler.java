@@ -128,6 +128,13 @@ class RuleApiHandler implements ResourceHandler {
             }
         }
 
+        if (path.startsWith(API_PREFIX + "rulesets/") && "DELETE".equals(method)) {
+            String id = ApiUtils.extractId(path, API_PREFIX + "rulesets/", null);
+            ctx.requirePermission("rule", "delete");
+            boolean deleted = ctx.storage.deleteRuleSet(id);
+            return deleted ? ApiResponse.ok("Deleted", null) : ApiResponse.notFound("RuleSet not found");
+        }
+
         return null;
     }
 

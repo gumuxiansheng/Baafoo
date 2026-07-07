@@ -5,6 +5,8 @@
 **项目**: Baafoo - JavaAgent-Based API Mock Platform
 
 **版本更新记录**：
+- v2.3 (2026-07-08): §6.4 不再只标注缺口——补写全部缺失用例的具体定义：§6.4.2.1 协议×模式矩阵 18 个未覆盖组合（TCP/Kafka/Pulsar/JMS 非 STUB 模式 + gRPC 全列）逐条用例；§6.4.3.1 已补充能力的逐步断言；§6.4.4 其余 P2 缺口（场景集/MCP/故障注入/Consul DNS/fail-open/继承环境/规则分页/优先级/多响应/tags）具体用例。每个缺口用例均含前置条件/步骤/预期/脚本状态。
+- v2.2 (2026-07-07): §6.4 全链路测试重构——补充协议×模式覆盖矩阵、断言红线（禁止 `|mocked` 兜底伪通过、失败态必须判 FAIL、计数器前置重置、模式切换等待）、规则集/录制管理/撤销重置/OpenAPI 导入用例；标注 gRPC 与真实 MQ broker 缺口
 - v2.1 (2026-07-04): §10.7 多 Agent 共存兼容性扩展：合并 JaCoCo + SkyWalking + Baafoo 三 Agent 组合详细测试方案（MULTI-001~008），含测试矩阵、环境配置、JVM 启动命令、验收标准、风险缓解、执行流程；更新 COMP-AGENT 矩阵增加版本号和测试状态
 - v2.0 (2026-06-29): 全方位查漏补缺：新增变异测试(§5.6)、安全测试(§15)、文档/API契约测试(§16)、客户端SDK测试(§8.9)、代理Sidecar测试(§8.10)；补全缺失的服务端Handler/Auth/Storage/MCP/API单元测试；新增L4层Testcontainers集成测试、gRPC服务端流测试、协议TLS/SASL兼容性、虚拟线程兼容性、ARM64架构兼容性、资源泄漏专项(文件描述符/线程泄漏/Netty堆外内存)；前端新增组件单元测试、响应式测试、可访问性测试、视觉回归测试；整合已知P0问题验证用例(代码审查报告的3个P0 + 5个P1)
 - v1.4 (2026-06-24): 企业级应用测试按行业领域重新分类，新增金融/互联网/政务信创/工业物联网/电商零售/医疗等行业测试应用，扩展多Agent共存测试
@@ -813,24 +815,163 @@ mvnw clean test jacoco:report
 
 ### 6.4 L3 - 全链路集成测试（Docker Staging）
 
-使用 Docker Staging 环境执行完整的全链路测试，已由 [test-fullchain.ps1](test-fullchain.ps1) 脚本实现。
+使用 Docker Staging 环境执行完整的全链路测试，由 [test-fullchain.ps1](test-fullchain.ps1) 脚本实现。脚本是当前**自动化**的权威来源；本计划除描述设计原则与覆盖结构外，**对每一处覆盖缺口都补写了具体测试用例定义**（见 §6.4.2.1 / §6.4.4），使"缺口"变为可执行的待办——而非仅标注。用例的 `脚本状态` 列标明该用例当前是 `✅已断言` / `部分可用` / `SKIP（阻塞项）`，SKIP 不代表断言失败，而是待 Staging 补齐真实 broker 或 test-spring 增加对应客户端后即可转为断言。
 
-**当前覆盖**：33 个用例，91% 通过率（30 通过 / 3 跳过 / 0 失败）
+#### 6.4.1 用例分组与断言规范
 
-**待补充用例**：
+用例按协议 / 能力分组：`F`(核心) `A`(API 安全与 CRUD) `H`(HTTP) `T`(TCP) `K`(Kafka) `P`(Pulsar) `J`(JMS) `E`(环境隔离) `PL`(插件) `R/D`(录制与 MQ 方向) `C`(条件类型) `M`(环境模式) `AS`(规则集) `REC`(录制管理) `RU/RST`(撤销与重置) `OAPI`(OpenAPI 导入) `G`(gRPC) `MX`(协议×模式矩阵缺口)。
 
-| 用例ID | 测试项 | 优先级 |
-|--------|-------|-------|
-| IT-L3-001 | 规则热更新（动态添加规则即时生效） | P0 |
-| IT-L3-002 | 环境模式热切换（stub ↔ passthrough） | P0 |
-| IT-L3-003 | 多环境规则隔离 | P0 |
-| IT-L3-004 | 场景集启用/禁用 | P1 |
-| IT-L3-005 | 规则版本撤销 | P1 |
-| IT-L3-006 | 录制数据查询与删除 | P1 |
-| IT-L3-007 | 插件热加载（需验证） | P2 |
-| IT-L3-008 | MCP Server 工具调用 | P2 |
-| IT-L3-009 | 故障注入功能验证 | P2 |
-| IT-L3-010 | OpenAPI 导入功能 | P2 |
+**断言红线（2026-07-07 审查后强制执行）**：
+
+1. **禁止 `|mocked` 兜底伪通过**：条件类用例（C01–C09、H07）必须从 stub 响应 `body` 中精确提取 `matchedBy` 字段并比对目标值，不能仅凭响应含 `mocked` 就判通过——否则"命中默认规则"也会误判为"目标条件命中"。
+2. **失败态必须判 FAIL**：Pulsar/JMS 等用例断言中不得把 `error|timeout|null` 计入通过条件；调用报错/超时/空返回必须判 FAIL。
+3. **计数器前置重置**：有状态计数类用例（如 H08 requestCount）执行前必须调用 `/rules/{id}/reset-state` 重置，消除二次运行的 flaky。
+4. **模式切换等待**：切换环境模式后必须等待 `pollIntervalSec`（默认 10s）+ 余量（脚本常量 `$MODE_SETTLE_WAIT=12`），否则 Agent 尚未同步就断言。
+
+#### 6.4.2 协议 × 环境模式 覆盖矩阵（设计目标）
+
+环境模式共 5 种：`STUB / PASSTHROUGH / RECORD / RECORD_AND_STUB / RECORD_ALL`。
+
+| 协议 \ 模式 | STUB | PASSTHROUGH | RECORD | RECORD_AND_STUB | RECORD_ALL |
+|-------------|:----:|:-----------:|:------:|:---------------:|:----------:|
+| **HTTP** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **TCP** | ✅ | ⚠️* | ⚠️* | ⚠️* | ⚠️* |
+| **Kafka** | ✅ | ⚠️* | ⚠️* | ✅(录制方向) | ⚠️* |
+| **Pulsar** | ✅ | ⚠️* | ⚠️* | ✅(录制方向) | ⚠️* |
+| **JMS** | ✅ | ⚠️* | ⚠️* | ✅(录制方向) | ⚠️* |
+| **gRPC** | ❌** | ❌** | ❌** | ❌** | ❌** |
+
+> ✅ 已覆盖断言；⚠️* 受 Staging 环境限制未覆盖——Docker Staging 无真实 TCP/Kafka/Pulsar/JMS broker，仅 `MockBroker` 的 STUB / RECORD_AND_STUB 重定向路径可被脚本驱动；PASSTHROUGH/RECORD/RECORD_ALL 需真实后端才能断言透传行为。脚本中这些组合以 `MX:*` SKIP 显式标注缺口，不代表断言失败。每一格对应的**具体测试用例见 §6.4.2.1**。
+> ❌** gRPC 整列缺失：`baafoo-test-spring` 无 gRPC 客户端端点，6 个 `grpc-*.json` 规则无法被脚本驱动。需为 test-spring 增加 gRPC client 后方可补 G01–G06。
+
+#### 6.4.2.1 矩阵未覆盖组合的具体测试用例
+
+下面把 §6.4.2 中标记为 ⚠️ / ❌ 的每一格落定为**可执行测试用例**。当前在 Docker Staging 中这些组合仍以 `MX:*` / `G:*` SKIP 显式跳过（脚本不谎报通过），但用例定义已就绪——一旦 Staging 补齐真实 broker 或 test-spring 增加对应客户端，即可把 SKIP 改为断言。HTTP 的 5 个模式已由 `M01/H*/M03/M04/M02/M05` 覆盖，此处不再重复。
+
+**TCP**（无真实 TCP 后端；MockBroker 的 STUB 路径已被 `T01–T03` 驱动）
+
+| 模式 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
+|------|--------|----------|----------|----------|----------|
+| PASSTHROUGH | MX-TCP-PT-001 | staging-a 切 PASSTHROUGH；Staging 内置真实 TCP echo 服务（如 `server:9100`） | 1) 切模式等 `$MODE_SETTLE_WAIT`；2) `GET /api/socket/bio?host=server&port=9100` | 响应不含 `intercepted`，回显内容与直连 echo 服务一致（透传） | SKIP：需真实 TCP 后端 |
+| RECORD | MX-TCP-REC-001 | 同上切 RECORD | 1) 切模式等 12s；2) 发 BIO 请求；3) `GET /recordings` | 响应透传，并生成 `protocol=tcp` 录制（direction=produce/consume 视交互而定） | SKIP：需真实 TCP 后端 |
+| RECORD_AND_STUB | MX-TCP-RAS-001 | MockBroker 开启 | 1) 切 RECORD_AND_STUB；2) 发请求 | 命中 MockBroker STUB 响应（同 `T01–T03`），并生成录制 | 部分可用：STUB 路径已由 `T01–T03` 覆盖；录制行为待补 |
+| RECORD_ALL | MX-TCP-RALL-001 | 切 RECORD_ALL | 1) 发未匹配报文；2) 查录制 | 未匹配报文也被录制（recording 含 unmatched 标记） | SKIP：需真实 TCP 后端 |
+
+**Kafka**（MockBroker 驱动 STUB 与 RECORD_AND_STUB 的录制方向；其余模式需真实 broker）
+
+| 模式 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
+|------|--------|----------|----------|----------|----------|
+| PASSTHROUGH | MX-KAF-PT-001 | staging-a 切 PASSTHROUGH；Staging 内置真实 Kafka broker | 1) 切模式等 12s；2) `GET /api/kafka/send?...&topic=baafoo-test-topic` | `success=true` 且响应非 MockBroker（透传至真实 broker） | SKIP：需真实 Kafka broker |
+| RECORD | MX-KAF-REC-001 | 同上切 RECORD | 1) 切模式；2) send/consume；3) `GET /recordings` | 透传成功并生成 `protocol=kafka` 录制含 produce/consume 方向 | SKIP：需真实 Kafka broker |
+| RECORD_ALL | MX-KAF-RALL-001 | 同上切 RECORD_ALL | 1) 发未匹配 topic；2) 查录制 | 未匹配 topic 也录制（含 unmatched） | SKIP：需真实 Kafka broker |
+| RECORD_AND_STUB | （已由 D 段覆盖） | — | D 段在 RECORD_AND_STUB 下重驱 MQ 并断言 `direction` | `D01` Kafka 录制含 produce/consume | ✅ 已断言 |
+
+**Pulsar**（对照 `P01–P03` + `D02`；仅 PASSTHROUGH / RECORD / RECORD_ALL 三格待补）
+
+| 模式 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
+|------|--------|----------|----------|----------|----------|
+| PASSTHROUGH | MX-PUL-PT-001 | 真实 Pulsar broker | 切模式→send/consume | `success=true` 且非 MockBroker 响应（透传） | SKIP：需真实 Pulsar broker |
+| RECORD | MX-PUL-REC-001 | 真实 Pulsar broker | 切 RECORD→send/consume→查录制 | 透传 + `protocol=pulsar` 录制含方向 | SKIP |
+| RECORD_ALL | MX-PUL-RALL-001 | 真实 Pulsar broker | 未匹配 topic 也录制 | 录制含 unmatched | SKIP |
+
+**JMS**（对照 `J01–J02` + `D03`；仅 PASSTHROUGH / RECORD / RECORD_ALL 三格待补）
+
+| 模式 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
+|------|--------|----------|----------|----------|----------|
+| PASSTHROUGH | MX-JMS-PT-001 | 真实 JMS broker | 切模式→send/receive | `success=true` 且非 MockBroker（透传） | SKIP：需真实 JMS broker |
+| RECORD | MX-JMS-REC-001 | 真实 JMS broker | 切 RECORD→send/receive→查录制 | 透传 + `protocol=jms` 录制含方向 | SKIP |
+| RECORD_ALL | MX-JMS-RALL-001 | 真实 JMS broker | 未匹配 queue 也录制 | 录制含 unmatched | SKIP |
+
+**gRPC**（整列缺失：`baafoo-test-spring` 无 gRPC client 端点，6 个 `grpc-*.json` 规则无法驱动）
+
+| 模式 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
+|------|--------|----------|----------|----------|----------|
+| STUB | G01 | test-spring 增加 `/api/grpc/call` 端点驱动 `grpc-greeter` 规则 | 调用 SayHello | 返回 MockBroker 构造的 Mock 响应，`matchedBy=grpc` | SKIP：待 test-spring gRPC client |
+| PASSTHROUGH | G02 | 同上 + 真实 gRPC 服务 | 调用并切 PASSTHROUGH | 透传至真实服务 | SKIP |
+| RECORD | G03 | 同上 | 切 RECORD 调用 | 透传并录制 `protocol=grpc` | SKIP |
+| RECORD_AND_STUB | G04 | 同上 | 切 RECORD_AND_STUB 调用 | 返回 Mock + 录制 | SKIP |
+| RECORD_ALL | G05–G06 | 同上；覆盖 server/client/bidirectional streaming 规则 | 各类 streaming 调用 | 未匹配也录制 | SKIP |
+
+> 阻塞项单一且明确：给 `baafoo-test-spring` 增加 gRPC client controller（`/api/grpc/call?service=...&method=...&payload=...`），即可把 6 个 `grpc-*.json` 规则从"死资产"变活，并把脚本 G 段 SKIP 改为断言。用例 G01–G06 已就绪。
+
+#### 6.4.3 已实现但历史版本零覆盖、现已补充的能力
+
+| 能力 | 用例 | 说明 |
+|------|------|------|
+| 规则集 RuleSet CRUD | AS01–AS03 | `GET/POST /__baafoo__/api/rulesets` 创建→查询→删除 |
+| 录制删除 | REC-DEL | `DELETE /__baafoo__/api/recordings/{id}` |
+| 录制分页 | REC-PAGE | `GET /__baafoo__/api/recordings?page=&size=` |
+| 规则撤销 undo | RU01 | `POST /__baafoo__/api/rules/{id}/undo` |
+| 计数器重置 | RST01 | `POST /__baafoo__/api/rules/reset-all-state` 与 `/rules/{id}/reset-state` |
+| OpenAPI 导入 | OAPI01–OAPI02 | `POST /__baafoo__/api/rules/import-openapi` 预览 + 持久化 |
+
+##### 6.4.3.1 已补充能力的具体用例定义（逐步断言）
+
+- **AS01 规则集创建**：`POST /__baafoo__/api/rulesets`，body `{id:"test-ruleset-*", name, description, ruleIds:["staging-a-http-get"], enabled:true}` → 断言 `success=true` 且返回 `data.id`。
+- **AS02 规则集查询**：`GET /__baafoo__/api/rulesets` → 响应含刚创建的 `test-ruleset-*` id。
+- **AS03 规则集删除**：`DELETE /__baafoo__/api/rulesets/{id}` → 再次列表不含该 id（验证 `RuleApiHandler` DELETE 接线生效）。
+- **REC-PAGE 录制分页**：`GET /__baafoo__/api/recordings?page=1&size=5` → 从 `ApiResponse.data` 取 `total`/`items`，断言分页结构存在。
+- **REC-DEL 录制删除**：`GET /recordings?page=1&size=10` 取首条 `id` → `DELETE /recordings/{id}` → 再次列表该 `id` 不再出现。
+- **RU01 规则撤销**：`GET /rules/{id}` 取原规则 → `PUT` 改 `description` → `POST /rules/{id}/undo` → 断言 `success=true` 且 `description` 回滚。
+- **RST01 计数器重置**：`POST /rules/reset-all-state`（及 `/rules/{id}/reset-state`）→ 断言 `success=true`；`H08` 执行前调用以消 flaky。
+- **OAPI01 OpenAPI 预览**：`POST /rules/import-openapi`，body=openapi-sample.json → 断言 `success=true` 且 `data.generatedCount>0`。
+- **OAPI02 OpenAPI 持久化**：同端点 `?save=true&environment=staging-a` → 断言 `data.savedCount>0`，随后循环 `DELETE /rules/{rid}` 清理导入规则。
+
+> 注：上述历史"待补充用例"中，IT-L3-001~003（规则热更新/模式热切换/多环境隔离）、IT-L3-005/006（撤销/录制删除）**已在脚本中实现**（对应 AS*/RU01/REC-DEL 等）；IT-L3-004/007/008/009/010（场景集/MCP/故障注入/继承环境等）的具体用例已写入 **§6.4.4**，其自动化待 test-spring / Staging 能力补齐。
+
+#### 6.4.4 其余 P2 缺口的具体用例定义
+
+下列用例对应审查报告 P2 项与 §7 功能测试表里已存在但 L3 脚本尚未接入的能力。Server 端能力多数已实现，缺口主要在 **test-spring 客户端 / Staging 环境支撑**，用例定义已就绪，接入后即可脚本化。
+
+**场景集（对应 FT-SCENE-001~004，`SceneApiHandler` 已实现）**
+
+| 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
+|--------|----------|----------|----------|----------|
+| SCN-001 创建场景集 | 有若干规则 | `POST /__baafoo__/api/scenes` 含 ruleIds | `success=true` 且返回 id | SKIP：待脚本注册场景集 API 调用 |
+| SCN-002 启用场景集 | 场景集存在（默认禁用） | `POST /scenes/{id}/enable` | 其下规则全部 `enabled=true`，Agent 开始匹配 | SKIP |
+| SCN-003 禁用场景集 | 场景集已启用 | `POST /scenes/{id}/disable` | 其下规则全部 `enabled=false` | SKIP |
+| SCN-004 场景集增删规则 | 场景集存在 | 动态 `PUT /scenes/{id}` 增删 ruleIds | 列表与实际生效规则一致 | SKIP |
+
+**MCP Server（对应 FT-MCP，`McpToolRegistry` 已实例化工具）**
+
+| 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
+|--------|----------|----------|----------|----------|
+| MCP-001 工具清单 | MCP 已启用 | 调 MCP `list_tools` | 返回 Rule/Environment/Scene/Recording 等工具 | SKIP：待脚本增加 MCP 客户端调用 |
+| MCP-002 经 MCP 建规则 | 同上 | 调 `create_rule` 工具建一条 HTTP 规则 | 规则入库，Agent 能命中该规则 | SKIP |
+| MCP-003 经 MCP 切模式 | 同上 | 调 `set_environment_mode` | 环境模式变更并同步 Agent | SKIP |
+
+**故障注入（对应 FT-FAULT-001~004；delay/error 已由 H05/H06 部分覆盖）**
+
+| 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
+|--------|----------|----------|----------|----------|
+| FLT-001 延迟注入 | 规则配 `delayMs=2000` | 发请求测实际耗时 | 延迟误差 < 10%（已可由 H05 验证延迟路径） | 部分可用 |
+| FLT-002 异常状态码 | 规则配 `statusCode=500` | 发请求 | 返回 500（已由 H06 覆盖） | ✅ 已断言 |
+| FLT-003 混沌工程 | 配置 `ChaosProfile`（按概率触发） | 多次请求统计触发率 | 触发率≈配置概率 | SKIP：待脚本接 ChaosApiHandler |
+| FLT-004 有状态 Mock | 配置 `StatefulCounter` | 连续请求 | 响应中计数器递增 | SKIP |
+
+**Consul DNS 重定向（`ConsulDnsAdvice` 把服务名解析重定向到 MockBroker）**
+
+| 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
+|--------|----------|----------|----------|----------|
+| CONS-001 DNS 重定向 | test-spring 通过 `InetAddress` 解析 `consul-server` | 触发解析 | 解析结果被重定向到 MockBroker 的 Consul stub 地址（对照 H09 的 HTTP stub 规则） | SKIP：需 test-spring 走 InetAddress 解析该域名 |
+
+**fail-open 降级（`BaafooAgent.failOpen`）**
+
+| 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
+|--------|----------|----------|----------|----------|
+| FO-001 断连透传 | Agent 与 Server 网络断开 | 发业务请求 | 请求 fail-open 透传真实后端，不阻断业务 | SKIP：需模拟 Server 不可达 |
+
+**继承环境 / 规则分页 / 优先级 / 多响应 / tags（对应 FT-RULE-009/012/013 等）**
+
+| 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
+|--------|----------|----------|----------|----------|
+| INH-001 继承环境 | 规则在场景集内继承环境 | `GET /rules/{id}/inherited-environments` | 返回正确继承关系 | SKIP |
+| PAG-001 规则分页 | 规则数 > size | `GET /rules?page=1&size=10` | 分页返回 `total`/`items` | SKIP：脚本当前用全量 GET |
+| PRIO-001 规则优先级 | 两条同匹配规则不同 priority | 发请求 | 高 priority 规则先命中（`matchedBy` 指向高优先级规则） | SKIP |
+| MULTI-001 多响应分支 | 一条规则多 response + 条件 | 不同条件请求 | 返回对应分支响应 | SKIP |
+| TAG-001 标签筛选 | 规则带 tags | 按 tag 查询 | 仅返回匹配 tag 的规则 | SKIP |
+
+> 上述 P2 用例定义完成后，原审查报告所列"16 个矩阵未覆盖组合 + 场景集/MCP/故障注入/Consul DNS/fail-open/继承环境/分页/优先级/多响应/tags"缺口均已**落到具体用例**，不再只是缺口标注。脚本侧接入对应客户端/环境后，将 `SKIP` 改为断言即可关闭缺口。
 
 **执行方式**：
 

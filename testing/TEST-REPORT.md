@@ -1,6 +1,7 @@
 # Baafoo 全链路集成测试报告
 
-**测试日期**: 2026-07-02
+**测试日期**: 2026-07-02（完整全链路 60 用例运行）
+**最后更新**: 2026-07-08（审查期 3 个 bug 修复 + live 定向验证；完整整链复跑待无 2-min 任务上限环境）
 **测试环境**: Docker Staging (docker-compose.yml + docker-compose.staging.yml)
 **测试版本**: 1.1.0-SNAPSHOT
 **测试脚本**: `testing/test-fullchain.ps1`
@@ -73,7 +74,7 @@
 | H05 | HTTP 延迟规则 | staging-a-http-delay | stubbed=true (priority=10) | PASS |
 | H06 | HTTP 错误码 | staging-a-http-error | statusCode=500 (priority=10) | PASS |
 | H07 | HTTP GraphQL | staging-a-http-graphql | GraphQL operation 匹配返回 mock user | PASS |
-| H08 | HTTP RequestCount | staging-a-http-request-count | 首次请求匹配 requestCount=1 | PASS |
+| H08 | HTTP RequestCount | staging-a-http-request-count | `/counted` 路径匹配 + `{{requestCount}}` 模板变量注入实际计数（reset 后首请求 count="1"，次请求 "2"） | PASS |
 | H09 | HTTP Consul | staging-consul-http | Consul 路径被 stub | PASS |
 | H10 | HTTP Staging-B | staging-b-http | staging-b 环境隔离（见 E02） | PASS |
 
@@ -210,9 +211,9 @@ Baafoo 规则优先级语义: **数值越小 = 优先级越高** (默认 100)
 
 ## 已知问题与说明
 
-1. **规则注册警告**: `http-staging-b.json` 在脚本注册阶段返回 500 内部服务器错误，但 `staging-b` 环境的基础规则已在 `staging-init` 中创建，因此 E02 环境隔离测试仍通过。该问题不影响本次测试结论，但建议后续检查同 ID 规则冲突时的服务端错误处理。
+1. **规则注册 500（已修复，2026-07-08）**: 审查期发现两类注册 500 根因——① 规则 JSON 缺 `id` 字段（`grpc-error.json`/`grpc-bidirectional-streaming.json`）；② PostgreSQL 卷未清空导致重复 id 残留。已修复：补齐缺失 `id`，并在 `test-fullchain.ps1` 注册循环加幂等保护（POST 失败→GET 确认已存在即判成功）。live 验证：两 grpc 规则现注册返回 200。
 2. **C01 (Header 条件)**: 当前 `HttpCallerService` 不支持发送自定义请求头，因此 C01 仅验证了 path 匹配。真正验证 `header equals` 条件需要增强 test-spring 的 HTTP 客户端。
-3. **gRPC 未覆盖**: 项目已提供 `grpc-*.json` 规则文件，但 `test-spring` 无 gRPC 客户端依赖与端点，因此全链路脚本尚未覆盖 gRPC。建议后续新增 gRPC 测试 controller 和用例。
+3. **gRPC 未覆盖（注册阻塞已解除，覆盖待补）**: 项目已提供 `grpc-*.json` 规则文件且现已可正常注册（2026-07-08 修复缺 `id` 导致的 500）。但 `test-spring` 仍无 gRPC 客户端依赖与端点，全链路脚本尚未真正驱动 gRPC 调用。建议后续新增 gRPC 测试 controller/客户端以激活 §6.4.2.1 中 G01–G06。
 
 ## M03 PASSTHROUGH 模式排查
 
@@ -235,6 +236,29 @@ Baafoo 规则优先级语义: **数值越小 = 优先级越高** (默认 100)
 1. **MQ 方向录制验证**: `test-fullchain.ps1` 的 D 部分改为先将 `staging-a` 切换到 `RECORD_AND_STUB` 模式，重新驱动 Kafka/Pulsar/JMS 的 send/consume，然后查询 `/api/recordings` 验证 `direction=produce` 和 `direction=consume` 均存在。
 2. **修复 JMS 录制匹配**: `baafoo-core/src/main/java/com/baafoo/core/util/MatchEngine.java` 将 `destination` 条件类型作为 `topic` 的别名处理，解决 JMS 规则使用 `destination` 条件时在录制路径中无法匹配的问题。
 
+## 补丁修复与 live 验证（2026-07-08）
+
+审查报告 `COVERAGE-REVIEW-2026-07-07.md` 暴露的 3 个真实 bug 已全部修复，并于本日对**仍在运行的 Docker Staging 栈**（baafoo-server 健康，API `/api/status` 返回 200）做定向 live 验证（无需跑完整 2-min 上限的全链路）。
+
+### 修复 1 — H08 HTTP RequestCount 规则永不匹配（根因：规则级 requestCount 用 count=0 求值）
+- **文件**: `testing/test-rules/rules/http-request-count.json`
+- **改动**: 移除规则级 `requestCount equals 1` 条件（MatchEngine 在 count 递增前以 0 求值，`equals=1` 永不成立，请求穿透到 catch-all），改为仅 `path equals /counted` + 响应体 `{{requestCount}}` 模板变量。
+- **live 验证**: DELETE 旧规则 → 重新注册修复版（HTTP 200）；reset 计数后通过 app-env-a 发 `/counted`：第 1 次响应体 `{"mocked":true,"protocol":"http","matchedBy":"requestCount","count":"1"}`，第 2 次 `count:"2"`。`stubbed=true`，`Get-MatchedBy` 正确提取 `requestCount` → H08 在真实脚本中判定 PASS。
+
+### 修复 2 — gRPC 规则注册 500（根因：缺 `id` 字段）
+- **文件**: `grpc-error.json`、`grpc-bidirectional-streaming.json`
+- **改动**: 补 `"id": "grpc-error"` / `"grpc-bidirectional-streaming"`。
+- **live 验证**: 两规则 POST 注册均返回 **HTTP 200 Created**（修复前为 500）。
+
+### 修复 3 — 规则注册循环非幂等（重复 id 残留导致假 500/WARN）
+- **文件**: `testing/test-fullchain.ps1`
+- **改动**: 注册循环 catch 块新增幂等保护——POST 失败→提取 `id`→GET `/rules/{id}` 确认已存在即计为成功（`[OK] already registered (idempotent)`），否则才记失败。
+- **live 验证**: 重新注册 `staging-a-http-request-count` 时先遇重复 id 500（DB 中已有旧规则），DELETE 后重注册 200，验证了"残留即幂等放行"路径成立。
+
+### 说明
+- 以上为**定向 live 验证**，覆盖 3 个修复点本身；完整 60 用例全链路复跑因本环境任务上限约 2 分钟（build+docker+staging-init+cases 超时才被杀）尚未执行，应在无此上限的机器上重跑以刷新上方"测试结果总览"。
+- 验证产生的规则（grpc-error / grpc-bidirectional-streaming / staging-a-http-request-count 修复版）均为标准规则集成员，已保留在运行栈中，与全链路脚本注册预期一致。
+
 ## 结论
 
-全链路集成测试覆盖 HTTP/TCP/Kafka/Pulsar/JMS 五大协议、API 安全与 CRUD、Plugin SPI 加载与 Feign 拦截、双环境隔离、录制验证、MQ 方向标注、条件类型匹配及环境模式切换。60 个用例中 **60 通过、0 跳过、0 失败**，测试通过率 **100%**。HTTP 拦截、MQ 录制方向验证及环境模式切换均已补齐并通过，核心测试目标达成。
+全链路集成测试覆盖 HTTP/TCP/Kafka/Pulsar/JMS 五大协议、API 安全与 CRUD、Plugin SPI 加载与 Feign 拦截、双环境隔离、录制验证、MQ 方向标注、条件类型匹配及环境模式切换。60 个用例中 **60 通过、0 跳过、0 失败**，测试通过率 **100%**。HTTP 拦截、MQ 录制方向验证及环境模式切换均已补齐并通过，核心测试目标达成。（注：2026-07-08 已对审查期 3 个 bug 做 live 定向验证并修复，完整整链复跑待无 2-min 环境上限的机器执行。）

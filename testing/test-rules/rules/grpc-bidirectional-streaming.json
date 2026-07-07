@@ -1,4 +1,5 @@
 {
+  "id": "grpc-bidirectional-streaming",
   "name": "gRPC Bidirectional Streaming - Chat",
   "protocol": "grpc",
   "host": "chat.example.com",
