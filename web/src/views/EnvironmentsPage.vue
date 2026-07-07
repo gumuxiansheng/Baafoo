@@ -38,7 +38,7 @@
                   <el-dropdown-item command="stub" :disabled="row.mode === 'stub'">{{ $t('environments.modes.stub') }}</el-dropdown-item>
                   <el-dropdown-item command="passthrough" :disabled="row.mode === 'passthrough'">{{ $t('environments.modes.passthrough') }}</el-dropdown-item>
                   <el-dropdown-item command="record" :disabled="row.mode === 'record'">{{ $t('environments.modes.record') }}</el-dropdown-item>
-                  <el-dropdown-item command="record-and-stub" :disabled="row.mode === 'record-and-stub'">Record+Stub</el-dropdown-item>
+                  <el-dropdown-item command="record-and-stub" :disabled="row.mode === 'record-and-stub'">{{ $t('environments.modes.recordAndStub') }}</el-dropdown-item>
                   <el-dropdown-item command="record-all" :disabled="row.mode === 'record-all'">{{ $t('environments.modes.recordAll') }}</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -63,7 +63,7 @@
             <el-option :label="$t('environments.modes.stub')" value="stub" />
             <el-option :label="$t('environments.modes.passthrough')" value="passthrough" />
             <el-option :label="$t('environments.modes.record')" value="record" />
-            <el-option label="Record+Stub" value="record-and-stub" />
+            <el-option :label="$t('environments.modes.recordAndStub')" value="record-and-stub" />
             <el-option :label="$t('environments.modes.recordAll')" value="record-all" />
           </el-select>
         </el-form-item>

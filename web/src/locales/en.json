@@ -270,6 +270,7 @@
       "stub": "Stub",
       "passthrough": "Passthrough",
       "record": "Record",
+      "recordAndStub": "Record+Stub",
       "recordAll": "Record All"
     },
     "noVariables": "No variables"

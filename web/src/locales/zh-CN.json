@@ -267,10 +267,11 @@
     "selectRulesPlaceholder": "选择要关联的规则",
     "saveAssociation": "保存关联",
     "modes": {
-      "stub": "Stub 模式",
-      "passthrough": "Passthrough（透传）",
-      "record": "Record（录制）",
-      "recordAll": "Record All（全量录制）"
+      "stub": "Stub",
+      "passthrough": "Passthrough",
+      "record": "Record",
+      "recordAndStub": "Record+Stub",
+      "recordAll": "Record All"
     },
     "noVariables": "无变量"
   },
