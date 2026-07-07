@@ -32,7 +32,7 @@
           <template #default="{ row }">
             <el-button size="small" text @click="viewDetail(row.id)">{{ $t('environments.detail') }}</el-button>
             <el-dropdown @command="(cmd) => changeMode(row, cmd)" style="margin-left: 8px" v-if="authStore.canWriteEnvironment">
-              <el-button size="small" text>{{ $t('environments.switchMode') }} <el-icon><ArrowDown /></el-icon></el-button>
+              <el-button size="small" text :style="{ background: 'var(--el-bg-color)' }">{{ $t('environments.switchMode') }} <el-icon><ArrowDown /></el-icon></el-button>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="stub" :disabled="row.mode === 'stub'">{{ $t('environments.modes.stub') }}</el-dropdown-item>
