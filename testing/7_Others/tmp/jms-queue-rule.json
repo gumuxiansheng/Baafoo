@@ -1,0 +1,23 @@
+{
+  "id": "staging-a-jms-queue",
+  "name": "JMS Queue挡板",
+  "protocol": "jms",
+  "host": "jms-broker",
+  "port": 61616,
+  "serviceName": "BAAFOO.TEST.QUEUE",
+  "conditions": [
+    {"type": "destination", "operator": "equals", "value": "BAAFOO.TEST.QUEUE"}
+  ],
+  "responses": [
+    {
+      "name": "JMS Queue响应",
+      "statusCode": 200,
+      "body": "{\"mocked\":true,\"protocol\":\"jms\",\"destination\":\"BAAFOO.TEST.QUEUE\",\"message\":\"Baafoo JMS stub\"}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 100,
+  "tags": ["jms", "queue", "staging"],
+  "environments": ["staging-a"]
+}

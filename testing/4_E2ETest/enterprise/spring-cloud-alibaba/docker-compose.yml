@@ -1,0 +1,166 @@
+# =============================================================================
+# Spring Cloud Alibaba 企业级测试 - Docker Compose 编排
+# 架构: Nacos Server + service-provider + service-consumer + Baafoo Server
+# 测试用例: EG-INT-001/003/008
+# =============================================================================
+
+services:
+  # ====================================================================
+  # Nacos Server (服务注册中心 + 配置中心)
+  # ====================================================================
+  nacos:
+    image: nacos/nacos-server:v2.2.3
+    container_name: baafoo-enterprise-nacos
+    networks:
+      - baafoo-enterprise-net
+    ports:
+      - "18848:8848"
+      - "19848:9848"
+    environment:
+      - MODE=standalone
+      - PREFER_HOST_MODE=hostname
+      - NACOS_AUTH_ENABLE=false
+      - JVM_XMS=512m
+      - JVM_XMX=512m
+      - JVM_XMN=256m
+      - JVM_MS=32m
+      - JVM_MMS=64m
+      - JAVA_OPT=-XX:-UseContainerSupport
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8848/nacos/v1/console/health/readiness || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+
+  # ====================================================================
+  # service-provider (Nacos Discovery Provider + Baafoo Agent)
+  # ====================================================================
+  provider:
+    build:
+      context: ../../..
+      dockerfile: testing/4_E2ETest/enterprise/spring-cloud-alibaba/Dockerfile.provider
+    image: baafoo-sca-provider:1.0.0
+    container_name: baafoo-enterprise-sca-provider
+    networks:
+      baafoo-enterprise-net:
+        aliases:
+          # Add "service-provider" as a network alias so Docker DNS can resolve it.
+          # This allows InetAddress.getByName("service-provider") to succeed in Consumer,
+          # enabling the HttpOpenServerAdvice + DnsResolveAdvice interception path.
+          - service-provider
+    ports:
+      - "18081:18081"
+    environment:
+      - BAAFOO_SERVER_HOST=baafoo-server
+      - BAAFOO_ENV=enterprise-sca-provider
+      - SERVER_PORT=18081
+      - NACOS_ADDR=nacos:8848
+      - NACOS_USER=nacos
+      - NACOS_PASS=nacos
+      - JAVA_OPTS=-XX:-UseContainerSupport -Xms128m -Xmx256m
+    depends_on:
+      baafoo-server:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:18081/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+
+  # ====================================================================
+  # service-consumer (Nacos Discovery Consumer + Feign + Baafoo Agent)
+  # ====================================================================
+  consumer:
+    build:
+      context: ../../..
+      dockerfile: testing/4_E2ETest/enterprise/spring-cloud-alibaba/Dockerfile.consumer
+    image: baafoo-sca-consumer:1.0.0
+    container_name: baafoo-enterprise-sca-consumer
+    networks:
+      - baafoo-enterprise-net
+    ports:
+      - "18083:18083"
+    environment:
+      - BAAFOO_SERVER_HOST=baafoo-server
+      - BAAFOO_ENV=enterprise-sca-consumer
+      - SERVER_PORT=18083
+      - NACOS_ADDR=nacos:8848
+      - NACOS_USER=nacos
+      - NACOS_PASS=nacos
+      - JAVA_OPTS=-XX:-UseContainerSupport -Xms128m -Xmx256m
+    depends_on:
+      baafoo-server:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+      provider:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:18083/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+
+  # ====================================================================
+  # 初始化容器: 创建 Baafoo Mock 规则
+  # ====================================================================
+  sca-test-init:
+    image: curlimages/curl:8.5.0
+    container_name: baafoo-enterprise-sca-init
+    networks:
+      - baafoo-enterprise-net
+    depends_on:
+      baafoo-server:
+        condition: service_healthy
+      consumer:
+        condition: service_healthy
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        echo "=========================================="
+        echo " Spring Cloud Alibaba 测试环境初始化"
+        echo "=========================================="
+        echo ""
+        echo "[1/4] 创建环境: enterprise-sca-provider (STUB)"
+        curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
+          -H "Content-Type: application/json" \
+          -H "X-Api-Key: enterprise-admin-key" \
+          -d '{"id":"enterprise-sca-provider","name":"enterprise-sca-provider","mode":"STUB","description":"SCA Provider 环境","tags":["enterprise","sca"]}' && echo "  OK" || echo "  已存在"
+        echo ""
+        echo "[2/4] 创建环境: enterprise-sca-consumer (STUB)"
+        curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
+          -H "Content-Type: application/json" \
+          -H "X-Api-Key: enterprise-admin-key" \
+          -d '{"id":"enterprise-sca-consumer","name":"enterprise-sca-consumer","mode":"STUB","description":"SCA Consumer 环境","tags":["enterprise","sca"]}' && echo "  OK" || echo "  已存在"
+        echo ""
+        echo "[3/4] 创建 Provider Echo API Mock 规则 (Mock Feign 调用)"
+        curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
+          -H "Content-Type: application/json" \
+          -H "X-Api-Key: enterprise-admin-key" \
+          -d '{"id":"sca-provider-echo-mock","name":"Provider Echo API Mock","protocol":"http","host":"provider","port":18081,"conditions":[{"type":"path","operator":"startsWith","value":"/echo/"}],"responses":[{"name":"Mock Echo 响应","statusCode":200,"body":"hello Nacos Discovery mock","delayMs":0}],"enabled":true,"priority":50,"tags":["enterprise","sca","echo"],"environments":["enterprise-sca-consumer"]}' && echo "  OK" || echo "  已存在"
+        echo ""
+        echo "[4/4] 创建 Nacos Server API Mock 规则 (Mock 服务发现响应)"
+        curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
+          -H "Content-Type: application/json" \
+          -H "X-Api-Key: enterprise-admin-key" \
+          -d '{"id":"sca-nacos-discovery-mock","name":"Nacos Discovery Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance/list"}],"responses":[{"name":"Mock 服务发现响应","statusCode":200,"body":"{\"name\":\"service-provider\",\"hosts\":[{\"instanceId\":\"mock-instance-1\",\"ip\":\"provider\",\"port\":18081,\"healthy\":true,\"enabled\":true}],\"mocked\":true}","delayMs":0}],"enabled":false,"priority":50,"tags":["enterprise","sca","nacos"],"environments":["enterprise-sca-consumer"]}' && echo "  OK (默认禁用)" || echo "  已存在"
+        echo ""
+        echo "=========================================="
+        echo " 初始化完成"
+        echo "=========================================="
+        echo ""
+        echo "  Nacos:        http://localhost:18848/nacos"
+        echo "  Provider:     http://localhost:18081/echo/test"
+        echo "  Consumer:     http://localhost:18083/echo-feign/test"
+        echo "  Baafoo:       http://localhost:18084/__baafoo__/"
+        echo "  API Key:      enterprise-admin-key"
+        echo ""
+        echo "  测试API:"
+        echo "    GET /echo-feign/{str}  - Consumer Feign 调用 Provider"
+        echo "    GET /divide-feign?a=10&b=2 - Consumer Feign Divide 调用"
+        echo "    GET /services          - 查询注册到 Nacos 的服务列表"

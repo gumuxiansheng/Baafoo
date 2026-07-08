@@ -362,20 +362,20 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
 
 ```bash
 # PowerShell (Windows)
-testing/test-fullchain.ps1
+testing/3_SystemTest/test-fullchain.ps1
 
 # Bash (Linux/macOS)
-testing/test-integration.ps1
+testing/2_IntegrationTest/test-integration.ps1
 ```
 
 Test assets located in `testing/` directory:
 
 | Directory/File | Description |
 |:----------|:-----|
-| `testing/test-rules/` | 34 JSON rule files covering all protocols and condition types |
+| `testing/2_IntegrationTest/rules/` | 34 JSON rule files covering all protocols and condition types |
 | `testing/deploy/staging/` | Staging environment Agent & Server configuration |
-| `testing/TEST-MANUAL.md` | Complete test manual |
-| `testing/TEST-REPORT.md` | Latest test report |
+| `testing/3_SystemTest/TEST-MANUAL.md` | Complete test manual |
+| `testing/3_SystemTest/TEST-REPORT.md` | Latest test report |
 
 ### Continuous Integration Recommendations
 
@@ -389,7 +389,7 @@ Test assets located in `testing/` directory:
     mvn clean package -DskipTests
     docker build -t baafoo-server:latest .
     docker build -t baafoo-test-spring:latest -f baafoo-test-spring/Dockerfile .
-    pwsh testing/test-fullchain.ps1
+    pwsh testing/3_SystemTest/test-fullchain.ps1
 ```
 
 ## Testcontainers Module

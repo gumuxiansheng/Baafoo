@@ -1,0 +1,43 @@
+fix(agent): activate Plugin SPI for all protocols + sync fixes
+
+P2-2: PluginManager.fireEvent() double delivery
+  - fireEvent() iterated plugins calling onEvent() directly, but
+    loadPlugin() already registered plugin::onEvent as an EventBus
+    listener, so every event was delivered twice.
+  - Fix: fireEvent() now only calls eventBus.fire(); plugins receive
+    events exclusively via the EventBus.
+  - Added regression test testFireEventDeliveredOncePerPlugin.
+
+P2-7: GRPC_PORT / GRPC_STREAMING_PORT not synced to Bootstrap CL
+  - syncGlobalRouteStateToBootstrapCL() synced 8 protocol ports but
+    missed GRPC_PORT (9005) and GRPC_STREAMING_PORT (10005). When the
+    server ran on non-default ports, Bootstrap CL's isInternal() could
+    mis-classify gRPC traffic.
+  - Fix: added GRPC_PORT / GRPC_STREAMING_PORT to the sync method and
+    to the startup log line.
+  - Added grpcPort / grpcStreamingPort to AgentConfig.ServerConnection
+    and AgentManifest so they are configurable and propagated to
+    GlobalRouteState at init time.
+
+P2-8: LOG_DEBUG_HANDLER never set
+  - premain() set INFO/WARN/ERROR handlers but not DEBUG, so Bootstrap
+    CL advice calling logDebug() fell back to System.out.println,
+    bypassing SLF4J level controls.
+  - Fix: set LOG_DEBUG_HANDLER in premain() and sync it to Bootstrap
+    CL in syncLogHandlersToBootstrapCL().
+
+P1-4 (part 1): Fully activate Plugin SPI — protocol coverage
+  - InterceptTarget enum: added GRPC.
+  - PluginManager.resolveTarget(): added "grpc" -> GRPC mapping.
+  - PLUGIN_CONSULT_FN_EXT lambda (BaafooAgent.premain): the protocol
+    switch only handled nio/nio-socket and defaulted everything else
+    to SOCKET. Now handles kafka, pulsar, jms, grpc, tcp, socket
+    explicitly, so Bootstrap CL Advice consulting the bridge for any
+    protocol gets the correct InterceptTarget.
+  - GrpcChannelAdvice: converted from the bridge-function pattern to
+    direct PluginManager SPI calls, consistent with Kafka/JMS/Pulsar
+    App-CL advices. Added PASSTHROUGH mode check and avoided double
+    event firing.
+  - No @Deprecated annotation was present on PluginManager, so no
+    removal was needed; SPI is now treated as the canonical extension
+    mechanism.

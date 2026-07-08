@@ -1,0 +1,23 @@
+{
+  "id": "staging-a-jms-topic",
+  "name": "JMS Topic挡板",
+  "protocol": "jms",
+  "host": "jms-broker",
+  "port": 61616,
+  "serviceName": "BAAFOO.TEST.TOPIC",
+  "conditions": [
+    {"type": "destination", "operator": "equals", "value": "BAAFOO.TEST.TOPIC"}
+  ],
+  "responses": [
+    {
+      "name": "JMS Topic响应",
+      "statusCode": 200,
+      "body": "{\"mocked\":true,\"protocol\":\"jms\",\"destination\":\"BAAFOO.TEST.TOPIC\",\"type\":\"topic\"}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 100,
+  "tags": ["jms", "topic", "staging"],
+  "environments": ["staging-a"]
+}

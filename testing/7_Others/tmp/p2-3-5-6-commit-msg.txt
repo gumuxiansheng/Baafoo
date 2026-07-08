@@ -1,0 +1,34 @@
+fix(agent,core): P2-3 PluginClassLoader + P2-5 ReDoS + P2-6 MatchEngine DI
+
+P2-3: PluginClassLoader delegation
+  - PluginClassLoader (parent=null for isolation) previously delegated
+    SPI/JDK class resolution to ClassLoader.getSystemClassLoader(),
+    which is incorrect in Java EE containers / custom launchers where
+    the system loader is not the application loader that owns
+    baafoo-plugin-api.
+  - Fix: capture the loader of BaafooAgent at construction time and
+    resolve com.baafoo.plugin.*, java.*, javax.*, and org.slf4j.*
+    through it. Also added a test-friendly constructor that accepts an
+    explicit SPI loader.
+
+P2-5: MatchEngine.matchRegex() ReDoS protection
+  - A pathological regex (e.g., "(a+)+b" against 80 'a's) could cause
+    catastrophic backtracking and hang the matching thread.
+  - Fix: matchRegex() now delegates to matchWithTimeout(), which
+    offloads the regex match to a daemon-thread executor and enforces a
+    wall-clock timeout (default 100ms). On timeout the match is treated
+    as a non-match and a warning is logged.
+  - Fast path: inputs shorter than 64 chars run inline to avoid the
+    executor overhead.
+  - Added testRegexReDoSTimeout verifying a 100ms-bounded engine
+    returns within 1s for an evil regex.
+
+P2-6: MatchEngine decoupled from StatefulCounterStore.global()
+  - MatchEngine now holds a counterStore field, defaulting to the
+    global singleton via the no-arg constructor (backward compatible).
+    New constructor MatchEngine(StatefulCounterStore, long timeoutMs)
+    accepts an injected store + regex timeout for testability.
+  - matchConditions() and selectResponseEntry() call counterStore
+    instead of the static global().
+  - Added testCounterStoreInjection verifying an injected store is
+    mutated while the global singleton remains untouched.

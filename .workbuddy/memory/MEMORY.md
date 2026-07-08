@@ -40,7 +40,7 @@ SocketConnectAdvice / NioSocketConnectAdvice / ConsulDnsAdvice / ConsulHttpAdvic
 - 违反此约束会导致 `NoClassDefFoundError` / `LinkageError`，使对应拦截 silently fail-closed
 
 ## 测试脚本陷阱
-- `testing/test-fullchain.ps1` 中从 `/api/environments` 取 `staging-a` ID 时，不能用跨对象正则（id→name 可能跨条目），必须用 JSON 解析（如 `ConvertFrom-Json` + 按 name 查找）。
+- `testing/3_SystemTest/test-fullchain.ps1` 中从 `/api/environments` 取 `staging-a` ID 时，不能用跨对象正则（id→name 可能跨条目），必须用 JSON 解析（如 `ConvertFrom-Json` + 按 name 查找）。
 - 环境模式切换后需等待 agent 轮询周期（默认 `pollIntervalSec=10s`）+ 余量，否则 agent 仍持有旧模式。
 - M03 PASSTHROUGH 被误判为功能 bug，实为脚本提取了错误环境 ID 导致模式未真正切到 staging-a。
 - 拦截 JDK 类的 Advice（SocketConnectAdvice / NioSocketConnectAdvice）绝对不能直接引用 `com.baafoo.plugin.PluginEvent`
@@ -49,6 +49,6 @@ SocketConnectAdvice / NioSocketConnectAdvice / ConsulDnsAdvice / ConsulHttpAdvic
 - 违反此约束会导致 `NoClassDefFoundError` / `LinkageError`，使对应拦截 silently fail-closed
 
 ## 环境/验证约束（2026-07-08 新增）
-- 本环境后台/前台任务执行上限约 2 分钟；`testing/test-fullchain.ps1` 全链路（build+docker+health+staging-init+cases+cleanup）超时才被杀，无法在此环境单次跑完验证。验证改用以 curl/Invoke-RestMethod 对仍运行的 Docker 环境做定向 live 调用；复跑整链需拆分步骤或放到无 2-min 上限的机器。
+- 本环境后台/前台任务执行上限约 2 分钟；`testing/3_SystemTest/test-fullchain.ps1` 全链路（build+docker+health+staging-init+cases+cleanup）超时才被杀，无法在此环境单次跑完验证。验证改用以 curl/Invoke-RestMethod 对仍运行的 Docker 环境做定向 live 调用；复跑整链需拆分步骤或放到无 2-min 上限的机器。
 - MatchEngine 规则级 `requestCount` 条件用 count=0（递增前）求值（MatchEngine.java:253-256），故 `equals=1` 在规则级永不成立；requestCount 正确用法是放在 response entry 级（那里用递增后的 count）。`http-request-count.json` 已改为仅 path 级条件 + `{{requestCount}}` 模板变量。
 - 规则注册 500 常见两因：① 缺 `id` 字段；② PostgreSQL 卷未被 `docker compose down -v` 完全清空导致重复 id 残留。脚本注册循环已加幂等保护（POST 失败→GET 确认已存在即算成功）。

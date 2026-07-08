@@ -1,0 +1,42 @@
+# =============================================================================
+# Baafoo 企业级应用测试 - Spring Boot PetClinic
+# 验证 Agent 在经典 Spring Boot 企业应用中的兼容性
+#
+# 基础镜像: springcommunity/spring-petclinic-rest (实际为 cnych/spring-petclinic)
+# 在官方镜像基础上注入 baafoo-agent.jar
+# 注意: 基础镜像使用 Java 17，应用路径为 /app/app.jar，默认端口 8080
+# =============================================================================
+
+FROM springcommunity/spring-petclinic-rest:latest
+
+LABEL maintainer="Baafoo"
+
+USER root
+
+# 安装 wget 用于健康检查（基础镜像基于 Debian，使用 apt-get）
+RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
+
+# 应用目录已存在于 /app，应用 jar 为 /app/app.jar
+# 复制 baafoo-agent.jar（从本地构建产物）
+COPY baafoo-agent/target/baafoo-agent-*.jar /app/baafoo-agent.jar
+
+# 复制 PetClinic 专用 Agent 配置（不再通过 volume 挂载，避免 Windows Docker Desktop 问题）
+COPY testing/enterprise/petclinic/baafoo-agent-petclinic.yml /app/baafoo-agent.yml
+
+# 创建数据目录（基础镜像以 root 运行，无需 chown）
+RUN mkdir -p /root/.baafoo/data
+
+EXPOSE 8080
+
+ENV JAVA_OPTS="-XX:-UseContainerSupport" \
+    BAAFOO_SERVER_HOST="baafoo-server" \
+    BAAFOO_ENV="enterprise-petclinic" \
+    SERVER_PORT=8080
+
+# 以 Agent 模式启动 PetClinic
+# 注意: -XX:-UseContainerSupport 用于绕过 Java 17 在 Windows Docker 上的 cgroup 读取 bug
+ENTRYPOINT ["sh", "-c", \
+    "java ${JAVA_OPTS} \
+     -javaagent:/app/baafoo-agent.jar=config=/app/baafoo-agent.yml \
+     -jar /app/app.jar \
+     --server.port=${SERVER_PORT}"]

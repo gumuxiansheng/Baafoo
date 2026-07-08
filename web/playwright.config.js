@@ -12,14 +12,14 @@ module.exports = {
   workers: 1,
   reporter: [
     ['list'],
-    ['html', { outputFolder: path.join(__dirname, '../testing/tmp/playwright-report') }],
+    ['html', { outputFolder: path.join(__dirname, '../testing/7_Others/tmp/playwright-report') }],
   ],
   use: {
     baseURL: 'http://localhost:8084',
     browserName: 'chromium',
     channel: 'chrome',
     headless: true,
-    storageState: path.join(__dirname, '../testing/tmp/admin-storage.json'),
+    storageState: path.join(__dirname, '../testing/7_Others/tmp/admin-storage.json'),
     screenshot: 'only-on-failure',
     trace: 'on-first-retry',
   },

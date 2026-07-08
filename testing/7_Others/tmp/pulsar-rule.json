@@ -1,0 +1,22 @@
+{
+  "id": "staging-a-pulsar-topic",
+  "name": "Pulsar Topic挡板",
+  "protocol": "pulsar",
+  "host": "pulsar-broker",
+  "port": 6650,
+  "conditions": [
+    {"type": "topic", "operator": "startsWith", "value": "persistent://public/default/baafoo"}
+  ],
+  "responses": [
+    {
+      "name": "Pulsar响应",
+      "statusCode": 200,
+      "body": "{\"mocked\":true,\"protocol\":\"pulsar\",\"topic\":\"baafoo-test-topic\",\"message\":\"Baafoo Pulsar stub\"}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 100,
+  "tags": ["pulsar", "staging"],
+  "environments": ["staging-a"]
+}

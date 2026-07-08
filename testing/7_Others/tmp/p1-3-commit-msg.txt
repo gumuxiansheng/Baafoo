@@ -1,0 +1,46 @@
+refactor(server): P1-3 extract SceneService from JdbcStorageService
+
+JdbcStorageService was a 900-line class handling rules, environments,
+scenes, MQ relationships, recordings, agents, and users. P1-3 extracts
+scene-set management into a dedicated SceneService to reduce surface
+area and clarify the bidirectional Rule-Scene environment coupling.
+
+New types:
+- SceneService interface: listScenes, getScene, createScene, updateScene,
+  deleteScene, getInheritedEnvironments(ruleId).
+- JdbcSceneService: JDBC implementation owning all scene CRUD and the
+  Rule-Scene environment sync helpers (syncSceneEnvironmentsToRules,
+  isEnvironmentInheritedFromOtherScene, getInheritedEnvironments).
+  Takes a CacheInvalidator callback so it can invalidate the rule and
+  environment caches held by JdbcStorageService without reaching into
+  its private fields.
+
+Backward compatibility:
+- JdbcStorageService still implements StorageService; its scene methods
+  are now thin delegations to JdbcSceneService. Existing callers keep
+  working unchanged.
+- JdbcStorageService.getSceneService() exposes the dedicated service for
+  new callers.
+- ApiContext.getSceneService() returns the SceneService when the backing
+  storage is JdbcStorageService, else null (caller falls back to storage).
+
+Migrated callers:
+- SceneApiHandler: now depends on SceneService (via ctx.getSceneService())
+  with a SceneServiceStorageAdapter fallback for non-Jdbc storage. The
+  GET /scenes/{id} path now calls getScene(id) directly instead of
+  listScenes().stream().filter(...).
+- ManagementApiHandlerTest.testGetScene: updated to also mock
+  storage.getScene("s1") since the handler now prefers getScene over
+  listScenes+filter.
+
+Not migrated in this commit (deferred):
+- SceneTools (MCP): still uses ctx.getStorage() because McpToolContext
+  does not yet expose getSceneService().
+- RuleApiHandler, StatusApiHandler, SystemTools: still use
+  storage.listScenes() / ApiUtils.getInheritedEnvironments() — these
+  need both StorageService and SceneService, migration is a larger
+  change.
+- ApiUtils.getInheritedEnvironments: kept for now; will be removed once
+  RuleApiHandler is migrated to call SceneService directly.
+
+All 65 existing tests pass.

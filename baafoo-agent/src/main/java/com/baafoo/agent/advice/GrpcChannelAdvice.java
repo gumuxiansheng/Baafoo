@@ -129,7 +129,7 @@ public class GrpcChannelAdvice {
      *
      * @return [host, port] array, or null if the target cannot be parsed
      */
-    static String[] parseTarget(String target) {
+    public static String[] parseTarget(String target) {
         if (target == null || target.isEmpty()) return null;
 
         String cleaned = target;

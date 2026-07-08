@@ -141,7 +141,7 @@ testing/
 
 **Operators covered:** equals, contains, startsWith, endsWith, regex, exists
 
-**Rule**: All intermediate/temp files generated during test execution (logs, dumps, temp configs, etc.) must be written to `testing/tmp/`. This directory is gitignored. Never write test artifacts to the project root or module directories.
+**Rule**: All intermediate/temp files generated during test execution (logs, dumps, temp configs, etc.) must be written to `testing/7_Others/tmp/`. This directory is gitignored. Never write test artifacts to the project root or module directories.
 
 Docker staging environment:
 

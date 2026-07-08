@@ -1,0 +1,11 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:8084",
+      "localStorage": [
+        { "name": "baafoo_role", "value": "admin" }
+      ]
+    }
+  ]
+}

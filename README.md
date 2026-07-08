@@ -362,20 +362,20 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
 
 ```bash
 # PowerShell（Windows）
-testing/test-fullchain.ps1
+testing/3_SystemTest/test-fullchain.ps1
 
 # Bash（Linux/macOS）
-testing/test-integration.ps1
+testing/2_IntegrationTest/test-integration.ps1
 ```
 
 测试资产位于 `testing/` 目录：
 
 | 目录/文件 | 说明 |
 |:----------|:-----|
-| `testing/test-rules/` | 34 个 JSON 规则文件，覆盖全部协议与条件类型 |
+| `testing/2_IntegrationTest/rules/` | 34 个 JSON 规则文件，覆盖全部协议与条件类型 |
 | `testing/deploy/staging/` | Staging 环境 Agent & Server 配置 |
-| `testing/TEST-MANUAL.md` | 完整测试手册 |
-| `testing/TEST-REPORT.md` | 最新测试报告 |
+| `testing/3_SystemTest/TEST-MANUAL.md` | 完整测试手册 |
+| `testing/3_SystemTest/TEST-REPORT.md` | 最新测试报告 |
 
 ### 持续集成建议
 
@@ -389,7 +389,7 @@ testing/test-integration.ps1
     mvn clean package -DskipTests
     docker build -t baafoo-server:latest .
     docker build -t baafoo-test-spring:latest -f baafoo-test-spring/Dockerfile .
-    pwsh testing/test-fullchain.ps1
+    pwsh testing/3_SystemTest/test-fullchain.ps1
 ```
 
 ## Testcontainers 模块
