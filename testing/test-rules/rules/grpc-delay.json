@@ -1,4 +1,5 @@
 {
+  "id": "grpc-delay",
   "name": "gRPC Delay Response",
   "protocol": "grpc",
   "host": "greeter.example.com",

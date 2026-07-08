@@ -1,4 +1,5 @@
 {
+  "id": "grpc-greeter",
   "name": "gRPC Greeter SayHello",
   "protocol": "grpc",
   "host": "greeter.example.com",
@@ -25,7 +26,7 @@
         "grpc-status": "0",
         "grpc-message": "OK"
       },
-      "body": "{\"message\":\"Hello, Baafoo gRPC!\"}",
+      "body": "{\"message\":\"Hello Baafoo gRPC\"}",
       "delayMs": 0
     }
   ],

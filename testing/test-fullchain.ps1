@@ -1178,15 +1178,84 @@ if (-not (Test-Path $oapiSpecPath)) {
     }
 }
 
-# -------------------- G: gRPC (no test-spring client yet) --------------------
+# -------------------- G: gRPC (end-to-end via test-spring client) --------------------
 Write-Host ""
 Write-Host "--- G: gRPC ---" -ForegroundColor White
-# gRPC is NOT covered end-to-end: baafoo-test-spring has no gRPC client endpoint,
-# so the 6 grpc-*.json rules cannot be driven. These are explicit SKIPs (not failures)
-# until a gRPC client is added to test-spring (see plan §6.4.2).
-$gGrpcRules = @("grpc-greeter","grpc-error","grpc-delay","grpc-server-streaming","grpc-client-streaming","grpc-bidirectional-streaming")
-foreach ($g in $gGrpcRules) {
-    Test-Skip "G: gRPC rule $g not exercised (no gRPC client in test-spring)"
+# gRPC rules are now driven through baafoo-test-spring's /api/grpc/* endpoints.
+# The agent's GrpcChannelAdvice intercepts ManagedChannelBuilder.forTarget(...)
+# and redirects the call to the Baafoo stub gRPC server (port 9005). Each endpoint
+# returns JSON: { completed, grpcStatus, grpcMessage, messages[], error, latencyMs }.
+
+# G01: unary SayHello -> grpc-status 0, body echoes "Baafoo gRPC"
+try {
+    $j = Invoke-AppGet "$APP_A/api/grpc/greeter" | ConvertFrom-Json
+    if ($j.completed -and $j.grpcStatus -eq "0" -and $j.messages.Count -ge 1 -and $j.messages[0] -match "Baafoo gRPC") {
+        Test-Pass "G01: gRPC unary SayHello stubbed (grpc-status=$($j.grpcStatus), msgs=$($j.messages.Count))"
+    } else {
+        Test-Fail "G01: gRPC unary SayHello (resp=$j)"
+    }
+} catch {
+    Test-Fail "G01: gRPC unary SayHello (error: $_)"
+}
+
+# G02: unary SlowMethod -> grpc-status 0, body echoes "delayed" (distinct rule from G01)
+try {
+    $j = Invoke-AppGet "$APP_A/api/grpc/slow" | ConvertFrom-Json
+    if ($j.completed -and $j.grpcStatus -eq "0" -and $j.messages.Count -ge 1 -and $j.messages[0] -match "delayed") {
+        Test-Pass "G02: gRPC unary SlowMethod stubbed (grpc-status=$($j.grpcStatus), msgs=$($j.messages.Count))"
+    } else {
+        Test-Fail "G02: gRPC unary SlowMethod (resp=$j)"
+    }
+} catch {
+    Test-Fail "G02: gRPC unary SlowMethod (error: $_)"
+}
+
+# G03: unary GetUser -> expects grpc-status 5 (NOT_FOUND) from grpc-error rule
+try {
+    $j = Invoke-AppGet "$APP_A/api/grpc/error" | ConvertFrom-Json
+    if ($j.completed -and $j.grpcStatus -eq "5") {
+        Test-Pass "G03: gRPC unary GetUser returns grpc-status=5 (NOT_FOUND) as configured"
+    } else {
+        Test-Fail "G03: gRPC unary GetUser expected grpc-status=5 (resp=$j)"
+    }
+} catch {
+    Test-Fail "G03: gRPC unary GetUser (error: $_)"
+}
+
+# G04: server streaming StreamEvents -> grpc-status 0, 3 streamed messages
+try {
+    $j = Invoke-AppGet "$APP_A/api/grpc/server-stream" | ConvertFrom-Json
+    if ($j.completed -and $j.grpcStatus -eq "0" -and $j.messages.Count -eq 3) {
+        Test-Pass "G04: gRPC server-streaming StreamEvents returned $($j.messages.Count) messages"
+    } else {
+        Test-Fail "G04: gRPC server-streaming StreamEvents expected 3 messages (resp=$j)"
+    }
+} catch {
+    Test-Fail "G04: gRPC server-streaming (error: $_)"
+}
+
+# G05: client streaming CollectMetrics -> grpc-status 0, 1 aggregated response
+try {
+    $j = Invoke-AppGet "$APP_A/api/grpc/client-stream" | ConvertFrom-Json
+    if ($j.completed -and $j.grpcStatus -eq "0" -and $j.messages.Count -eq 1) {
+        Test-Pass "G05: gRPC client-streaming CollectMetrics returned $($j.messages.Count) aggregated response"
+    } else {
+        Test-Fail "G05: gRPC client-streaming CollectMetrics expected 1 response (resp=$j)"
+    }
+} catch {
+    Test-Fail "G05: gRPC client-streaming (error: $_)"
+}
+
+# G06: bidirectional streaming Chat -> grpc-status 0, 2 echoed messages
+try {
+    $j = Invoke-AppGet "$APP_A/api/grpc/bidi" | ConvertFrom-Json
+    if ($j.completed -and $j.grpcStatus -eq "0" -and $j.messages.Count -eq 2) {
+        Test-Pass "G06: gRPC bidi-streaming Chat returned $($j.messages.Count) messages"
+    } else {
+        Test-Fail "G06: gRPC bidi-streaming Chat expected 2 messages (resp=$j)"
+    }
+} catch {
+    Test-Fail "G06: gRPC bidi-streaming (error: $_)"
 }
 
 # -------------------- MX: Protocol x Mode coverage gaps --------------------

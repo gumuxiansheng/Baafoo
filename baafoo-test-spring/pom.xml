@@ -21,6 +21,10 @@
         <pulsar-client.version>2.10.4</pulsar-client.version>
         <okhttp.version>3.14.9</okhttp.version>
         <feign.version>11.10</feign.version>
+        <!-- gRPC: stay on 1.59.x for strict Java 8 compatibility.
+             grpc-netty-shaded relocates Netty so it cannot clash with the
+             server's Netty 4.1.100 on test-spring's own classpath. -->
+        <grpc.version>1.59.1</grpc.version>
     </properties>
 
     <dependencies>
@@ -97,6 +101,34 @@
             <groupId>io.github.openfeign</groupId>
             <artifactId>feign-okhttp</artifactId>
             <version>${feign.version}</version>
+        </dependency>
+
+        <!-- gRPC client (dynamic, no .proto codegen).
+             grpc-netty-shaded isolates Netty from the rest of the classpath. -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-netty-shaded</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-core</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-api</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-stub</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-context</artifactId>
+            <version>${grpc.version}</version>
         </dependency>
 
         <!-- Logging -->
