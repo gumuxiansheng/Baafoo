@@ -839,10 +839,10 @@ mvnw clean test jacoco:report
 | **Kafka** | ✅ | ⚠️* | ⚠️* | ✅(录制方向) | ⚠️* |
 | **Pulsar** | ✅ | ⚠️* | ⚠️* | ✅(录制方向) | ⚠️* |
 | **JMS** | ✅ | ⚠️* | ⚠️* | ✅(录制方向) | ⚠️* |
-| **gRPC** | ❌** | ❌** | ❌** | ❌** | ❌** |
+| **gRPC** | ✅ | ⚠️* | ⚠️* | ⚠️* | ⚠️* |
 
 > ✅ 已覆盖断言；⚠️* 受 Staging 环境限制未覆盖——Docker Staging 无真实 TCP/Kafka/Pulsar/JMS broker，仅 `MockBroker` 的 STUB / RECORD_AND_STUB 重定向路径可被脚本驱动；PASSTHROUGH/RECORD/RECORD_ALL 需真实后端才能断言透传行为。脚本中这些组合以 `MX:*` SKIP 显式标注缺口，不代表断言失败。每一格对应的**具体测试用例见 §6.4.2.1**。
-> ❌** gRPC 整列缺失：`baafoo-test-spring` 无 gRPC 客户端端点，6 个 `grpc-*.json` 规则无法被脚本驱动。需为 test-spring 增加 gRPC client 后方可补 G01–G06。
+> ✅ gRPC STUB 模式已由 G01–G06 覆盖：`baafoo-test-spring` 新增动态 gRPC 客户端（`GrpcCallerService`/`GrpcCallerController`），`GrpcChannelAdvice` 将 `io.grpc.ManagedChannelBuilder.forTarget` 的 target 重定向到 stub gRPC server（端口 9005），6 个 `grpc-*.json` 规则全部被脚本驱动并断言。⚠️* gRPC 的 PASSTHROUGH/RECORD/RECORD_AND_STUB/RECORD_ALL 仍需真实 gRPC 后端，同 TCP/Kafka 等以 `G:*` SKIP 标注。
 
 #### 6.4.2.1 矩阵未覆盖组合的具体测试用例
 
@@ -882,17 +882,22 @@ mvnw clean test jacoco:report
 | RECORD | MX-JMS-REC-001 | 真实 JMS broker | 切 RECORD→send/receive→查录制 | 透传 + `protocol=jms` 录制含方向 | SKIP |
 | RECORD_ALL | MX-JMS-RALL-001 | 真实 JMS broker | 未匹配 queue 也录制 | 录制含 unmatched | SKIP |
 
-**gRPC**（整列缺失：`baafoo-test-spring` 无 gRPC client 端点，6 个 `grpc-*.json` 规则无法驱动）
+**gRPC**（STUB 模式已由 G01–G06 覆盖；其余模式需真实 gRPC 后端）
 
 | 模式 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
 |------|--------|----------|----------|----------|----------|
-| STUB | G01 | test-spring 增加 `/api/grpc/call` 端点驱动 `grpc-greeter` 规则 | 调用 SayHello | 返回 MockBroker 构造的 Mock 响应，`matchedBy=grpc` | SKIP：待 test-spring gRPC client |
-| PASSTHROUGH | G02 | 同上 + 真实 gRPC 服务 | 调用并切 PASSTHROUGH | 透传至真实服务 | SKIP |
-| RECORD | G03 | 同上 | 切 RECORD 调用 | 透传并录制 `protocol=grpc` | SKIP |
-| RECORD_AND_STUB | G04 | 同上 | 切 RECORD_AND_STUB 调用 | 返回 Mock + 录制 | SKIP |
-| RECORD_ALL | G05–G06 | 同上；覆盖 server/client/bidirectional streaming 规则 | 各类 streaming 调用 | 未匹配也录制 | SKIP |
+| STUB | G01 | test-spring `/api/grpc/greeter` 驱动 `grpc-greeter` | SayHello unary 调用 | grpcStatus=0，消息 `{"message":"Hello Baafoo gRPC"}` | ✅ 已断言 |
+| STUB | G02 | `/api/grpc/slow` 驱动 `grpc-delay` | SlowMethod unary（+delay） | grpcStatus=0，消息 `{"result":"delayed"}` | ✅ 已断言 |
+| STUB | G03 | `/api/grpc/error` 驱动 `grpc-error` | GetUser unary | grpcStatus=5，grpcMessage="User not found" | ✅ 已断言 |
+| STUB | G04 | `/api/grpc/server-stream` 驱动 `grpc-server-streaming` | StreamEvents server-streaming | grpcStatus=0，3 条消息 event1/2/3 | ✅ 已断言 |
+| STUB | G05 | `/api/grpc/client-stream` 驱动 `grpc-client-streaming` | CollectMetrics client-streaming | grpcStatus=0，消息 `{"summary":"Collected 3 metrics"}` | ✅ 已断言 |
+| STUB | G06 | `/api/grpc/bidi` 驱动 `grpc-bidirectional-streaming` | Chat bidirectional | grpcStatus=0，2 条消息 Echo hello/world | ✅ 已断言 |
+| PASSTHROUGH | G02-PT | 真实 gRPC 服务 | 切 PASSTHROUGH 调用 | 透传至真实服务 | SKIP：需真实 gRPC 后端 |
+| RECORD | G03-REC | 真实 gRPC 服务 | 切 RECORD 调用 | 透传并录制 `protocol=grpc` | SKIP：需真实 gRPC 后端 |
+| RECORD_AND_STUB | G04-RAS | 真实 gRPC 服务 | 切 RECORD_AND_STUB | 返回 Mock + 录制 | SKIP：需真实 gRPC 后端 |
+| RECORD_ALL | G05/6-RALL | 真实 gRPC 服务 | 未匹配也录制 | 录制含 unmatched | SKIP：需真实 gRPC 后端 |
 
-> 阻塞项单一且明确：给 `baafoo-test-spring` 增加 gRPC client controller（`/api/grpc/call?service=...&method=...&payload=...`），即可把 6 个 `grpc-*.json` 规则从"死资产"变活，并把脚本 G 段 SKIP 改为断言。用例 G01–G06 已就绪。
+> G01–G06（STUB）已端到端打通：agent `GrpcChannelAdvice` 重写 target → stub:9005，`baafoo-server` 在 9005 起 gRPC stub（`GrpcUnifiedHandler`），规则匹配后返回构造响应，test-spring 动态客户端正确解析。其余 gRPC 模式因 Staging 无真实 gRPC 后端仍以 SKIP 标注。关键修复：① server 配置缺 `grpc:9005` 致 9005 未监听（已补，并硬化 `ServerConfig.setProtocolPorts` 合并默认防回归）；② stale UUID grpc 规则与正确规则路径碰撞（已硬化脚本先清后注）；③ `GrpcChannelAdvice.parseTarget` 需 public（已修）。
 
 #### 6.4.3 已实现但历史版本零覆盖、现已补充的能力
 

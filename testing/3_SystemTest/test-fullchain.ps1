@@ -276,7 +276,7 @@ if ($envCount -ge 2) {
 # ==================== 4. Register test rules ====================
 Write-Step "4/6: Register all test rules"
 
-$rulesDir = "testing\2_IntegrationTest\rules\rules"
+$rulesDir = "testing\2_IntegrationTest\rules"
 $ruleFiles = @(
     "http-get.json", "http-post.json", "http-put.json", "http-delete.json",
     "http-delay.json", "http-error.json", "http-staging-b.json", "http-consul.json",
@@ -297,6 +297,22 @@ $ruleFiles = @(
 $registered = 0
 $failed = 0
 $headers = @{ "X-Api-Key" = $API_KEY }
+
+# Cleanup stale gRPC rules left by a prior (non-reset) run. Without this, a
+# leftover UUID-named gRPC rule matching the same service/method would win over
+# the 6 known rules below and return a comma-split (malformed) body, breaking the
+# unary gRPC assertions G01/G05. Only the 6 known ids are preserved.
+$knownGrpcIds = @("grpc-greeter","grpc-error","grpc-delay","grpc-server-streaming","grpc-client-streaming","grpc-bidirectional-streaming")
+try {
+    $allRules = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules" -Method Get -Headers $headers -ErrorAction Stop
+    $ruleList = if ($allRules.data) { $allRules.data } else { $allRules }
+    foreach ($r in $ruleList) {
+        if ($r.protocol -eq "grpc" -and $knownGrpcIds -notcontains $r.id) {
+            Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/$($r.id)" -Method Delete -Headers $headers -ErrorAction SilentlyContinue | Out-Null
+        }
+    }
+} catch {}
+
 foreach ($ruleFile in $ruleFiles) {
     $rulePath = Join-Path $rulesDir $ruleFile
     if (-not (Test-Path $rulePath)) {

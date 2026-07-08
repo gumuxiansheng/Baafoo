@@ -1,12 +1,7 @@
 package com.baafoo.agent.advice;
 
-import com.baafoo.agent.BaafooAgent;
 import com.baafoo.agent.GlobalRouteState;
-import com.baafoo.agent.plugin.PluginManager;
 import com.baafoo.core.model.EnvironmentMode;
-import com.baafoo.plugin.ConnectAdvice;
-import com.baafoo.plugin.ConnectContext;
-import com.baafoo.plugin.InterceptTarget;
 import com.baafoo.plugin.PluginEvent;
 import net.bytebuddy.asm.Advice;
 import org.slf4j.Logger;
@@ -47,12 +42,10 @@ public class GrpcChannelAdvice {
     @Advice.OnMethodEnter
     public static void onForTarget(@Advice.Argument(value = 0, readOnly = false) String target) {
         try {
-            log.info("[DIAG-grpc] onForTarget ENTER target={}", target);
             if (target == null || target.isEmpty()) return;
 
             // Skip interception in PASSTHROUGH mode (consistent with other App-CL advices)
             EnvironmentMode mode = RouteManager.getMode();
-            log.info("[DIAG-grpc] mode={}", mode);
             if (mode == EnvironmentMode.PASSTHROUGH) {
                 return;
             }
@@ -67,12 +60,10 @@ public class GrpcChannelAdvice {
 
             // 1. Check route table for redirect (core path — no optional SPI dependency)
             String[] route = GlobalRouteState.lookup(host, port);
-            log.info("[DIAG-grpc] lookup({}:{}) => {}", host, port, route);
 
             if (route != null) {
                 String originalTarget = host + ":" + port;
                 String newTarget = route[0] + ":" + route[1];
-                log.info("[DIAG-grpc] REWRITE target={} -> {}", originalTarget, newTarget);
                 try {
                     GlobalRouteState.firePluginEvent(
                             PluginEvent.connectionRedirected("grpc", originalTarget, newTarget));

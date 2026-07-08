@@ -11,7 +11,7 @@
 
 | 组件 | 容器 | 端口 | 状态 |
 |------|------|------|------|
-| Baafoo Server | baafoo-server | 8084(API), 9000(HTTP), 9001(TCP), 9002(Kafka), 9003(Pulsar), 9004(JMS) | Healthy |
+| Baafoo Server | baafoo-server | 8084(API), 9000(HTTP), 9001(TCP), 9002(Kafka), 9003(Pulsar), 9004(JMS), 9005(gRPC) | Healthy |
 | PostgreSQL | baafoo-staging-postgres | 15432 | Healthy |
 | App Env-A (staging-a) | baafoo-app-env-a | 9090 | Healthy |
 | App Env-B (staging-b) | baafoo-app-env-b | 9091 | Healthy |
@@ -166,6 +166,19 @@
 | M04 | RECORD | RECORD | 透传 + 录制 | PASS |
 | M05 | RECORD_ALL | RECORD_ALL | 记录未匹配流量 | PASS |
 
+### G: gRPC 协议 (6/6 通过，live 定向验证)
+
+| # | 用例 | 规则 | 验证内容 | 结果 |
+|---|------|------|----------|------|
+| G01 | gRPC Greeter (unary) | grpc-greeter | grpcStatus=0，消息 `{"message":"Hello Baafoo gRPC"}` | PASS |
+| G02 | gRPC Slow (unary+delay) | grpc-delay | grpcStatus=0，消息 `{"result":"delayed"}` | PASS |
+| G03 | gRPC Error (unary) | grpc-error | grpcStatus=5，grpcMessage="User not found" | PASS |
+| G04 | gRPC Server-Stream | grpc-server-streaming | grpcStatus=0，3 条消息 event1/2/3 | PASS |
+| G05 | gRPC Client-Stream | grpc-client-streaming | grpcStatus=0，消息 `{"summary":"Collected 3 metrics"}` | PASS |
+| G06 | gRPC Bidi | grpc-bidirectional-streaming | grpcStatus=0，2 条消息 Echo hello/world | PASS |
+
+> 注：G01–G06 为 2026-07-08 晚新增的 gRPC 覆盖，经对运行中 Staging 栈定向 live 验证全绿（非原 60 用例整链复跑的一部分）。完整 60+6 整链复跑待无 2-min 任务上限环境。
+
 ## 规则优先级说明
 
 Baafoo 规则优先级语义: **数值越小 = 优先级越高** (默认 100)
@@ -183,7 +196,7 @@ Baafoo 规则优先级语义: **数值越小 = 优先级越高** (默认 100)
 | staging-a-http-get | 100 | 默认优先级，GET + path startsWith / |
 | staging-tcp-multiround | 150 | 低优先级，多轮 TCP 交互 |
 
-## 测试规则文件 (31条)
+## 测试规则文件 (37条)
 
 | 协议 | 规则文件 | 数量 |
 |------|----------|------|
@@ -192,6 +205,7 @@ Baafoo 规则优先级语义: **数值越小 = 优先级越高** (默认 100)
 | Pulsar | pulsar-topic, pulsar-wildcard | 2 |
 | JMS | jms-queue, jms-topic | 2 |
 | TCP | tcp-hex, tcp-regex, tcp-multiround | 3 |
+| gRPC | grpc-greeter, grpc-error, grpc-delay, grpc-server-streaming, grpc-client-streaming, grpc-bidirectional-streaming | 6 |
 
 ## 运行方式
 
@@ -213,7 +227,7 @@ Baafoo 规则优先级语义: **数值越小 = 优先级越高** (默认 100)
 
 1. **规则注册 500（已修复，2026-07-08）**: 审查期发现两类注册 500 根因——① 规则 JSON 缺 `id` 字段（`grpc-error.json`/`grpc-bidirectional-streaming.json`）；② PostgreSQL 卷未清空导致重复 id 残留。已修复：补齐缺失 `id`，并在 `test-fullchain.ps1` 注册循环加幂等保护（POST 失败→GET 确认已存在即判成功）。live 验证：两 grpc 规则现注册返回 200。
 2. **C01 (Header 条件)**: 当前 `HttpCallerService` 不支持发送自定义请求头，因此 C01 仅验证了 path 匹配。真正验证 `header equals` 条件需要增强 test-spring 的 HTTP 客户端。
-3. **gRPC 未覆盖（注册阻塞已解除，覆盖待补）**: 项目已提供 `grpc-*.json` 规则文件且现已可正常注册（2026-07-08 修复缺 `id` 导致的 500）。但 `test-spring` 仍无 gRPC 客户端依赖与端点，全链路脚本尚未真正驱动 gRPC 调用。建议后续新增 gRPC 测试 controller/客户端以激活 §6.4.2.1 中 G01–G06。
+3. **gRPC 覆盖（已修复，2026-07-08 晚）**: G01–G06 现已端到端打通并 live 验证全绿（见下方「修复 4」）。根因三连：① server 配置 `protocolPorts` 缺 `grpc:9005` → 9005 未监听，agent 重定向后连接失败（status 14）；② 运行栈残留 run4 的 stale UUID grpc 规则与正确规则路径碰撞，逗号启发式把含逗号 body 切碎导致 unary 读帧失败；③ `GrpcChannelAdvice.parseTarget` 原为包私有，ByteBuddy 内联后抛 `IllegalAccessError`。均已修复（详见「修复 4」）。
 
 ## M03 PASSTHROUGH 模式排查
 
@@ -239,6 +253,18 @@ Baafoo 规则优先级语义: **数值越小 = 优先级越高** (默认 100)
 ## 补丁修复与 live 验证（2026-07-08）
 
 审查报告 `COVERAGE-REVIEW-2026-07-07.md` 暴露的 3 个真实 bug 已全部修复，并于本日对**仍在运行的 Docker Staging 栈**（baafoo-server 健康，API `/api/status` 返回 200）做定向 live 验证（无需跑完整 2-min 上限的全链路）。
+
+### 修复 4 — gRPC 全链路打通（根因三连，2026-07-08 晚）
+
+- **链路**: test-spring `/api/grpc/*` → 动态 gRPC 客户端 `ManagedChannelBuilder.forTarget(greeter.example.com:50051)` → agent `GrpcChannelAdvice` 改写 target → `server:9005` → `baafoo-server` 在 9005 的 `GrpcUnifiedHandler`（HTTP/2）→ 匹配 `grpc-*.json` 规则 → 返回构造响应 → 客户端解析。
+- **根因①（端口未监听）**: 所有 server 配置 `protocolPorts` 漏写 `grpc:9005`；`ConfigLoader` 用 Jackson 反序列化整体覆盖 `ServerConfig` 构造器默认值，致 `getPortForProtocol("grpc")` 返回 0，`startGrpcStubServer` 不调用，9005 无监听。客户端连 `server:9005` 失败 → grpcStatus=14。
+  - **改动**: 6 个 `baafoo-server*.yml` 的 `protocolPorts` 补 `grpc: 9005`；硬化 `ServerConfig.setProtocolPorts` 改为「YAML 覆盖默认」合并，防未来协议被静默丢弃。
+  - **live 验证**: 重启 baafoo-server 后 `/proc/net/tcp6` 出现 `:232D`（9005）LISTENING，客户端不再 status 14。
+- **根因②（stale 规则碰撞）**: 运行栈残留 run4 的 UUID 命名 grpc 规则（`4ef2ffc2…`/`eb3dea64…`/`d89db271…`/`b8b291a…`），其 body 含逗号，与正确规则路径碰撞且被 `splitStreamingMessages` 的逗号启发式切碎成多帧，unary 期望单帧 → "Failed to read message"。
+  - **改动**: `test-fullchain.ps1` 注册前先删除非 6 已知 id 的 stale grpc 规则；6 个正确 `grpc-*.json` 的 body 设计为逗号安全（server-streaming 换行分隔且每行无逗号 → 3 帧；bidi 逗号分隔 2 个无逗号 JSON → 2 帧）。
+  - **live 验证**: 删除 4 条 stale + 注册 6 条正确规则后，G01–G06 全部返回预期（greeter=`{"message":"Hello Baafoo gRPC"}`、server-stream=3 帧、bidi=2 帧等）。
+- **根因③（advice 内联权限）**: `GrpcChannelAdvice.parseTarget` 原包私有，被 ByteBuddy 内联进 `io.grpc.ManagedChannelBuilder` 后从 `io.grpc` 包调用触发 `IllegalAccessError`，整段 advice 进 catch 不重定向。已改为 `public static`。
+- **结果**: G01–G06 全部 live 验证通过（见 § G: gRPC 协议）。
 
 ### 修复 1 — H08 HTTP RequestCount 规则永不匹配（根因：规则级 requestCount 用 count=0 求值）
 - **文件**: `testing/2_IntegrationTest/rules/rules/http-request-count.json`
