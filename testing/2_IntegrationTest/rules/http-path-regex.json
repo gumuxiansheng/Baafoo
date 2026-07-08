@@ -1,1 +1,32 @@
-{"id":"staging-a-http-path-regex","name":"HTTP Path Regex","protocol":"http","host":"httpbin.org","port":80,"conditions":[{"type":"path","operator":"regex","value":"/api/v[0-9]+/.*"}],"responses":[{"name":"Regex Matched","statusCode":200,"body":"{\"mocked\":true,\"protocol\":\"http\",\"matchedBy\":\"path-regex\"}","delayMs":0}],"enabled":true,"priority":10,"tags":["http","regex","staging-a"],"environments":["staging-a"]}
+{
+  "id": "staging-a-http-path-regex",
+  "name": "HTTP Path Regex",
+  "protocol": "http",
+  "host": "real-backend",
+  "port": 9090,
+  "conditions": [
+    {
+      "type": "path",
+      "operator": "regex",
+      "value": "/api/v[0-9]+/.*"
+    }
+  ],
+  "responses": [
+    {
+      "name": "Regex Matched",
+      "statusCode": 200,
+      "body": "{\"mocked\":true,\"protocol\":\"http\",\"matchedBy\":\"path-regex\"}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 10,
+  "tags": [
+    "http",
+    "regex",
+    "staging-a"
+  ],
+  "environments": [
+    "staging-a"
+  ]
+}

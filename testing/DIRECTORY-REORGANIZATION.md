@@ -66,18 +66,21 @@ testing/
 
 ## Path references updated
 
-- `test-fullchain.ps1`: `$PROJECT_ROOT` now computed two levels up from `testing/3_SystemTest`; rule directory path set to `testing\2_IntegrationTest\rules\rules`.
+- `test-fullchain.ps1`: `$PROJECT_ROOT` now computed two levels up from `testing/3_SystemTest`; rule directory path set to `testing\2_IntegrationTest\rules`.
 - `register-rules.ps1`: reads `all-protocols-rules.json` directly.
 - `register-all.sh`: updated to point to `rules/*.json`.
 - `run-mutation.ps1`: `$projectRoot` computed one level up from `testing/1_UnitTest`.
 
 ## Bash equivalents (P0) still needed
 
-- `testing/2_IntegrationTest/test-fullchain.sh` equivalent of `test-fullchain.ps1`
-- `testing/1_UnitTest/run-mutation.sh` equivalent of `run-mutation.ps1`
+- `testing/2_IntegrationTest/test-fullchain.sh` (equivalent of `test-fullchain.ps1`, runs under Git Bash/WSL/Cygwin)
+- `testing/1_UnitTest/run-mutation.sh` (equivalent of `run-mutation.ps1`)
+
+下面对旧路径的引用仅用于记录迁移映射，不代表项目当前仍存在这些路径。)
 
 ## Notes
 
+- `testing/tmp/` is kept as a historical archive and is excluded from Git by `.gitignore` (see the line `# testing/tmp/`).
 - `5_PerformanceTest/` is currently empty.
 - Docker Compose paths inside `test-integration.ps1` still reference `docker-compose.test.yml` / `.env.test`; verify those files exist at project root or adjust if they were moved.
 - Some historical test reports in `7_Others/tmp/` contain stale links; they are archived and not executed.

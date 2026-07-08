@@ -1,1 +1,42 @@
-{"id":"staging-a-http-graphql","name":"HTTP GraphQL Match","protocol":"http","host":"httpbin.org","port":80,"conditions":[{"type":"path","operator":"equals","value":"/graphql"},{"type":"graphqlOperationType","operator":"equals","value":"query"},{"type":"graphqlOperationName","operator":"equals","value":"GetUser"}],"responses":[{"name":"GraphQL Response","statusCode":200,"body":"{\"data\":{\"user\":{\"id\":\"1\",\"name\":\"Baafoo Mock User\"}}}","delayMs":0}],"enabled":true,"priority":5,"tags":["http","graphql","staging-a"],"environments":["staging-a"]}
+{
+  "id": "staging-a-http-graphql",
+  "name": "HTTP GraphQL Match",
+  "protocol": "http",
+  "host": "real-backend",
+  "port": 9090,
+  "conditions": [
+    {
+      "type": "path",
+      "operator": "equals",
+      "value": "/graphql"
+    },
+    {
+      "type": "graphqlOperationType",
+      "operator": "equals",
+      "value": "query"
+    },
+    {
+      "type": "graphqlOperationName",
+      "operator": "equals",
+      "value": "GetUser"
+    }
+  ],
+  "responses": [
+    {
+      "name": "GraphQL Response",
+      "statusCode": 200,
+      "body": "{\"data\":{\"user\":{\"id\":\"1\",\"name\":\"Baafoo Mock User\"}}}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 5,
+  "tags": [
+    "http",
+    "graphql",
+    "staging-a"
+  ],
+  "environments": [
+    "staging-a"
+  ]
+}

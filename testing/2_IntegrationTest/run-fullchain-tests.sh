@@ -26,12 +26,54 @@ PASS=0
 FAIL=0
 SKIP=0
 FAILED_TESTS=()
+TEST_RESULTS=()
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ==================== 工具函数 ====================
 
-log_pass()  { echo -e "${GREEN}[PASS]${NC} $1"; PASS=$((PASS+1)); }
-log_fail()  { echo -e "${RED}[FAIL]${NC} $1"; FAIL=$((FAIL+1)); FAILED_TESTS+=("$1"); }
-log_skip()  { echo -e "${YELLOW}[SKIP]${NC} $1"; SKIP=$((SKIP+1)); }
+record_result() {
+  local msg="$1" status="$2" id
+  if [[ "$msg" =~ ^([A-Z]{1,4}[0-9]{1,3})[:[:space:]] ]]; then
+    id="${BASH_REMATCH[1]}"
+  else
+    id="$msg"
+  fi
+  TEST_RESULTS+=("$id|$status|$msg")
+}
+
+log_pass()  { echo -e "${GREEN}[PASS]${NC} $1"; PASS=$((PASS+1)); record_result "$1" "pass"; }
+log_fail()  { echo -e "${RED}[FAIL]${NC} $1"; FAIL=$((FAIL+1)); FAILED_TESTS+=("$1"); record_result "$1" "fail"; }
+log_skip()  { echo -e "${YELLOW}[SKIP]${NC} $1"; SKIP=$((SKIP+1)); record_result "$1" "skip"; }
+
+# 生成 JUnit 兼容 XML 报告供 CI 解析
+write_junit_xml() {
+  local path="$1" ts total entry name rest status msg esc
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  total=$((PASS + FAIL + SKIP))
+  {
+    echo '<?xml version="1.0" encoding="UTF-8"?>'
+    echo "<testsuites name=\"baafoo-fullchain\" tests=\"$total\" failures=\"$FAIL\" skipped=\"$SKIP\" errors=\"0\">"
+    echo "<testsuite name=\"FullChain\" tests=\"$total\" failures=\"$FAIL\" skipped=\"$SKIP\" errors=\"0\" timestamp=\"$ts\">"
+    if [ "${#TEST_RESULTS[@]}" -gt 0 ]; then
+      for entry in "${TEST_RESULTS[@]}"; do
+        name="${entry%%|*}"
+        rest="${entry#*|}"
+        status="${rest%%|*}"
+        msg="${rest#*|}"
+        esc="$(printf '%s' "$msg" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g")"
+        echo "<testcase name=\"$name\" classname=\"FullChain\" status=\"$status\">"
+        if [ "$status" = "fail" ]; then
+          echo "<failure message=\"$esc\">$esc</failure>"
+        elif [ "$status" = "skip" ]; then
+          echo "<skipped message=\"$esc\"/>"
+        fi
+        echo "</testcase>"
+      done
+    fi
+    echo "</testsuite></testsuites>"
+  } > "$path"
+  echo "  [OK] JUnit XML written: $path"
+}
 
 assert_eq() {
     local desc="$1" expected="$2" actual="$3"
@@ -137,14 +179,14 @@ echo ""
 echo "--- H: HTTP 协议 ---"
 
 # H01: HTTP GET 挡板
-RESP=$(app_get "$APP_A/api/http/get?url=http://httpbin.org/get")
+RESP=$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get")
 STUBBED=$(jq_val "$RESP" '.stubbed')
 BODY=$(jq_val "$RESP" '.body')
 assert_true "H01: HTTP GET 被挡板拦截" "$STUBBED"
 assert_contains "H01: HTTP GET 响应内容正确" "$BODY" "mocked"
 
 # H02: HTTP POST 挡板
-RESP=$(curl -sf "$APP_A/api/http/post?url=http://httpbin.org/post&body=%7B%22test%22%3A%22baafoo%22%7D" 2>/dev/null || echo "{}")
+RESP=$(curl -sf "$APP_A/api/http/post?url=http://real-backend:9090/post&body=%7B%22test%22%3A%22baafoo%22%7D" 2>/dev/null || echo "{}")
 STUBBED=$(jq_val "$RESP" '.stubbed')
 assert_true "H02: HTTP POST 被挡板拦截" "$STUBBED"
 
@@ -158,12 +200,12 @@ DELETE_STUBBED=$(jq_val "$RESP" '.delete.stubbed')
 assert_true "H04: HTTP DELETE 被挡板拦截" "$DELETE_STUBBED"
 
 # H05: HTTP 延迟规则
-RESP=$(app_get "$APP_A/api/http/get?url=http://httpbin.org/delay")
+RESP=$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/delay")
 STUBBED=$(jq_val "$RESP" '.stubbed')
 assert_true "H05: HTTP 延迟路径被挡板拦截" "$STUBBED"
 
 # H06: HTTP 错误码规则
-RESP=$(app_get "$APP_A/api/http/get?url=http://httpbin.org/error500")
+RESP=$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/error500")
 STATUS=$(jq_val "$RESP" '.statusCode')
 assert_eq "H06: HTTP 错误码返回 500" "500" "$STATUS"
 
@@ -274,7 +316,7 @@ echo ""
 echo "--- E: 环境隔离 ---"
 
 # E01: staging-a 环境返回 staging-a 标识
-RESP_A=$(app_get "$APP_A/api/http/get?url=http://httpbin.org/get")
+RESP_A=$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get")
 BODY_A=$(jq_val "$RESP_A" '.body')
 if echo "$BODY_A" | grep -q "staging-a"; then
     log_pass "E01: staging-a 环境隔离正确"
@@ -283,7 +325,7 @@ else
 fi
 
 # E02: staging-b 环境返回 staging-b 标识
-RESP_B=$(app_get "$APP_B/api/http/get?url=http://httpbin.org/get")
+RESP_B=$(app_get "$APP_B/api/http/get?url=http://real-backend:9090/get")
 BODY_B=$(jq_val "$RESP_B" '.body')
 if echo "$BODY_B" | grep -q "staging-b"; then
     log_pass "E02: staging-b 环境隔离正确"
@@ -361,6 +403,9 @@ if echo "$JMS_RECS" | grep -qi "produce\|consume"; then
 else
     log_skip "D02: JMS 录制方向 (可能无 JMS 录制)"
 fi
+
+# ==================== JUnit XML 报告 (CI 消费) ====================
+write_junit_xml "$SCRIPT_DIR/junit-report.xml"
 
 # ==================== 汇总报告 ====================
 echo ""

@@ -56,6 +56,7 @@ temp_extract/
 
 # Testing temp files
 testing/tmp/
+testing/7_Others/tmp/
 testing/enterprise/spring-cloud-alibaba/agents/
 
 # Python cache

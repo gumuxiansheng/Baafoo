@@ -19,6 +19,7 @@
           <el-select v-model="filter.protocol" :placeholder="$t('recordings.all')" clearable style="width: 120px" @change="doSearch">
             <el-option label="HTTP" value="http" />
             <el-option label="TCP" value="tcp" />
+            <el-option label="gRPC" value="grpc" />
             <el-option label="Kafka" value="kafka" />
             <el-option label="Pulsar" value="pulsar" />
             <el-option label="JMS" value="jms" />

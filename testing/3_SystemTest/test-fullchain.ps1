@@ -60,24 +60,57 @@ $script:Pass = 0
 $script:Fail = 0
 $script:Skip = 0
 $script:FailedTests = @()
+$script:TestResults = @()   # JUnit XML source of truth: list of {Name,Status,Message}
 
 function Write-Step($msg) { Write-Host "`n[STEP] $msg" -ForegroundColor Cyan }
 function Write-OK($msg)   { Write-Host "  [OK] $msg" -ForegroundColor Green }
 function Write-Warn($msg) { Write-Host "  [WARN] $msg" -ForegroundColor Yellow }
 function Write-Err($msg)  { Write-Host "  [ERR] $msg" -ForegroundColor Red }
 
+# Record a test result for JUnit XML emission (CI consumption).
+function Add-TestResult($msg, $status) {
+    $id = if ($msg -match '^([A-Z]{1,4}\d{1,3})[:\s]') { $matches[1] } else { $msg }
+    $script:TestResults += [PSCustomObject]@{ Name = $id; Status = $status; Message = $msg }
+}
+
 function Test-Pass($msg) {
     Write-Host "  [PASS] $msg" -ForegroundColor Green
     $script:Pass++
+    Add-TestResult $msg "pass"
 }
 function Test-Fail($msg) {
     Write-Host "  [FAIL] $msg" -ForegroundColor Red
     $script:Fail++
     $script:FailedTests += $msg
+    Add-TestResult $msg "fail"
 }
 function Test-Skip($msg) {
     Write-Host "  [SKIP] $msg" -ForegroundColor Yellow
     $script:Skip++
+    Add-TestResult $msg "skip"
+}
+
+# Emit a JUnit-compatible XML report so CI (GitHub Actions test-reporter,
+# GitLab, Jenkins, etc.) can parse per-test results.
+function Export-JUnitXml($path) {
+    $ts = (Get-Date -Format "yyyy-MM-ddTHH:mm:ss")
+    $sb = New-Object System.Text.StringBuilder
+    $null = $sb.Append('<?xml version="1.0" encoding="UTF-8"?>')
+    $null = $sb.AppendFormat('<testsuites name="baafoo-fullchain" tests="{0}" failures="{1}" skipped="{2}" errors="0">', $script:TestResults.Count, $script:Fail, $script:Skip)
+    $null = $sb.AppendFormat('<testsuite name="FullChain" tests="{0}" failures="{1}" skipped="{2}" errors="0" timestamp="{3}">', $script:TestResults.Count, $script:Fail, $script:Skip, $ts)
+    foreach ($t in $script:TestResults) {
+        $esc = [Security.SecurityElement]::Escape($t.Message)
+        $null = $sb.AppendFormat('<testcase name="{0}" classname="FullChain" status="{1}">', $t.Name, $t.Status)
+        if ($t.Status -eq "fail") {
+            $null = $sb.AppendFormat('<failure message="{0}">{0}</failure>', $esc)
+        } elseif ($t.Status -eq "skip") {
+            $null = $sb.AppendFormat('<skipped message="{0}"/>', $esc)
+        }
+        $null = $sb.Append('</testcase>')
+    }
+    $null = $sb.Append('</testsuite></testsuites>')
+    Set-Content -Path $path -Value $sb.ToString() -Encoding UTF8
+    Write-Host "  [OK] JUnit XML written: $path" -ForegroundColor Gray
 }
 
 # HTTP helpers
@@ -511,7 +544,7 @@ Write-Host ""
 Write-Host "--- H: HTTP ---" -ForegroundColor White
 
 # H01: HTTP GET stub
-$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get"
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/get"
 $stubbed = Get-JsonValue $resp "stubbed"
 if ($stubbed -eq "true") { Test-Pass "H01: HTTP GET intercepted" }
 else { Test-Fail "H01: HTTP GET intercepted (stubbed=$stubbed)" }
@@ -519,7 +552,7 @@ if ($resp -match '"env"\s*:\s*"staging-a"') { Test-Pass "H01: HTTP GET response 
 else { Test-Fail "H01: HTTP GET response correct (resp=$resp)" }
 
 # H02: HTTP POST stub (endpoint is @PostMapping, must use POST)
-$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://httpbin.org/post&body=%7B%22test%22%3A%22baafoo%22%7D"
+$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://real-backend:9090/post&body=%7B%22test%22%3A%22baafoo%22%7D"
 $stubbed = Get-JsonValue $resp "stubbed"
 if ($stubbed -eq "true") { Test-Pass "H02: HTTP POST intercepted" }
 else { Test-Fail "H02: HTTP POST intercepted (stubbed=$stubbed)" }
@@ -536,13 +569,13 @@ if ($deleteStubbed -eq "true") { Test-Pass "H04: HTTP DELETE intercepted" }
 else { Test-Fail "H04: HTTP DELETE intercepted (stubbed=$deleteStubbed)" }
 
 # H05: HTTP delay rule
-$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/delay"
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/delay"
 $stubbed = Get-JsonValue $resp "stubbed"
 if ($stubbed -eq "true") { Test-Pass "H05: HTTP delay path intercepted" }
 else { Test-Fail "H05: HTTP delay path intercepted (stubbed=$stubbed)" }
 
 # H06: HTTP error code rule
-$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/error500"
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/error500"
 $statusCode = Get-JsonValue $resp "statusCode"
 if ($statusCode -eq "500") { Test-Pass "H06: HTTP error code returns 500" }
 else { Test-Fail "H06: HTTP error code returns 500 (statusCode=$statusCode)" }
@@ -550,7 +583,7 @@ else { Test-Fail "H06: HTTP error code returns 500 (statusCode=$statusCode)" }
 # H07: HTTP GraphQL rule — body must carry operationName so the server matches
 # graphqlOperationName / graphqlOperationType conditions (MatchEngine reads $.operationName).
 $graphqlBody = [System.Uri]::EscapeDataString('{"operationName":"GetUser","query":"query GetUser { user { id name } }"}')
-$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://httpbin.org/graphql&body=$graphqlBody"
+$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://real-backend:9090/graphql&body=$graphqlBody"
 if ($resp -match "Baafoo Mock User") {
     Test-Pass "H07: HTTP GraphQL rule matched (operationName=GetUser)"
 } else {
@@ -560,7 +593,7 @@ if ($resp -match "Baafoo Mock User") {
 # H08: HTTP request-count rule. Reset the per-rule counter BEFORE the assertion so
 # repeated runs always see count=1 (eliminates the latent flaky reported in the review).
 $null = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/staging-a-http-request-count/reset-state" -Method Post -Headers $headers -ErrorAction SilentlyContinue
-$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/counted"
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/counted"
 $mb = Get-MatchedBy $resp
 if ($mb -eq "requestCount") {
     Test-Pass "H08: HTTP request-count rule matched (counter reset before run)"
@@ -691,7 +724,7 @@ Write-Host ""
 Write-Host "--- E: Environment Isolation ---" -ForegroundColor White
 
 # E01: staging-a returns staging-a tag (check raw response for env tag)
-$respA = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get"
+$respA = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/get"
 if ($respA -match "staging-a") {
     Test-Pass "E01: staging-a isolation correct"
 } else {
@@ -699,7 +732,7 @@ if ($respA -match "staging-a") {
 }
 
 # E02: staging-b returns staging-b tag (check raw response for env tag)
-$respB = Invoke-AppGet "$APP_B/api/http/get?url=http://httpbin.org/get"
+$respB = Invoke-AppGet "$APP_B/api/http/get?url=http://real-backend:9090/get"
 if ($respB -match "staging-b") {
     Test-Pass "E02: staging-b isolation correct"
 } else {
@@ -732,7 +765,7 @@ if ($agentsJson -match "agent|staging") {
 }
 
 # PL03: Feign plugin functional test (Feign client uses OkHttp, agent should intercept)
-$resp = Invoke-AppGet "$APP_A/api/feign/get?baseUrl=http://httpbin.org"
+$resp = Invoke-AppGet "$APP_A/api/feign/get?baseUrl=http://real-backend:9090"
 if ($resp -match '"stubbed":\s*true') {
     Test-Pass "PL03: Feign call intercepted by agent"
 } elseif ($resp -match '"statusCode":\s*\d+') {
@@ -840,7 +873,7 @@ Write-Host "--- C: Condition Types ---" -ForegroundColor White
 
 # C01: Header condition match. The test app must actually send X-Test-Header so the
 # http-header rule (path /headers + header equals) is the one that matches.
-$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/headers&headerName=X-Test-Header&headerValue=baafoo-test"
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/headers&headerName=X-Test-Header&headerValue=baafoo-test"
 $mb = Get-MatchedBy $resp
 if ($mb -eq "header") {
     Test-Pass "C01: Header condition match (matchedBy=header)"
@@ -849,7 +882,7 @@ if ($mb -eq "header") {
 }
 
 # C02: Query param condition match
-$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get?baafoo=test"
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/get?baafoo=test"
 $mb = Get-MatchedBy $resp
 if ($mb -eq "query") {
     Test-Pass "C02: Query param condition match (matchedBy=query)"
@@ -859,7 +892,7 @@ if ($mb -eq "query") {
 
 # C03: Body contains condition match
 $bodyC03 = [System.Uri]::EscapeDataString('{"data":"baafoo-body-test"}')
-$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://httpbin.org/post&body=$bodyC03"
+$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://real-backend:9090/post&body=$bodyC03"
 $mb = Get-MatchedBy $resp
 if ($mb -eq "body") {
     Test-Pass "C03: Body contains condition match (matchedBy=body)"
@@ -869,7 +902,7 @@ if ($mb -eq "body") {
 
 # C04: BodyJsonPath condition match
 $bodyC04 = [System.Uri]::EscapeDataString('{"action":"submit"}')
-$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://httpbin.org/post&body=$bodyC04"
+$resp = Invoke-AppPost "$APP_A/api/http/post?url=http://real-backend:9090/post&body=$bodyC04"
 $mb = Get-MatchedBy $resp
 if ($mb -eq "jsonPath") {
     Test-Pass "C04: BodyJsonPath condition match (matchedBy=jsonPath)"
@@ -878,7 +911,7 @@ if ($mb -eq "jsonPath") {
 }
 
 # C05: Path contains operator
-$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/baafoo/anything"
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/baafoo/anything"
 $mb = Get-MatchedBy $resp
 if ($mb -eq "path-contains") {
     Test-Pass "C05: Path contains operator (matchedBy=path-contains)"
@@ -887,7 +920,7 @@ if ($mb -eq "path-contains") {
 }
 
 # C06: Path endsWith operator
-$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/suffix"
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/suffix"
 $mb = Get-MatchedBy $resp
 if ($mb -eq "path-endswith") {
     Test-Pass "C06: Path endsWith operator (matchedBy=path-endswith)"
@@ -896,7 +929,7 @@ if ($mb -eq "path-endswith") {
 }
 
 # C07: Path regex operator
-$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/api/v1/users"
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/api/v1/users"
 $mb = Get-MatchedBy $resp
 if ($mb -eq "path-regex") {
     Test-Pass "C07: Path regex operator (matchedBy=path-regex)"
@@ -905,7 +938,7 @@ if ($mb -eq "path-regex") {
 }
 
 # C08: Header exists operator. Send a header the http-header-exists rule keys on.
-$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get&headerName=X-Baafoo-Test&headerValue=1"
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/get&headerName=X-Baafoo-Test&headerValue=1"
 $mb = Get-MatchedBy $resp
 if ($mb -eq "header-exists") {
     Test-Pass "C08: Header exists operator (matchedBy=header-exists)"
@@ -914,7 +947,7 @@ if ($mb -eq "header-exists") {
 }
 
 # C09: Case insensitive match (rule path equals /CASE-TEST, caseInsensitive=true)
-$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/case-test"
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/case-test"
 $mb = Get-MatchedBy $resp
 if ($mb -eq "case-insensitive") {
     Test-Pass "C09: Case insensitive match (matchedBy=case-insensitive)"
@@ -923,7 +956,7 @@ if ($mb -eq "case-insensitive") {
 }
 
 # C10: Disabled rule should NOT match
-$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/disabled-path"
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/disabled-path"
 if ($resp -notmatch "disabled") {
     Test-Pass "C10: Disabled rule not matched"
 } else {
@@ -931,7 +964,7 @@ if ($resp -notmatch "disabled") {
 }
 
 # C11: No-environment global rule should match regardless of environment
-$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/global-endpoint"
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/global-endpoint"
 if ($resp -match '"rule"\s*:\s*"global"') {
     Test-Pass "C11: Global rule (no env) matched"
 } else {
@@ -943,7 +976,7 @@ Write-Host ""
 Write-Host "--- M: Environment Mode ---" -ForegroundColor White
 
 # M01: STUB mode (staging-a default) — returns stub response
-$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get"
+$resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/get"
 $stubbed = Get-JsonValue $resp "stubbed"
 if ($stubbed -eq "true") {
     Test-Pass "M01: STUB mode returns stub response"
@@ -952,7 +985,7 @@ if ($stubbed -eq "true") {
 }
 
 # M02: RECORD_AND_STUB mode (staging-b default) — returns stub + records
-$resp = Invoke-AppGet "$APP_B/api/http/get?url=http://httpbin.org/get"
+$resp = Invoke-AppGet "$APP_B/api/http/get?url=http://real-backend:9090/get"
 $stubbed = Get-JsonValue $resp "stubbed"
 if ($stubbed -eq "true") {
     Test-Pass "M02: RECORD_AND_STUB mode returns stub"
@@ -970,9 +1003,9 @@ if ($envAId) {
         # Wait long enough for the next poll to pick up the mode change and sync
         # it to the Bootstrap-CL inlined advice.
         Start-Sleep -Seconds $MODE_SETTLE_WAIT
-        $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get"
+        $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/get"
         $stubbed = Get-JsonValue $resp "stubbed"
-        if ($stubbed -ne "true" -and $resp -match "httpbin\.org") {
+        if ($stubbed -ne "true" -and $resp -match "real-backend") {
             Test-Pass "M03: PASSTHROUGH mode forwards request to real backend"
         } elseif ($stubbed -eq "true") {
             Test-Fail "M03: PASSTHROUGH mode still returning stub (agent has not picked up mode change yet?)"
@@ -996,10 +1029,10 @@ if ($envAId) {
     try {
         Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"record"}' -ErrorAction Stop | Out-Null
         Start-Sleep -Seconds $MODE_SETTLE_WAIT
-        $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/get"
+        $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/get"
         # RECORD mode should passthrough (not stubbed) and create recording
         $recAfter = Invoke-ApiGet "recordings?limit=5"
-        if ($resp -match "passthrough|httpbin|statusCode" -and $recAfter -match "direction") {
+        if ($resp -match "passthrough|real-backend|statusCode" -and $recAfter -match "direction") {
             Test-Pass "M04: RECORD mode passthrough + record"
         } else {
             Test-Skip "M04: RECORD mode (resp: $resp)"
@@ -1022,7 +1055,7 @@ if ($envAId) {
         Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"record-all"}' -ErrorAction Stop | Out-Null
         Start-Sleep -Seconds $MODE_SETTLE_WAIT
         # Send request to unmatched path
-        $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://httpbin.org/status/200"
+        $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/status/200"
         $recAfter = Invoke-ApiGet "recordings?limit=10"
         if ($recAfter -match "unmatched|direction") {
             Test-Pass "M05: RECORD_ALL mode records unmatched"
@@ -1313,6 +1346,9 @@ if ($script:FailedTests.Count -gt 0) {
     }
     Write-Host ""
 }
+
+# ==================== JUnit XML report (CI consumption) ====================
+Export-JUnitXml (Join-Path $PSScriptRoot "junit-report.xml")
 
 # ==================== Cleanup ====================
 if (-not $NoCleanup) {

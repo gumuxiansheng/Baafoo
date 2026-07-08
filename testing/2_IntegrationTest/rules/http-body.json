@@ -1,1 +1,37 @@
-{"id":"staging-a-http-body","name":"HTTP Body Match","protocol":"http","host":"httpbin.org","port":80,"conditions":[{"type":"path","operator":"startsWith","value":"/post"},{"type":"body","operator":"contains","value":"baafoo-body-test"}],"responses":[{"name":"Body Matched","statusCode":200,"body":"{\"mocked\":true,\"protocol\":\"http\",\"matchedBy\":\"body\"}","delayMs":0}],"enabled":true,"priority":10,"tags":["http","body","staging-a"],"environments":["staging-a"]}
+{
+  "id": "staging-a-http-body",
+  "name": "HTTP Body Match",
+  "protocol": "http",
+  "host": "real-backend",
+  "port": 9090,
+  "conditions": [
+    {
+      "type": "path",
+      "operator": "startsWith",
+      "value": "/post"
+    },
+    {
+      "type": "body",
+      "operator": "contains",
+      "value": "baafoo-body-test"
+    }
+  ],
+  "responses": [
+    {
+      "name": "Body Matched",
+      "statusCode": 200,
+      "body": "{\"mocked\":true,\"protocol\":\"http\",\"matchedBy\":\"body\"}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 10,
+  "tags": [
+    "http",
+    "body",
+    "staging-a"
+  ],
+  "environments": [
+    "staging-a"
+  ]
+}

@@ -138,7 +138,7 @@ export default {
     function renderRulesChart(rules) {
       if (!rulesChart.value) return
       const chart = echarts.init(rulesChart.value)
-      const counts = { http: 0, tcp: 0, kafka: 0, pulsar: 0, jms: 0 }
+      const counts = { http: 0, tcp: 0, grpc: 0, kafka: 0, pulsar: 0, jms: 0 }
       rules.forEach(r => { if (counts[r.protocol] !== undefined) counts[r.protocol]++ })
       chart.setOption({
         tooltip: { trigger: 'item' },

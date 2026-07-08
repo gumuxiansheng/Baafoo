@@ -1,1 +1,39 @@
-{"id":"staging-a-http-delete","name":"HTTP DELETE","protocol":"http","host":"httpbin.org","port":80,"conditions":[{"type":"method","operator":"equals","value":"DELETE"},{"type":"path","operator":"startsWith","value":"/"}],"responses":[{"name":"DELETE","statusCode":204,"headers":{"X-Baafoo-Method":"DELETE"},"body":"{\"mocked\":true,\"env\":\"{{environment}}\",\"protocol\":\"http\",\"method\":\"DELETE\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["http","staging-a"],"environments":["staging-a"]}
+{
+  "id": "staging-a-http-delete",
+  "name": "HTTP DELETE",
+  "protocol": "http",
+  "host": "real-backend",
+  "port": 9090,
+  "conditions": [
+    {
+      "type": "method",
+      "operator": "equals",
+      "value": "DELETE"
+    },
+    {
+      "type": "path",
+      "operator": "startsWith",
+      "value": "/"
+    }
+  ],
+  "responses": [
+    {
+      "name": "DELETE",
+      "statusCode": 204,
+      "headers": {
+        "X-Baafoo-Method": "DELETE"
+      },
+      "body": "{\"mocked\":true,\"env\":\"{{environment}}\",\"protocol\":\"http\",\"method\":\"DELETE\"}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 100,
+  "tags": [
+    "http",
+    "staging-a"
+  ],
+  "environments": [
+    "staging-a"
+  ]
+}

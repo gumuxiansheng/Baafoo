@@ -25,6 +25,10 @@
 #   ./testing/3_SystemTest/test-fullchain.sh              # Build + test + cleanup
 #   ./testing/3_SystemTest/test-fullchain.sh --no-cleanup # Keep environment after test
 #   ./testing/3_SystemTest/test-fullchain.sh --skip-build # Skip build step
+#
+# Environment:
+#   This script is a Bash script. On Windows run it inside Git Bash, WSL, or
+#   another Bash-compatible environment. PowerShell will not execute it.
 # =============================================================================
 
 set -o pipefail
@@ -71,15 +75,57 @@ PASS=0
 FAIL=0
 SKIP=0
 FAILED_TESTS=()
+TEST_RESULTS=()
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 write_step() { echo -e "\n[STEP] $1"; }
 write_ok()   { echo "  [OK] $1"; }
 write_warn() { echo "  [WARN] $1" >&2; }
 write_err()  { echo "  [ERR] $1" >&2; }
 
-test_pass() { echo "  [PASS] $1"; PASS=$((PASS + 1)); }
-test_fail() { echo "  [FAIL] $1" >&2; FAIL=$((FAIL + 1)); FAILED_TESTS+=("$1"); }
-test_skip() { echo "  [SKIP] $1"; SKIP=$((SKIP + 1)); }
+record_result() {
+  local msg="$1" status="$2" id
+  if [[ "$msg" =~ ^([A-Z]{1,4}[0-9]{1,3})[:[:space:]] ]]; then
+    id="${BASH_REMATCH[1]}"
+  else
+    id="$msg"
+  fi
+  TEST_RESULTS+=("$id|$status|$msg")
+}
+
+test_pass() { echo "  [PASS] $1"; PASS=$((PASS + 1)); record_result "$1" "pass"; }
+test_fail() { echo "  [FAIL] $1" >&2; FAIL=$((FAIL + 1)); FAILED_TESTS+=("$1"); record_result "$1" "fail"; }
+test_skip() { echo "  [SKIP] $1"; SKIP=$((SKIP + 1)); record_result "$1" "skip"; }
+
+# Emit a JUnit-compatible XML report so CI can parse per-test results.
+write_junit_xml() {
+  local path="$1" ts total entry name rest status msg esc
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  total=$((PASS + FAIL + SKIP))
+  {
+    echo '<?xml version="1.0" encoding="UTF-8"?>'
+    echo "<testsuites name=\"baafoo-fullchain\" tests=\"$total\" failures=\"$FAIL\" skipped=\"$SKIP\" errors=\"0\">"
+    echo "<testsuite name=\"FullChain\" tests=\"$total\" failures=\"$FAIL\" skipped=\"$SKIP\" errors=\"0\" timestamp=\"$ts\">"
+    if [ "${#TEST_RESULTS[@]}" -gt 0 ]; then
+      for entry in "${TEST_RESULTS[@]}"; do
+        name="${entry%%|*}"
+        rest="${entry#*|}"
+        status="${rest%%|*}"
+        msg="${rest#*|}"
+        esc="$(printf '%s' "$msg" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g")"
+        echo "<testcase name=\"$name\" classname=\"FullChain\" status=\"$status\">"
+        if [ "$status" = "fail" ]; then
+          echo "<failure message=\"$esc\">$esc</failure>"
+        elif [ "$status" = "skip" ]; then
+          echo "<skipped message=\"$esc\"/>"
+        fi
+        echo "</testcase>"
+      done
+    fi
+    echo "</testsuite></testsuites>"
+  } > "$path"
+  echo "  [OK] JUnit XML written: $path"
+}
 
 # -----------------------------------------------------------------------------
 # JSON helpers: use jq when available, fallback to grep/regex
@@ -519,14 +565,14 @@ test_pass "A07: Environment deleted"
 echo ""
 echo "--- H: HTTP ---"
 
-resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/get")"
+resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get")"
 stubbed="$(get_json_value "$resp" "stubbed")"
 if [[ "$stubbed" == "true" ]]; then test_pass "H01: HTTP GET intercepted"
 else test_fail "H01: HTTP GET intercepted (stubbed=$stubbed)"; fi
 if [[ "$resp" =~ \"env\"[[:space:]]*:[[:space:]]*\"staging-a\" ]]; then test_pass "H01: HTTP GET response correct (staging-a stub)"
 else test_fail "H01: HTTP GET response correct (resp=$resp)"; fi
 
-resp="$(app_post "$APP_A/api/http/post?url=http://httpbin.org/post&body=%7B%22test%22%3A%22baafoo%22%7D")"
+resp="$(app_post "$APP_A/api/http/post?url=http://real-backend:9090/post&body=%7B%22test%22%3A%22baafoo%22%7D")"
 stubbed="$(get_json_value "$resp" "stubbed")"
 if [[ "$stubbed" == "true" ]]; then test_pass "H02: HTTP POST intercepted"
 else test_fail "H02: HTTP POST intercepted (stubbed=$stubbed)"; fi
@@ -537,26 +583,26 @@ else test_fail "H03: HTTP PUT intercepted (resp=$resp)"; fi
 if [[ "$resp" =~ \"delete\".*\"stubbed\"[[:space:]]*:[[:space:]]*true ]]; then test_pass "H04: HTTP DELETE intercepted"
 else test_fail "H04: HTTP DELETE intercepted (resp=$resp)"; fi
 
-resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/delay")"
+resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/delay")"
 stubbed="$(get_json_value "$resp" "stubbed")"
 if [[ "$stubbed" == "true" ]]; then test_pass "H05: HTTP delay path intercepted"
 else test_fail "H05: HTTP delay path intercepted (stubbed=$stubbed)"; fi
 
-resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/error500")"
+resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/error500")"
 status_code="$(get_json_value "$resp" "statusCode")"
 if [[ "$status_code" == "500" ]]; then test_pass "H06: HTTP error code returns 500"
 else test_fail "H06: HTTP error code returns 500 (statusCode=$status_code)"; fi
 
 graphql_body='{"operationName":"GetUser","query":"query GetUser { user { id name } }"}'
 urlencoded_body="$(printf '%s' "$graphql_body" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))' 2>/dev/null || printf '%s' "$graphql_body")"
-resp="$(app_post "$APP_A/api/http/post?url=http://httpbin.org/graphql&body=$urlencoded_body")"
+resp="$(app_post "$APP_A/api/http/post?url=http://real-backend:9090/graphql&body=$urlencoded_body")"
 if [[ "$resp" =~ Baafoo[[:space:]]Mock[[:space:]]User ]]; then test_pass "H07: HTTP GraphQL rule matched (operationName=GetUser)"
 else test_fail "H07: HTTP GraphQL rule not matched (response: $resp)"; fi
 
 # H08: request-count reset before request
 curl -sf -X POST "$SERVER/__baafoo__/api/rules/staging-a-http-request-count/reset-state" \
      -H "X-Api-Key: $API_KEY" >/dev/null 2>&1 || true
-resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/counted")"
+resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/counted")"
 mb="$(get_matched_by "$resp")"
 if [[ "$mb" == "requestCount" ]]; then test_pass "H08: HTTP request-count rule matched (counter reset before run)"
 else test_fail "H08: HTTP request-count rule (matchedBy=$mb, resp=$resp)"; fi
@@ -634,11 +680,11 @@ else test_fail "J02: JMS Queue receive (response: $resp)"; fi
 echo ""
 echo "--- E: Environment Isolation ---"
 
-resp_a="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/get")"
+resp_a="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get")"
 if [[ "$resp_a" =~ staging-a ]]; then test_pass "E01: staging-a isolation correct"
 else test_fail "E01: staging-a isolation (resp: $resp_a)"; fi
 
-resp_b="$(app_get "$APP_B/api/http/get?url=http://httpbin.org/get")"
+resp_b="$(app_get "$APP_B/api/http/get?url=http://real-backend:9090/get")"
 if [[ "$resp_b" =~ staging-b ]]; then test_pass "E02: staging-b isolation correct"
 else test_fail "E02: staging-b isolation (resp: $resp_b)"; fi
 
@@ -656,7 +702,7 @@ agents_json="$(api_get "agents")"
 if [[ "$agents_json" =~ agent|staging ]]; then test_pass "PL02: Agent heartbeat registered"
 else test_fail "PL02: Agent heartbeat registration failed (response: $agents_json)"; fi
 
-resp="$(app_get "$APP_A/api/feign/get?baseUrl=http://httpbin.org")"
+resp="$(app_get "$APP_A/api/feign/get?baseUrl=http://real-backend:9090")"
 if [[ "$resp" =~ \"stubbed\"[[:space:]]*:[[:space:]]*true ]]; then test_pass "PL03: Feign call intercepted by agent"
 elif [[ "$resp" =~ \"statusCode\"[[:space:]]*:[[:space:]]*[0-9]+ ]]; then test_skip "PL03: Feign call completed (may not be stubbed: $resp)"
 else test_skip "PL03: Feign plugin test (response: $resp)"; fi
@@ -721,60 +767,60 @@ fi
 echo ""
 echo "--- C: Condition Types ---"
 
-resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/headers&headerName=X-Test-Header&headerValue=baafoo-test")"
+resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/headers&headerName=X-Test-Header&headerValue=baafoo-test")"
 mb="$(get_matched_by "$resp")"
 if [[ "$mb" == "header" ]]; then test_pass "C01: Header condition match (matchedBy=header)"
 else test_fail "C01: Header condition not matched (matchedBy=$mb, resp=$resp)"; fi
 
-resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/get?baafoo=test")"
+resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get?baafoo=test")"
 mb="$(get_matched_by "$resp")"
 if [[ "$mb" == "query" ]]; then test_pass "C02: Query param condition match (matchedBy=query)"
 else test_fail "C02: Query param condition not matched (matchedBy=$mb, resp=$resp)"; fi
 
 body_c03='{"data":"baafoo-body-test"}'
 body_c03_enc="$(printf '%s' "$body_c03" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))' 2>/dev/null || printf '%s' "$body_c03")"
-resp="$(app_post "$APP_A/api/http/post?url=http://httpbin.org/post&body=$body_c03_enc")"
+resp="$(app_post "$APP_A/api/http/post?url=http://real-backend:9090/post&body=$body_c03_enc")"
 mb="$(get_matched_by "$resp")"
 if [[ "$mb" == "body" ]]; then test_pass "C03: Body contains condition match (matchedBy=body)"
 else test_fail "C03: Body contains condition not matched (matchedBy=$mb, resp=$resp)"; fi
 
 body_c04='{"action":"submit"}'
 body_c04_enc="$(printf '%s' "$body_c04" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))' 2>/dev/null || printf '%s' "$body_c04")"
-resp="$(app_post "$APP_A/api/http/post?url=http://httpbin.org/post&body=$body_c04_enc")"
+resp="$(app_post "$APP_A/api/http/post?url=http://real-backend:9090/post&body=$body_c04_enc")"
 mb="$(get_matched_by "$resp")"
 if [[ "$mb" == "jsonPath" ]]; then test_pass "C04: BodyJsonPath condition match (matchedBy=jsonPath)"
 else test_fail "C04: BodyJsonPath condition not matched (matchedBy=$mb, resp=$resp)"; fi
 
-resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/baafoo/anything")"
+resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/baafoo/anything")"
 mb="$(get_matched_by "$resp")"
 if [[ "$mb" == "path-contains" ]]; then test_pass "C05: Path contains operator (matchedBy=path-contains)"
 else test_fail "C05: Path contains operator not matched (matchedBy=$mb, resp=$resp)"; fi
 
-resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/suffix")"
+resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/suffix")"
 mb="$(get_matched_by "$resp")"
 if [[ "$mb" == "path-endswith" ]]; then test_pass "C06: Path endsWith operator (matchedBy=path-endswith)"
 else test_fail "C06: Path endsWith operator not matched (matchedBy=$mb, resp=$resp)"; fi
 
-resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/api/v1/users")"
+resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/api/v1/users")"
 mb="$(get_matched_by "$resp")"
 if [[ "$mb" == "path-regex" ]]; then test_pass "C07: Path regex operator (matchedBy=path-regex)"
 else test_fail "C07: Path regex operator not matched (matchedBy=$mb, resp=$resp)"; fi
 
-resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/get&headerName=X-Baafoo-Test&headerValue=1")"
+resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get&headerName=X-Baafoo-Test&headerValue=1")"
 mb="$(get_matched_by "$resp")"
 if [[ "$mb" == "header-exists" ]]; then test_pass "C08: Header exists operator (matchedBy=header-exists)"
 else test_fail "C08: Header exists operator not matched (matchedBy=$mb, resp=$resp)"; fi
 
-resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/case-test")"
+resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/case-test")"
 mb="$(get_matched_by "$resp")"
 if [[ "$mb" == "case-insensitive" ]]; then test_pass "C09: Case insensitive match (matchedBy=case-insensitive)"
 else test_fail "C09: Case insensitive match not matched (matchedBy=$mb, resp=$resp)"; fi
 
-resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/disabled-path")"
+resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/disabled-path")"
 if [[ ! "$resp" =~ disabled ]]; then test_pass "C10: Disabled rule not matched"
 else test_fail "C10: Disabled rule should not match (response: $resp)"; fi
 
-resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/global-endpoint")"
+resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/global-endpoint")"
 if [[ "$resp" =~ \"rule\"[[:space:]]*:[[:space:]]*\"global\" ]]; then test_pass "C11: Global rule (no env) matched"
 else test_skip "C11: Global rule (response: $resp)"; fi
 
@@ -782,12 +828,12 @@ else test_skip "C11: Global rule (response: $resp)"; fi
 echo ""
 echo "--- M: Environment Mode ---"
 
-resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/get")"
+resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get")"
 stubbed="$(get_json_value "$resp" "stubbed")"
 if [[ "$stubbed" == "true" ]]; then test_pass "M01: STUB mode returns stub response"
 else test_fail "M01: STUB mode should return stub (stubbed=$stubbed)"; fi
 
-resp="$(app_get "$APP_B/api/http/get?url=http://httpbin.org/get")"
+resp="$(app_get "$APP_B/api/http/get?url=http://real-backend:9090/get")"
 stubbed="$(get_json_value "$resp" "stubbed")"
 if [[ "$stubbed" == "true" ]]; then test_pass "M02: RECORD_AND_STUB mode returns stub"
 else test_fail "M02: RECORD_AND_STUB mode should return stub (stubbed=$stubbed)"; fi
@@ -799,9 +845,9 @@ env_a_id="$(get_environment_id "$envs_json" "staging-a")"
 if [[ -n "$env_a_id" ]]; then
     api_put "environments/$env_a_id" '{"mode":"passthrough"}' >/dev/null
     sleep "$MODE_SETTLE_WAIT"
-    resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/get")"
+    resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get")"
     stubbed="$(get_json_value "$resp" "stubbed")"
-    if [[ "$stubbed" != "true" && "$resp" =~ httpbin\.org ]]; then test_pass "M03: PASSTHROUGH mode forwards request to real backend"
+    if [[ "$stubbed" != "true" && "$resp" =~ real-backend ]]; then test_pass "M03: PASSTHROUGH mode forwards request to real backend"
     elif [[ "$stubbed" == "true" ]]; then test_fail "M03: PASSTHROUGH mode still returning stub (agent has not picked up mode change yet?)"
     else test_skip "M03: PASSTHROUGH mode (unexpected response: $resp)"; fi
     api_put "environments/$env_a_id" '{"mode":"stub"}' >/dev/null
@@ -814,9 +860,9 @@ fi
 if [[ -n "$env_a_id" ]]; then
     api_put "environments/$env_a_id" '{"mode":"record"}' >/dev/null
     sleep "$MODE_SETTLE_WAIT"
-    resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/get")"
+    resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get")"
     rec_after="$(api_get "recordings?limit=5")"
-    if [[ "$resp" =~ passthrough|httpbin|statusCode && "$rec_after" =~ direction ]]; then test_pass "M04: RECORD mode passthrough + record"
+    if [[ "$resp" =~ passthrough|real-backend|statusCode && "$rec_after" =~ direction ]]; then test_pass "M04: RECORD mode passthrough + record"
     else test_skip "M04: RECORD mode (resp: $resp)"; fi
     api_put "environments/$env_a_id" '{"mode":"stub"}' >/dev/null
     sleep "$MODE_SETTLE_WAIT"
@@ -828,7 +874,7 @@ fi
 if [[ -n "$env_a_id" ]]; then
     api_put "environments/$env_a_id" '{"mode":"record-all"}' >/dev/null
     sleep "$MODE_SETTLE_WAIT"
-    resp="$(app_get "$APP_A/api/http/get?url=http://httpbin.org/status/200")"
+    resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/status/200")"
     rec_after="$(api_get "recordings?limit=10")"
     if [[ "$rec_after" =~ unmatched|direction ]]; then test_pass "M05: RECORD_ALL mode records unmatched"
     else test_skip "M05: RECORD_ALL mode (recordings: $rec_after)"; fi
@@ -1130,6 +1176,11 @@ if [[ ${#FAILED_TESTS[@]} -gt 0 ]]; then
     done
     echo ""
 fi
+
+# -----------------------------------------------------------------------------
+# JUnit XML report (CI consumption)
+# -----------------------------------------------------------------------------
+write_junit_xml "$SCRIPT_DIR/junit-report.xml"
 
 # -----------------------------------------------------------------------------
 # Cleanup

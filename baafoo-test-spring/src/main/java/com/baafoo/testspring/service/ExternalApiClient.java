@@ -16,7 +16,7 @@ public class ExternalApiClient {
 
     public String fetchData() {
         try {
-            URL url = new URL("https://httpbin.org/get");
+            URL url = new URL("http://real-backend:9090/get");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(5000);
