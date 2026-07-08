@@ -47,10 +47,12 @@ public class GrpcChannelAdvice {
     @Advice.OnMethodEnter
     public static void onForTarget(@Advice.Argument(value = 0, readOnly = false) String target) {
         try {
+            log.info("[DIAG-grpc] onForTarget ENTER target={}", target);
             if (target == null || target.isEmpty()) return;
 
             // Skip interception in PASSTHROUGH mode (consistent with other App-CL advices)
             EnvironmentMode mode = RouteManager.getMode();
+            log.info("[DIAG-grpc] mode={}", mode);
             if (mode == EnvironmentMode.PASSTHROUGH) {
                 return;
             }
@@ -63,50 +65,19 @@ public class GrpcChannelAdvice {
             int defaultGrpcPort = GlobalRouteState.GRPC_PORT;
             int port = parts.length > 1 ? Integer.parseInt(parts[1]) : defaultGrpcPort;
 
-            // 1. Check route table for redirect
+            // 1. Check route table for redirect (core path — no optional SPI dependency)
             String[] route = GlobalRouteState.lookup(host, port);
-
-            // 2. Consult the gRPC plugin via PluginManager SPI (App-CL direct call).
-            //    A plugin may override the redirect target or block the connection.
-            String originalTarget = host + ":" + port;
-            boolean pluginPassthrough = false;
-            try {
-                PluginManager pm = BaafooAgent.getPluginManager();
-                if (pm != null) {
-                    ConnectContext ctx = new ConnectContext(
-                            "grpc", host, port, null, null, null, null);
-                    ConnectAdvice advice = pm.connectWithMonitor(InterceptTarget.GRPC, ctx);
-                    if (advice != null) {
-                        if (advice.isRedirect()) {
-                            route = new String[]{advice.getRedirectHost(),
-                                    String.valueOf(advice.getRedirectPort())};
-                            log.info("[Baafoo] gRPC plugin redirected to {}:{}",
-                                    advice.getRedirectHost(), advice.getRedirectPort());
-                        } else if (advice.isPassthrough()) {
-                            pm.fireEvent(PluginEvent.connectionPassthrough("grpc", originalTarget));
-                            pluginPassthrough = true;
-                        }
-                        // Other advice actions (e.g., BLOCK) fall through to route lookup
-                    }
-                }
-            } catch (Throwable t) {
-                log.debug("[Baafoo] gRPC plugin consult skipped: {}", t.getMessage());
-            }
-
-            if (pluginPassthrough) {
-                return;
-            }
+            log.info("[DIAG-grpc] lookup({}:{}) => {}", host, port, route);
 
             if (route != null) {
+                String originalTarget = host + ":" + port;
                 String newTarget = route[0] + ":" + route[1];
-                log.info("[Baafoo] gRPC channel redirect: {} -> {}", originalTarget, newTarget);
-                PluginManager pm = BaafooAgent.getPluginManager();
-                if (pm != null) {
-                    pm.fireEvent(PluginEvent.connectionRedirected(
-                            "grpc", originalTarget, newTarget));
-                } else {
+                log.info("[DIAG-grpc] REWRITE target={} -> {}", originalTarget, newTarget);
+                try {
                     GlobalRouteState.firePluginEvent(
                             PluginEvent.connectionRedirected("grpc", originalTarget, newTarget));
+                } catch (Throwable ignore) {
+                    // event is best-effort; must not break the redirect
                 }
                 target = newTarget;
             }

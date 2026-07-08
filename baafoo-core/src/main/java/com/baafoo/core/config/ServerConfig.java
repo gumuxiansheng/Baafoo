@@ -104,7 +104,19 @@ public class ServerConfig {
     public void setHttpPort(int httpPort) { this.httpPort = httpPort; }
 
     public Map<String, Integer> getProtocolPorts() { return protocolPorts; }
-    public void setProtocolPorts(Map<String, Integer> protocolPorts) { this.protocolPorts = protocolPorts; }
+    /**
+     * Merge YAML-provided ports over the constructor defaults instead of replacing
+     * the whole map. This guarantees protocols omitted from a config file (e.g. grpc,
+     * which was added later) keep their default port and are not silently dropped —
+     * a missing entry previously caused {@code getPortForProtocol("grpc")} to return 0
+     * and the gRPC stub server to never start.
+     */
+    public void setProtocolPorts(Map<String, Integer> protocolPorts) {
+        if (this.protocolPorts == null) {
+            this.protocolPorts = new java.util.HashMap<String, Integer>();
+        }
+        this.protocolPorts.putAll(protocolPorts);
+    }
 
     public int getPortForProtocol(String protocol) {
         Integer port = protocolPorts.get(protocol);

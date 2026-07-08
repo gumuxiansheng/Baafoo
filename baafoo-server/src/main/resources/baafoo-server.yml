@@ -11,6 +11,7 @@ protocolPorts:
   kafka: 9002
   pulsar: 9003
   jms: 9004
+  grpc: 9005
 
 # Data storage directory
 dataDir: "~/.baafoo/data"
