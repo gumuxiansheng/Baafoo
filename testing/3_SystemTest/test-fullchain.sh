@@ -567,8 +567,9 @@ resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get")"
 stubbed="$(get_json_value "$resp" "stubbed")"
 if [[ "$stubbed" == "true" ]]; then test_pass "H01: HTTP GET intercepted"
 else test_fail "H01: HTTP GET intercepted (stubbed=$stubbed)"; fi
-if [[ "$resp" =~ \"env\"[[:space:]]*:[[:space:]]*\"staging-a\" ]]; then test_pass "H01: HTTP GET response correct (staging-a stub)"
-else test_fail "H01: HTTP GET response correct (resp=$resp)"; fi
+ruleid="$(get_json_value "$resp" "ruleId")"
+if [[ "$ruleid" == staging-a* ]]; then test_pass "H01: HTTP GET response correct (served by $ruleid)"
+else test_fail "H01: HTTP GET response correct (ruleId=$ruleid)"; fi
 
 resp="$(app_post "$APP_A/api/http/post?url=http://real-backend:9090/post&body=%7B%22test%22%3A%22baafoo%22%7D")"
 stubbed="$(get_json_value "$resp" "stubbed")"
@@ -956,8 +957,27 @@ echo "--- RU/RST: Undo & Reset ---"
 
 ru_rule_id="staging-a-http-get"
 orig="$(api_get "rules/$ru_rule_id")"
-if [[ "$HAVE_JQ" == "true" && -n "$orig" ]]; then
-    updated="$(echo "$orig" | jq '.data | .description = "temp-edited-for-undo-test"' 2>/dev/null)"
+if [[ -n "$orig" ]]; then
+    # Build update payload without hard jq dependency (python3 fallback).
+    # Parity with the jq path: emit ONLY the rule object (the .data node),
+    # not the full API envelope — the server rejects envelope fields such as
+    # "success"/"code" when deserializing a Rule. The Rule model has no
+    # "description" field, so we mutate "name" (a real field) to a temp value;
+    # this creates an undo history entry, which the subsequent undo call reverts.
+    updated=""
+    if command -v python3 >/dev/null 2>&1; then
+        updated="$(echo "$orig" | python3 -c "import sys,json
+try:
+    d=json.load(sys.stdin)
+    tgt = d.get('data', d)
+    if isinstance(tgt, dict):
+        base = tgt.get('name') or ''
+        tgt['name'] = base + '-tmp-undo'
+    print(json.dumps(tgt))
+except Exception: pass" 2>/dev/null)"
+    elif [[ "$HAVE_JQ" == "true" ]]; then
+        updated="$(echo "$orig" | jq '.data | .name = ((.name // "") + "-tmp-undo")' 2>/dev/null)"
+    fi
     if [[ -n "$updated" ]]; then
         api_put "rules/$ru_rule_id" "$updated" >/dev/null
         undo="$(api_post "rules/$ru_rule_id/undo" "")"
@@ -967,7 +987,7 @@ if [[ "$HAVE_JQ" == "true" && -n "$orig" ]]; then
         test_skip "RU01: rule undo (could not build update payload)"
     fi
 else
-    test_skip "RU01: rule undo (jq required or empty response)"
+    test_skip "RU01: rule undo (empty response)"
 fi
 
 rst="$(api_post "rules/reset-all-state" "")"

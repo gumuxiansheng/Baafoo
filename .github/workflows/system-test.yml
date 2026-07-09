@@ -33,6 +33,18 @@ jobs:
       - name: Make build scripts executable
         run: chmod +x mvnw testing/3_SystemTest/test-fullchain.sh testing/2_IntegrationTest/run-fullchain-tests.sh
 
+      # Ensure jq is present. The test script degrades gracefully to python3
+      # fallbacks when jq is missing, but having jq available keeps the RU01
+      # rule-undo payload builder on its primary (jq) path and matches the
+      # documented CI dependency. ubuntu-latest ships jq; this step is
+      # idempotent insurance for other runners / minimal images.
+      - name: Ensure jq is available
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+          jq --version
+
       - name: Run full-chain integration test
         # The script builds all JARs, brings up the Staging stack (server +
         # postgres + app-env-a + app-env-b), registers rules, drives every

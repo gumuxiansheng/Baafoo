@@ -72,7 +72,26 @@ public final class DnsResolveAdvice {
                 GlobalRouteState.logInfo("[Baafoo] DnsResolve redirect (getByName): " + host + " -> " + target.host);
                 GlobalRouteState.DNS_REENTRY_GUARD.set(Boolean.TRUE);
                 try {
-                    result = InetAddress.getByName(target.host);
+                    // Resolve the stub-server's IP (guarded so this lookup won't
+                    // re-trigger redirection), then build an InetAddress that
+                    // PRESERVES the original hostName but points at the server IP.
+                    //
+                    // Why preserve the hostName?
+                    // SocketConnectAdvice (and NioSocketConnectAdvice) later match
+                    // the connection against the route table by the ORIGINAL
+                    // host:port (e.g. "real-backend:9090" -> server:9000). If we
+                    // overwrote the hostName with the server's name, the socket
+                    // advice would see "server:9090", miss the route, and connect
+                    // to a port where nothing listens.
+                    //
+                    // This matters most for HTTP clients that do NOT use JDK's
+                    // sun.net.www.http.HttpClient (e.g. OkHttp / Feign-over-OkHttp):
+                    // they have no HttpOpenServerAdvice port-rewrite, so the only
+                    // thing that makes them reach the stub port (9000) is the
+                    // socket advice seeing the original host:port and applying the
+                    // route. Preserving the hostName here makes that work.
+                    InetAddress serverAddr = InetAddress.getByName(target.host);
+                    result = InetAddress.getByAddress(host, serverAddr.getAddress());
                 } finally {
                     GlobalRouteState.DNS_REENTRY_GUARD.set(Boolean.FALSE);
                 }

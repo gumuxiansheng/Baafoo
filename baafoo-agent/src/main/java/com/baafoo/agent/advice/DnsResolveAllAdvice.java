@@ -67,8 +67,14 @@ public final class DnsResolveAllAdvice {
                 GlobalRouteState.logInfo("[Baafoo] DnsResolve redirect (getAllByName): " + host + " -> " + target.host);
                 GlobalRouteState.DNS_REENTRY_GUARD.set(Boolean.TRUE);
                 try {
-                    InetAddress stubAddr = InetAddress.getByName(target.host);
-                    result = new InetAddress[]{stubAddr};
+                    // Parity with DnsResolveAdvice: resolve the stub-server IP but
+                    // PRESERVE the original hostName so downstream SocketConnectAdvice
+                    // can still match the connection by the original host:port and
+                    // apply the route that rewrites the port to the stub port (9000).
+                    // Without this, non-JDK HTTP clients (OkHttp / Feign) connect to
+                    // server:<originalPort> where nothing listens.
+                    InetAddress serverAddr = InetAddress.getByName(target.host);
+                    result = new InetAddress[]{InetAddress.getByAddress(host, serverAddr.getAddress())};
                 } finally {
                     GlobalRouteState.DNS_REENTRY_GUARD.set(Boolean.FALSE);
                 }
