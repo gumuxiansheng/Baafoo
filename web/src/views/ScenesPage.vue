@@ -30,7 +30,7 @@
         <el-table-column :label="$t('scenes.createdAt')" width="170">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column :label="$t('scenes.actions')" width="160">
+        <el-table-column :label="$t('scenes.actions')" width="160" v-if="authStore.canWriteScene">
           <template #default="{ row }">
             <el-button size="small" text type="primary" @click="showEditDialog(row)" v-if="authStore.canWriteScene">{{ $t('scenes.edit') }}</el-button>
             <el-popconfirm :title="$t('scenes.confirmDelete')" @confirm="deleteSceneItem(row.id)" v-if="authStore.canWriteScene">
