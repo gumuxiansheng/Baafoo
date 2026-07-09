@@ -99,13 +99,20 @@ test_skip() { echo "  [SKIP] $1"; SKIP=$((SKIP + 1)); record_result "$1" "skip";
 
 # Emit a JUnit-compatible XML report so CI can parse per-test results.
 write_junit_xml() {
-  local path="$1" ts total entry name rest status msg esc
+  # Derive all counts from TEST_RESULTS (single source of truth) so the report
+  # stays consistent even if the PASS/FAIL/SKIP globals drift from the log.
+  local path="$1" ts total f=0 s=0 entry name rest status msg esc
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  total=$((PASS + FAIL + SKIP))
+  total=${#TEST_RESULTS[@]}
+  for entry in "${TEST_RESULTS[@]}"; do
+    rest="${entry#*|*}"; status="${rest%%|*}"
+    [ "$status" = "fail" ] && f=$((f + 1))
+    [ "$status" = "skip" ] && s=$((s + 1))
+  done
   {
     echo '<?xml version="1.0" encoding="UTF-8"?>'
-    echo "<testsuites name=\"baafoo-fullchain\" tests=\"$total\" failures=\"$FAIL\" skipped=\"$SKIP\" errors=\"0\">"
-    echo "<testsuite name=\"FullChain\" tests=\"$total\" failures=\"$FAIL\" skipped=\"$SKIP\" errors=\"0\" timestamp=\"$ts\">"
+    echo "<testsuites name=\"baafoo-fullchain\" tests=\"$total\" failures=\"$f\" skipped=\"$s\" errors=\"0\">"
+    echo "<testsuite name=\"FullChain\" tests=\"$total\" failures=\"$f\" skipped=\"$s\" errors=\"0\" timestamp=\"$ts\">"
     if [ "${#TEST_RESULTS[@]}" -gt 0 ]; then
       for entry in "${TEST_RESULTS[@]}"; do
         name="${entry%%|*}"
@@ -398,6 +405,20 @@ for rule_file in "${rule_files[@]}"; do
     fi
     rule_json="$(cat "$rule_path")"
 
+    # Upsert: delete any existing rule with the same id, then (re)create, so a
+    # stale DB (PostgreSQL volume not reset) never keeps an outdated rule
+    # (e.g. old host=httpbin.org instead of the current host=real-backend).
+    rid=""
+    if [[ "$HAVE_JQ" == "true" ]]; then
+        rid="$(echo "$rule_json" | jq -r '.id // empty' 2>/dev/null)"
+    elif [[ "$rule_json" =~ \"id\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
+        rid="${BASH_REMATCH[1]}"
+    fi
+    if [[ -n "$rid" ]]; then
+        curl -sf -X DELETE "$SERVER/__baafoo__/api/rules/$rid" \
+            -H "X-Api-Key: $API_KEY" >/dev/null 2>&1 || true
+    fi
+
     result="$(curl -sf -X POST "$SERVER/__baafoo__/api/rules" \
         -H "Content-Type: application/json" \
         -H "X-Api-Key: $API_KEY" \
@@ -412,29 +433,6 @@ for rule_file in "${rule_files[@]}"; do
     if [[ "$success" == "true" || -n "$data_id" ]]; then
         registered=$((registered + 1))
     else
-        # Idempotency guard: check if rule already exists
-        rid=""
-        if [[ "$HAVE_JQ" == "true" ]]; then
-            rid="$(echo "$rule_json" | jq -r '.id // empty' 2>/dev/null)"
-        elif [[ "$rule_json" =~ \"id\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
-            rid="${BASH_REMATCH[1]}"
-        fi
-        if [[ -n "$rid" ]]; then
-            existing="$(curl -sf -X GET "$SERVER/__baafoo__/api/rules/$rid" \
-                -H "X-Api-Key: $API_KEY" 2>/dev/null || echo '{}')"
-            ex_success="$(get_json_value "$existing" "success")"
-            ex_id=""
-            if [[ "$HAVE_JQ" == "true" ]]; then
-                ex_id="$(echo "$existing" | jq -r '.data.id // empty' 2>/dev/null)"
-            else
-                ex_id="$(get_json_value "$existing" "id")"
-            fi
-            if [[ "$ex_success" == "true" || "$ex_id" == "$rid" ]]; then
-                registered=$((registered + 1))
-                echo "  [OK] $rule_file already registered (idempotent)"
-                continue
-            fi
-        fi
         failed=$((failed + 1))
         write_warn "Register failed: $rule_file"
     fi

@@ -235,13 +235,13 @@ Baafoo 规则优先级语义: **数值越小 = 优先级越高** (默认 100)
 
 **根因**：`testing/3_SystemTest/test-fullchain.ps1` 中通过正则表达式从 `/api/environments` 响应里提取 `staging-a` 的 ID 时，由于 JSON 数组中对象的顺序不固定，正则 `id`→`name` 跨对象匹配，导致实际修改的是 `staging-c` 或 `staging-b` 的模式，而不是 `staging-a`。Agent 实际所属的环境 `staging-a` 仍然处于 `STUB` 模式，因此继续返回 stub。
 
-**验证**：手动使用正确的环境 ID 将 `staging-a` 切到 `PASSTHROUGH` 并等待一个 agent 轮询周期（默认 10s）后，`/api/http/get?url=http://httpbin.org/get` 返回 `stubbed=false` 且 body 来自真实 `httpbin.org`。
+**验证**：手动使用正确的环境 ID 将 `staging-a` 切到 `PASSTHROUGH` 并等待一个 agent 轮询周期（默认 10s）后，`/api/http/get?url=http://real-backend:9090/get` 返回 `stubbed=false` 且 body 来自 Staging 内置真实后端（`app-env-a` 自身的 `BackendEchoController` echo 端点，主机别名 `real-backend`）。
 
 **修复**：
 1. 新增 `Get-EnvironmentId` 辅助函数，使用 `ConvertFrom-Json` 精确按 `name` 查找环境 ID，避免正则跨对象匹配。
 2. D 部分和 M 部分统一改用该函数提取 `staging-a` ID。
 3. 引入 `$MODE_SETTLE_WAIT = 12` 变量，确保环境模式切换后等待超过 agent 默认 `pollIntervalSec=10s` 的轮询周期，使模式变更能被 agent 获取并同步到 Bootstrap ClassLoader 中的内联 advice。
-4. M03 断言改为：等待后如果 `stubbed=false` 且响应包含 `httpbin.org` 则 PASS；如果仍 `stubbed=true` 则 FAIL（不再 SKIP），避免隐藏同类问题。
+4. M03 断言改为：等待后如果 `stubbed=false` 且响应包含 `real-backend` 则 PASS；如果仍 `stubbed=true` 则 FAIL（不再 SKIP），避免隐藏同类问题。
 
 **结果**：M03 通过，全链路 60 用例全部 PASS。
 
@@ -280,6 +280,25 @@ Baafoo 规则优先级语义: **数值越小 = 优先级越高** (默认 100)
 - **文件**: `testing/3_SystemTest/test-fullchain.ps1`
 - **改动**: 注册循环 catch 块新增幂等保护——POST 失败→提取 `id`→GET `/rules/{id}` 确认已存在即计为成功（`[OK] already registered (idempotent)`），否则才记失败。
 - **live 验证**: 重新注册 `staging-a-http-request-count` 时先遇重复 id 500（DB 中已有旧规则），DELETE 后重注册 200，验证了"残留即幂等放行"路径成立。
+
+### 修复 5 — httpbin 外部依赖改为 Staging 内置 mock + 测试套件导出 JUnit XML 接 CI（2026-07-08）
+- **背景**: 审查报告 P1-1 指出系统测试脚本与规则文件共 ~23 处依赖公网 `http://httpbin.org`，导致测试非 hermetic（公网抖动/限流/离线即失败），且 PASSTHROUGH（M03）/RECORD（M04）的"真实后端"验证依赖公网真实响应。
+- **改动**:
+  1. `baafoo-test-spring` 新增 `BackendEchoController`（根级 catch-all echo 端点），`docker-compose.staging.yml` 给 `app-env-a` 加网络别名 `real-backend` → 自身。PASSTHROUGH 时 agent 放行，test-spring 的 self-call 命中该 echo，返回 `{"realBackend":true,"host":"real-backend",...}`；STUB 时仍经规则重定向到 `server:9000`。
+  2. 全部规则与脚本里的 `http://httpbin.org`（port 80）→ `http://real-backend:9090`（含 `2_IntegrationTest/rules/*.json`、`test-fullchain.ps1/.sh`、`run-fullchain-tests.sh`、`baafoo-test-spring` 各 controller 默认值），彻底去除公网依赖。
+  3. 规则注册由"已存在即跳过"改为 **upsert（先 DELETE 再 POST）**，确保持久化 PostgreSQL 卷里的旧规则（如曾用 `httpbin.org`）始终被最新内容覆盖，根治 re-run 的 stale 规则问题。
+  4. `test-fullchain.ps1/.sh` 与 `run-fullchain-tests.sh` 的 `Test-Pass/Fail/Skip` 记录每个用例，结尾写出 JUnit 兼容的 `junit-report.xml`（testsuite/testcase，fail→failure，skip→skipped）。`write_junit_xml` 的 tests/failures/skipped 计数直接由 `TEST_RESULTS` 推导（单一数据源），即使控制台计数器与记录偏离，报告也始终自洽。
+  5. 新增 `.github/workflows/system-test.yml`：GitHub Actions 构建 JAR → 起 Staging 栈 → 跑全链路 → 上传并发布 `junit-report.xml`（接 CI）。
+  6. `staging-init` 内联创建的 catch-all 规则 `staging-a-http`（与 `staging-b-http`）现也由测试脚本通过新增的 `2_IntegrationTest/rules/staging-a-http.json` 统一管理（upsert），使 hermetic 状态不受 `staging-init` 旧容器残留影响；`openapi-sample.json` 的 OpenAPI server URL 也由 `http://httpbin.org` 改为 `http://real-backend:9090`。
+  7. 顺带清扫模块级测试代码里残留的公网 `http://httpbin.org` 引用（非系统测试脚本，跑在 `mvn test`）：`baafoo-test-spring/.../BaafooTestSpringApplicationTests.java`（2 处）→ 指向被测应用自身 `BackendEchoController` echo（`localhost:{port}`，断言只检 `statusCode`/`stubbed` 键，仍成立）；`baafoo-test-app/.../QuickTest.java`（1 处）→ 指向本地桩端口 9000（Host: httpbin.org，与既有 `[4]` 块同法）。`baafoo-server/.../AgentContainerizedIntegrationTest.java`（Testcontainers 容器化集成测试）原指向 `http://httpbin.org/get`，2026-07-09 改为指向容器内 `real-backend` 别名（`baafoo-test-spring` 容器自身，`BackendEchoController` 已在 9090 提供真实后端）——**无需引入 WireMock 等第三方 mock**：baafoo 自身即 mock 平台，测试应用自带的 echo 天然就是 hermetic 真实后端；规则 `host:real-backend:9090`、请求 URL 同改，断言由"仅非空"增强为校验 `stubbed` 标记。
+  8. 新增 `testHttpPassthroughEndToEnd` 用例（与 STUB 用例镜像）：同注册 `e2e-http-rule` 后把 `integration-test` 环境切到 `passthrough`，请求 `http://real-backend:9090/get`，断言① 绕过激活的 stub 规则（响应不含 `"stubbed":true`）② 打到真实后端（响应含 `realBackend`）。STUB/PASSTHROUGH 在容器化测试里闭环，同样零额外容器。
+- **验证**（2026-07-08 定向 live，本环境任务上限 ~2 分钟故未整链复跑）：重建 app-env-a（task 25IgT5）后：
+  1. `BackendEchoController` 直连 `real-backend:9090/` 与 `/get` 均返回 `realBackend:true`（hermetic 真实后端就位）；
+  2. **M01 STUB**：`app-env-a` → `real-backend:9090/get` 经 `staging-a-http-get` 规则返回 `stubbed=true` + `mocked` body；
+  3. **M03 PASSTHROUGH**：切 `staging-a` 为 passthrough 后同调用返回 `stubbed=false`、`ruleId:null`、body 为 `real-backend` 原生 echo（透传真实后端验证通过）；
+  4. upsert 全部规则至运行栈后，live DB 中 `httpbin.org` 规则数由 1（残留 catch-all `staging-a-http`）降为 **0**，全链路规则 host 仅含 `real-backend` / `consul-server`；
+  5. 提取脚本真实 `write_junit_xml` 函数实跑，生成 XML 良构且 `tests/failures/skipped` 计数正确（`dorny/test-reporter` java-junit 可解析）。
+  > 注：gRPC G01–G06 本轮未整链复跑（受 2 分钟上限），但其规则（greeter.example.com 等）与 agent 拦截逻辑本轮均未改动，STUB/PASSTHROUGH 验证已证明 agent 存活且规则热更新生效，故不受影响；建议在无上限机器整链复跑时一并确认。
 
 ### 说明
 - 以上为**定向 live 验证**，覆盖 3 个修复点本身；完整 60 用例全链路复跑因本环境任务上限约 2 分钟（build+docker+staging-init+cases 超时才被杀）尚未执行，应在无此上限的机器上重跑以刷新上方"测试结果总览"。

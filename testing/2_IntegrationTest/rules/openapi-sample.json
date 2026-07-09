@@ -6,7 +6,7 @@
     "description": "Minimal OpenAPI 3.0 spec used by the full-chain test OAPI01/OAPI02 to exercise rule import."
   },
   "servers": [
-    { "url": "http://httpbin.org" }
+    { "url": "http://real-backend:9090" }
   ],
   "paths": {
     "/sample/users": {

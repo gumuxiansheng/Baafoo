@@ -240,10 +240,14 @@ public class AgentContainerizedIntegrationTest {
             String envJson = "{\"name\":\"integration-test\",\"mode\":\"stub\",\"description\":\"E2E test\"}";
             httpPost(serverUrl + "/__baafoo__/api/environments", envJson);
 
-            // Start test app with Agent
+            // Start test app with Agent.
+            // The app image (baafoo-test-spring) already bundles BackendEchoController,
+            // which serves a real HTTP backend on port 9090. We alias it as "real-backend"
+            // so the stub rule + outbound call stay fully hermetic (no public internet, no
+            // third-party mock server like WireMock needed).
             appContainer = new GenericContainer<>(DockerImageName.parse(TEST_APP_IMAGE))
                     .withNetwork(network)
-                    .withNetworkAliases("baafoo-test-app")
+                    .withNetworkAliases("baafoo-test-app", "real-backend")
                     .withExposedPorts(TEST_APP_PORT)
                     .withEnv("BAAFOO_SERVER_HOST", "baafoo-server")
                     .withEnv("BAAFOO_ENV", "integration-test")
@@ -258,13 +262,107 @@ public class AgentContainerizedIntegrationTest {
                 // Wait for Agent to pick up rules
                 Thread.sleep(5000);
 
-                // Send an HTTP request through the test app
-                // The test app has an endpoint that makes an outbound HTTP call
+                // Send an HTTP request through the test app targeting the in-network
+                // "real-backend" alias (the app's own BackendEchoController). The Agent
+                // should intercept it and return the stubbed response.
                 String appUrl = "http://localhost:" + appContainer.getMappedPort(TEST_APP_PORT);
-                String response = httpGet(appUrl + "/api/stub-demo/http?url=http://httpbin.org/get");
+                String response = httpGet(appUrl + "/api/stub-demo/http?url=http://real-backend:9090/get");
 
                 assertNotNull("Should get a response from test app", response);
+                assertTrue("Agent should stub the call to real-backend (response should contain stubbed marker)",
+                        response.contains("stubbed"));
                 log.info("E2E HTTP stub test response: {}", response);
+            } finally {
+                appContainer.stop();
+            }
+        } finally {
+            serverContainer.stop();
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // Test 4: HTTP passthrough works end-to-end (bypasses active stub rule)
+    // ----------------------------------------------------------------------
+
+    /**
+     * Register a stub rule on the Server, switch the environment to
+     * PASSTHROUGH, then send an HTTP request through the test app (with
+     * Agent) and verify the call reaches the real backend instead of being
+     * stubbed. The "real backend" is the test app's own BackendEchoController
+     * (aliased as real-backend), so this stays fully hermetic — no WireMock,
+     * no public internet.
+     */
+    @Test
+    public void testHttpPassthroughEndToEnd() throws Exception {
+        // Start Server
+        serverContainer = new GenericContainer<>(DockerImageName.parse(SERVER_IMAGE))
+                .withNetwork(network)
+                .withNetworkAliases("baafoo-server")
+                .withExposedPorts(SERVER_API_PORT, SERVER_HTTP_MOCK_PORT)
+                .withEnv("BAAFOO_HTTP_PORT", String.valueOf(SERVER_API_PORT))
+                .withEnv("BAAFOO_DB_TYPE", "h2")
+                .waitingFor(new HttpWaitStrategy()
+                        .forPath("/__baafoo__/api/status")
+                        .forStatusCode(200)
+                        .withStartupTimeout(Duration.ofSeconds(60)));
+        serverContainer.start();
+
+        try {
+            String serverUrl = "http://localhost:" + serverContainer.getMappedPort(SERVER_API_PORT);
+
+            // Register the SAME stub rule as the stub test, so we prove that
+            // passthrough mode genuinely bypasses an active stub rule.
+            String ruleJson = "{"
+                    + "\"id\":\"e2e-http-rule\","
+                    + "\"name\":\"E2E HTTP Stub\","
+                    + "\"protocol\":\"http\","
+                    + "\"host\":\"real-backend\","
+                    + "\"port\":9090,"
+                    + "\"conditions\":[{\"type\":\"path\",\"operator\":\"equals\",\"value\":\"/get\"}],"
+                    + "\"responses\":[{\"name\":\"stub\",\"value\":\"{\\\"stubbed\\\":true}\",\"delayMs\":0}],"
+                    + "\"enabled\":true,"
+                    + "\"priority\":100,"
+                    + "\"environments\":[\"integration-test\"]"
+                    + "}";
+
+            httpPost(serverUrl + "/__baafoo__/api/rules", ruleJson);
+
+            // Create environment in PASSTHROUGH mode
+            String envJson = "{\"name\":\"integration-test\",\"mode\":\"passthrough\",\"description\":\"E2E test\"}";
+            httpPost(serverUrl + "/__baafoo__/api/environments", envJson);
+
+            // Start test app with Agent (self-hosted real backend via real-backend alias).
+            appContainer = new GenericContainer<>(DockerImageName.parse(TEST_APP_IMAGE))
+                    .withNetwork(network)
+                    .withNetworkAliases("baafoo-test-app", "real-backend")
+                    .withExposedPorts(TEST_APP_PORT)
+                    .withEnv("BAAFOO_SERVER_HOST", "baafoo-server")
+                    .withEnv("BAAFOO_ENV", "integration-test")
+                    .withEnv("SERVER_PORT", String.valueOf(TEST_APP_PORT))
+                    .waitingFor(new HttpWaitStrategy()
+                            .forPath("/api/stub-demo/health")
+                            .forStatusCode(200)
+                            .withStartupTimeout(Duration.ofSeconds(90)));
+            appContainer.start();
+
+            try {
+                // Wait for Agent to pick up the passthrough mode
+                Thread.sleep(5000);
+
+                // Send an HTTP request through the test app. In passthrough mode
+                // the Agent forwards it to the real backend (real-backend alias ->
+                // the app's own BackendEchoController), which returns realBackend:true.
+                String appUrl = "http://localhost:" + appContainer.getMappedPort(TEST_APP_PORT);
+                String response = httpGet(appUrl + "/api/stub-demo/http?url=http://real-backend:9090/get");
+
+                assertNotNull("Should get a response from test app", response);
+                // The active stub rule must be bypassed...
+                assertFalse("Passthrough must bypass the active stub rule (no stubbed:true marker)",
+                        response.contains("\"stubbed\":true"));
+                // ...and the real backend echo must be returned.
+                assertTrue("Passthrough must reach the real backend (response should contain realBackend marker)",
+                        response.contains("realBackend"));
+                log.info("E2E HTTP passthrough test response: {}", response);
             } finally {
                 appContainer.stop();
             }

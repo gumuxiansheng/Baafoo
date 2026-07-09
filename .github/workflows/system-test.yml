@@ -1,0 +1,59 @@
+name: Full-Chain Integration Test
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+# Needed by dorny/test-reporter to publish a check run on the PR.
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+concurrency:
+  group: system-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  system-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Make build scripts executable
+        run: chmod +x mvnw testing/3_SystemTest/test-fullchain.sh testing/2_IntegrationTest/run-fullchain-tests.sh
+
+      - name: Run full-chain integration test
+        # The script builds all JARs, brings up the Staging stack (server +
+        # postgres + app-env-a + app-env-b), registers rules, drives every
+        # protocol/mode, writes testing/3_SystemTest/junit-report.xml, then
+        # tears the stack down. No external network is touched — the only
+        # "real backend" is the in-Staging echo endpoint (host: real-backend).
+        run: ./testing/3_SystemTest/test-fullchain.sh
+
+      - name: Upload JUnit XML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-report
+          path: testing/3_SystemTest/junit-report.xml
+          if-no-files-found: warn
+
+      - name: Publish Test Report
+        if: always()
+        uses: dorny/test-reporter@v1
+        continue-on-error: true
+        with:
+          name: Full-Chain Test Report
+          path: testing/3_SystemTest/junit-report.xml
+          reporter: java-junit

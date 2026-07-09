@@ -1,0 +1,26 @@
+{
+  "id": "staging-a-http",
+  "name": "Staging-A HTTP catch-all",
+  "protocol": "http",
+  "host": "real-backend",
+  "port": 9090,
+  "conditions": [
+    {
+      "type": "path",
+      "operator": "startsWith",
+      "value": "/"
+    }
+  ],
+  "responses": [
+    {
+      "name": "挡板响应",
+      "statusCode": 200,
+      "body": "{\"mocked\":true,\"env\":\"staging-a\",\"protocol\":\"http\"}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 100,
+  "tags": ["staging", "env-a"],
+  "environments": ["staging-a"]
+}

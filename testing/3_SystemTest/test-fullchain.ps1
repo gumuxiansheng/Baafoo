@@ -353,6 +353,15 @@ foreach ($ruleFile in $ruleFiles) {
         continue
     }
     $ruleJson = Get-Content $rulePath -Raw
+    # Upsert: delete any existing rule with the same id, then (re)create, so a
+    # stale DB (PostgreSQL volume not reset) never keeps an outdated rule
+    # (e.g. old host=httpbin.org instead of the current host=real-backend).
+    try {
+        $rid = ($ruleJson | ConvertFrom-Json -ErrorAction SilentlyContinue).id
+        if ($rid) {
+            Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/$rid" -Method Delete -Headers $headers -ErrorAction SilentlyContinue | Out-Null
+        }
+    } catch {}
     try {
         $result = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules" -Method Post -ContentType "application/json" -Headers $headers -Body $ruleJson -ErrorAction Stop
         if ($result.success -eq $true -or $result.data.id) {
@@ -362,21 +371,6 @@ foreach ($ruleFile in $ruleFiles) {
             Write-Warn "Register failed: $ruleFile -> $($result.message)"
         }
     } catch {
-        # Idempotency guard: a stale DB (PostgreSQL volume not fully reset by
-        # `docker compose down -v`) may already hold a rule with this id, causing
-        # a duplicate-key 500. Treat "already exists" as a successful registration
-        # instead of a failure, so residue never produces a false WARN.
-        try {
-            $rid = ($ruleJson | ConvertFrom-Json -ErrorAction SilentlyContinue).id
-            if ($rid) {
-                $existing = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/$rid" -Method Get -Headers $headers -ErrorAction Stop
-                if ($existing.success -eq $true -or $existing.data.id -eq $rid) {
-                    $registered++
-                    Write-Host "  [OK] $ruleFile already registered (idempotent)" -ForegroundColor Gray
-                    continue
-                }
-            }
-        } catch {}
         $failed++
         $errMsg = $_.Exception.Message
         if ($errMsg.Length -gt 80) { $errMsg = $errMsg.Substring(0, 80) + "..." }
