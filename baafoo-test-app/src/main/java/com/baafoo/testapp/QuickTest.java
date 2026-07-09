@@ -13,11 +13,12 @@ public class QuickTest {
         System.out.println("=== Baafoo Quick Connectivity Test ===");
         System.out.println();
 
-        System.out.println("[1] HTTP call to httpbin.org/get...");
+        System.out.println("[1] HTTP call to local Baafoo stub port 9000 (Host: httpbin.org)...");
         try {
-            URL url = new URL("http://httpbin.org/get");
+            URL url = new URL("http://127.0.0.1:9000/get");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
+            conn.setRequestProperty("Host", "httpbin.org");
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(5000);
             int code = conn.getResponseCode();

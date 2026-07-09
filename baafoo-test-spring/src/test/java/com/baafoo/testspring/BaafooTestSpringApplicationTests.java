@@ -168,7 +168,7 @@ class BaafooTestSpringApplicationTests {
     @Test
     void httpGetEndpointReturnsResultMap() {
         Map<String, Object> result = restTemplate.getForObject(
-                "http://localhost:" + port + "/api/http/get?url=http://httpbin.org/get",
+                "http://localhost:" + port + "/api/http/get?url=http://localhost:" + port + "/get",
                 Map.class);
         assertThat(result).isNotNull();
         assertThat(result.containsKey("statusCode")).isTrue();
@@ -221,7 +221,7 @@ class BaafooTestSpringApplicationTests {
     @Test
     void feignGetEndpointReturnsResult() {
         Map<String, Object> result = restTemplate.getForObject(
-                "http://localhost:" + port + "/api/feign/get?baseUrl=http://httpbin.org",
+                "http://localhost:" + port + "/api/feign/get?baseUrl=http://localhost:" + port,
                 Map.class);
         assertThat(result).isNotNull();
         assertThat(result.containsKey("statusCode")).isTrue();
