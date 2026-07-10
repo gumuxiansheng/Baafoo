@@ -18,10 +18,16 @@ master:
           script: ./mvnw test -pl baafoo-server -am -DskipTests=false -Dnpm.skip=true
         - name: test-all
           script: ./mvnw verify -Dnpm.skip=true
+        - name: coverage-debug
+          script: |
+            echo "=== per-module jacoco reports ==="
+            find . -path '*/target/site/jacoco/jacoco.xml' | sort
+            echo "=== aggregate report (if any) ==="
+            ls -la baafoo-coverage/target/site/jacoco-aggregate/ 2>&1 || true
         - name: coverage
           type: testing:coverage
           options:
-            pattern: "baafoo-coverage/target/site/jacoco-aggregate/jacoco.xml"
+            pattern: "**/target/site/jacoco/jacoco.xml"
             breakIfNoCoverage: false
           exports:
             lines: COVERAGE_LINES
@@ -73,7 +79,7 @@ master:
         - name: coverage
           type: testing:coverage
           options:
-            pattern: "baafoo-coverage/target/site/jacoco-aggregate/jacoco.xml"
+            pattern: "**/target/site/jacoco/jacoco.xml"
             breakIfNoCoverage: false
           exports:
             lines: COVERAGE_LINES
