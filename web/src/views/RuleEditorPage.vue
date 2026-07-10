@@ -7,7 +7,7 @@
       <h2>{{ isNew ? $t('rules.newRuleTitle') : $t('rules.editRuleTitle') }}</h2>
     </div>
 
-    <el-form :model="form" label-width="100px" size="small" v-if="isNew || rule" v-loading="loading">
+    <el-form ref="formRef" :model="form" :rules="formRules" label-width="100px" size="small" v-if="isNew || rule" v-loading="loading">
       <!-- Basic Info -->
       <el-card shadow="never" class="section-card">
         <template #header>
@@ -21,12 +21,12 @@
 
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item :label="$t('rules.ruleNameLabel')" required>
+            <el-form-item :label="$t('rules.ruleNameLabel')" prop="name" required>
               <el-input v-model="form.name" />
             </el-form-item>
           </el-col>
           <el-col :span="6">
-            <el-form-item :label="$t('rules.protocolLabel')" required>
+            <el-form-item :label="$t('rules.protocolLabel')" prop="protocol" required>
               <el-select v-model="form.protocol" style="width: 100%">
                 <el-option label="HTTP" value="http" />
                 <el-option label="TCP" value="tcp" />
@@ -469,6 +469,7 @@ export default {
     const rule = ref(null)
     const loading = ref(false)
     const saving = ref(false)
+    const formRef = ref(null)
     const allEnvironments = ref([])
     const inheritedEnvs = ref([])
     const showFakerRef = ref(false)
@@ -526,6 +527,15 @@ export default {
       fakerSeed: null, requestCountReset: null,
       faultInjectionEnabled: false, faults: []
     })
+
+    const formRules = {
+      name: [
+        { required: true, message: t('rules.nameRequired'), trigger: 'blur' }
+      ],
+      protocol: [
+        { required: true, message: t('rules.protocolRequired'), trigger: 'change' }
+      ]
+    }
 
     onMounted(async () => {
       if (isNew.value) {
@@ -710,6 +720,16 @@ export default {
     }
 
     async function saveRule() {
+      if (!formRef.value) return
+      try {
+        await formRef.value.validate()
+      } catch {
+        return
+      }
+      if (form.responses.length === 0) {
+        ElMessage.warning(t('rules.atLeastOneResponse'))
+        return
+      }
       saving.value = true
       const responsesData = form.responses.map(r => {
         const entry = {
@@ -779,7 +799,7 @@ export default {
     loadEnvironments()
 
     return {
-      isNew, rule, loading, saving, form, allEnvironments, inheritedEnvs, envTagType, templateVarHint, bodyPlaceholder,
+      isNew, rule, loading, saving, form, formRef, formRules, allEnvironments, inheritedEnvs, envTagType, templateVarHint, bodyPlaceholder,
       showFakerRef, fakerGroups, insertFakerVar,
       isGraphqlPath, isMqProtocol, isGrpcProtocol, addGraphqlHelper,
       addCondition, removeCondition,
