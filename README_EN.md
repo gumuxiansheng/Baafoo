@@ -8,6 +8,7 @@ Zero-Intrusion Microservice Stub Platform
 [![Java](https://img.shields.io/badge/Java-8%2B-orange?logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-2.7-brightgreen?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Vue](https://img.shields.io/badge/Vue-3.4-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
+[![Coverage](https://cnb.cool/mikezhu/Baafoo/-/badge/git/latest/testing/unit/coverage)](https://cnb.cool/mikezhu/Baafoo/-/build)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 [English](README_EN.md) · [Quick Start](#quick-start) · [Usage Guide](#usage-guide) · [API Reference](#rest-api-reference) · [Plugin Development](#plugin-development)

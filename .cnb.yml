@@ -18,6 +18,15 @@ master:
           script: ./mvnw test -pl baafoo-server -am -DskipTests=false -Dnpm.skip=true
         - name: test-all
           script: ./mvnw verify -Dnpm.skip=true
+        - name: coverage
+          type: testing:coverage
+          options:
+            pattern: "baafoo-coverage/target/site/jacoco-aggregate/jacoco.xml"
+            breakIfNoCoverage: false
+          exports:
+            lines: COVERAGE_LINES
+        - name: coverage-result
+          script: echo "单元测试行覆盖率:${COVERAGE_LINES}%"
         - name: package
           script: ./mvnw package -DskipTests -Dnpm.skip=true
       endStages:
@@ -59,6 +68,17 @@ master:
           script: ./mvnw test -pl baafoo-server -am -DskipTests=false -Dnpm.skip=true
         - name: test-agent
           script: ./mvnw test -pl baafoo-agent -am -DskipTests=false
+        - name: coverage-aggregate
+          script: ./mvnw verify -pl baafoo-coverage -am -DskipTests -Dnpm.skip=true
+        - name: coverage
+          type: testing:coverage
+          options:
+            pattern: "baafoo-coverage/target/site/jacoco-aggregate/jacoco.xml"
+            breakIfNoCoverage: false
+          exports:
+            lines: COVERAGE_LINES
+        - name: coverage-result
+          script: echo "本次 PR 单元测试行覆盖率:${COVERAGE_LINES}%"
         - name: package
           script: ./mvnw package -DskipTests -Dnpm.skip=true
       failStages:
@@ -148,5 +168,3 @@ $:
       stages:
         - name: log-deletion
           script: echo "Branch $CNB_BRANCH deleted"
-artifacts:
-  - target/site/jacoco-aggregate/**/*
