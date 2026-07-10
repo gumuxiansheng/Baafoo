@@ -102,9 +102,6 @@ public final class GlobalRouteState {
     /** gRPC stub port (default 9005) */
     public static volatile int GRPC_PORT = 9005;
 
-    /** gRPC streaming stub port (HTTP/2, default 10005) */
-    public static volatile int GRPC_STREAMING_PORT = 10005;
-
     // ---- Logging bridge ----
     // Set by the App CL side (BaafooAgent) with SLF4J-backed implementations.
     // Advice code inlined into Bootstrap CL classes calls logInfo/logWarn/logError/logDebug,

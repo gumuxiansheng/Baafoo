@@ -33,8 +33,7 @@ public final class ProtocolMapper {
                 || port == GlobalRouteState.KAFKA_PORT
                 || port == GlobalRouteState.PULSAR_PORT
                 || port == GlobalRouteState.JMS_PORT
-                || port == GlobalRouteState.GRPC_PORT
-                || port == GlobalRouteState.GRPC_STREAMING_PORT) return true;
+                || port == GlobalRouteState.GRPC_PORT) return true;
         return false;
     }
 

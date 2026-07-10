@@ -16,7 +16,6 @@ server:
   pulsarPort: 9003
   jmsPort: 9004
   grpcPort: 9005
-  grpcStreamingPort: 10005
 
 # Agent unique identifier (auto-generated if empty)
 agentId: ""

@@ -308,7 +308,6 @@ public class BaafooAgent {
         AgentManifest.setPulsarPort(sc.getPulsarPort());
         AgentManifest.setJmsPort(sc.getJmsPort());
         AgentManifest.setGrpcPort(sc.getGrpcPort());
-        AgentManifest.setGrpcStreamingPort(sc.getGrpcStreamingPort());
 
         AgentManifest.environmentId = cfg.getEnvironment() != null ? cfg.getEnvironment() : "default";
 
@@ -694,16 +693,15 @@ public class BaafooAgent {
             setBootstrapInt(bootGRS, "PULSAR_PORT", GlobalRouteState.PULSAR_PORT);
             setBootstrapInt(bootGRS, "JMS_PORT", GlobalRouteState.JMS_PORT);
             setBootstrapInt(bootGRS, "GRPC_PORT", GlobalRouteState.GRPC_PORT);
-            setBootstrapInt(bootGRS, "GRPC_STREAMING_PORT", GlobalRouteState.GRPC_STREAMING_PORT);
 
             bootstrapGRSClass = bootGRS;
 
             log.info("Synced GlobalRouteState fields to Bootstrap CL: CURRENT_MODE={}, SERVER_HOST={}, SERVER_HOST_IP={}, SERVER_PORT={}, " +
-                            "HTTP_PORT={}, TCP_PORT={}, KAFKA_PORT={}, PULSAR_PORT={}, JMS_PORT={}, GRPC_PORT={}, GRPC_STREAMING_PORT={}",
+                            "HTTP_PORT={}, TCP_PORT={}, KAFKA_PORT={}, PULSAR_PORT={}, JMS_PORT={}, GRPC_PORT={}",
                     GlobalRouteState.CURRENT_MODE, GlobalRouteState.SERVER_HOST, GlobalRouteState.SERVER_HOST_IP, GlobalRouteState.SERVER_PORT,
                     GlobalRouteState.HTTP_PORT, GlobalRouteState.TCP_PORT, GlobalRouteState.KAFKA_PORT,
                     GlobalRouteState.PULSAR_PORT, GlobalRouteState.JMS_PORT,
-                    GlobalRouteState.GRPC_PORT, GlobalRouteState.GRPC_STREAMING_PORT);
+                    GlobalRouteState.GRPC_PORT);
         } catch (Exception e) {
             log.error("Failed to sync GlobalRouteState to Bootstrap CL: {}", e.getMessage(), e);
         }
