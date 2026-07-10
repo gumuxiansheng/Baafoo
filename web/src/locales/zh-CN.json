@@ -52,6 +52,7 @@
     "effectiveEnvs": "生效环境",
     "unassociated": "未关联",
     "version": "版本",
+    "createdAt": "创建时间",
     "actions": "操作",
     "edit": "编辑",
     "undo": "撤销",

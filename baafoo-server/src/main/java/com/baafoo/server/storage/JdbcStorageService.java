@@ -256,12 +256,12 @@ public class JdbcStorageService implements StorageService {
     }
 
     @Override
-    public PaginatedResult<Rule> listRulesPaged(String protocol, String keyword, String environment, String host, int page, int size) {
+    public PaginatedResult<Rule> listRulesPaged(String protocol, String keyword, String environment, String host, String sortBy, String sortOrder, int page, int size) {
         try (SqlSession session = openSession()) {
             RuleMapper rm = session.getMapper(RuleMapper.class);
             long total = rm.countRules(protocol, keyword, environment, host);
             int offset = (page - 1) * size;
-            List<Rule> items = rm.listRulesPaged(protocol, keyword, environment, host, size, offset);
+            List<Rule> items = rm.listRulesPaged(protocol, keyword, environment, host, sortBy, sortOrder, size, offset);
             return new PaginatedResult<>(page, size, total, items);
         }
     }

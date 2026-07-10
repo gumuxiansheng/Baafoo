@@ -52,6 +52,7 @@
     "effectiveEnvs": "Effective Envs",
     "unassociated": "Unassociated",
     "version": "Version",
+    "createdAt": "Created",
     "actions": "Actions",
     "edit": "Edit",
     "undo": "Undo",

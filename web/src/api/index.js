@@ -55,12 +55,14 @@ export default {
 
   // --- Rules ---
   getRules: () => http.get('/rules'),
-  getRulesPaged: (protocol, keyword, environment, host, page = 1, size = 20) => {
+  getRulesPaged: (protocol, keyword, environment, host, page = 1, size = 20, sortBy, sortOrder) => {
     const params = new URLSearchParams({ page, size })
     if (protocol) params.set('protocol', protocol)
     if (keyword) params.set('keyword', keyword)
     if (environment) params.set('environment', environment)
     if (host) params.set('host', host)
+    if (sortBy) params.set('sortBy', sortBy)
+    if (sortOrder) params.set('sortOrder', sortOrder)
     return http.get(`/rules?${params.toString()}`)
   },
   getRule: (id) => http.get(`/rules/${id}`),

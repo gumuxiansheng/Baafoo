@@ -32,6 +32,7 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
     private static final Logger log = LoggerFactory.getLogger(AuthFilter.class);
     private static final String API_PREFIX = "/__baafoo__/api/";
     private static final String AUTH_PREFIX = "/__baafoo__/api/auth/";
+    private static final String STATUS_PATH = "/__baafoo__/api/status";
 
     private final AuthService authService;
     private final ServerConfig config;
@@ -73,6 +74,12 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
 
         // Allow auth endpoints without permission check (needed for login)
         if (path.startsWith(AUTH_PREFIX)) {
+            ctx.fireChannelRead(request.retain());
+            return;
+        }
+
+        // Allow status endpoint without permission check (needed for health checks)
+        if (path.equals(STATUS_PATH)) {
             ctx.fireChannelRead(request.retain());
             return;
         }

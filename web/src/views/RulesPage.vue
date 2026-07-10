@@ -45,8 +45,10 @@
 
     <!-- Rule Table -->
     <el-card shadow="never" style="margin-top: 16px">
-      <el-table :data="rulesStore.rules" stripe v-loading="rulesStore.loading" size="small">
-        <el-table-column prop="name" :label="$t('rules.ruleName')" min-width="180">
+      <el-table :data="rulesStore.rules" stripe v-loading="rulesStore.loading" size="small"
+                :default-sort="{ prop: 'createdAt', order: 'ascending' }"
+                @sort-change="onSortChange">
+        <el-table-column prop="name" :label="$t('rules.ruleName')" min-width="180" sortable="custom">
           <template #default="{ row }">
             <el-link type="primary" @click="editRule(row)">{{ row.name }}</el-link>
           </template>
@@ -78,6 +80,11 @@
           </template>
         </el-table-column>
         <el-table-column prop="version" :label="$t('rules.version')" width="60" align="center" />
+        <el-table-column prop="createdAt" :label="$t('rules.createdAt')" width="160" sortable="custom">
+          <template #default="{ row }">
+            {{ formatTime(row.createdAt) }}
+          </template>
+        </el-table-column>
         <el-table-column :label="$t('rules.actions')" min-width="260" fixed="right" v-if="authStore.canWriteRule">
           <template #default="{ row }">
             <el-button size="small" text @click="editRule(row)" v-if="authStore.canWriteRule">{{ $t('rules.edit') }}</el-button>
@@ -185,6 +192,20 @@ export default {
       await rulesStore.undoRule(rule.id)
     }
 
+    const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
+
+    function onSortChange({ prop, order }) {
+      if (!prop || !order) {
+        rulesStore.filter.sortBy = 'createdAt'
+        rulesStore.filter.sortOrder = 'asc'
+      } else {
+        rulesStore.filter.sortBy = prop
+        rulesStore.filter.sortOrder = order === 'ascending' ? 'asc' : 'desc'
+      }
+      rulesStore.pagination.page = 1
+      rulesStore.fetchRulesPaged()
+    }
+
     function onImported() {
       ElMessage.success(t('rules.importSuccess'))
       rulesStore.fetchRulesPaged()
@@ -198,7 +219,8 @@ export default {
     return {
       filter, environments, rulesStore, authStore, showImportDialog,
       doSearch, resetFilter, onPageChange, onSizeChange,
-      createRule, editRule, toggleRule, deleteRuleItem, undoRuleItem, onImported
+      createRule, editRule, toggleRule, deleteRuleItem, undoRuleItem, onImported,
+      formatTime, onSortChange
     }
   }
 }

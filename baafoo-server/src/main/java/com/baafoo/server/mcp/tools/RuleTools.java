@@ -35,6 +35,7 @@ public class RuleTools {
 
             PaginatedResult<Rule> result = ctx.getStorage().listRulesPaged(
                     protocol, keyword, environment, host,
+                    null, null,
                     page != null ? page : 1,
                     size != null ? size : 20);
             return formatPage(result);

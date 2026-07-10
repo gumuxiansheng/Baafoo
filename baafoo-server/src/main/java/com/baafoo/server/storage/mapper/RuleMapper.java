@@ -17,6 +17,8 @@ public interface RuleMapper {
                               @Param("keyword") String keyword,
                               @Param("environment") String environment,
                               @Param("host") String host,
+                              @Param("sortBy") String sortBy,
+                              @Param("sortOrder") String sortOrder,
                               @Param("limit") int limit,
                               @Param("offset") int offset);
 

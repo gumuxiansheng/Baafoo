@@ -96,7 +96,16 @@
         <if test="host != null and host != ''">
             AND (LOWER(host) LIKE '%' || LOWER(#{host}) || '%' OR LOWER(service_name) LIKE '%' || LOWER(#{host}) || '%')
         </if>
-        ORDER BY priority ASC
+        ORDER BY
+        <choose>
+            <when test="sortBy == 'name'">name</when>
+            <otherwise>created_at</otherwise>
+        </choose>
+        <choose>
+            <when test="sortOrder == 'desc'">DESC</when>
+            <otherwise>ASC</otherwise>
+        </choose>
+        , priority ASC, id ASC
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
