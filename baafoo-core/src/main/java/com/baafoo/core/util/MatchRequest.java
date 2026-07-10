@@ -8,7 +8,7 @@ import java.util.Map;
  *
  * <p>P2-1: replaces the 11-14 parameter method signatures that were previously
  * duplicated across {@code HttpStubHandler}, {@code TcpStubHandler},
- * {@code GrpcUnifiedHandler}, {@code GrpcStubHandler}, {@code GrpcStreamingHandler},
+ * {@code GrpcUnifiedHandler},
  * {@code MqMatchHelper}, and the agent's {@code RouteManager}. Carrying these
  * fields in a single object:</p>
  *

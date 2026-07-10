@@ -178,8 +178,7 @@ Server 启动后会监听以下端口：
 | 9002 | Kafka Mock | 模拟 Kafka Broker |
 | 9003 | Pulsar Mock | 模拟 Pulsar Broker |
 | 9004 | JMS Mock | 模拟 JMS Broker |
-| 9005 | gRPC Mock | 接收被重定向的 gRPC 请求 |
-| 10005 | gRPC Streaming Mock | 接收被重定向的 gRPC streaming 请求（HTTP/2） |
+| 9005 | gRPC Mock | 接收被重定向的 gRPC 请求（Unary + Streaming，HTTP/2 统一处理） |
 
 ### 4️⃣ 启动应用（附加 Agent）
 
@@ -534,7 +533,6 @@ server:                              # Server 连接配置（推荐，覆盖 ser
   pulsarPort: 9003
   jmsPort: 9004
   grpcPort: 9005
-  grpcStreamingPort: 10005
   useSsl: false
   apiKey: ""                         # API Key（Server 开启 auth 时需要）
 heartbeatIntervalSec: 30
@@ -1251,8 +1249,8 @@ curl http://localhost:8084/__baafoo__/api/status
 | 协议 | 状态 | 说明 |
 |:-----|:----:|:-----|
 | HTTP/1.1 | ✅ 完全支持 | 含参数化规则、条件匹配、延迟模拟、异常模拟 |
-| gRPC | ✅ 支持 | gRPC over HTTP/1.1；支持 service/method/path 匹配、grpc-status 状态码、protobuf 消息帧 |
-| gRPC Streaming | ✅ 支持 | Server Streaming / Client Streaming / Bidi Streaming（端口 10005） |
+| gRPC | ✅ 支持 | gRPC over HTTP/2；支持 service/method/path 匹配、grpc-status 状态码、protobuf 消息帧 |
+| gRPC Streaming | ✅ 支持 | Server Streaming / Client Streaming / Bidi Streaming（统一在端口 9005） |
 | TCP Socket | ✅ 完全支持 | 字节级匹配、长连接多轮交互、BIO/NIO 双模式拦截 |
 | Consul DNS | ✅ 完全支持 | `.service.consul` 域名拦截 |
 | Consul HTTP API | ✅ 支持 | OkHttp 客户端拦截 |

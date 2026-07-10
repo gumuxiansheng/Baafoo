@@ -178,8 +178,7 @@ The server listens on the following ports after startup:
 | 9002 | Kafka Mock | Simulates a Kafka Broker |
 | 9003 | Pulsar Mock | Simulates a Pulsar Broker |
 | 9004 | JMS Mock | Simulates a JMS Broker |
-| 9005 | gRPC Mock | Receives redirected gRPC requests |
-| 10005 | gRPC Streaming Mock | Receives redirected gRPC streaming requests (HTTP/2) |
+| 9005 | gRPC Mock | Receives redirected gRPC requests (Unary + Streaming, HTTP/2 unified) |
 
 ### 4️⃣ Start the Application (with Agent)
 
@@ -534,7 +533,6 @@ server:                              # Server connection config (recommended, ov
   pulsarPort: 9003
   jmsPort: 9004
   grpcPort: 9005
-  grpcStreamingPort: 10005
   useSsl: false
   apiKey: ""                         # API Key (required when Server auth is enabled)
 heartbeatIntervalSec: 30
@@ -1251,8 +1249,8 @@ Example plugins: [feign](baafoo-example-plugins/feign/), [kafka-redirect](baafoo
 | Protocol | Status | Description |
 |:-----|:----:|:-----|
 | HTTP/1.1 | ✅ Full Support | Includes parameterized rules, condition matching, delay/error simulation |
-| gRPC | ✅ Supported | gRPC over HTTP/1.1; supports service/method/path matching, grpc-status codes, protobuf message frames |
-| gRPC Streaming | ✅ Supported | Server Streaming / Client Streaming / Bidi Streaming (port 10005) |
+| gRPC | ✅ Supported | gRPC over HTTP/2; supports service/method/path matching, grpc-status codes, protobuf message frames |
+| gRPC Streaming | ✅ Supported | Server Streaming / Client Streaming / Bidi Streaming (unified on port 9005) |
 | TCP Socket | ✅ Full Support | Byte-level matching, long-connection multi-round interaction, BIO/NIO dual-mode interception |
 | Consul DNS | ✅ Full Support | `.service.consul` domain interception |
 | Consul HTTP API | ✅ Supported | OkHttp client interception |

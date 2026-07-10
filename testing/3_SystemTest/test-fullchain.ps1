@@ -1117,6 +1117,59 @@ try {
     Test-Skip "AS03: RuleSet delete (error: $_)"
 }
 
+# AS04: Update rule set (rename + change ruleIds)
+$updateSetBody = @{
+    name = "Test RuleSet Updated"
+    description = "Updated description"
+    ruleIds = @("staging-a-http-get", "staging-a-http-post")
+    enabled = $true
+} | ConvertTo-Json -Depth 4
+try {
+    # Re-create if AS03 already deleted
+    try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rulesets" -Method Post -ContentType "application/json" -Headers $headers -Body $setBody -ErrorAction Stop | Out-Null } catch {}
+    $updateSet = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rulesets/$testSetId" -Method Put -ContentType "application/json" -Headers $headers -Body $updateSetBody -ErrorAction Stop
+    if ($updateSet.success -eq $true) {
+        Test-Pass "AS04: RuleSet updated"
+    } else {
+        Test-Skip "AS04: RuleSet update (response: $updateSet)"
+    }
+} catch {
+    Test-Skip "AS04: RuleSet update (error: $_)"
+}
+
+# AS05: Disable rule set (enabled=false)
+try {
+    $disableSet = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rulesets/$testSetId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"enabled":false}' -ErrorAction Stop
+    if ($disableSet.success -eq $true) {
+        $setDetail = Invoke-ApiGet "rulesets/$testSetId"
+        $enabledVal = if ($setDetail -match '"enabled"\s*:\s*(true|false)') { $matches[1] } else { $null }
+        if ($enabledVal -eq "false") {
+            Test-Pass "AS05: RuleSet disabled (enabled=false)"
+        } else {
+            Test-Fail "AS05: RuleSet disable did not take effect (enabled=$enabledVal)"
+        }
+    } else {
+        Test-Skip "AS05: RuleSet disable (response: $disableSet)"
+    }
+} catch {
+    Test-Skip "AS05: RuleSet disable (error: $_)"
+}
+
+# AS06: Re-enable rule set (enabled=true)
+try {
+    $enableSet = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rulesets/$testSetId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"enabled":true}' -ErrorAction Stop
+    if ($enableSet.success -eq $true) {
+        Test-Pass "AS06: RuleSet re-enabled (enabled=true)"
+    } else {
+        Test-Skip "AS06: RuleSet re-enable (response: $enableSet)"
+    }
+} catch {
+    Test-Skip "AS06: RuleSet re-enable (error: $_)"
+}
+
+# Clean up the rule set created for testing
+try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rulesets/$testSetId" -Method Delete -Headers $headers -ErrorAction Stop | Out-Null } catch {}
+
 # -------------------- REC: Recording management --------------------
 Write-Host ""
 Write-Host "--- REC: Recording Management ---" -ForegroundColor White

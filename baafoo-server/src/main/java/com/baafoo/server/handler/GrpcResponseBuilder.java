@@ -23,7 +23,7 @@ import java.util.Map;
  * </ul>
  * </p>
  *
- * <p>Extracted from GrpcStubHandler and GrpcStreamingHandler to eliminate
+ * <p>Extracted from the original gRPC handlers to eliminate
  * code duplication (D5 fix).</p>
  */
 public final class GrpcResponseBuilder {

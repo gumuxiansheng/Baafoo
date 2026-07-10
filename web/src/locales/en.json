@@ -70,6 +70,7 @@
     "targetHostPlaceholder": "Leave empty to match all",
     "targetPort": "Target Port",
     "serviceName": "Service Name",
+    "ruleNamePlaceholder": "Suggested: protocol-service-path-desc, e.g. http-user-api-/users/{id}-get-user",
     "enabled": "Enabled",
     "fakerSeed": "Faker Seed",
     "fakerSeedPlaceholder": "Leave empty for random",

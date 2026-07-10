@@ -70,6 +70,7 @@
     "targetHostPlaceholder": "留空匹配所有",
     "targetPort": "目标端口",
     "serviceName": "服务名",
+    "ruleNamePlaceholder": "推荐格式：协议-服务名-路径-描述，如 http-user-api-/users/{id}-获取用户信息",
     "enabled": "启用",
     "fakerSeed": "Faker种子",
     "fakerSeedPlaceholder": "留空随机",

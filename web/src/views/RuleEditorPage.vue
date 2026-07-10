@@ -22,7 +22,7 @@
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item :label="$t('rules.ruleNameLabel')" prop="name" required>
-              <el-input v-model="form.name" />
+              <el-input v-model="form.name" :placeholder="$t('rules.ruleNamePlaceholder')" />
             </el-form-item>
           </el-col>
           <el-col :span="6">

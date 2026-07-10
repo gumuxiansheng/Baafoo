@@ -53,7 +53,7 @@ import io.netty.handler.codec.http2.Http2Settings;
  * </ul>
  * </p>
  *
- * <p>Replaces both {@link GrpcStubHandler} (HTTP/1.1) and {@link GrpcStreamingHandler} (HTTP/2 streaming).
+ * <p>Unified handler for all gRPC call types (HTTP/1.1 unary + HTTP/2 streaming).
  * Uses {@link Http2FrameCodec} + {@link Http2MultiplexHandler} for proper HTTP/2 stream management.</p>
  *
  * <p><b>Stream type detection</b>: gRPC stream types are defined by the protobuf service definition,

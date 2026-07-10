@@ -7,8 +7,8 @@ import com.baafoo.core.model.EnvironmentMode;
  * description of what the handler should do for the current request.
  *
  * <p>P1-1: This abstraction replaces the duplicated 5-way mode dispatch trees
- * that previously appeared in {@code HttpStubHandler}, {@code GrpcStubHandler},
- * {@code GrpcUnifiedHandler}, {@code TcpStubHandler}, and the MQ brokers. The
+ * that previously appeared in {@code HttpStubHandler}, {@code GrpcUnifiedHandler},
+ * {@code TcpStubHandler}, and the MQ brokers. The
  * handler keeps full control of the actual I/O (forwarding, recording, stub
  * response) — the strategy only decides <em>which</em> operations to perform.</p>
  *
