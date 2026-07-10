@@ -24,17 +24,10 @@ jobs:
     name: Build & Test (JDK 8)
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    # baafoo-testcontainers uses Testcontainers, which needs a Docker daemon.
-    services:
-      docker:
-        image: docker:dind
-        options: --privileged
-        # Disable TLS so the daemon listens on plain tcp://0.0.0.0:2375,
-        # reachable from the job as "docker:2375" (not localhost).
-        env:
-          DOCKER_TLS_CERTDIR: ""
+    # GitHub's ubuntu-latest runner ships a Docker daemon on
+    # /var/run/docker.sock. Testcontainers (baafoo-testcontainers) and the
+    # `docker build` step below use it directly — no dind service needed.
     env:
-      DOCKER_HOST: tcp://docker:2375
       TESTCONTAINERS_RYUK_DISABLED: "true"
     steps:
       - name: Checkout
