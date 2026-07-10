@@ -24,6 +24,14 @@ jobs:
     name: Build & Test (JDK 8)
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # baafoo-testcontainers uses Testcontainers, which needs a Docker daemon.
+    services:
+      docker:
+        image: docker:dind
+        options: --privileged
+    env:
+      DOCKER_HOST: tcp://localhost:2375
+      TESTCONTAINERS_RYUK_DISABLED: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,6 +48,16 @@ jobs:
 
       - name: Make mvnw executable
         run: chmod +x mvnw
+
+      # baafoo-testcontainers spins up a real Baafoo server via Testcontainers,
+      # which needs the local image "baafoo-server:latest". Build the server +
+      # agent jars (skip tests here; the verify step below runs them) and bake
+      # the image so the container test can start it.
+      - name: Build server/agent jars
+        run: ./mvnw -B --no-transfer-progress package -DskipTests -Dnpm.skip=true -pl baafoo-server,baafoo-agent -am
+
+      - name: Build baafoo-server Docker image
+        run: docker build -t baafoo-server:latest .
 
       # verify runs the full reactor's tests and triggers baafoo-coverage's
       # report-aggregate, writing baafoo-coverage/target/site/jacoco-aggregate.
