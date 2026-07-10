@@ -122,7 +122,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         String remoteAddr = resolveRemoteAddr(ctx, request);
         AuthService.AuthResult auth = authenticate(request, remoteAddr);
 
-        if (!auth.isSuccess() && !path.startsWith(API_PREFIX + "auth/")) {
+        if (!auth.isSuccess() && !path.startsWith(API_PREFIX + "auth/") && !path.equals(API_PREFIX + "status")) {
             throw new ApiException(401, "Authentication failed: " + auth.getMessage());
         }
 
