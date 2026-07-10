@@ -53,11 +53,10 @@ public class AuthServiceTest {
     }
 
     @Test
-    public void authenticateWithNoCredentialsReturnsGuest() {
+    public void authenticateWithNoCredentialsReturnsFailure() {
         AuthService svc = new AuthService(storage, null, true, false, null);
         AuthService.AuthResult result = svc.authenticate(null, null, "10.0.0.1");
-        assertTrue(result.isSuccess());
-        assertEquals("guest", result.getRole());
+        assertFalse(result.isSuccess());
     }
 
     @Test

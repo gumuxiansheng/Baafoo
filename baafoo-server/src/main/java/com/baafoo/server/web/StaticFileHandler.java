@@ -174,7 +174,7 @@ public class StaticFileHandler extends SimpleChannelInboundHandler<FullHttpReque
 
             String contentType = getContentType(file.getName());
 
-            RandomAccessFile raf = new RandomAccessFile(file, "r");
+            final RandomAccessFile raf = new RandomAccessFile(file, "r");
             long fileLength = raf.length();
 
             HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
@@ -185,7 +185,17 @@ public class StaticFileHandler extends SimpleChannelInboundHandler<FullHttpReque
 
             ctx.write(response);
             ctx.write(new ChunkedFile(raf, 0, fileLength, 8192));
-            ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT).addListener(ChannelFutureListener.CLOSE);
+            // M12: close RandomAccessFile after write completes to prevent file handle leak
+            ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT).addListener(new ChannelFutureListener() {
+                @Override
+                public void operationComplete(ChannelFuture future) {
+                    try { raf.close(); } catch (Exception ignored) {}
+                    if (!future.isSuccess()) {
+                        log.debug("Write failed for {}: {}", normalizedPath, future.cause().getMessage());
+                    }
+                    future.channel().close();
+                }
+            });
 
             log.debug("Served from filesystem: {} ({} bytes)", normalizedPath, fileLength);
             return true;

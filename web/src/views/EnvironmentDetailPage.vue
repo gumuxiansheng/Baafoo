@@ -78,7 +78,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/store'
@@ -111,7 +111,9 @@ export default {
       return agents.value.filter(a => a.environment === envName || ids.has(a.agentId))
     })
 
-    onMounted(async () => {
+    // M25: extract load logic for route param watch
+    async function loadEnv() {
+      loading.value = true
       const res = await api.getEnvironment(route.params.id)
       if (res.success) {
         env.value = res.data
@@ -123,6 +125,14 @@ export default {
         const agentRes = await api.getAgents()
         if (agentRes.success) agents.value = agentRes.data || []
       } catch (e) { console.error('Failed to load agents:', e) }
+    }
+
+    onMounted(loadEnv)
+    // M25: reload when route param changes (same component, different id)
+    watch(() => route.params.id, (newId, oldId) => {
+      if (newId && newId !== oldId) {
+        loadEnv()
+      }
     })
 
     async function switchMode(mode) {

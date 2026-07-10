@@ -90,6 +90,10 @@ public class JdbcStorageService implements StorageService {
     private final ConcurrentHashMap<String, Map<String, Object>> agentPluginStatuses =
             new ConcurrentHashMap<String, Map<String, Object>>();
 
+    /** H8: trimRecordings is expensive — only run every 50 inserts, not every call. */
+    private static final int TRIM_INTERVAL = 50;
+    private final java.util.concurrent.atomic.AtomicInteger addRecordingCounter = new java.util.concurrent.atomic.AtomicInteger(0);
+
     public JdbcStorageService(ServerConfig config) {
         this.config = config;
         // ObjectMapper is used only for deep-cloning Rule snapshots (serialize
@@ -695,7 +699,10 @@ public class JdbcStorageService implements StorageService {
         try (SqlSession session = openSession()) {
             RecordingMapper rcm = session.getMapper(RecordingMapper.class);
             rcm.insertRecording(recording);
-            rcm.trimRecordings(1000);
+            // H8: only trim every TRIM_INTERVAL inserts to avoid blocking IO thread
+            if (addRecordingCounter.incrementAndGet() % TRIM_INTERVAL == 0) {
+                rcm.trimRecordings(1000);
+            }
         } catch (Exception e) {
             log.error("Failed to add recording: {}", e.getMessage());
         }
@@ -713,7 +720,10 @@ public class JdbcStorageService implements StorageService {
                 rcm.insertRecording(r);
             }
             session.commit();
-            rcm.trimRecordings(1000);
+            // H8: only trim every TRIM_INTERVAL inserts
+            if (addRecordingCounter.addAndGet(batch.size()) % TRIM_INTERVAL == 0) {
+                rcm.trimRecordings(1000);
+            }
         } catch (Exception e) {
             log.error("Failed to batch insert recordings: {}", e.getMessage());
         }

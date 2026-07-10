@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -262,8 +263,13 @@ func matchOperator(operator, actual, expected string) bool {
 	case "suffix":
 		return strings.HasSuffix(actual, expected)
 	case "regex":
-		// 简化实现，实际应使用 regexp
-		return strings.Contains(actual, expected)
+		// M15: use regexp.MatchString for actual regex matching
+		matched, err := regexp.MatchString(expected, actual)
+		if err != nil {
+			// Invalid regex pattern — fall back to literal contains
+			return strings.Contains(actual, expected)
+		}
+		return matched
 	case "exists":
 		return actual != ""
 	default:

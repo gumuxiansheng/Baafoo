@@ -12,8 +12,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 class RuleApiHandler implements ResourceHandler {
     @Override
@@ -47,6 +49,10 @@ class RuleApiHandler implements ResourceHandler {
             if ("POST".equals(method)) {
                 ctx.requirePermission("rule", "create");
                 Rule rule = ctx.mapper.readValue(body, Rule.class);
+                String validationError = validateRuleConditions(rule);
+                if (validationError != null) {
+                    return ApiResponse.badRequest(validationError);
+                }
                 Rule created = ctx.storage.createRule(rule);
                 fireRuleChanged(ctx, created.getId(), "created", null);
                 return ApiResponse.created(created);
@@ -97,6 +103,10 @@ class RuleApiHandler implements ResourceHandler {
             if ("PUT".equals(method)) {
                 ctx.requirePermission("rule", "update");
                 Rule update = ctx.mapper.readValue(body, Rule.class);
+                String validationError = validateRuleConditions(update);
+                if (validationError != null) {
+                    return ApiResponse.badRequest(validationError);
+                }
                 Rule existing = ctx.storage.getRule(id);
                 if (existing == null) return ApiResponse.notFound("Rule not found");
                 // Inherited-environment merging is now handled in
@@ -225,6 +235,69 @@ class RuleApiHandler implements ResourceHandler {
         }
 
         return ApiResponse.ok(resultData);
+    }
+
+    /**
+     * Condition types valid per protocol.
+     * "topic"/"destination" are treated as aliases of "path" by MatchEngine
+     * and are intentionally allowed for HTTP for backward compatibility.
+     * "requestCount", "header", "body", "bodyContains" are protocol-agnostic.
+     */
+    private static final Map<String, Set<String>> VALID_CONDITION_TYPES;
+
+    static {
+        Set<String> http = new HashSet<>(Arrays.asList(
+                "method", "path", "topic", "destination", "header", "query",
+                "body", "bodyContains", "bodyJsonPath",
+                "graphqlOperationName", "graphqlOperationType", "requestCount"));
+        Set<String> tcp = new HashSet<>(Arrays.asList(
+                "body", "bodyContains", "requestCount"));
+        Set<String> grpc = new HashSet<>(Arrays.asList(
+                "grpcService", "grpcMethod", "path", "header",
+                "body", "bodyContains", "requestCount"));
+        Set<String> kafka = new HashSet<>(Arrays.asList(
+                "topic", "destination", "key", "header",
+                "body", "bodyContains", "requestCount"));
+        Set<String> pulsar = new HashSet<>(Arrays.asList(
+                "topic", "destination", "header",
+                "body", "bodyContains", "requestCount"));
+        Set<String> jms = new HashSet<>(Arrays.asList(
+                "destination", "header",
+                "body", "bodyContains", "requestCount"));
+
+        Map<String, Set<String>> map = new HashMap<>();
+        map.put("http", http);
+        map.put("tcp", tcp);
+        map.put("grpc", grpc);
+        map.put("kafka", kafka);
+        map.put("pulsar", pulsar);
+        map.put("jms", jms);
+        VALID_CONDITION_TYPES = Collections.unmodifiableMap(map);
+    }
+
+    /**
+     * Validates that all condition types in the rule are valid for the rule's protocol.
+     * Returns an error message if any condition type is mismatched, or null if valid.
+     */
+    private String validateRuleConditions(Rule rule) {
+        if (rule == null || rule.getProtocol() == null || rule.getConditions() == null) {
+            return null;
+        }
+        Set<String> valid = VALID_CONDITION_TYPES.get(rule.getProtocol().toLowerCase());
+        if (valid == null) {
+            return null; // unknown protocol — don't block, let other logic handle it
+        }
+        for (MatchCondition cond : rule.getConditions()) {
+            if (cond.getType() == null || cond.getType().isEmpty()) {
+                continue; // empty type handled elsewhere
+            }
+            if (!valid.contains(cond.getType())) {
+                return "Condition type '" + cond.getType()
+                        + "' is not valid for protocol '" + rule.getProtocol()
+                        + "'. Valid types: " + valid;
+            }
+        }
+        return null;
     }
 
     /**

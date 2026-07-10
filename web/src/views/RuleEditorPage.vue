@@ -451,7 +451,7 @@
 </template>
 
 <script>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useRulesStore, useAuthStore } from '@/store'
@@ -511,11 +511,11 @@ export default {
       return `${prefix}<code>{{request.body.xxx}}</code> <code>{{request.header.xxx}}</code> <code>{{request.query.xxx}}</code> <code>{{request.path}}</code><br/>${dynamicLabel}<code>{{faker.phone}}</code> <code>{{faker.email}}</code> <code>{{faker.name}}</code> <code>{{faker.address}}</code> <code>{{faker.idCard}}</code> <code>{{faker.uuid}}</code> <code>{{faker.int.1.100}}</code> <a href="javascript:void(0)" onclick="document.dispatchEvent(new CustomEvent('toggle-faker-ref'))" style="color:var(--bf-accent)">${moreFn}</a>`
     })
 
+    // M22: extract handler so we can remove it on unmount
+    const toggleFakerRef = () => { showFakerRef.value = !showFakerRef.value }
     // Listen for toggle-faker-ref event from v-html link
     if (typeof document !== 'undefined') {
-      document.addEventListener('toggle-faker-ref', () => {
-        showFakerRef.value = !showFakerRef.value
-      })
+      document.addEventListener('toggle-faker-ref', toggleFakerRef)
     }
 
     const bodyPlaceholder = '{"code": 0, "data": {}}'
@@ -537,7 +537,15 @@ export default {
       ]
     }
 
-    onMounted(async () => {
+    // M22: remove event listener on unmount
+    onBeforeUnmount(() => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('toggle-faker-ref', toggleFakerRef)
+      }
+    })
+
+    // M25: extract load logic so route param changes can trigger reload
+    async function loadRule() {
       if (isNew.value) {
         form.responses.push({ name: `${t('rules.responseDefault')}`, statusCode: 200, delayMs: 0, body: '', headers: {}, condition: null })
         loading.value = false
@@ -586,6 +594,14 @@ export default {
         }
       }
       loading.value = false
+    }
+
+    onMounted(loadRule)
+    // M25: reload when route param changes (same component, different id)
+    watch(() => route.params.id, (newId, oldId) => {
+      if (newId && newId !== oldId && !isNew.value) {
+        loadRule()
+      }
     })
 
     function onConditionTypeChange(cond) {
@@ -603,14 +619,24 @@ export default {
     }
 
     function insertFakerVar(resp, variable) {
-      const ta = document.querySelector('.response-card textarea')
-      if (ta && resp) {
-        const start = ta.selectionStart
-        const end = ta.selectionEnd
-        const before = (resp.body || '').substring(0, start)
-        const after = (resp.body || '').substring(end)
-        resp.body = before + '{{' + variable + '}}' + after
-      } else if (resp) {
+      // Find the textarea inside the response card that owns this resp.
+      // Previously used document.querySelector('.response-card textarea') which
+      // always returned the first card's textarea regardless of which card's
+      // faker button was clicked.
+      const idx = form.responses.indexOf(resp)
+      if (idx >= 0) {
+        const cards = document.querySelectorAll('.response-card')
+        const ta = cards[idx] ? cards[idx].querySelector('textarea') : null
+        if (ta && resp) {
+          const start = ta.selectionStart
+          const end = ta.selectionEnd
+          const before = (resp.body || '').substring(0, start)
+          const after = (resp.body || '').substring(end)
+          resp.body = before + '{{' + variable + '}}' + after
+          return
+        }
+      }
+      if (resp) {
         resp.body = (resp.body || '') + '{{' + variable + '}}'
       }
     }
@@ -641,7 +667,16 @@ export default {
     }
 
     function addCondition() {
-      form.conditions.push({ type: 'method', operator: 'equals', key: '', value: '', caseSensitive: true })
+      const defaults = {
+        http: { type: 'method', operator: 'equals' },
+        tcp: { type: 'body', operator: 'contains' },
+        grpc: { type: 'grpcService', operator: 'equals' },
+        kafka: { type: 'topic', operator: 'equals' },
+        pulsar: { type: 'topic', operator: 'equals' },
+        jms: { type: 'destination', operator: 'equals' }
+      }
+      const d = defaults[form.protocol] || defaults.http
+      form.conditions.push({ type: d.type, operator: d.operator, key: '', value: '', caseSensitive: true })
     }
 
     function removeCondition(idx) {
@@ -723,7 +758,11 @@ export default {
       if (!formRef.value) return
       try {
         await formRef.value.validate()
-      } catch {
+      } catch (fields) {
+        ElMessage.error(t('rules.validationFailed'))
+        if (fields && typeof fields === 'object') {
+          formRef.value.scrollToField(Object.keys(fields)[0])
+        }
         return
       }
       if (form.responses.length === 0) {
@@ -782,13 +821,18 @@ export default {
         faultInjection: faultInjection
       }
 
+      let res
       if (isNew.value) {
-        await rulesStore.createRule(data)
+        res = await rulesStore.createRule(data)
       } else {
-        await rulesStore.updateRule(route.params.id, data)
+        res = await rulesStore.updateRule(route.params.id, data)
       }
       saving.value = false
-      router.back()
+      if (res && res.success) {
+        router.back()
+      } else if (res && res.message) {
+        ElMessage.error(res.message)
+      }
     }
 
     async function loadEnvironments() {

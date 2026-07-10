@@ -192,6 +192,8 @@ public class PassthroughProxy {
                     if (cf.isSuccess()) {
                         cf.channel().writeAndFlush(request);
                     } else {
+                        // M10: release request ByteBuf on connect failure to prevent leak
+                        request.release();
                         Throwable cause = cf.cause();
                         if (cause == null) {
                             // Connection failed without explicit cause - likely network issue

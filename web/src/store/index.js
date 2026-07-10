@@ -95,7 +95,8 @@ export const useRulesStore = defineStore('rules', {
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     token: localStorage.getItem('baafoo_token') || null,
-    role: localStorage.getItem('baafoo_role') || 'guest',
+    // M23: don't trust localStorage for role — fetch from server on init
+    role: null,
     username: localStorage.getItem('baafoo_username') || null,
     permissions: [],
     initialized: false
@@ -119,7 +120,7 @@ export const useAuthStore = defineStore('auth', {
         this.role = res.data.role
         this.username = username
         localStorage.setItem('baafoo_token', res.data.token)
-        localStorage.setItem('baafoo_role', res.data.role)
+        // M23: don't persist role in localStorage — it's fetched from server via fetchMe()
         localStorage.setItem('baafoo_username', username)
         await this.fetchMe()
         return true
@@ -128,7 +129,7 @@ export const useAuthStore = defineStore('auth', {
     },
     logout() {
       this.token = null
-      this.role = 'guest'
+      this.role = null
       this.username = null
       this.permissions = []
       localStorage.removeItem('baafoo_token')
@@ -142,7 +143,7 @@ export const useAuthStore = defineStore('auth', {
           this.role = res.data.role
           this.username = res.data.username
           this.permissions = res.data.permissions || []
-          localStorage.setItem('baafoo_role', res.data.role)
+          // M23: role is kept in memory only, not persisted to localStorage
           if (res.data.username) {
             localStorage.setItem('baafoo_username', res.data.username)
           }

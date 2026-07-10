@@ -130,6 +130,7 @@ public final class NioSocketConnectAdvice {
                                     routeValue = new String[]{(String) extResult[1], String.valueOf(extResult[2])};
                                 } else if (action == 2) {
                                     GlobalRouteState.logInfo("[Baafoo] NIO Socket blocked by plugin: " + (extResult.length > 3 ? extResult[3] : "blocked"));
+                                    remote = new InetSocketAddress("0.0.0.0", 1);
                                     return;
                                 }
                             }
@@ -211,6 +212,7 @@ public final class NioSocketConnectAdvice {
                                 GlobalRouteState.logInfo("[Baafoo] NIO Socket plugin redirected (EXT): " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
                             } else if (action == 2) {
                                 GlobalRouteState.logInfo("[Baafoo] NIO Socket blocked by plugin: " + (extResult.length > 3 ? extResult[3] : "blocked"));
+                                remote = new InetSocketAddress("0.0.0.0", 1);
                                 return;
                             }
                         }

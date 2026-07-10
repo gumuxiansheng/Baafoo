@@ -142,13 +142,19 @@ public class MatchEngine {
     public MatchResult matchWithFallback(List<Rule> rules, MatchRequest req) {
         MatchResult result = match(rules, req);
         if (!result.isMatched() && req.getPort() > 0) {
-            int originalPort = req.getPort();
-            req.setPort(0);
-            try {
-                result = match(rules, req);
-            } finally {
-                req.setPort(originalPort);
-            }
+            // M3: create a copy with port=0 instead of mutating the original request,
+            // which could be read concurrently by other threads during match().
+            MatchRequest fallbackReq = new MatchRequest(req.getProtocol(), req.getHost(), 0)
+                    .setServiceName(req.getServiceName())
+                    .setMethod(req.getMethod())
+                    .setPath(req.getPath())
+                    .setTopic(req.getTopic())
+                    .setHeaders(req.getHeaders())
+                    .setQueryParams(req.getQueryParams())
+                    .setBody(req.getBody())
+                    .setGrpcService(req.getGrpcService())
+                    .setGrpcMethod(req.getGrpcMethod());
+            result = match(rules, fallbackReq);
         }
         return result;
     }
@@ -249,21 +255,19 @@ public class MatchEngine {
 
         List<MatchCondition> conditions = rule.getConditions();
 
+        // Increment per-rule counter (1-based) BEFORE evaluating conditions,
+        // so that requestCount conditions at both rule level and response
+        // entry level use the same incremented count.
+        int count = counterStore.incrementAndGet(rule.getId());
+
         // Check if all rule-level conditions match.
-        // requestCount at rule level uses the pre-increment count (0 on first request).
         if (conditions != null && !conditions.isEmpty()) {
             for (MatchCondition cond : conditions) {
-                if (!matchSingleCondition(cond, method, path, topic, headers, queryParams, body, 0)) {
+                if (!matchSingleCondition(cond, method, path, topic, headers, queryParams, body, count)) {
                     return null;
                 }
             }
         }
-
-        // Rule matched (or has no rule-level conditions) — increment per-rule
-        // counter (1-based). This happens AFTER rule-level conditions pass but
-        // BEFORE response entry evaluation, so requestCount conditions in
-        // response entries see the incremented count.
-        int count = counterStore.incrementAndGet(rule.getId());
 
         // Select response entry, evaluating requestCount conditions with the
         // incremented count.
@@ -275,6 +279,12 @@ public class MatchEngine {
         Integer resetThreshold = rule.getRequestCountReset();
         if (resetThreshold != null && resetThreshold > 0) {
             counterStore.resetIfThreshold(rule.getId(), resetThreshold);
+        }
+
+        // If no response entry matched (all had conditions, none satisfied),
+        // treat this rule as non-matching and continue to the next rule.
+        if (responseIdx < 0) {
+            return null;
         }
 
         return new int[]{responseIdx, count};
@@ -310,8 +320,9 @@ public class MatchEngine {
             }
         }
 
-        // All matched but no response condition matched → use first (default)
-        return 0;
+        // All entries had conditions but none matched → return -1 to signal
+        // that this rule should be skipped (continue to next rule).
+        return -1;
     }
 
     private boolean matchSingleCondition(MatchCondition cond, String method, String path, String topic,

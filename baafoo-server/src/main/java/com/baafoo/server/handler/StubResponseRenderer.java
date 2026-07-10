@@ -42,12 +42,25 @@ public class StubResponseRenderer {
         corsOrigins = origins;
     }
 
-    /** Resolve the Access-Control-Allow-Origin header value from config (or "*" fallback). */
-    private static String resolveCorsOrigin() {
-        if (corsOrigins != null && !corsOrigins.isEmpty()) {
-            return corsOrigins.size() == 1 ? corsOrigins.get(0) : String.join(", ", corsOrigins);
+    /**
+     * Resolve the Access-Control-Allow-Origin header value from config.
+     * M13: When multiple origins are configured, must echo the requesting
+     * Origin header back (browsers reject comma-joined values in ACAO).
+     * If no origins configured, fall back to "*".
+     */
+    private static String resolveCorsOrigin(String requestOrigin) {
+        if (corsOrigins == null || corsOrigins.isEmpty()) {
+            return "*";
         }
-        return "*";
+        if (corsOrigins.size() == 1) {
+            return corsOrigins.get(0);
+        }
+        // Multiple origins: echo the request Origin if it's in the allowlist
+        if (requestOrigin != null && corsOrigins.contains(requestOrigin)) {
+            return requestOrigin;
+        }
+        // Not in allowlist — return the first configured origin (or null to deny)
+        return corsOrigins.get(0);
     }
 
     public static void sendStubResponse(ChannelHandlerContext ctx, ResponseEntry entry, String ruleId,
@@ -138,7 +151,7 @@ public class StubResponseRenderer {
             }
 
             // CORS for Web Console — respects ServerConfig.corsOrigins when set
-            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, resolveCorsOrigin());
+            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, resolveCorsOrigin(headers != null ? headers.get("Origin") : null));
 
             log.debug("Stub response: {} {} body={}bytes", statusCode,
                     entry.getName(), responseBody.length());
@@ -217,7 +230,7 @@ public class StubResponseRenderer {
                     Unpooled.copiedBuffer(json, StandardCharsets.UTF_8));
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json; charset=UTF-8");
             response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
-            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, resolveCorsOrigin());
+            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, resolveCorsOrigin(null));
             response.headers().set("X-Baafoo-Stub", "true");
             response.headers().set("X-Baafoo-Rule-Id", ruleId);
             response.headers().set("X-Baafoo-Fault", faultType);
@@ -239,7 +252,7 @@ public class StubResponseRenderer {
                     Unpooled.copiedBuffer(json, StandardCharsets.UTF_8));
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json; charset=UTF-8");
             response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
-            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, resolveCorsOrigin());
+            response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, resolveCorsOrigin(null));
             response.headers().set("X-Baafoo-Stub", "unmatched");
 
             ctx.writeAndFlush(response).addListener(

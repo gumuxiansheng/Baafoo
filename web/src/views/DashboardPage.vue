@@ -78,7 +78,7 @@
 </template>
 
 <script>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
 import * as echarts from 'echarts'
@@ -91,6 +91,9 @@ export default {
     const recentRecordings = ref([])
     const rulesChart = ref(null)
     const trendChart = ref(null)
+    // M21: keep chart instances for disposal to prevent memory leaks
+    let rulesChartInstance = null
+    let trendChartInstance = null
 
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
 
@@ -137,10 +140,12 @@ export default {
 
     function renderRulesChart(rules) {
       if (!rulesChart.value) return
-      const chart = echarts.init(rulesChart.value)
+      // M21: dispose old instance before re-init to prevent leak
+      if (rulesChartInstance) rulesChartInstance.dispose()
+      rulesChartInstance = echarts.init(rulesChart.value)
       const counts = { http: 0, tcp: 0, grpc: 0, kafka: 0, pulsar: 0, jms: 0 }
       rules.forEach(r => { if (counts[r.protocol] !== undefined) counts[r.protocol]++ })
-      chart.setOption({
+      rulesChartInstance.setOption({
         tooltip: { trigger: 'item' },
         legend: { bottom: 0 },
         series: [{
@@ -153,7 +158,9 @@ export default {
 
     function renderTrendChart(trendData) {
       if (!trendChart.value) return
-      const chart = echarts.init(trendChart.value)
+      // M21: dispose old instance before re-init to prevent leak
+      if (trendChartInstance) trendChartInstance.dispose()
+      trendChartInstance = echarts.init(trendChart.value)
 
       // Process trend data - fill in missing days with 0
       // Use YYYY-MM-DD string comparison to avoid UTC vs local timezone mismatch
@@ -175,7 +182,7 @@ export default {
         counts.push(dayData ? dayData.count : 0)
       }
 
-      chart.setOption({
+      trendChartInstance.setOption({
         tooltip: { trigger: 'axis' },
         grid: { left: 40, right: 20, top: 20, bottom: 30 },
         xAxis: { type: 'category', data: days },
@@ -196,6 +203,12 @@ export default {
       const day = String(d.getDate()).padStart(2, '0')
       return `${y}-${m}-${day}`
     }
+
+    // M21: dispose chart instances on unmount
+    onUnmounted(() => {
+      if (rulesChartInstance) rulesChartInstance.dispose()
+      if (trendChartInstance) trendChartInstance.dispose()
+    })
 
     return { stats, recentRecordings, rulesChart, trendChart, formatTime, isMqProtocol, directionLabel, directionType }
   }

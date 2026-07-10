@@ -923,20 +923,24 @@ public class MatchEngineTest {
     @Test
     public void testRequestCountInvalidValue() {
         Rule r = createSimpleRule("stateful-invalid");
-        ResponseEntry resp = new ResponseEntry();
-        resp.setBody("resp");
-        resp.setName("resp");
-        resp.setCondition(MatchCondition.requestCount("equals", "not-a-number"));
+        ResponseEntry condResp = new ResponseEntry();
+        condResp.setBody("cond");
+        condResp.setName("cond");
+        condResp.setCondition(MatchCondition.requestCount("equals", "not-a-number"));
 
-        r.setResponses(Arrays.asList(resp));
+        ResponseEntry defaultResp = new ResponseEntry();
+        defaultResp.setBody("default");
+        defaultResp.setName("default");
+        // No condition = default fallback
 
-        // Invalid number → condition fails → falls through to default (first entry)
+        r.setResponses(Arrays.asList(condResp, defaultResp));
+
+        // Invalid number → condition fails → falls through to default entry
         MatchEngine.MatchResult result = engine.match(
                 Collections.singletonList(r), "http", "host", 80, null, "GET", "/",
                 Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(), "");
         assertTrue(result.isMatched());
-        // The conditioned entry didn't match, so it falls through to entry 0 (the same entry)
-        assertEquals("resp", result.getResponse().getBody());
+        assertEquals("default", result.getResponse().getBody());
     }
 
     @Test

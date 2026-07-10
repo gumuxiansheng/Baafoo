@@ -59,7 +59,7 @@
         </el-table-column>
         <el-table-column :label="$t('rules.target')" min-width="200">
           <template #default="{ row }">
-            <span v-if="row.serviceName">{{ row.serviceName }} (Consul)</span>
+            <span v-if="row.serviceName">{{ row.serviceName }}</span>
             <span v-else>{{ row.host || '*' }}:{{ row.port || '*' }}</span>
           </template>
         </el-table-column>

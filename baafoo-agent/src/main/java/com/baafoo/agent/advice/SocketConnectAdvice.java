@@ -130,8 +130,12 @@ public final class SocketConnectAdvice {
                                     routeValue = new String[]{(String) extResult[1], String.valueOf(extResult[2])};
                                     GlobalRouteState.logInfo("[Baafoo] Socket plugin redirected (EXT): " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
                                 } else if (action == 2) {
-                                    // BLOCK — log and return without connecting
+                                    // BLOCK — redirect to an unroutable address so that
+                                    // Socket.connect() throws ConnectException.
+                                    // Previously this just returned, which let the original
+                                    // connect() proceed to the real target.
                                     GlobalRouteState.logInfo("[Baafoo] Socket blocked by plugin: " + (extResult.length > 3 ? extResult[3] : "blocked"));
+                                    endpoint = new InetSocketAddress("0.0.0.0", 1);
                                     return;
                                 }
                                 // action == 0 (PASSTHROUGH): do nothing, continue

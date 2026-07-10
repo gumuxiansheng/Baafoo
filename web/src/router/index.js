@@ -82,11 +82,16 @@ const router = createRouter({
 // Auth guard
 import { useAuthStore } from '@/store'
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
   // Allow public pages
   if (to.meta.public) {
     return next()
+  }
+
+  // M23: if token exists but role hasn't been fetched yet, fetch it first
+  if (authStore.token && !authStore.role && !authStore.initialized) {
+    await authStore.fetchMe()
   }
 
   // Allow guest browsing for non-admin pages

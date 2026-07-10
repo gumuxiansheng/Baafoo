@@ -84,7 +84,7 @@ public class McpController extends SimpleChannelInboundHandler<FullHttpRequest> 
                     result = handleToolsList();
                     break;
                 case "tools/call":
-                    result = handleToolsCall(params);
+                    result = handleToolsCall(params, request);
                     break;
                 case "ping":
                     result = Collections.emptyMap();
@@ -136,7 +136,7 @@ public class McpController extends SimpleChannelInboundHandler<FullHttpRequest> 
     }
 
     @SuppressWarnings("unchecked")
-    private Object handleToolsCall(Map<String, Object> params) throws Exception {
+    private Object handleToolsCall(Map<String, Object> params, FullHttpRequest request) throws Exception {
         String toolName = (String) params.get("name");
         Map<String, Object> arguments = (Map<String, Object>) params.getOrDefault("arguments", new HashMap<>());
 
@@ -145,11 +145,23 @@ public class McpController extends SimpleChannelInboundHandler<FullHttpRequest> 
             throw new McpException(404, "Unknown tool: " + toolName);
         }
 
-        // Role is determined by AuthFilter; for MCP we use the auth result.
-        // The AuthFilter sets the role as an attribute on the channel.
-        // Since we don't have direct access, we use guest role as fallback.
-        // The MCP API key can be configured in the auth config.
-        McpToolContext ctx = new McpToolContext(storage, authService, "admin", "mcp-user");
+        // Read the authenticated role/username set by AuthFilter in request headers.
+        String role = request.headers().get("X-Baafoo-Auth-Role");
+        String username = request.headers().get("X-Baafoo-Auth-User");
+        if (role == null || role.isEmpty()) {
+            role = "guest";
+        }
+        if (username == null || username.isEmpty()) {
+            username = "mcp-user";
+        }
+
+        // Enforce safety level: AUDIT_REQUIRED tools are restricted to admin only.
+        McpSafetyLevel safety = tool.getSafetyLevel();
+        if (safety == McpSafetyLevel.AUDIT_REQUIRED && !"admin".equals(role)) {
+            throw new McpException(403, "Permission denied: tool '" + toolName + "' requires admin role, you have " + role);
+        }
+
+        McpToolContext ctx = new McpToolContext(storage, authService, role, username);
 
         Object toolResult = tool.execute(arguments, ctx);
 

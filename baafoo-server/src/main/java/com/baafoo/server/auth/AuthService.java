@@ -121,7 +121,10 @@ public class AuthService {
             return validateApiKey(apiKeyHeader);
         }
 
-        return new AuthResult(true, "guest", "No credentials, using guest role");
+        // No credentials provided — reject instead of falling back to guest.
+        // Previously this returned AuthResult(true, "guest", ...) which allowed
+        // anonymous read access to all API endpoints including user lists.
+        return new AuthResult(false, null, "Authentication required");
     }
 
     private boolean isLocalAddress(String addr) {
