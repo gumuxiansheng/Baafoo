@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+# pull-requests: write lets the coverage step publish/update a PR comment.
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Backend: compile, run unit tests across all modules, and produce a single
+  # aggregated JaCoCo report via the baafoo-coverage module (bound to verify).
+  # ---------------------------------------------------------------------------
+  backend:
+    name: Build & Test (JDK 8)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        # Full history lets the coverage tool compute changed-file coverage on PRs.
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+          cache: maven
+
+      - name: Make mvnw executable
+        run: chmod +x mvnw
+
+      # verify runs the full reactor's tests and triggers baafoo-coverage's
+      # report-aggregate, writing baafoo-coverage/target/site/jacoco-aggregate.
+      # -Dnpm.skip=true skips the frontend build here (handled by the web job).
+      - name: Build and test with coverage
+        run: ./mvnw -B --no-transfer-progress verify -Dnpm.skip=true
+
+      - name: Add coverage to job summary & PR comment
+        if: always()
+        uses: madrapps/jacoco-report@v1.7.1
+        continue-on-error: true
+        with:
+          paths: ${{ github.workspace }}/baafoo-coverage/target/site/jacoco-aggregate/jacoco.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          title: "🛡️ Coverage Report"
+          update-comment: true
+          # Report only; do not fail the build on low coverage. Raise these to
+          # enforce a gate once a baseline is established.
+          min-coverage-overall: 0
+          min-coverage-changed-files: 0
+
+      - name: Upload aggregated coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-aggregate-report
+          path: baafoo-coverage/target/site/jacoco-aggregate/
+          if-no-files-found: warn
+
+      - name: Upload build artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: baafoo-jars
+          path: |
+            baafoo-server/target/baafoo-server-*.jar
+            baafoo-agent/target/baafoo-agent-*.jar
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  # Frontend: install and build the Vue 3 console (web/).
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: Build Frontend (Node 20)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build
+        working-directory: web
+        run: npm run build
+
+      - name: Upload web dist
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist/
+          if-no-files-found: warn
