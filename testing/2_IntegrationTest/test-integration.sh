@@ -464,43 +464,11 @@ else
     test_fail "L2-RULESET-002: RuleSet not found in list"
 fi
 
-# L2-RULESET-003: Update rule set (rename)
-l2_update_body='{"name":"L2 Test RuleSet Updated","description":"Updated","ruleIds":["staging-a-http-get","staging-a-http-post"],"enabled":true}'
-l2_update_set="$(api_put "rulesets/$l2_set_id" "$l2_update_body")"
-if [[ "$l2_update_set" =~ \"success\"[[:space:]]*:[[:space:]]*true ]]; then
-    test_pass "L2-RULESET-003: RuleSet updated"
-else
-    test_skip "L2-RULESET-003: RuleSet update (response: $l2_update_set)"
-fi
+# NOTE: L2-RULESET-003~005 (Update/Disable/Re-enable) removed — server does not
+# implement PUT /api/rulesets/{id}. RuleApiHandler only supports POST/GET/DELETE.
+# When the server adds PUT support, restore update/disable/re-enable tests here.
 
-# L2-RULESET-004: Disable rule set (enabled=false)
-l2_disable="$(api_put "rulesets/$l2_set_id" '{"enabled":false}')"
-if [[ "$l2_disable" =~ \"success\"[[:space:]]*:[[:space:]]*true ]]; then
-    l2_set_detail="$(api_get "rulesets/$l2_set_id")"
-    l2_enabled=""
-    if [[ "$HAVE_JQ" == "true" ]]; then
-        l2_enabled="$(echo "$l2_set_detail" | jq -r '.data.enabled // empty' 2>/dev/null)"
-    else
-        if [[ "$l2_set_detail" =~ \"enabled\"[[:space:]]*:[[:space:]]*(true|false) ]]; then l2_enabled="${BASH_REMATCH[1]}"; fi
-    fi
-    if [[ "$l2_enabled" == "false" ]]; then
-        test_pass "L2-RULESET-004: RuleSet disabled (enabled=false)"
-    else
-        test_fail "L2-RULESET-004: RuleSet disable did not take effect (enabled=$l2_enabled)"
-    fi
-else
-    test_skip "L2-RULESET-004: RuleSet disable (response: $l2_disable)"
-fi
-
-# L2-RULESET-005: Re-enable rule set (enabled=true)
-l2_enable="$(api_put "rulesets/$l2_set_id" '{"enabled":true}')"
-if [[ "$l2_enable" =~ \"success\"[[:space:]]*:[[:space:]]*true ]]; then
-    test_pass "L2-RULESET-005: RuleSet re-enabled (enabled=true)"
-else
-    test_skip "L2-RULESET-005: RuleSet re-enable (response: $l2_enable)"
-fi
-
-# L2-RULESET-006: Delete rule set and verify removal
+# L2-RULESET-003: Delete rule set and verify removal
 api_delete "rulesets/$l2_set_id" >/dev/null
 l2_sets_after="$(api_get "rulesets")"
 if [[ ! "$l2_sets_after" =~ "$l2_set_id" ]]; then
