@@ -12,8 +12,8 @@
     },
     {
       "type": "path",
-      "operator": "startsWith",
-      "value": "/"
+      "operator": "equals",
+      "value": "/get"
     }
   ],
   "responses": [

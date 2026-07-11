@@ -142,20 +142,26 @@ if command -v jq >/dev/null 2>&1; then
     HAVE_JQ=true
 fi
 
-# Extract a top-level string/bool/number value from JSON
+# Extract a top-level (or dotted, e.g. "data.generatedCount") string/bool/number
+# value from JSON.
 get_json_value() {
     local json="$1" key="$2"
     if [[ "$HAVE_JQ" == "true" ]]; then
         echo "$json" | jq -r "\.$key // empty" 2>/dev/null
         return
     fi
-    # Fallback regex extraction
+    # Fallback regex extraction. Support dotted keys by searching on the leaf
+    # name (e.g. for "data.generatedCount" we look for "generatedCount").
     local val
-    if [[ "$json" =~ \"$key\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    local search_key="$key"
+    if [[ "$search_key" == *.* ]]; then
+        search_key="${search_key##*.}"
+    fi
+    if [[ "$json" =~ \"$search_key\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
         val="${BASH_REMATCH[1]}"
-    elif [[ "$json" =~ \"$key\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
+    elif [[ "$json" =~ \"$search_key\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
         val="${BASH_REMATCH[1]}"
-    elif [[ "$json" =~ \"$key\"[[:space:]]*:[[:space:]]*(-?[0-9]+\.?[0-9]*) ]]; then
+    elif [[ "$json" =~ \"$search_key\"[[:space:]]*:[[:space:]]*(-?[0-9]+\.?[0-9]*) ]]; then
         val="${BASH_REMATCH[1]}"
     fi
     # Unescape if needed
@@ -439,7 +445,7 @@ for rule_file in "${rule_files[@]}"; do
 done
 write_ok "Rules registered (success=$registered, failed=$failed)"
 
-sleep 3
+sleep 5
 write_ok "Rules effective"
 
 # -----------------------------------------------------------------------------
@@ -816,7 +822,7 @@ if [[ "$mb" == "case-insensitive" ]]; then test_pass "C09: Case insensitive matc
 else test_fail "C09: Case insensitive match not matched (matchedBy=$mb, resp=$resp)"; fi
 
 resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/disabled-path")"
-if [[ ! "$resp" =~ disabled ]]; then test_pass "C10: Disabled rule not matched"
+if [[ ! "$resp" =~ \"stubbed\"[[:space:]]*:[[:space:]]*true ]]; then test_pass "C10: Disabled rule not matched"
 else test_fail "C10: Disabled rule should not match (response: $resp)"; fi
 
 resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/global-endpoint")"
@@ -1016,7 +1022,7 @@ else
         -H "Content-Type: application/json" \
         -H "X-Api-Key: $API_KEY" \
         -d "$oapi_spec" 2>/dev/null || echo '{}')"
-    gen_count="$(get_json_value "$preview" "generatedCount")"
+    gen_count="$(get_json_value "$preview" "data.generatedCount")"
     if [[ "$preview" =~ \"success\"[[:space:]]*:[[:space:]]*true && -n "$gen_count" && "$gen_count" != "0" ]]; then
         test_pass "OAPI01: OpenAPI import preview generated $gen_count rules"
     else
@@ -1027,7 +1033,7 @@ else
         -H "Content-Type: application/json" \
         -H "X-Api-Key: $API_KEY" \
         -d "$oapi_spec" 2>/dev/null || echo '{}')"
-    saved_count="$(get_json_value "$save" "savedCount")"
+    saved_count="$(get_json_value "$save" "data.savedCount")"
     if [[ "$save" =~ \"success\"[[:space:]]*:[[:space:]]*true && -n "$saved_count" && "$saved_count" != "0" ]]; then
         test_pass "OAPI02: OpenAPI import persisted $saved_count rules"
         if [[ "$HAVE_JQ" == "true" ]]; then
