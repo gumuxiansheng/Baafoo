@@ -154,16 +154,11 @@ public class PluginHealthCheckTest {
         ThrowingPlugin plugin = new ThrowingPlugin(InterceptTarget.JMS);
         injectPlugin(pm, plugin);
 
-        PluginContext ctx = new PluginContext();
-        ctx.setProtocol("jms");
+        ConnectContext ctx = new ConnectContext("jms", "test", 9092, null, null, null, null);
 
         // Trigger 5 consecutive errors to reach UNHEALTHY threshold
         for (int i = 0; i < 5; i++) {
-            try {
-                pm.interceptWithMonitor(InterceptTarget.JMS, ctx);
-            } catch (RuntimeException expected) {
-                // ThrowingPlugin always throws
-            }
+            pm.connectWithMonitor(InterceptTarget.JMS, ctx);
         }
 
         assertEquals(PluginHealth.UNHEALTHY,
@@ -172,20 +167,19 @@ public class PluginHealthCheckTest {
                 pm.getPlugin(InterceptTarget.JMS));
     }
 
-    // ==================== interceptWithMonitor ====================
+    // ==================== connectWithMonitor ====================
 
     @Test
-    public void testInterceptWithMonitor_success() throws Exception {
+    public void testConnectWithMonitor_success() throws Exception {
         PluginManager pm = new PluginManager("/nonexistent/path/plugins");
         TestPlugin plugin = new TestPlugin(InterceptTarget.KAFKA);
         injectPlugin(pm, plugin);
 
-        PluginContext ctx = new PluginContext();
-        ctx.setProtocol("kafka");
-        InterceptResult result = pm.interceptWithMonitor(InterceptTarget.KAFKA, ctx);
+        ConnectContext ctx = new ConnectContext("kafka", "test", 9092, null, null, null, null);
+        ConnectAdvice advice = pm.connectWithMonitor(InterceptTarget.KAFKA, ctx);
 
-        assertNotNull(result);
-        assertTrue(result.isRedirect());
+        assertNotNull(advice);
+        assertTrue(advice.isRedirect());
         assertEquals(1, plugin.invocationCount.get());
 
         PluginManager.PluginHealthStatus status = pm.getHealthStatus(InterceptTarget.KAFKA);
@@ -194,39 +188,36 @@ public class PluginHealthCheckTest {
     }
 
     @Test
-    public void testInterceptWithMonitor_noPlugin() {
+    public void testConnectWithMonitor_noPlugin() {
         PluginManager pm = new PluginManager("/nonexistent/path/plugins");
-        PluginContext ctx = new PluginContext();
-        InterceptResult result = pm.interceptWithMonitor(InterceptTarget.KAFKA, ctx);
-        assertNull("No plugin → must return null", result);
+        ConnectContext ctx = new ConnectContext("kafka", "test", 9092, null, null, null, null);
+        ConnectAdvice advice = pm.connectWithMonitor(InterceptTarget.KAFKA, ctx);
+        assertTrue("No plugin → must return passthrough", advice.isPassthrough());
     }
 
     @Test
-    public void testInterceptWithMonitor_disabledPlugin() throws Exception {
+    public void testConnectWithMonitor_disabledPlugin() throws Exception {
         PluginManager pm = new PluginManager("/nonexistent/path/plugins");
         TestPlugin plugin = new TestPlugin(InterceptTarget.KAFKA);
         injectPlugin(pm, plugin);
         pm.disablePlugin(InterceptTarget.KAFKA);
 
-        PluginContext ctx = new PluginContext();
-        InterceptResult result = pm.interceptWithMonitor(InterceptTarget.KAFKA, ctx);
-        assertNull("Disabled plugin → must return null", result);
+        ConnectContext ctx = new ConnectContext("kafka", "test", 9092, null, null, null, null);
+        ConnectAdvice advice = pm.connectWithMonitor(InterceptTarget.KAFKA, ctx);
+        assertTrue("Disabled plugin → must return passthrough", advice.isPassthrough());
         assertEquals(0, plugin.invocationCount.get());
     }
 
     @Test
-    public void testInterceptWithMonitor_errorTracking() throws Exception {
+    public void testConnectWithMonitor_errorTracking() throws Exception {
         PluginManager pm = new PluginManager("/nonexistent/path/plugins");
         ThrowingPlugin plugin = new ThrowingPlugin(InterceptTarget.KAFKA);
         injectPlugin(pm, plugin);
 
-        PluginContext ctx = new PluginContext();
-        try {
-            pm.interceptWithMonitor(InterceptTarget.KAFKA, ctx);
-            fail("Expected RuntimeException");
-        } catch (RuntimeException expected) {
-            // ok
-        }
+        ConnectContext ctx = new ConnectContext("kafka", "test", 9092, null, null, null, null);
+        ConnectAdvice advice = pm.connectWithMonitor(InterceptTarget.KAFKA, ctx);
+        assertNotNull(advice);
+        assertTrue("Error → must return passthrough", advice.isPassthrough());
 
         PluginManager.PluginHealthStatus status = pm.getHealthStatus(InterceptTarget.KAFKA);
         assertEquals(PluginHealth.DEGRADED, status.getHealth());
@@ -263,9 +254,9 @@ public class PluginHealthCheckTest {
         @Override public String getName() { return "test-" + target; }
         @Override public InterceptTarget getTarget() { return target; }
         @Override public void init() {}
-        @Override public InterceptResult intercept(PluginContext ctx) {
+        @Override public ConnectAdvice onConnect(ConnectContext ctx) {
             invocationCount.incrementAndGet();
-            return InterceptResult.redirect("localhost", 9999);
+            return ConnectAdvice.redirect("localhost", 9999);
         }
         @Override public void destroy() {}
     }
@@ -278,7 +269,7 @@ public class PluginHealthCheckTest {
         @Override public String getName() { return "throwing-" + target; }
         @Override public InterceptTarget getTarget() { return target; }
         @Override public void init() {}
-        @Override public InterceptResult intercept(PluginContext ctx) {
+        @Override public ConnectAdvice onConnect(ConnectContext ctx) {
             throw new RuntimeException("simulated failure");
         }
         @Override public void destroy() {}

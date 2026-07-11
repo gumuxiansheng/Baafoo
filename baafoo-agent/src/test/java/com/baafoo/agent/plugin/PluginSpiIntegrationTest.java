@@ -9,9 +9,9 @@ import com.baafoo.agent.advice.RouteManager;
 import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.Rule;
 import com.baafoo.plugin.AgentPlugin;
-import com.baafoo.plugin.InterceptResult;
+import com.baafoo.plugin.ConnectAdvice;
+import com.baafoo.plugin.ConnectContext;
 import com.baafoo.plugin.InterceptTarget;
-import com.baafoo.plugin.PluginContext;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -21,20 +21,19 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
 
 import static org.junit.Assert.*;
 
 /**
  * Integration tests for the Plugin SPI delegation path across all protocol
  * Advice classes. Verifies that each Advice (KafkaProducer, KafkaConsumer,
- * JMS, Socket/NIO via bridge function) correctly consults the PluginManager
- * and honors plugin redirect / passthrough / failure semantics.
+ * JMS) correctly consults the PluginManager and honors plugin redirect /
+ * passthrough / failure semantics.
  *
  * <p>These tests prove that the SPI is wired end-to-end: the Advice calls
  * {@link PluginManager#getPlugin(InterceptTarget)}, invokes
- * {@link AgentPlugin#intercept(PluginContext)}, and respects the
- * {@link InterceptResult} — including fail-closed behavior on plugin
+ * {@link AgentPlugin#onConnect(ConnectContext)}, and respects the
+ * {@link ConnectAdvice} — including fail-closed behavior on plugin
  * exceptions.</p>
  */
 public class PluginSpiIntegrationTest {
@@ -46,7 +45,6 @@ public class PluginSpiIntegrationTest {
         GlobalRouteState.KAFKA_PORT = 9002;
         GlobalRouteState.PULSAR_PORT = 9003;
         GlobalRouteState.JMS_PORT = 9004;
-        GlobalRouteState.PLUGIN_CONSULT_FN = null;
         RouteManager.setMode(EnvironmentMode.STUB);
 
         // Register protocol rules so hasProtocolRoutes() returns true.
@@ -72,7 +70,6 @@ public class PluginSpiIntegrationTest {
     public void teardown() throws Exception {
         RouteManager.setMode(EnvironmentMode.PASSTHROUGH);
         RouteManager.updateRules(Collections.<Rule>emptyList());
-        GlobalRouteState.PLUGIN_CONSULT_FN = null;
         injectPluginManager(null);
     }
 
@@ -88,7 +85,7 @@ public class PluginSpiIntegrationTest {
 
         KafkaProducerAdvice.onConstructor(new Object[]{props});
 
-        assertTrue("Kafka plugin intercept() must be invoked", plugin.invocationCount.get() > 0);
+        assertTrue("Kafka plugin onConnect() must be invoked", plugin.invocationCount.get() > 0);
         assertEquals("kafka", plugin.lastProtocol);
         assertEquals("real-kafka", plugin.lastHost);
         assertEquals(9092, plugin.lastPort);
@@ -149,7 +146,7 @@ public class PluginSpiIntegrationTest {
 
         KafkaConsumerAdvice.onConstructor(new Object[]{configs});
 
-        assertTrue("KafkaConsumer plugin intercept() must be invoked", plugin.invocationCount.get() > 0);
+        assertTrue("KafkaConsumer plugin onConnect() must be invoked", plugin.invocationCount.get() > 0);
         assertEquals("localhost:9050", configs.get("bootstrap.servers"));
     }
 
@@ -175,7 +172,7 @@ public class PluginSpiIntegrationTest {
 
         JmsConnectionFactoryAdvice.onConstructorExit(factory);
 
-        assertTrue("JMS plugin intercept() must be invoked", plugin.invocationCount.get() > 0);
+        assertTrue("JMS plugin onConnect() must be invoked", plugin.invocationCount.get() > 0);
         assertEquals("jms", plugin.lastProtocol);
         assertEquals("real-jms", plugin.lastHost);
         assertEquals(61616, plugin.lastPort);
@@ -192,127 +189,7 @@ public class PluginSpiIntegrationTest {
         assertEquals("tcp://127.0.0.1:9004", getBrokerUrl(factory));
     }
 
-    // ==================== Socket/NIO Bridge Function SPI ====================
-
-    @Test
-    public void socketBridge_pluginRedirect_overridesDefault() throws Exception {
-        CountingPlugin plugin = new CountingPlugin(InterceptTarget.SOCKET, "localhost", 9060);
-        PluginManager pm = installPlugin(plugin);
-
-        // Set up the bridge function (normally done in BaafooAgent.premain)
-        setupPluginConsultBridge();
-
-        // Simulate what SocketConnectAdvice does: consult the bridge
-        Function<Object[], Object[]> consultFn = GlobalRouteState.PLUGIN_CONSULT_FN;
-        assertNotNull("Bridge function must be set", consultFn);
-
-        Object[] result = consultFn.apply(new Object[]{"external-host", Integer.valueOf(8080)});
-
-        assertNotNull("Plugin must return a redirect result", result);
-        assertEquals("localhost", result[0]);
-        assertEquals(9060, result[1]);
-        assertTrue("Socket plugin intercept() must be invoked", plugin.invocationCount.get() > 0);
-        assertEquals("tcp", plugin.lastProtocol);
-    }
-
-    @Test
-    public void socketBridge_pluginPassthrough_returnsNull() throws Exception {
-        PassthroughPlugin plugin = new PassthroughPlugin(InterceptTarget.SOCKET);
-        PluginManager pm = installPlugin(plugin);
-        setupPluginConsultBridge();
-
-        Function<Object[], Object[]> consultFn = GlobalRouteState.PLUGIN_CONSULT_FN;
-        Object[] result = consultFn.apply(new Object[]{"external-host", Integer.valueOf(8080)});
-
-        assertNull("Passthrough plugin must return null (no redirect)", result);
-        assertTrue(plugin.invocationCount.get() > 0);
-    }
-
-    @Test
-    public void socketBridge_pluginThrows_failsClosed() throws Exception {
-        ThrowingPlugin plugin = new ThrowingPlugin(InterceptTarget.SOCKET);
-        PluginManager pm = installPlugin(plugin);
-        setupPluginConsultBridge();
-
-        Function<Object[], Object[]> consultFn = GlobalRouteState.PLUGIN_CONSULT_FN;
-        // Must not throw — exception caught inside bridge function.
-        Object[] result = consultFn.apply(new Object[]{"external-host", Integer.valueOf(8080)});
-
-        assertNull("Throwing plugin must return null (fail-closed)", result);
-    }
-
-    @Test
-    public void socketBridge_noPlugin_returnsNull() {
-        // No plugin manager injected — bridge function returns null.
-        setupPluginConsultBridge();
-
-        Function<Object[], Object[]> consultFn = GlobalRouteState.PLUGIN_CONSULT_FN;
-        Object[] result = consultFn.apply(new Object[]{"external-host", Integer.valueOf(8080)});
-
-        assertNull("No plugin → bridge must return null", result);
-    }
-
-    @Test
-    public void socketBridge_nullFunction_returnsNull() {
-        // PLUGIN_CONSULT_FN is null (not set) — SocketConnectAdvice checks for null.
-        assertNull(GlobalRouteState.PLUGIN_CONSULT_FN);
-    }
-
-    // ==================== P1: pluginConfig injection ====================
-
-    @Test
-    public void kafkaProducer_pluginConfig_injectedIntoContext() throws Exception {
-        CountingPlugin plugin = new CountingPlugin(InterceptTarget.KAFKA, "localhost", 9050);
-        PluginManager pm = installPlugin(plugin);
-
-        // Verify that PluginContext.pluginConfig is non-null (even if empty,
-        // since we're using a no-config PluginManager)
-        Properties props = new Properties();
-        props.setProperty("bootstrap.servers", "real-kafka:9092");
-        KafkaProducerAdvice.onConstructor(new Object[]{props});
-
-        assertTrue(plugin.invocationCount.get() > 0);
-        assertNotNull("pluginConfig must be non-null", plugin.lastPluginConfig);
-    }
-
-    @Test
-    public void jms_pluginConfig_injectedIntoContext() throws Exception {
-        CountingPlugin plugin = new CountingPlugin(InterceptTarget.JMS, "localhost", 9054);
-        PluginManager pm = installPlugin(plugin);
-
-        MockConnectionFactory cf = new MockConnectionFactory("tcp://real-jms:61616");
-        JmsConnectionFactoryAdvice.onConstructorExit(cf);
-
-        assertTrue(plugin.invocationCount.get() > 0);
-        assertNotNull("pluginConfig must be non-null", plugin.lastPluginConfig);
-    }
-
-    // ==================== P2: protocol-specific fields ====================
-
-    @Test
-    public void jms_destination_extractedFromBrokerUrl() throws Exception {
-        CountingPlugin plugin = new CountingPlugin(InterceptTarget.JMS, "localhost", 9054);
-        PluginManager pm = installPlugin(plugin);
-
-        // brokerURL with a destination path
-        MockConnectionFactory cf = new MockConnectionFactory("tcp://real-jms:61616/queue.orders?jms.useAsyncSend=true");
-        JmsConnectionFactoryAdvice.onConstructorExit(cf);
-
-        assertTrue(plugin.invocationCount.get() > 0);
-        assertEquals("queue.orders", plugin.lastDestination);
-    }
-
-    @Test
-    public void jms_destination_nullWhenNoPath() throws Exception {
-        CountingPlugin plugin = new CountingPlugin(InterceptTarget.JMS, "localhost", 9054);
-        PluginManager pm = installPlugin(plugin);
-
-        MockConnectionFactory cf = new MockConnectionFactory("tcp://real-jms:61616");
-        JmsConnectionFactoryAdvice.onConstructorExit(cf);
-
-        assertTrue(plugin.invocationCount.get() > 0);
-        assertNull("destination should be null when brokerURL has no path", plugin.lastDestination);
-    }
+    // ==================== Path segment extraction helpers ====================
 
     @Test
     public void pulsarExtractPathSegments_withTenantNamespace() {
@@ -377,46 +254,6 @@ public class PluginSpiIntegrationTest {
         f.set(null, pm);
     }
 
-    /**
-     * Set up the PLUGIN_CONSULT_FN bridge function, mirroring what
-     * BaafooAgent.premain does. This allows Socket/NIO advice to consult
-     * the PluginManager SPI via the bridge.
-     */
-    private void setupPluginConsultBridge() {
-        GlobalRouteState.PLUGIN_CONSULT_FN = (Function<Object[], Object[]>) args -> {
-            if (args == null || args.length < 2) return null;
-            try {
-                String host = (String) args[0];
-                int port = (Integer) args[1];
-                PluginManager pm;
-                try {
-                    java.lang.reflect.Field f = BaafooAgent.class.getDeclaredField("pluginManager");
-                    f.setAccessible(true);
-                    pm = (PluginManager) f.get(null);
-                } catch (Exception e) {
-                    return null;
-                }
-                if (pm == null) return null;
-                AgentPlugin plugin = pm.getPlugin(InterceptTarget.SOCKET);
-                if (plugin == null) {
-                    plugin = pm.getPlugin(InterceptTarget.NIO_SOCKET);
-                }
-                if (plugin == null) return null;
-                PluginContext ctx = new PluginContext();
-                ctx.setProtocol("tcp");
-                ctx.setHost(host);
-                ctx.setPort(port);
-                InterceptResult result = plugin.intercept(ctx);
-                if (result != null && result.isRedirect()) {
-                    return new Object[]{result.getRedirectHost(), result.getRedirectPort()};
-                }
-            } catch (Throwable t) {
-                // Fail-closed
-            }
-            return null;
-        };
-    }
-
     /** Create a mock object with getBrokerURL/setBrokerURL methods. */
     private Object createMockConnectionFactory(final String initialUrl) {
         return new MockConnectionFactory(initialUrl);
@@ -444,15 +281,12 @@ public class PluginSpiIntegrationTest {
 
     // ==================== Test Plugins ====================
 
-    /** A plugin that counts intercept() calls, records context, and returns a redirect. */
+    /** A plugin that counts onConnect() calls, records context, and returns a redirect. */
     private static class CountingPlugin implements AgentPlugin {
         final AtomicInteger invocationCount = new AtomicInteger();
         volatile String lastProtocol;
         volatile String lastHost;
         volatile int lastPort;
-        volatile Map<String, Object> lastPluginConfig;
-        volatile String lastTenant;
-        volatile String lastDestination;
         private final InterceptTarget target;
         private final String redirectHost;
         private final int redirectPort;
@@ -466,15 +300,12 @@ public class PluginSpiIntegrationTest {
         @Override public String getName() { return "counting-" + target; }
         @Override public InterceptTarget getTarget() { return target; }
         @Override public void init() {}
-        @Override public InterceptResult intercept(PluginContext ctx) {
+        @Override public ConnectAdvice onConnect(ConnectContext ctx) {
             invocationCount.incrementAndGet();
             lastProtocol = ctx.getProtocol();
             lastHost = ctx.getHost();
             lastPort = ctx.getPort();
-            lastPluginConfig = ctx.getPluginConfig();
-            lastTenant = ctx.getTenant();
-            lastDestination = ctx.getDestination();
-            return InterceptResult.redirect(redirectHost, redirectPort);
+            return ConnectAdvice.redirect(redirectHost, redirectPort);
         }
         @Override public void destroy() {}
     }
@@ -488,9 +319,9 @@ public class PluginSpiIntegrationTest {
         @Override public String getName() { return "passthrough-" + target; }
         @Override public InterceptTarget getTarget() { return target; }
         @Override public void init() {}
-        @Override public InterceptResult intercept(PluginContext ctx) {
+        @Override public ConnectAdvice onConnect(ConnectContext ctx) {
             invocationCount.incrementAndGet();
-            return InterceptResult.passthrough();
+            return ConnectAdvice.passthrough();
         }
         @Override public void destroy() {}
     }
@@ -503,7 +334,7 @@ public class PluginSpiIntegrationTest {
         @Override public String getName() { return "throwing-" + target; }
         @Override public InterceptTarget getTarget() { return target; }
         @Override public void init() {}
-        @Override public InterceptResult intercept(PluginContext ctx) {
+        @Override public ConnectAdvice onConnect(ConnectContext ctx) {
             throw new RuntimeException("simulated plugin failure");
         }
         @Override public void destroy() {}

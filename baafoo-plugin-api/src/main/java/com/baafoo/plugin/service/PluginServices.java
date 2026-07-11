@@ -1,7 +1,7 @@
 package com.baafoo.plugin.service;
 
 /**
- * Unified service context injected into PluginContext.
+ * Unified service context injected into plugin contexts.
  *
  * <p>Provides plugins with access to core Baafoo services (rule store,
  * recording store, server admin). The implementation lives in

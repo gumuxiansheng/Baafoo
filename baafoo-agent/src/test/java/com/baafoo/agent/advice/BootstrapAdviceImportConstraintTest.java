@@ -79,7 +79,7 @@ public class BootstrapAdviceImportConstraintTest {
                 failures.add("Bootstrap-CL advice " + className
                         + " references forbidden package " + offending
                         + " — Bootstrap CL cannot load com.baafoo.plugin.*. Use GlobalRouteState's "
-                        + "Object-typed bridge fields (PLUGIN_CONSULT_FN, EVENT_FIRE_FN, etc.) instead.");
+                        + "Object-typed bridge fields (PLUGIN_CONSULT_FN_EXT, EVENT_FIRE_FN, etc.) instead.");
             }
         }
         if (!failures.isEmpty()) {

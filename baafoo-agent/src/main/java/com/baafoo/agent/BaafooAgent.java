@@ -123,44 +123,11 @@ public class BaafooAgent {
             // Also sync handlers to the Bootstrap CL copy of GlobalRouteState
             syncLogHandlersToBootstrapCL(adviceLogger);
 
-            // Set up the PLUGIN_CONSULT_FN bridge function.
-            // This allows Bootstrap CL advice (SocketConnectAdvice/NioSocketConnectAdvice)
-            // to consult the PluginManager SPI without directly referencing App CL classes.
-            // Input: Object[] { String host, Integer port }
-            // Output: Object[] { String targetHost, Integer targetPort } or null
-            GlobalRouteState.PLUGIN_CONSULT_FN = (java.util.function.Function<Object[], Object[]>) args -> {
-                if (args == null || args.length < 2) return null;
-                try {
-                    String host = (String) args[0];
-                    int port = (Integer) args[1];
-                    PluginManager pm = pluginManager;
-                    if (pm == null) return null;
-                    com.baafoo.plugin.AgentPlugin plugin = pm.getPlugin(com.baafoo.plugin.InterceptTarget.SOCKET);
-                    if (plugin == null) {
-                        plugin = pm.getPlugin(com.baafoo.plugin.InterceptTarget.NIO_SOCKET);
-                    }
-                    if (plugin == null) return null;
-                    com.baafoo.plugin.PluginContext ctx = new com.baafoo.plugin.PluginContext();
-                    ctx.setProtocol("tcp");
-                    ctx.setHost(host);
-                    ctx.setPort(port);
-                    // P1: inject per-plugin config into context
-                    ctx.setPluginConfig(pm.getPluginConfig(plugin.getName()));
-                    com.baafoo.plugin.InterceptResult result = plugin.intercept(ctx);
-                    if (result != null && result.isRedirect()) {
-                        return new Object[]{result.getRedirectHost(), result.getRedirectPort()};
-                    }
-                } catch (Throwable t) {
-                    log.debug("[Baafoo] Plugin consult (Socket/NIO) skipped: {}", t.getMessage());
-                }
-                return null;
-            };
-
             // P1: Set up PLUGIN_CONSULT_FN_EXT — extended bridge with action semantics.
             // Input: Object[] { String host, Integer port, String protocol }
             // Output: Object[] { Integer action, String targetHost, Integer targetPort, String reason }
             //   action=0: PASSTHROUGH, action=1: REDIRECT, action=2: BLOCK
-            //   null: fall back to PLUGIN_CONSULT_FN
+            //   null: no plugin consulted (proceed with default routing)
             GlobalRouteState.PLUGIN_CONSULT_FN_EXT = (java.util.function.Function<Object[], Object[]>) args -> {
                 if (args == null || args.length < 2) return null;
                 try {
@@ -869,14 +836,12 @@ public class BaafooAgent {
             java.lang.reflect.Field iswField = requireBootstrapField(bootGRS, "INPUT_STREAM_WRAPPER");
             java.lang.reflect.Field oswField = requireBootstrapField(bootGRS, "OUTPUT_STREAM_WRAPPER");
             java.lang.reflect.Field nioField = requireBootstrapField(bootGRS, "NIO_RECORDING_HANDLER");
-            java.lang.reflect.Field pluginConsultField = requireBootstrapField(bootGRS, "PLUGIN_CONSULT_FN");
             java.lang.reflect.Field pluginConsultExtField = requireBootstrapField(bootGRS, "PLUGIN_CONSULT_FN_EXT");
             java.lang.reflect.Field eventFireField = requireBootstrapField(bootGRS, "EVENT_FIRE_FN");
 
             iswField.set(null, GlobalRouteState.INPUT_STREAM_WRAPPER);
             oswField.set(null, GlobalRouteState.OUTPUT_STREAM_WRAPPER);
             nioField.set(null, GlobalRouteState.NIO_RECORDING_HANDLER);
-            pluginConsultField.set(null, GlobalRouteState.PLUGIN_CONSULT_FN);
             pluginConsultExtField.set(null, GlobalRouteState.PLUGIN_CONSULT_FN_EXT);
             eventFireField.set(null, GlobalRouteState.EVENT_FIRE_FN);
 

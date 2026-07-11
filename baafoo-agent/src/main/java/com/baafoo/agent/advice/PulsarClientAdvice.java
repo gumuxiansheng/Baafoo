@@ -23,7 +23,7 @@ import java.net.URISyntaxException;
  * (pulsar://localhost:9003 by default).</p>
  *
  * <p>Before rewriting, it consults the registered Pulsar plugin (if any) via the
- * {@link PluginManager} SPI. A plugin may return an {@link InterceptResult#redirect}
+ * {@link PluginManager} SPI. A plugin may return a {@link com.baafoo.plugin.ConnectAdvice#redirect}
  * to override the default stub target — e.g. the TDMQ plugin redirects to port 9005
  * to use a dedicated TDMQ/Pulsar 2.7.4 broker. This is the agent's first production
  * SPI invocation site.</p>

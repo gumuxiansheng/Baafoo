@@ -6,8 +6,8 @@ import com.baafoo.agent.plugin.PluginManager;
 import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.Rule;
 import com.baafoo.plugin.AgentPlugin;
-import com.baafoo.plugin.PluginContext;
-import com.baafoo.plugin.InterceptResult;
+import com.baafoo.plugin.ConnectAdvice;
+import com.baafoo.plugin.ConnectContext;
 import com.baafoo.plugin.InterceptTarget;
 import org.junit.After;
 import org.junit.Before;
@@ -96,7 +96,7 @@ public class PulsarClientAdviceTest {
      * in place at runtime (via @Advice.Argument(readOnly=false)), but a plain Java
      * call cannot capture that mutation, we instead reason about behaviour by
      * observing side effects: the plugin-consult path logs, and the plugin's
-     * intercept() is invoked. We assert those rather than the rewritten string.
+     * onConnect() is invoked. We assert those rather than the rewritten string.
      */
     @Test
     public void testStubModeRewritesToDefaultWhenNoPlugin() {
@@ -113,7 +113,7 @@ public class PulsarClientAdviceTest {
 
     /**
      * When a Pulsar plugin returns a redirect, the advice must consult it and the
-     * plugin's intercept() must actually be invoked (proving the SPI is wired).
+     * plugin's onConnect() must actually be invoked (proving the SPI is wired).
      */
     @Test
     public void testPluginRedirectIsConsulted() throws Exception {
@@ -130,7 +130,7 @@ public class PulsarClientAdviceTest {
             String serviceUrl = "pulsar://real-broker:6650";
             PulsarClientAdvice.onServiceUrl(serviceUrl);
 
-            assertTrue("Plugin.intercept() must be invoked by the advice",
+            assertTrue("Plugin.onConnect() must be invoked by the advice",
                     plugin.invocationCount.get() > 0);
             assertEquals("pulsar", plugin.lastProtocol);
             assertEquals("real-broker", plugin.lastHost);
@@ -197,7 +197,7 @@ public class PulsarClientAdviceTest {
 
     // ---- test plugins ----
 
-    /** A plugin that counts intercept() calls and records the last context. */
+    /** A plugin that counts onConnect() calls and records the last context. */
     private static class CountingPlugin implements AgentPlugin {
         final java.util.concurrent.atomic.AtomicInteger invocationCount = new java.util.concurrent.atomic.AtomicInteger();
         volatile String lastProtocol;
@@ -207,12 +207,12 @@ public class PulsarClientAdviceTest {
         @Override public String getName() { return "counting"; }
         @Override public InterceptTarget getTarget() { return InterceptTarget.PULSAR; }
         @Override public void init() {}
-        @Override public InterceptResult intercept(PluginContext ctx) {
+        @Override public ConnectAdvice onConnect(ConnectContext ctx) {
             invocationCount.incrementAndGet();
             lastProtocol = ctx.getProtocol();
             lastHost = ctx.getHost();
             lastPort = ctx.getPort();
-            return InterceptResult.redirect("localhost", 9005);
+            return ConnectAdvice.redirect("localhost", 9005);
         }
         @Override public void destroy() {}
     }
@@ -222,9 +222,9 @@ public class PulsarClientAdviceTest {
         @Override public String getName() { return "passthrough"; }
         @Override public InterceptTarget getTarget() { return InterceptTarget.PULSAR; }
         @Override public void init() {}
-        @Override public InterceptResult intercept(PluginContext ctx) {
+        @Override public ConnectAdvice onConnect(ConnectContext ctx) {
             invocationCount.incrementAndGet();
-            return InterceptResult.passthrough();
+            return ConnectAdvice.passthrough();
         }
         @Override public void destroy() {}
     }
@@ -233,7 +233,7 @@ public class PulsarClientAdviceTest {
         @Override public String getName() { return "throwing"; }
         @Override public InterceptTarget getTarget() { return InterceptTarget.PULSAR; }
         @Override public void init() {}
-        @Override public InterceptResult intercept(PluginContext ctx) {
+        @Override public ConnectAdvice onConnect(ConnectContext ctx) {
             throw new RuntimeException("simulated plugin failure");
         }
         @Override public void destroy() {}

@@ -204,16 +204,6 @@ public final class GlobalRouteState {
     public static volatile java.util.function.Consumer<Object[]> NIO_RECORDING_HANDLER;
 
     /**
-     * Bridge function for plugin SPI consultation from Bootstrap CL advice.
-     * Set from the App CL (BaafooAgent) with a real implementation that calls
-     * PluginManager.getPlugin(InterceptTarget.SOCKET).intercept(...).
-     * Arguments: Object[] { String host, Integer port }
-     * Returns: Object[] { String targetHost, Integer targetPort } or null if no redirect.
-     * If null, no plugin consultation is performed (default routing only).
-     */
-    public static volatile java.util.function.Function<Object[], Object[]> PLUGIN_CONSULT_FN;
-
-    /**
      * Extended plugin consultation function (P1).
      *
      * <p>Arguments: Object[] { String host, Integer port, String protocol }</p>
@@ -222,11 +212,8 @@ public final class GlobalRouteState {
      *   <li>action=0: PASSTHROUGH (targetHost/targetPort ignored)</li>
      *   <li>action=1: REDIRECT to targetHost:targetPort</li>
      *   <li>action=2: BLOCK with reason</li>
-     *   <li>null: no plugin consulted (fallback to PLUGIN_CONSULT_FN)</li>
+     *   <li>null: no plugin consulted (proceed with default routing)</li>
      * </ul>
-     *
-     * <p><b>Backward compatibility:</b> If PLUGIN_CONSULT_FN_EXT returns null
-     * or is not set, the old PLUGIN_CONSULT_FN is consulted as fallback.</p>
      */
     public static volatile java.util.function.Function<Object[], Object[]> PLUGIN_CONSULT_FN_EXT;
 

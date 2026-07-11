@@ -1,12 +1,16 @@
 package com.baafoo.plugin.tdmq;
 
+import com.baafoo.plugin.ConnectAdvice;
+import com.baafoo.plugin.ConnectContext;
 import com.baafoo.plugin.InterceptTarget;
-import com.baafoo.plugin.PluginContext;
+import com.baafoo.plugin.PluginEvent;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 public class TdmqPluginTest {
+
+    // ---- Metadata ----
 
     @Test
     public void testPluginName() {
@@ -20,85 +24,88 @@ public class TdmqPluginTest {
         assertEquals(InterceptTarget.PULSAR, plugin.getTarget());
     }
 
+    // ---- onConnect (new API) ----
+
     @Test
-    public void testInterceptPulsarProtocolRedirectsToTdmq() {
-        // A Pulsar connection to a remote broker must redirect to the TDMQ stub.
+    public void testOnConnectPulsarRedirectsToTdmq() {
         TdmqPlugin plugin = new TdmqPlugin();
 
-        PluginContext ctx = new PluginContext();
-        ctx.setProtocol("pulsar");
-        ctx.setHost("pulsar-broker");
-        ctx.setPort(6650);
+        ConnectContext ctx = newConnectContext("pulsar", "pulsar-broker", 6650);
+        ConnectAdvice advice = plugin.onConnect(ctx);
 
-        com.baafoo.plugin.InterceptResult result = plugin.intercept(ctx);
-
-        assertTrue(result.isRedirect());
-        assertFalse(result.isStubbed()); // redirect is not a canned-response stub
-        assertEquals("localhost", result.getRedirectHost());
-        assertEquals(TdmqPlugin.TDMQ_BROKER_PORT, result.getRedirectPort());
+        assertTrue(advice.isRedirect());
+        assertEquals("localhost", advice.getRedirectHost());
+        assertEquals(TdmqPlugin.TDMQ_BROKER_PORT, advice.getRedirectPort());
     }
 
     @Test
-    public void testInterceptLocalhostPassthrough() {
-        // localhost must NOT be redirected (avoids a redirect loop).
+    public void testOnConnectLocalhostPassthrough() {
         TdmqPlugin plugin = new TdmqPlugin();
 
-        PluginContext ctx = new PluginContext();
-        ctx.setProtocol("pulsar");
-        ctx.setHost("localhost");
-        ctx.setPort(6650);
+        ConnectContext ctx = newConnectContext("pulsar", "localhost", 6650);
+        ConnectAdvice advice = plugin.onConnect(ctx);
 
-        com.baafoo.plugin.InterceptResult result = plugin.intercept(ctx);
-
-        assertFalse(result.isRedirect());
-        assertFalse(result.isStubbed());
+        assertTrue(advice.isPassthrough());
+        assertFalse(advice.isRedirect());
     }
 
     @Test
-    public void testInterceptLoopbackIpPassthrough() {
-        // 127.0.0.1 must NOT be redirected either.
+    public void testOnConnectLoopbackIpPassthrough() {
         TdmqPlugin plugin = new TdmqPlugin();
 
-        PluginContext ctx = new PluginContext();
-        ctx.setProtocol("pulsar");
-        ctx.setHost("127.0.0.1");
-        ctx.setPort(6650);
+        ConnectContext ctx = newConnectContext("pulsar", "127.0.0.1", 6650);
+        ConnectAdvice advice = plugin.onConnect(ctx);
 
-        com.baafoo.plugin.InterceptResult result = plugin.intercept(ctx);
-
-        assertFalse(result.isRedirect());
+        assertFalse(advice.isRedirect());
+        assertTrue(advice.isPassthrough());
     }
 
     @Test
-    public void testInterceptCaseInsensitiveLocalhost() {
-        // "LOCALHOST" must also pass through (regression guard for the
-        // case-sensitive equals("localhost") bug the redirect rewrite fixed).
+    public void testOnConnectCaseInsensitiveLocalhost() {
         TdmqPlugin plugin = new TdmqPlugin();
 
-        PluginContext ctx = new PluginContext();
-        ctx.setProtocol("pulsar");
-        ctx.setHost("LOCALHOST");
-        ctx.setPort(6650);
+        ConnectContext ctx = newConnectContext("pulsar", "LOCALHOST", 6650);
+        ConnectAdvice advice = plugin.onConnect(ctx);
 
-        com.baafoo.plugin.InterceptResult result = plugin.intercept(ctx);
-
-        assertFalse(result.isRedirect());
+        assertFalse(advice.isRedirect());
     }
 
     @Test
-    public void testInterceptNonPulsarProtocol() {
+    public void testOnConnectNonPulsarProtocol() {
         TdmqPlugin plugin = new TdmqPlugin();
 
-        PluginContext ctx = new PluginContext();
-        ctx.setProtocol("http");
-        ctx.setHost("example.com");
-        ctx.setPort(80);
+        ConnectContext ctx = newConnectContext("http", "example.com", 80);
+        ConnectAdvice advice = plugin.onConnect(ctx);
 
-        com.baafoo.plugin.InterceptResult result = plugin.intercept(ctx);
-
-        assertFalse(result.isRedirect());
-        assertFalse(result.isStubbed());
+        assertFalse(advice.isRedirect());
+        assertTrue(advice.isPassthrough());
     }
+
+    @Test
+    public void testOnConnectNullHost() {
+        TdmqPlugin plugin = new TdmqPlugin();
+
+        ConnectContext ctx = newConnectContext("pulsar", null, 6650);
+        ConnectAdvice advice = plugin.onConnect(ctx);
+
+        assertFalse(advice.isRedirect());
+        assertTrue(advice.isPassthrough());
+    }
+
+    // ---- onEvent (new API) ----
+
+    @Test
+    public void testOnEventNoThrow() {
+        TdmqPlugin plugin = new TdmqPlugin();
+
+        PluginEvent event = PluginEvent.connectionRedirected("pulsar", "pulsar-broker:6650", "localhost:9005");
+        assertDoesNotThrow(() -> plugin.onEvent(event));
+
+        PluginEvent otherEvent = PluginEvent.connectionPassthrough("pulsar", "localhost:6650");
+        assertDoesNotThrow(() -> plugin.onEvent(otherEvent));
+    }
+
+    // ---- Lifecycle ----
 
     @Test
     public void testInitAndDestroy() {
@@ -106,5 +113,11 @@ public class TdmqPluginTest {
 
         assertDoesNotThrow(plugin::init);
         assertDoesNotThrow(plugin::destroy);
+    }
+
+    // ---- Helpers ----
+
+    private ConnectContext newConnectContext(String protocol, String host, int port) {
+        return new ConnectContext(protocol, host, port, null, null, null, null);
     }
 }

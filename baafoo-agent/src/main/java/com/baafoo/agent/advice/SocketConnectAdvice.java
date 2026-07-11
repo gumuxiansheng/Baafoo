@@ -117,7 +117,7 @@ public final class SocketConnectAdvice {
                     }
                 }
 
-                // Plugin SPI fallback (prefer EXT, fallback to legacy)
+                // Plugin SPI fallback
                 if (routeValue == null) {
                     java.util.function.Function<Object[], Object[]> consultExtFn = GlobalRouteState.PLUGIN_CONSULT_FN_EXT;
                     if (consultExtFn != null) {
@@ -142,20 +142,6 @@ public final class SocketConnectAdvice {
                             }
                         } catch (Throwable t) {
                             GlobalRouteState.logDebug("[Baafoo] Socket plugin EXT consult skipped: " + t.getMessage());
-                        }
-                    }
-                    // Legacy fallback
-                    if (routeValue == null) {
-                        java.util.function.Function<Object[], Object[]> consultFn = GlobalRouteState.PLUGIN_CONSULT_FN;
-                        if (consultFn != null) {
-                            try {
-                                Object[] pluginResult = consultFn.apply(new Object[]{host, Integer.valueOf(port)});
-                                if (pluginResult != null && pluginResult.length >= 2) {
-                                    routeValue = new String[]{(String) pluginResult[0], String.valueOf(pluginResult[1])};
-                                }
-                            } catch (Throwable t) {
-                                GlobalRouteState.logDebug("[Baafoo] Socket plugin consult skipped: " + t.getMessage());
-                            }
                         }
                     }
                 }
@@ -206,7 +192,7 @@ public final class SocketConnectAdvice {
                 }
             }
 
-            // Plugin SPI fallback: prefer EXT, fallback to legacy
+            // Plugin SPI fallback
             if (routeValue == null) {
                 java.util.function.Function<Object[], Object[]> consultExtFn = GlobalRouteState.PLUGIN_CONSULT_FN_EXT;
                 if (consultExtFn != null) {
@@ -224,21 +210,6 @@ public final class SocketConnectAdvice {
                         }
                     } catch (Throwable t) {
                         GlobalRouteState.logDebug("[Baafoo] Socket plugin EXT consult skipped: " + t.getMessage());
-                    }
-                }
-                // Legacy fallback
-                if (routeValue == null) {
-                    java.util.function.Function<Object[], Object[]> consultFn = GlobalRouteState.PLUGIN_CONSULT_FN;
-                    if (consultFn != null) {
-                        try {
-                            Object[] pluginResult = consultFn.apply(new Object[]{host, Integer.valueOf(port)});
-                            if (pluginResult != null && pluginResult.length >= 2) {
-                                routeValue = new String[]{(String) pluginResult[0], String.valueOf(pluginResult[1])};
-                                GlobalRouteState.logInfo("[Baafoo] Socket plugin redirected: " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
-                            }
-                        } catch (Throwable t) {
-                            GlobalRouteState.logDebug("[Baafoo] Socket plugin consult skipped: " + t.getMessage());
-                        }
                     }
                 }
             }

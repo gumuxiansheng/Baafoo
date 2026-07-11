@@ -1,9 +1,10 @@
 package com.baafoo.plugin.tdmq;
 
 import com.baafoo.plugin.AgentPlugin;
-import com.baafoo.plugin.InterceptResult;
+import com.baafoo.plugin.ConnectAdvice;
+import com.baafoo.plugin.ConnectContext;
 import com.baafoo.plugin.InterceptTarget;
-import com.baafoo.plugin.PluginContext;
+import com.baafoo.plugin.PluginEvent;
 
 /**
  * TDMQ / Pulsar 2.7.4 protocol-adapter plugin.
@@ -14,11 +15,16 @@ import com.baafoo.plugin.PluginContext;
  * (e.g. a real Pulsar 2.7.4 instance acting as TDMQ) distinct from the built-in
  * mock on 9003.</p>
  *
- * <p>The plugin uses the {@link InterceptResult#redirect(String, int)} result —
- * it only declares the connection target; the actual Pulsar binary protocol
- * handshake is handled by the broker at the redirect target. Returning a
- * {@code stub(bytes, ...)} here would be wrong because Pulsar is a binary
- * protocol with no "response body" to inject at connection-establishment time.</p>
+ * <p>Uses the new phase-specific API hooks:</p>
+ * <ul>
+ *   <li>{@link #onConnect(ConnectContext)} — connection-phase redirect using
+ *       {@link ConnectAdvice#redirect(String, int)}</li>
+ *   <li>{@link #onEvent(PluginEvent)} — observation-only event logging</li>
+ * </ul>
+ *
+ * <p>The plugin uses {@link ConnectAdvice#redirect(String, int)} — it only
+ * declares the connection target; the actual Pulsar binary protocol handshake
+ * is handled by the broker at the redirect target.</p>
  */
 public class TdmqPlugin implements AgentPlugin {
 
@@ -44,18 +50,38 @@ public class TdmqPlugin implements AgentPlugin {
         System.out.println("[TDMQ Plugin] Initialized for Pulsar/TDMQ 2.7.4");
     }
 
+    // ---- New API hooks ----
+
+    /**
+     * Connection-phase hook: redirect Pulsar connections to the TDMQ stub broker.
+     *
+     * <p>Only intercepts Pulsar connections to non-local brokers. A local target
+     * (localhost / 127.0.0.1) is assumed to already point at a stub, so it is
+     * left alone to avoid a redirect loop.</p>
+     *
+     * @param ctx connection context (protocol, host, port)
+     * @return {@link ConnectAdvice#redirect} to {@code localhost:9005} for remote
+     *         Pulsar targets, {@link ConnectAdvice#passthrough} otherwise
+     */
     @Override
-    public InterceptResult intercept(PluginContext ctx) {
+    public ConnectAdvice onConnect(ConnectContext ctx) {
         String protocol = ctx.getProtocol();
         String host = ctx.getHost();
 
-        // Only intercept Pulsar connections to non-local brokers. A local target
-        // (localhost / 127.0.0.1) is assumed to already point at a stub, so we
-        // leave it alone to avoid a redirect loop.
         if ("pulsar".equalsIgnoreCase(protocol) && host != null && !isLocalAddress(host)) {
-            return InterceptResult.redirect("localhost", TDMQ_BROKER_PORT);
+            return ConnectAdvice.redirect("localhost", TDMQ_BROKER_PORT);
         }
-        return InterceptResult.passthrough();
+        return ConnectAdvice.passthrough();
+    }
+
+    /**
+     * Observation-only event hook: logs connection redirect events.
+     */
+    @Override
+    public void onEvent(PluginEvent event) {
+        if (event.getType() == PluginEvent.Type.CONNECTION_REDIRECTED) {
+            System.out.println("[TDMQ Plugin] Event: " + event);
+        }
     }
 
     @Override
@@ -63,7 +89,8 @@ public class TdmqPlugin implements AgentPlugin {
         System.out.println("[TDMQ Plugin] Destroyed");
     }
 
-    /** True for loopback targets that must not be redirected. */
+    // ---- Helpers ----
+
     private static boolean isLocalAddress(String host) {
         return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host);
     }

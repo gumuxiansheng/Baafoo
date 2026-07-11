@@ -19,13 +19,8 @@ import java.util.Map;
  *   <li>{@link #onRequest(RequestContext)} — request-phase hook</li>
  *   <li>{@link #onResponse(ResponseContext)} — response-phase hook</li>
  *   <li>{@link #onEvent(PluginEvent)} — observation-only event hook</li>
- *   <li>{@link #intercept(PluginContext)} — legacy unified hook (deprecated)</li>
  *   <li>{@link #destroy()} — cleanup</li>
  * </ol>
- *
- * <p><b>Backward compatibility:</b> Plugins that only implement {@link #intercept}
- * continue to work unchanged. The new hooks are {@code default} methods that
- * delegate to {@code intercept()} for legacy plugins.</p>
  */
 public interface AgentPlugin {
 
@@ -60,16 +55,15 @@ public interface AgentPlugin {
      * <p><b>Agent-only:</b> No equivalent in WireMock because WireMock operates
      * at HTTP proxy level, not at Socket.connect().</p>
      *
-     * <p>Default implementation delegates to {@link #intercept} for backward
-     * compatibility. New plugins should override this instead of intercept().</p>
+     * <p>Default implementation returns {@link ConnectAdvice#passthrough()},
+     * meaning the connection proceeds to the original target. Plugins that
+     * need to redirect or block connections must override this method.</p>
      *
      * @param ctx connection context
      * @return connect advice (passthrough / redirect / block)
      */
     default ConnectAdvice onConnect(ConnectContext ctx) {
-        PluginContext legacy = ctx.toLegacyContext();
-        InterceptResult result = intercept(legacy);
-        return ConnectAdvice.fromInterceptResult(result);
+        return ConnectAdvice.passthrough();
     }
 
     /**
@@ -110,27 +104,6 @@ public interface AgentPlugin {
      * @param event plugin event
      */
     default void onEvent(PluginEvent event) {}
-
-    // ---- Legacy (deprecated) ----
-
-    /**
-     * Process an intercepted call.
-     * <ul>
-     *   <li>In <b>stub</b> mode: return a mocked InterceptResult</li>
-     *   <li>In <b>passthrough</b> mode: execute originalCall and return result</li>
-     *   <li>In <b>record</b> mode: execute originalCall, store result, return real result</li>
-     *   <li>In <b>record-and-stub</b> mode: execute originalCall, store, return stubbed</li>
-     * </ul>
-     *
-     * @param ctx interception context
-     * @return interception result
-     * @deprecated Use {@link #onConnect}, {@link #onRequest}, or
-     *             {@link #onResponse} instead. This method is retained
-     *             for backward compatibility and is called by the default
-     *             implementations of the new hooks.
-     */
-    @Deprecated
-    InterceptResult intercept(PluginContext ctx);
 
     /**
      * Called on JVM shutdown / agent unload.

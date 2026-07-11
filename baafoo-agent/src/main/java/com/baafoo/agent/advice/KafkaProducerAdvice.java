@@ -22,7 +22,7 @@ import java.util.Map;
  * address (port 9002 by default).</p>
  *
  * <p>Before rewriting, it consults the registered Kafka plugin (if any) via the
- * {@link PluginManager} SPI. A plugin may return an {@link InterceptResult#redirect}
+ * {@link PluginManager} SPI. A plugin may return a {@link com.baafoo.plugin.ConnectAdvice#redirect}
  * to override the default stub target.</p>
  *
  * <p><b>CRITICAL</b>: This advice is inlined into KafkaProducer by ByteBuddy.

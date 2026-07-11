@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
  * <p>On exit, we call {@code setBrokerURL} on the constructed object to override
  * whatever URL was set during construction. Before rewriting, it consults the
  * registered JMS plugin (if any) via the {@link PluginManager} SPI. A plugin may
- * return an {@link InterceptResult#redirect} to override the default stub target.</p>
+ * return a {@link com.baafoo.plugin.ConnectAdvice#redirect} to override the default stub target.</p>
  *
  * <p><b>CRITICAL</b>: This advice is inlined into ActiveMQConnectionFactory by ByteBuddy.
  * Do NOT reference any private fields from this class in the advice

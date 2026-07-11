@@ -45,20 +45,6 @@ public class ConnectAdvice {
         return new ConnectAdvice(Action.BLOCK, null, 0, reason);
     }
 
-    /**
-     * Convert from legacy InterceptResult (for backward compatibility).
-     */
-    public static ConnectAdvice fromInterceptResult(InterceptResult result) {
-        if (result == null) return passthrough();
-        if (result.isRedirect()) {
-            return redirect(result.getRedirectHost(), result.getRedirectPort());
-        }
-        if (result.isStubbed()) {
-            return block(result.getErrorMessage() != null ? result.getErrorMessage() : "stubbed");
-        }
-        return passthrough();
-    }
-
     // --- Getters ---
 
     public Action getAction() { return action; }

@@ -9,34 +9,14 @@ import java.util.function.Function;
 /**
  * P1-2: Plugin consultation and event bridge.
  *
- * <p>Encapsulates the plugin SPI bridge functions ({@code PLUGIN_CONSULT_FN},
- * {@code PLUGIN_CONSULT_FN_EXT}, {@code EVENT_FIRE_FN}) and the
- * {@code firePluginEvent} dispatch previously inlined in
- * {@link GlobalRouteState}. The bridge fields stay on
+ * <p>Encapsulates the plugin SPI bridge functions ({@code PLUGIN_CONSULT_FN_EXT},
+ * {@code EVENT_FIRE_FN}) and the {@code firePluginEvent} dispatch previously
+ * inlined in {@link GlobalRouteState}. The bridge fields stay on
  * {@code GlobalRouteState} for Bootstrap-CL compatibility (Bootstrap-CL
  * advice reads {@code PLUGIN_CONSULT_FN_EXT} etc. by field name); this
  * class provides typed dispatch for App-CL callers.</p>
  */
 public final class PluginBridge {
-
-    /**
-     * Consult the legacy plugin function.
-     *
-     * @param args {@code { String host, Integer port }}
-     * @return {@code { String targetHost, Integer targetPort }} or {@code null}
-     *         if no redirect applies or the function is not set.
-     */
-    public Object[] consult(Object[] args) {
-        Function<Object[], Object[]> fn = GlobalRouteState.PLUGIN_CONSULT_FN;
-        if (fn == null) {
-            return null;
-        }
-        try {
-            return fn.apply(args);
-        } catch (Throwable t) {
-            return null;
-        }
-    }
 
     /**
      * Consult the extended plugin function.
@@ -77,10 +57,6 @@ public final class PluginBridge {
                 GlobalRouteState.logDebug("[Baafoo] Event fire skipped: " + t.getMessage());
             }
         }
-    }
-
-    public void setConsultFn(Function<Object[], Object[]> fn) {
-        GlobalRouteState.PLUGIN_CONSULT_FN = fn;
     }
 
     public void setConsultExtFn(Function<Object[], Object[]> fn) {

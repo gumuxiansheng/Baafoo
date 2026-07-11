@@ -6,9 +6,7 @@ import com.baafoo.core.event.EventBus;
 import com.baafoo.plugin.AgentPlugin;
 import com.baafoo.plugin.ConnectAdvice;
 import com.baafoo.plugin.ConnectContext;
-import com.baafoo.plugin.InterceptResult;
 import com.baafoo.plugin.InterceptTarget;
-import com.baafoo.plugin.PluginContext;
 import com.baafoo.plugin.PluginEvent;
 import com.baafoo.plugin.PluginHealth;
 import com.baafoo.plugin.RequestAdvice;
@@ -29,8 +27,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>The plugin system is activated in the agent bootstrap flow. All protocol
  * Advice classes (Socket, NIO, Kafka, Pulsar, JMS) consult the PluginManager
- * before falling back to the built-in routing logic. A plugin may return an
- * {@link com.baafoo.plugin.InterceptResult#redirect} to override the default
+ * before falling back to the built-in routing logic. A plugin may return a
+ * {@link com.baafoo.plugin.ConnectAdvice#redirect} to override the default
  * stub target.</p>
  *
  * <p>P3: Includes health monitoring (success/error tracking, auto-disable on
@@ -126,44 +124,6 @@ public class PluginManager {
     public AgentPlugin getPluginForProtocol(String protocol) {
         InterceptTarget target = resolveTarget(protocol);
         return target != null ? getPlugin(target) : null;
-    }
-
-    /**
-     * P3: Intercept with health monitoring. Wraps plugin.intercept() with
-     * timing and success/error tracking.
-     *
-     * @deprecated No production Advice calls this method anymore — all four
-     * App-CL Advice classes (KafkaProducer, KafkaConsumer, JmsConnectionFactory,
-     * GrpcChannel, PulsarClient) now use the phase-specific
-     * {@link #connectWithMonitor(InterceptTarget, ConnectContext)},
-     * {@link #requestWithMonitor(InterceptTarget, RequestContext)} or
-     * {@link #responseWithMonitor(InterceptTarget, ResponseContext)} hooks,
-     * which align with the plugin lifecycle ({@code onConnect/onRequest/onResponse})
-     * and emit {@link PluginEvent}s on redirect/passthrough. Retained only
-     * for {@code PluginHealthCheckTest} which exercises the underlying
-     * health-tracking wrapper. New code MUST NOT call this method.
-     *
-     * @param target intercept target
-     * @param ctx plugin context
-     * @return intercept result, or null if plugin unavailable
-     */
-    @Deprecated
-    public InterceptResult interceptWithMonitor(InterceptTarget target, PluginContext ctx) {
-        AgentPlugin plugin = getPlugin(target);
-        if (plugin == null) return null;
-
-        PluginHealthStatus status = healthStatuses.get(target);
-        long start = System.currentTimeMillis();
-        try {
-            InterceptResult result = plugin.intercept(ctx);
-            long elapsed = System.currentTimeMillis() - start;
-            if (status != null) status.recordSuccess(elapsed);
-            return result;
-        } catch (Throwable t) {
-            long elapsed = System.currentTimeMillis() - start;
-            if (status != null) status.recordError(elapsed, t.getMessage());
-            throw t;
-        }
     }
 
     // ==================== P3: Enable / Disable ====================
@@ -331,7 +291,7 @@ public class PluginManager {
 
     /**
      * Inject PluginServices into this manager.
-     * When set, all PluginContext objects created via this manager will
+     * When set, all plugin contexts created via this manager will
      * have services attached.
      *
      * @param services service instance, or null to clear

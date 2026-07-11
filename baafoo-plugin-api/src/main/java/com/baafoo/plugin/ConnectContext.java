@@ -70,18 +70,4 @@ public class ConnectContext {
     public String getRawTarget() { return rawTarget; }
     public String getTenant() { return tenant; }
     public String getDestination() { return destination; }
-
-    /**
-     * Convert to legacy PluginContext for backward-compatible intercept() call.
-     */
-    public PluginContext toLegacyContext() {
-        PluginContext ctx = new PluginContext();
-        ctx.setProtocol(protocol);
-        ctx.setHost(host);
-        ctx.setPort(port);
-        ctx.setServiceName(serviceName);
-        ctx.setTenant(tenant);
-        ctx.setDestination(destination);
-        return ctx;
-    }
 }
