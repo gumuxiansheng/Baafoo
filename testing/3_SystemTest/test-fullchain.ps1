@@ -867,7 +867,7 @@ Write-Host "--- P: Pulsar ---" -ForegroundColor White
 # On a fresh CI container the broker may still be binding (a transient cold-start
 # bind race in BaafooServer.startProtocolServers): the broker now retries bind
 # 3x/1s, but the agent may have already tried to connect and cached the dead
-# endpoint. Polling /api/status.brokers.pulsar ("up") AND a Test-NetConnection
+# endpoint. Polling /api/status.data.brokers.pulsar ("up") AND a Test-NetConnection
 # probe on the published port 9003 gives us a reliable readiness gate so P01/P02
 # only run once the broker is proven listening — eliminating the classic
 # "connection timed out: ...:9003" flake.
@@ -880,7 +880,7 @@ while (-not $PULSAR_READY -and $brokerWaited -lt $brokerMaxWait) {
     Start-Sleep -Seconds 3
     $brokerWaited += 3
     $statusJson = & curl.exe -s --max-time 5 "$SERVER/__baafoo__/api/status" 2>$null
-    $pulsarState = ($statusJson | ConvertFrom-Json -ErrorAction SilentlyContinue).brokers.pulsar
+    $pulsarState = ($statusJson | ConvertFrom-Json -ErrorAction SilentlyContinue).data.brokers.pulsar
     $tcpOk = Test-NetConnection -ComputerName localhost -Port 9003 -InformationLevel Quiet -WarningAction SilentlyContinue
     if ($pulsarState -eq "up" -or $tcpOk) { $PULSAR_READY = $true }
     Write-Host "`r    status=$pulsarState tcp=$tcpOk (${brokerWaited}s)          " -NoNewline -ForegroundColor Gray
@@ -987,17 +987,50 @@ if ($respB -match "staging-b") {
 Write-Host ""
 Write-Host "--- PL: Plugin ---" -ForegroundColor White
 
-# PL01: Check agent logs for Plugin loading
-$agentLogs = & docker logs baafoo-app-env-a 2>&1 | Select-String -Pattern "Plugin|PluginManager" | Select-Object -Last 5
-$agentLogsStr = $agentLogs -join "`n"
-if ($agentLogsStr -match "Plugin loaded") {
-    Test-Pass "PL01: Plugin loaded (log shows Plugin loaded)"
-} elseif ($agentLogsStr -match "No plugin") {
-    Test-Pass "PL01: PluginManager initialized (no plugins loaded)"
-} elseif ($agentLogsStr -match "Plugin") {
-    Test-Pass "PL01: PluginManager initialized"
+# PL01: Verify plugin status via Agent API.
+# The agent reports pluginStatuses in its heartbeat to the server, which
+# exposes them via GET /api/agents. This is more reliable than scraping
+# container logs (which may fail due to docker logging driver issues).
+$agentsJson = Invoke-ApiGet "agents"
+$_pl01HasPlugin = $false
+$_pl01Detail = ""
+try {
+    $agentsObj = $agentsJson | ConvertFrom-Json -ErrorAction Stop
+    # The API may return either an array directly or {data: [...]}
+    $agentsList = $agentsObj
+    if ($agentsObj.PSObject.Properties.Name -contains "data") {
+        $agentsList = $agentsObj.data
+    }
+    if ($agentsList -is [array]) {
+        foreach ($agent in $agentsList) {
+            $ps = $agent.pluginStatuses
+            if ($ps) {
+                $_pl01Detail = ($ps | ConvertTo-Json -Compress -Depth 3)
+                # Any non-empty pluginStatuses means plugins were loaded
+                $psProps = $ps.PSObject.Properties
+                if ($psProps.Count -gt 0) {
+                    $_pl01HasPlugin = $true
+                    break
+                }
+            }
+        }
+    }
+} catch {
+    $_pl01Detail = "parse error: $_"
+}
+if ($_pl01HasPlugin) {
+    Test-Pass "PL01: Plugin loaded (pluginStatuses reported: $_pl01Detail)"
 } else {
-    Test-Skip "PL01: Plugin loading check (cannot get container logs)"
+    # Fallback: check container logs for plugin-related messages
+    $agentLogs = & docker logs baafoo-app-env-a 2>&1 | Select-String -Pattern "Plugin|PluginManager" | Select-Object -Last 5
+    $agentLogsStr = $agentLogs -join "`n"
+    if ($agentLogsStr -match "Plugin loaded") {
+        Test-Pass "PL01: Plugin loaded (log: Plugin loaded)"
+    } elseif ($agentLogsStr -match "PluginManager") {
+        Test-Pass "PL01: PluginManager initialized (log: $agentLogsStr)"
+    } else {
+        Test-Fail "PL01: No plugin evidence (API pluginStatuses empty, no log match; agentsJson=$(Format-RespShort $agentsJson))"
+    }
 }
 
 # PL02: Check agent heartbeat registration
@@ -1222,17 +1255,21 @@ if ($_c10RuleId -ne "staging-a-http-disabled") {
     Test-Fail "C10: Disabled rule should not match (ruleId=$_c10RuleId, resp=$resp)"
 }
 
-# C11: No-environment global rule should match regardless of environment
+# C11: No-environment global rule should match regardless of environment.
+# The global rule (staging-http-global) has priority=50, lower than the
+# staging-a catch-all (priority=100), so it should win for /global-endpoint.
+# Assert via ruleId to prove the global rule (not the env catch-all) matched.
 $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/global-endpoint"
-# The stubbed body carries "rule":"global", but it is JSON-escaped inside the
-# `body` field of the outer response ("\"rule\":\"global\""), so the literal
-# regex above can never match the raw response string. Decode the body first
-# (cf. Get-JsonBody already used by C10/H08) before asserting.
-$body = Get-JsonBody $resp
-if ($body -and $body -match '"rule"\s*:\s*"global"') {
-    Test-Pass "C11: Global rule (no env) matched"
+$_c11RuleId = Get-JsonValue $resp "ruleId"
+$_c11Stubbed = Get-JsonValue $resp "stubbed"
+if ($_c11RuleId -eq "staging-http-global") {
+    Test-Pass "C11: Global rule (no env) matched (ruleId=$_c11RuleId)"
+} elseif ($_c11Stubbed -eq "true" -and $_c11RuleId -eq "staging-a-http") {
+    Test-Fail "C11: Global rule NOT matched — env catch-all stole the request (ruleId=$_c11RuleId, check priority)"
+} elseif (Test-AppRespMissing $resp) {
+    Test-Fail "C11: Global rule NOT matched — agent did not intercept (resp=$(Format-RespShort $resp))"
 } else {
-    Test-Skip "C11: Global rule (response: $resp)"
+    Test-Fail "C11: Global rule NOT matched (ruleId=$_c11RuleId, stubbed=$_c11Stubbed, resp=$(Format-RespShort $resp))"
 }
 
 # -------------------- M: Environment Mode --------------------
@@ -1589,21 +1626,151 @@ try {
 
 # -------------------- MX: Protocol x Mode coverage gaps --------------------
 Write-Host ""
-Write-Host "--- MX: Protocol x Mode Matrix (gap markers) ---" -ForegroundColor White
-# HTTP is fully covered across all 5 modes (see H*/M* sections). The combinations
-# below cannot be exercised in Docker Staging because there is no real TCP/Kafka/
-# Pulsar/JMS broker — only the MockBroker STUB / RECORD_AND_STUB redirect paths are
-# driven (see T*/K*/P*/J* and D sections). Marked SKIP (not failure) to make the
-# coverage gap explicit and runnable.
-$mxGaps = @(
-    @{p="tcp";    m="passthrough"},      @{p="tcp";    m="record"},
-    @{p="tcp";    m="record-and-stub"},  @{p="tcp";    m="record-all"},
-    @{p="kafka";  m="passthrough"},      @{p="kafka";  m="record"},      @{p="kafka";  m="record-all"},
-    @{p="pulsar"; m="passthrough"},      @{p="pulsar"; m="record"},      @{p="pulsar"; m="record-all"},
-    @{p="jms";    m="passthrough"},      @{p="jms";    m="record"},      @{p="jms";    m="record-all"}
+Write-Host "--- MX: Protocol x Mode Matrix (real broker tests) ---" -ForegroundColor White
+# HTTP is fully covered across all 5 modes (see H*/M* sections).
+# With real brokers now in Staging (Kafka, Artemis/JMS, TCP echo), we can
+# exercise PASSTHROUGH mode for TCP/Kafka/JMS. We switch staging-a to
+# PASSTHROUGH mode for these tests, then restore to STUB.
+# Pulsar remains SKIP (no real Pulsar broker in Staging).
+
+# Switch staging-a to PASSTHROUGH for MX tests
+$mxEnvSwitched = $false
+$envsJsonMx = Invoke-ApiGet "environments"
+$envAIdMx = Get-EnvironmentId $envsJsonMx "staging-a"
+if ($envAIdMx) {
+    try {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdMx" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"passthrough"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+        $mxEnvSwitched = $true
+    } catch {
+        Write-Host "  WARN: Failed to switch staging-a to PASSTHROUGH for MX tests: $_" -ForegroundColor Yellow
+    }
+}
+
+if ($mxEnvSwitched) {
+    # Check broker availability before running MX tests
+    $kafkaReady = $false
+    $jmsReady = $false
+    $tcpEchoReady = $false
+    try {
+        $kafkaHealth = & docker inspect --format='{{.State.Health.Status}}' baafoo-staging-kafka 2>$null
+        if ($kafkaHealth -eq "healthy") { $kafkaReady = $true }
+    } catch {}
+    try {
+        $artemisHealth = & docker inspect --format='{{.State.Health.Status}}' baafoo-staging-artemis 2>$null
+        if ($artemisHealth -eq "healthy") { $jmsReady = $true }
+    } catch {}
+    try {
+        $tcpEchoState = & docker inspect --format='{{.State.Status}}' baafoo-staging-tcp-echo 2>$null
+        if ($tcpEchoState -eq "running") { $tcpEchoReady = $true }
+    } catch {}
+
+
+# MX-TCP-PT: TCP PASSTHROUGH — agent should let the connection through to tcp-echo-server:9999
+if ($tcpEchoReady) {
+    try {
+        $resp = Invoke-AppGet "$APP_A/api/socket/bio?host=tcp-echo-server&port=9999"
+        $stubbed = Get-JsonValue $resp "stubbed"
+        $connected = Get-JsonValue $resp "connected"
+        if ($connected -eq "true" -and $stubbed -ne "true") {
+            Test-Pass "MX-TCP-PT: TCP PASSTHROUGH to real echo server (connected=true, not stubbed)"
+        } elseif ($stubbed -eq "true") {
+            Test-Fail "MX-TCP-PT: TCP PASSTHROUGH still stubbed (agent intercepting in PASSTHROUGH mode?)"
+        } else {
+            Test-Fail "MX-TCP-PT: TCP PASSTHROUGH (connected=$connected, stubbed=$stubbed, resp=$(Format-RespShort $resp))"
+        }
+    } catch {
+        Test-Fail "MX-TCP-PT: TCP PASSTHROUGH (error: $_)"
+    }
+} else {
+    Test-Skip "MX-TCP-PT: TCP PASSTHROUGH (tcp-echo container not healthy)"
+}
+
+# MX-KAFKA-PT: Kafka PASSTHROUGH — agent should let Kafka connection through to real kafka-broker:9092
+if ($kafkaReady) {
+    try {
+        $resp = Invoke-AppGet "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=mx-test-topic&message=mx-kafka-passthrough"
+        $sent = Get-JsonValue $resp "sent"
+        $error = Get-JsonValue $resp "error"
+        if ($sent -eq "true" -or ($null -eq $error -and $resp -match "sent")) {
+            Test-Pass "MX-KAFKA-PT: Kafka PASSTHROUGH to real broker (message sent)"
+        } elseif ($error -and $error -match "stubbed") {
+            Test-Fail "MX-KAFKA-PT: Kafka PASSTHROUGH still stubbed (agent intercepting)"
+        } else {
+            # In PASSTHROUGH mode the agent doesn't intercept, but the app's Kafka
+            # client may still report success differently. Check if response has
+            # any success indicator.
+            if ($resp -notmatch '"stubbed":true' -and $resp -notmatch '"error"') {
+                Test-Pass "MX-KAFKA-PT: Kafka PASSTHROUGH (resp indicates no stub: $(Format-RespShort $resp))"
+            } else {
+                Test-Fail "MX-KAFKA-PT: Kafka PASSTHROUGH (error=$error, resp=$(Format-RespShort $resp))"
+            }
+        }
+    } catch {
+        Test-Fail "MX-KAFKA-PT: Kafka PASSTHROUGH (error: $_)"
+    }
+} else {
+    Test-Skip "MX-KAFKA-PT: Kafka PASSTHROUGH (kafka-broker container not healthy)"
+}
+
+# MX-JMS-PT: JMS PASSTHROUGH — agent should let JMS connection through to real artemis-broker:61616
+if ($jmsReady) {
+    try {
+        $resp = Invoke-AppGet "$APP_A/api/jms/send?brokerUrl=tcp://jms-broker:61616&queueName=MX.TEST.QUEUE&message=mx-jms-passthrough"
+        $sent = Get-JsonValue $resp "sent"
+        $error = Get-JsonValue $resp "error"
+        if ($sent -eq "true" -or ($null -eq $error -and $resp -match "sent")) {
+            Test-Pass "MX-JMS-PT: JMS PASSTHROUGH to real Artemis broker (message sent)"
+        } elseif ($error -and $error -match "stubbed") {
+            Test-Fail "MX-JMS-PT: JMS PASSTHROUGH still stubbed (agent intercepting)"
+        } else {
+            if ($resp -notmatch '"stubbed":true' -and $resp -notmatch '"error"') {
+                Test-Pass "MX-JMS-PT: JMS PASSTHROUGH (resp indicates no stub: $(Format-RespShort $resp))"
+            } else {
+                Test-Fail "MX-JMS-PT: JMS PASSTHROUGH (error=$error, resp=$(Format-RespShort $resp))"
+            }
+        }
+    } catch {
+        Test-Fail "MX-JMS-PT: JMS PASSTHROUGH (error: $_)"
+    }
+} else {
+    Test-Skip "MX-JMS-PT: JMS PASSTHROUGH (artemis-broker container not healthy)"
+}
+
+} else {
+    Write-Host "  WARN: Cannot switch to PASSTHROUGH — skipping MX real broker tests" -ForegroundColor Yellow
+}
+
+# Restore staging-a to STUB mode
+if ($mxEnvSwitched -and $envAIdMx) {
+    try {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdMx" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+    } catch {
+        Write-Host "  WARN: Failed to restore staging-a to STUB: $_" -ForegroundColor Yellow
+    }
+}
+
+# Pulsar — still no real broker in Staging, mark SKIP
+$mxPulsarGaps = @(
+    @{p="pulsar"; m="passthrough"},
+    @{p="pulsar"; m="record"},
+    @{p="pulsar"; m="record-all"}
 )
-foreach ($gap in $mxGaps) {
-    Test-Skip "MX: $($gap.p) x $($gap.m) not exercised (no real $($gap.p) broker in staging; only MockBroker STUB / RECORD_AND_STUB path driven)"
+foreach ($gap in $mxPulsarGaps) {
+    Test-Skip "MX: $($gap.p) x $($gap.m) not exercised (no real Pulsar broker in staging)"
+}
+
+# TCP/Kafka/JMS RECORD and RECORD_ALL — these require the agent to capture
+# traffic in RECORD mode and store it. This needs the recording pipeline
+# verification which is more complex. Mark as best-effort SKIP for now.
+$mxRecordGaps = @(
+    @{p="tcp";    m="record"},          @{p="tcp";    m="record-and-stub"},  @{p="tcp";    m="record-all"},
+    @{p="kafka";  m="record"},          @{p="kafka";  m="record-all"},
+    @{p="jms";    m="record"},          @{p="jms";    m="record-all"}
+)
+foreach ($gap in $mxRecordGaps) {
+    Test-Skip "MX: $($gap.p) x $($gap.m) not exercised (recording pipeline verification TBD)"
 }
 
 # ==================== 6. Summary report ====================

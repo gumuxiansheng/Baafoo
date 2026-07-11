@@ -27,20 +27,31 @@ public final class NetworkUtils {
      *
      * <p>Logic:
      * <ol>
-     *   <li>If both addresses are IPv4 and in the same private subnet:
-     *       <ul>
-     *         <li>If the client IP looks like a Docker gateway (last byte == 1),
-     *             return {@code advertisedHost} (or the local IP if not set)</li>
-     *         <li>Otherwise return {@code defaultHost} (container-internal address)</li>
-     *       </ul>
-     *   </li>
-     *   <li>If not in the same subnet or not IPv4, return
-     *       {@code advertisedHost} if set, otherwise the local IP</li>
+     *   <li>External / NAT'd client (remote is the Docker gateway, last byte == 1,
+     *       or a loopback client on the same host): return {@code advertisedHost}
+     *       (localhost / host IP) — the container IP we see is unreachable from
+     *       outside.</li>
+     *   <li>Wildcard-bound server (local address is 0.0.0.0): fall back to
+     *       {@code defaultHost} for in-Docker clients (preserves the previous
+     *       edge-case behaviour).</li>
+     *   <li>In-Docker client on a private subnet (the normal case): return the
+     *       <b>local address of the current connection</b>
+     *       ({@code localAddress.getHostAddress()}). This is the exact container
+     *       IP the client connected to, so it is guaranteed reachable from the
+     *       client's subnet. It MUST NOT be {@code defaultHost}, because
+     *       {@code defaultHost} is often derived from
+     *       {@code InetAddress.getLocalHost()}, which can pick a DIFFERENT network
+     *       interface of the server (e.g. in a multi-network Docker stack) that the
+     *       client cannot route to — that mismatch is exactly what produced
+     *       {@code "connection timed out: ...:<port>"} before this fix.</li>
+     *   <li>External client on a public address: return {@code advertisedHost}
+     *       (or {@code defaultHost} as a last resort).</li>
      * </ol></p>
      *
      * @param remoteAddress  the client's remote socket address
-     * @param localAddress   the server's local socket address
-     * @param defaultHost    the default host (typically the container-internal IP)
+     * @param localAddress   the server's local socket address (of THIS connection)
+     * @param defaultHost    the configured default host (container-internal IP);
+     *                       used only as a fallback, not for in-Docker clients
      * @param advertisedHost the advertised host for external clients (may be null)
      * @return the host address that the client can reach
      */
@@ -60,43 +71,47 @@ public final class NetworkUtils {
                 return fallbackHost(advertisedHost, defaultHost, localAddress);
             }
 
-            // When the broker is bound to the wildcard address (0.0.0.0 / ::), the
-            // local socket address carries no usable subnet information. This is the
-            // NORMAL case for a Netty server started with ServerBootstrap.bind(port)
-            // (no explicit host). The subnet check below would then fail and the
-            // function would fall back to the advertised host (e.g. "localhost"),
-            // which is UNREACHABLE from another container. For in-Docker clients we
-            // must return the server's real container address (defaultHost) instead.
-            if (isWildcardAddress(localBytes)) {
-                if (isLikelyGateway(remoteBytes) || isLoopback(remoteBytes)) {
-                    // External client reached us via the Docker gateway / NAT, or a
-                    // loopback client on the same host: the advertised host
-                    // (localhost for host port-mapping) is the reachable address.
-                    if (advertisedHost != null && !advertisedHost.isEmpty()) {
-                        return advertisedHost;
-                    }
-                    return defaultHost != null ? defaultHost
-                            : localAddress.getAddress().getHostAddress();
+            // External / NAT'd client reached us through the Docker gateway (remote
+            // is the gateway IP, last byte == 1) or a loopback client on the same
+            // host. In both cases the local address we see is the container-internal
+            // IP, which the client CANNOT reach directly, so we must return the
+            // advertised host (localhost / host IP) instead.
+            if (isLikelyGateway(remoteBytes) || isLoopback(remoteBytes)) {
+                if (advertisedHost != null && !advertisedHost.isEmpty()) {
+                    return advertisedHost;
                 }
-                // In-Docker client (another container on the same network): return
-                // the server's container-reachable address so the client reconnects
-                // to the broker, not to its own loopback.
+                // No advertised host configured: a loopback client CAN reach the
+                // local address; a gateway/NAT client cannot, but we have no better
+                // answer than the configured default host.
+                return isLoopback(remoteBytes)
+                        ? localAddress.getAddress().getHostAddress()
+                        : (defaultHost != null ? defaultHost : localAddress.getAddress().getHostAddress());
+            }
+
+            // Wildcard-bound server: the accepted connection's local address may
+            // carry no subnet info (0.0.0.0). For in-Docker clients fall back to
+            // the configured container IP (defaultHost) — this preserves the
+            // previous behaviour for that edge case.
+            if (isWildcardAddress(localBytes)) {
                 return defaultHost != null ? defaultHost
                         : localAddress.getAddress().getHostAddress();
             }
 
-            boolean sameSubnet = isSameSubnet(remoteBytes, localBytes);
-            boolean isPrivate = isPrivateSubnet(localBytes);
-
-            if (sameSubnet && isPrivate) {
-                if (isLikelyGateway(remoteBytes)) {
-                    if (advertisedHost != null && !advertisedHost.isEmpty()) {
-                        return advertisedHost;
-                    }
-                    return localAddress.getAddress().getHostAddress();
-                }
-                return defaultHost;
+            // In-Docker client (another container on a private subnet — same network
+            // or a different one the client can route to). The local address of THIS
+            // connection is the exact container IP the client connected to, so it is
+            // guaranteed reachable from the client. Return it instead of defaultHost,
+            // which may be a DIFFERENT interface IP of the server (e.g.
+            // InetAddress.getLocalHost() can pick an interface the client cannot
+            // route to). Returning the wrong interface IP is exactly what produced
+            // "connection timed out: ...:<port>" in multi-network Docker stacks.
+            if (isPrivateSubnet(remoteBytes)) {
+                return localAddress.getAddress().getHostAddress();
             }
+
+            // External client on a public address: the container IP is not reachable;
+            // use the advertised host (or defaultHost as a last resort).
+            return fallbackHost(advertisedHost, defaultHost, localAddress);
         } catch (Exception e) {
             // Fall through
         }

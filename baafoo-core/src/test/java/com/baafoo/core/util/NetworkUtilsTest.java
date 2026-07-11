@@ -88,13 +88,32 @@ public class NetworkUtilsTest {
     // --- resolveClientReachableHost ---
 
     @Test
-    public void testResolve_dockerInternalClient_returnsDefaultHost() throws Exception {
-        // Container client (172.19.0.5) talking to server (172.19.0.3)
-        InetSocketAddress remote = new InetSocketAddress(InetAddress.getByAddress(addr(172, 19, 0, 5)), 12345);
-        InetSocketAddress local = new InetSocketAddress(InetAddress.getByAddress(addr(172, 19, 0, 3)), 9003);
+    public void testResolve_dockerInternalClient_returnsLocalAddress() throws Exception {
+        // Regression guard for the multi-network Docker bug: the client reaches the
+        // server on interface 172.18.0.4 (local), but defaultHost is a DIFFERENT
+        // interface (172.19.0.3, e.g. from InetAddress.getLocalHost()). The client
+        // must reconnect to the local interface it used, NOT the unrelated
+        // defaultHost.
+        InetSocketAddress remote = new InetSocketAddress(InetAddress.getByAddress(addr(172, 18, 0, 5)), 12345);
+        InetSocketAddress local = new InetSocketAddress(InetAddress.getByAddress(addr(172, 18, 0, 4)), 9003);
 
         String result = NetworkUtils.resolveClientReachableHost(remote, local, "172.19.0.3", "localhost");
-        assertEquals("172.19.0.3", result);
+        assertEquals("172.18.0.4", result);
+    }
+
+    @Test
+    public void testResolve_multiNetwork_inDockerClient_returnsLocalInterfaceNotDefaultHost() throws Exception {
+        // Real CI failure scenario: server has two networks (172.18.0.x and
+        // 172.19.0.x). The client (on 172.18.0.0/16) connected via 172.18.0.4, but
+        // getLocalHost() resolved defaultHost to 172.19.0.3 (unreachable from the
+        // client). LOOKUP must return 172.18.0.4, not 172.19.0.3 and not localhost.
+        InetSocketAddress remote = new InetSocketAddress(InetAddress.getByAddress(addr(172, 18, 0, 5)), 12345);
+        InetSocketAddress local = new InetSocketAddress(InetAddress.getByAddress(addr(172, 18, 0, 4)), 9003);
+
+        String result = NetworkUtils.resolveClientReachableHost(remote, local, "172.19.0.3", "localhost");
+        assertEquals("172.18.0.4", result);
+        assertNotEquals("172.19.0.3", result);
+        assertNotEquals("localhost", result);
     }
 
     @Test

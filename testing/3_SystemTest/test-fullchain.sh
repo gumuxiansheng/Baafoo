@@ -824,13 +824,13 @@ echo "--- P: Pulsar ---"
 # On a fresh CI container the broker may still be binding (a transient cold-start
 # bind race in BaafooServer.startProtocolServers): the broker now retries
 # bind 3x/1s, but the agent may have already tried to connect and cached the
-# dead endpoint. Polling /api/status.brokers.pulsar ("up") AND a runner-side TCP
+# dead endpoint. Polling /api/status.data.brokers.pulsar ("up") AND a runner-side TCP
 # probe on the published port 9003 gives us a reliable readiness gate so P01/P02
 # only run once the broker is proven listening — eliminating the classic
 # "connection timed out: ...:9003" flake.
 #
 # We use TWO independent signals:
-#   1) /api/status (brokers.pulsar) — authoritative in-process signal; the server
+#   1) /api/status (.data.brokers.pulsar) — authoritative in-process signal; the server
 #      reports whether each protocol broker actually bound its port (or the
 #      failure cause). Requires jq for the dotted key.
 #   2) runner-side TCP probe on localhost:9003 (bash /dev/tcp) — a secondary
@@ -845,7 +845,7 @@ while [[ "$PULSAR_READY" != "true" && $broker_waited -lt $broker_max_wait ]]; do
     sleep 3
     broker_waited=$((broker_waited + 3))
     broker_status_json="$(curl -s --max-time 5 "$SERVER/__baafoo__/api/status" 2>/dev/null)"
-    pulsar_broker_state="$(echo "$broker_status_json" | jq -r '.brokers.pulsar // "unknown"' 2>/dev/null)"
+    pulsar_broker_state="$(echo "$broker_status_json" | jq -r '.data.brokers.pulsar // "unknown"' 2>/dev/null)"
     tcp_ok=false
     if timeout 3 bash -c 'exec 3<>/dev/tcp/localhost/9003' 2>/dev/null; then
         tcp_ok=true
