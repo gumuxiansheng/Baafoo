@@ -352,7 +352,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         AgentResolver.AgentInfo agentInfo = matchHelper.resolveAgent(ctx);
         EnvironmentMode mode = matchHelper.resolveMode(ctx);
         List<Rule> rules = matchHelper.filterRulesByEnvironment(storage.listRules(), agentInfo.environment);
-        boolean shouldRecord = (mode == EnvironmentMode.RECORD || mode == EnvironmentMode.RECORD_AND_STUB);
+        boolean shouldRecord = (mode == EnvironmentMode.RECORD || mode == EnvironmentMode.RECORD_AND_STUB || mode == EnvironmentMode.RECORD_ALL);
 
         KafkaFaultAggregation faults = new KafkaFaultAggregation();
         List<KafkaProduceCodec.ProduceTopicResult> results = new ArrayList<KafkaProduceCodec.ProduceTopicResult>();

@@ -189,7 +189,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
             // Re-decode the request bytes with the matched rule's charset for template/recording.
             String decodedPayload = decodeWithRuleCharset(data, result.getRule(), payload);
 
-            if (currentMode == EnvironmentMode.RECORD || currentMode == EnvironmentMode.RECORD_AND_STUB) {
+            if (currentMode == EnvironmentMode.RECORD || currentMode == EnvironmentMode.RECORD_AND_STUB || currentMode == EnvironmentMode.RECORD_ALL) {
                 RecordingEntry rec = RecordingHelper.buildFromStub(
                         result, "tcp", "127.0.0.1", 0, null, null,
                         Collections.<String, String>emptyMap(), decodedPayload);
@@ -473,7 +473,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                                 String agentEnvironment, String agentId, String agentIp,
                                 String payload) {
         EnvironmentMode currentMode = agentResolver.resolveEnvironmentMode(agentEnvironment);
-        if (currentMode == EnvironmentMode.RECORD || currentMode == EnvironmentMode.RECORD_AND_STUB) {
+        if (currentMode == EnvironmentMode.RECORD || currentMode == EnvironmentMode.RECORD_AND_STUB || currentMode == EnvironmentMode.RECORD_ALL) {
             RecordingEntry rec = RecordingHelper.buildFromStub(
                     rule, entry, "tcp", "127.0.0.1", 0, null, null,
                     Collections.<String, String>emptyMap(), payload);

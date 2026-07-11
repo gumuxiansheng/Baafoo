@@ -1605,7 +1605,12 @@ if [[ -n "$env_a_id_mx" ]]; then
         sleep "$MODE_SETTLE_WAIT"
 
         # Send traffic to real brokers (RECORD forwards + records)
-        if [[ "$tcp_echo_ready" -eq 1 ]]; then app_get "$APP_A/api/socket/bio?host=tcp-echo-server&port=9999" >/dev/null 2>&1; fi
+        # TCP: send to server:9001 (MockBroker port with a route) — agent intercepts,
+        #   finds route, starts stream-level recording. Server's TcpStubHandler also
+        #   records in RECORD mode (shouldRecord includes RECORD).
+        # Kafka/JMS/Pulsar: agent intercepts at API level, redirects to MockBroker,
+        #   which records in RECORD mode.
+        app_get "$APP_A/api/socket/bio?host=$TCP_HOST&port=$TCP_PORT" >/dev/null 2>&1
         if [[ "$kafka_ready" -eq 1 ]];   then app_get "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=mx-record-test&message=mx-kafka-rec" >/dev/null 2>&1; fi
         if [[ "$jms_ready" -eq 1 ]];     then app_get "$APP_A/api/jms/send?brokerUrl=tcp://jms-broker:61616&queueName=MX.RECORD.TEST&message=mx-jms-rec" >/dev/null 2>&1; fi
         if [[ "$pulsar_ready" -eq 1 ]];  then app_get "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/mx-record-test&message=mx-pulsar-rec" >/dev/null 2>&1; fi

@@ -1801,7 +1801,12 @@ if ($envAIdMx) {
         Start-Sleep -Seconds $MODE_SETTLE_WAIT
 
         # Send traffic to real brokers (RECORD forwards + records)
-        if ($tcpEchoReady) { $null = Invoke-AppGet "$APP_A/api/socket/bio?host=tcp-echo-server&port=9999" }
+        # TCP: send to server:9001 (MockBroker port with a route) — agent intercepts,
+        #   finds route, starts stream-level recording. Server's TcpStubHandler also
+        #   records in RECORD mode (shouldRecord includes RECORD).
+        # Kafka/JMS/Pulsar: agent intercepts at API level, redirects to MockBroker,
+        #   which records in RECORD mode.
+        $null = Invoke-AppGet "$APP_A/api/socket/bio?host=$TCP_HOST&port=$TCP_PORT"
         if ($kafkaReady)   { $null = Invoke-AppGet "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=mx-record-test&message=mx-kafka-rec" }
         if ($jmsReady)     { $null = Invoke-AppGet "$APP_A/api/jms/send?brokerUrl=tcp://jms-broker:61616&queueName=MX.RECORD.TEST&message=mx-jms-rec" }
         if ($pulsarReady)  { $null = Invoke-AppGet "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/mx-record-test&message=mx-pulsar-rec" }

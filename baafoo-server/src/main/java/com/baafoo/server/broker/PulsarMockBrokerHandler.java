@@ -297,7 +297,7 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
         log.info("Pulsar handleSend: agentInfo.env={}, mode={}, rulesCount={}, channelIp={}",
                 agentInfo.environment, mode, rules.size(),
                 ctx.channel().remoteAddress() != null ? ctx.channel().remoteAddress().toString() : "null");
-        boolean shouldRecord = (mode == EnvironmentMode.RECORD || mode == EnvironmentMode.RECORD_AND_STUB);
+        boolean shouldRecord = (mode == EnvironmentMode.RECORD || mode == EnvironmentMode.RECORD_AND_STUB || mode == EnvironmentMode.RECORD_ALL);
 
         MatchEngine.MatchResult m = matchHelper.match(rules, "pulsar", topic, bodyStr);
 

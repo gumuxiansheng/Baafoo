@@ -142,7 +142,7 @@ public class JmsRecordingPlugin implements ActiveMQServerPlugin {
             AgentResolver.AgentInfo info = resolver.resolveByIp(remoteIp);
             EnvironmentMode mode = resolver.resolveEnvironmentMode(info.environment);
 
-            if (mode != EnvironmentMode.RECORD && mode != EnvironmentMode.RECORD_AND_STUB) {
+            if (mode != EnvironmentMode.RECORD && mode != EnvironmentMode.RECORD_AND_STUB && mode != EnvironmentMode.RECORD_ALL) {
                 return;
             }
 

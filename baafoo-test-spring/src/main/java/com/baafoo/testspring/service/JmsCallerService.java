@@ -15,7 +15,8 @@ public class JmsCallerService {
 
     private static final Logger log = LoggerFactory.getLogger(JmsCallerService.class);
 
-    public Map<String, Object> sendMessage(String brokerUrl, String queueName, String message) {
+    public Map<String, Object> sendMessage(String brokerUrl, String queueName, String message,
+                                           String username, String password) {
         Map<String, Object> result = new LinkedHashMap<String, Object>();
         result.put("brokerUrl", brokerUrl);
         result.put("queueName", queueName);
@@ -27,7 +28,7 @@ public class JmsCallerService {
             result.put("actualBrokerUrl", actualUrl);
             result.put("intercepted", !actualUrl.equals(brokerUrl));
 
-            connection = factory.createConnection();
+            connection = factory.createConnection(username, password);
             connection.start();
 
             Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
@@ -54,7 +55,8 @@ public class JmsCallerService {
         return result;
     }
 
-    public Map<String, Object> receiveMessage(String brokerUrl, String queueName) {
+    public Map<String, Object> receiveMessage(String brokerUrl, String queueName,
+                                              String username, String password) {
         Map<String, Object> result = new LinkedHashMap<String, Object>();
         result.put("brokerUrl", brokerUrl);
         result.put("queueName", queueName);
@@ -66,7 +68,7 @@ public class JmsCallerService {
             result.put("actualBrokerUrl", actualUrl);
             result.put("intercepted", !actualUrl.equals(brokerUrl));
 
-            connection = factory.createConnection();
+            connection = factory.createConnection(username, password);
             connection.start();
 
             Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
