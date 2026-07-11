@@ -162,6 +162,41 @@ public class NetworkUtilsTest {
         assertEquals("192.168.1.1", result);
     }
 
+    // --- wildcard bind (production reality) ---
+
+    @Test
+    public void testResolve_wildcardBind_inDockerClient_returnsDefaultHost() throws Exception {
+        // Production reality: Netty binds to 0.0.0.0, so localAddress is wildcard.
+        // In-Docker client (app-env-a, 172.19.0.2) talking to the server container.
+        InetSocketAddress remote = new InetSocketAddress(InetAddress.getByAddress(addr(172, 19, 0, 2)), 12345);
+        InetSocketAddress local = new InetSocketAddress(InetAddress.getByAddress(addr(0, 0, 0, 0)), 9003);
+
+        String result = NetworkUtils.resolveClientReachableHost(remote, local, "172.19.0.3", "localhost");
+        // Must be the server's container IP, NOT "localhost" (which would be the
+        // client's OWN loopback and cause connection timeouts in Docker).
+        assertEquals("172.19.0.3", result);
+    }
+
+    @Test
+    public void testResolve_wildcardBind_gatewayClient_returnsAdvertisedHost() throws Exception {
+        // Wildcard bind, external client reached via the Docker gateway / NAT.
+        InetSocketAddress remote = new InetSocketAddress(InetAddress.getByAddress(addr(172, 19, 0, 1)), 12345);
+        InetSocketAddress local = new InetSocketAddress(InetAddress.getByAddress(addr(0, 0, 0, 0)), 9003);
+
+        String result = NetworkUtils.resolveClientReachableHost(remote, local, "172.19.0.3", "localhost");
+        assertEquals("localhost", result);
+    }
+
+    @Test
+    public void testResolve_wildcardBind_inDockerClient_noAdvertisedHost_returnsDefaultHost() throws Exception {
+        // Wildcard bind, in-Docker client, no advertisedHost configured.
+        InetSocketAddress remote = new InetSocketAddress(InetAddress.getByAddress(addr(172, 19, 0, 2)), 12345);
+        InetSocketAddress local = new InetSocketAddress(InetAddress.getByAddress(addr(0, 0, 0, 0)), 9003);
+
+        String result = NetworkUtils.resolveClientReachableHost(remote, local, "172.19.0.3", null);
+        assertEquals("172.19.0.3", result);
+    }
+
     // --- helper ---
 
     private static byte[] addr(int a, int b, int c, int d) {

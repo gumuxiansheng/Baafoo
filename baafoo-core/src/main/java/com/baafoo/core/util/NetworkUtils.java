@@ -57,7 +57,32 @@ public final class NetworkUtils {
 
             // Only handle IPv4
             if (remoteBytes.length != 4 || localBytes.length != 4) {
-                return fallbackHost(advertisedHost, localAddress);
+                return fallbackHost(advertisedHost, defaultHost, localAddress);
+            }
+
+            // When the broker is bound to the wildcard address (0.0.0.0 / ::), the
+            // local socket address carries no usable subnet information. This is the
+            // NORMAL case for a Netty server started with ServerBootstrap.bind(port)
+            // (no explicit host). The subnet check below would then fail and the
+            // function would fall back to the advertised host (e.g. "localhost"),
+            // which is UNREACHABLE from another container. For in-Docker clients we
+            // must return the server's real container address (defaultHost) instead.
+            if (isWildcardAddress(localBytes)) {
+                if (isLikelyGateway(remoteBytes) || isLoopback(remoteBytes)) {
+                    // External client reached us via the Docker gateway / NAT, or a
+                    // loopback client on the same host: the advertised host
+                    // (localhost for host port-mapping) is the reachable address.
+                    if (advertisedHost != null && !advertisedHost.isEmpty()) {
+                        return advertisedHost;
+                    }
+                    return defaultHost != null ? defaultHost
+                            : localAddress.getAddress().getHostAddress();
+                }
+                // In-Docker client (another container on the same network): return
+                // the server's container-reachable address so the client reconnects
+                // to the broker, not to its own loopback.
+                return defaultHost != null ? defaultHost
+                        : localAddress.getAddress().getHostAddress();
             }
 
             boolean sameSubnet = isSameSubnet(remoteBytes, localBytes);
@@ -75,7 +100,7 @@ public final class NetworkUtils {
         } catch (Exception e) {
             // Fall through
         }
-        return fallbackHost(advertisedHost, localAddress);
+        return fallbackHost(advertisedHost, defaultHost, localAddress);
     }
 
     /**
@@ -106,10 +131,42 @@ public final class NetworkUtils {
         return addr.length == 4 && (addr[3] & 0xFF) == 1;
     }
 
-    private static String fallbackHost(String advertisedHost, InetSocketAddress localAddress) {
+    private static String fallbackHost(String advertisedHost, String defaultHost, InetSocketAddress localAddress) {
         if (advertisedHost != null && !advertisedHost.isEmpty()) {
             return advertisedHost;
         }
+        // Prefer the server's real (container) address over the wildcard local
+        // address, which is unreachable from other containers.
+        if (defaultHost != null && !defaultHost.isEmpty()) {
+            return defaultHost;
+        }
         return localAddress != null ? localAddress.getAddress().getHostAddress() : "127.0.0.1";
+    }
+
+    /**
+     * True if the address is the IPv4/IPv6 wildcard (0.0.0.0 / ::).
+     * A Netty server started with {@code bind(port)} (no explicit host) binds to
+     * the wildcard address, so the local socket address carries no subnet info.
+     */
+    private static boolean isWildcardAddress(byte[] addr) {
+        if (addr == null) return false;
+        if (addr.length == 4) {
+            return addr[0] == 0 && addr[1] == 0 && addr[2] == 0 && addr[3] == 0;
+        }
+        if (addr.length == 16) {
+            for (byte b : addr) {
+                if (b != 0) return false;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * True if the address is IPv4 loopback (127.0.0.0/8).
+     */
+    private static boolean isLoopback(byte[] addr) {
+        if (addr == null || addr.length != 4) return false;
+        return (addr[0] & 0xFF) == 127;
     }
 }
