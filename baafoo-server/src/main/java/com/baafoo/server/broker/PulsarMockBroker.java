@@ -93,6 +93,7 @@ public class PulsarMockBroker {
                 .channel(io.netty.channel.socket.nio.NioServerSocketChannel.class)
                 .handler(new LoggingHandler(LogLevel.DEBUG))
                 .option(ChannelOption.SO_BACKLOG, 128)
+                .option(ChannelOption.SO_REUSEADDR, true)
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
@@ -106,6 +107,12 @@ public class PulsarMockBroker {
         serverChannel = b.bind(port).sync().channel();
         this.actualPort = ((java.net.InetSocketAddress) serverChannel.localAddress()).getPort();
         log.info("Pulsar Mock Broker started on port {}", actualPort);
+
+        // Self-connect verification: confirm the broker is actually accepting
+        // TCP connections on the bound port. This converts a silent bind/accept
+        // failure into a visible error so integration tests can tell the
+        // difference between "broker not listening" and "protocol handshake stall".
+        verifyListening(actualPort);
     }
 
     /**
@@ -115,6 +122,28 @@ public class PulsarMockBroker {
         if (serverChannel != null) {
             serverChannel.close();
             log.info("Pulsar Mock Broker stopped");
+        }
+    }
+
+    /**
+     * Verify the broker is actually accepting TCP connections on the given port.
+     * Opens a short-lived socket to 127.0.0.1:port and closes it. A successful
+     * connect proves the Netty acceptor is up; a failure is logged as an ERROR
+     * (not thrown) so the broker still starts but the problem is visible.
+     */
+    private void verifyListening(int port) {
+        java.net.Socket s = null;
+        try {
+            s = new java.net.Socket();
+            s.connect(new java.net.InetSocketAddress("127.0.0.1", port), 2000);
+            log.info("Pulsar Mock Broker self-connect OK on 127.0.0.1:{}", port);
+        } catch (Exception e) {
+            log.error("Pulsar Mock Broker self-connect FAILED on 127.0.0.1:{} — "
+                    + "broker may not be reachable from clients: {}", port, e.getMessage());
+        } finally {
+            if (s != null) {
+                try { s.close(); } catch (Exception ignore) { /* ignore */ }
+            }
         }
     }
 

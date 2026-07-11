@@ -461,7 +461,7 @@ for rule_file in "${rule_files[@]}"; do
 done
 write_ok "Rules registered (success=$registered, failed=$failed)"
 
-sleep 3
+sleep 5
 write_ok "Rules effective"
 
 # -----------------------------------------------------------------------------

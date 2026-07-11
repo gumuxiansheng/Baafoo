@@ -253,26 +253,46 @@ public class BaafooServer {
     }
 
     private void startProtocolServers() throws Exception {
+        // Each broker is started in its own try/catch so a failure in one
+        // (e.g. a port bind collision or protocol-handshake issue) is logged
+        // loudly instead of silently aborting the whole server startup —
+        // and does not prevent the other brokers from coming up.
+
         // Kafka uses the dedicated KafkaMockBroker with binary protocol parsing
         Integer kafkaPort = config.getPortForProtocol("kafka");
         if (kafkaPort > 0) {
-            kafkaBroker = new KafkaMockBroker(kafkaPort, storage, bossGroup, workerGroup, config.getMessagingAdvertisedHost());
-            kafkaBroker.start();
+            try {
+                kafkaBroker = new KafkaMockBroker(kafkaPort, storage, bossGroup, workerGroup, config.getMessagingAdvertisedHost());
+                kafkaBroker.start();
+            } catch (Exception e) {
+                log.error("Failed to start Kafka Mock Broker on port {}: {}", kafkaPort, e.getMessage(), e);
+                kafkaBroker = null;
+            }
         }
 
         // Pulsar uses the dedicated PulsarMockBroker with binary protocol parsing
         Integer pulsarPort = config.getPortForProtocol("pulsar");
         if (pulsarPort > 0) {
-            pulsarBroker = new PulsarMockBroker(pulsarPort, bossGroup, workerGroup, storage, config.getMessagingAdvertisedHost());
-            pulsarBroker.start();
+            try {
+                pulsarBroker = new PulsarMockBroker(pulsarPort, bossGroup, workerGroup, storage, config.getMessagingAdvertisedHost());
+                pulsarBroker.start();
+            } catch (Exception e) {
+                log.error("Failed to start Pulsar Mock Broker on port {}: {}", pulsarPort, e.getMessage(), e);
+                pulsarBroker = null;
+            }
         }
 
         // JMS uses the embedded Artemis broker with OpenWire protocol support
         Integer jmsPort = config.getPortForProtocol("jms");
         if (jmsPort != null && jmsPort > 0) {
-            jmsBroker = new JmsMockBroker(jmsPort, 3, storage);
-            jmsBroker.start();
-            jmsBroker.loadRules(storage.listRules());
+            try {
+                jmsBroker = new JmsMockBroker(jmsPort, 3, storage);
+                jmsBroker.start();
+                jmsBroker.loadRules(storage.listRules());
+            } catch (Exception e) {
+                log.error("Failed to start JMS Mock Broker on port {}: {}", jmsPort, e.getMessage(), e);
+                jmsBroker = null;
+            }
         }
     }
 

@@ -384,7 +384,7 @@ foreach ($ruleFile in $ruleFiles) {
 Write-OK "Rules registered (success=$registered, failed=$failed)"
 
 # Wait for rules to take effect
-Start-Sleep -Seconds 3
+Start-Sleep -Seconds 5
 Write-OK "Rules effective"
 
 # ==================== 5. Run test cases ====================
