@@ -1467,21 +1467,313 @@ else
     fi
 fi
 
-# -------------------- MX: Protocol x Mode coverage gaps --------------------
+# -------------------- MX: Protocol x Mode Matrix (real broker tests) --------------------
 echo ""
-echo "--- MX: Protocol x Mode Matrix (gap markers) ---"
+echo "--- MX: Protocol x Mode Matrix (real broker tests) ---"
+# HTTP is fully covered across all 5 modes (see H*/M* sections).
+# With real brokers now in Staging (Kafka, Artemis/JMS, TCP echo, Pulsar), we can
+# exercise PASSTHROUGH mode for TCP/Kafka/JMS/Pulsar. We switch staging-a to
+# PASSTHROUGH mode for these tests, then restore to STUB.
+# Pulsar RECORD/RECORD_ALL remain SKIP (recording pipeline verification TBD).
 
-mx_gaps=(
-    "tcp:passthrough"      "tcp:record"      "tcp:record-and-stub"  "tcp:record-all"
-    "kafka:passthrough"    "kafka:record"    "kafka:record-all"
-    "pulsar:passthrough"   "pulsar:record"   "pulsar:record-all"
-    "jms:passthrough"      "jms:record"      "jms:record-all"
-)
-for gap in "${mx_gaps[@]}"; do
-    proto="${gap%%:*}"
-    mode="${gap##*:}"
-    test_skip "MX: $proto x $mode not exercised (no real $proto broker in staging; only MockBroker STUB / RECORD_AND_STUB path driven)"
-done
+mx_env_switched=0
+envs_json_mx="$(api_get "environments")"
+env_a_id_mx="$(get_environment_id "$envs_json_mx" "staging-a")"
+
+if [[ -n "$env_a_id_mx" ]]; then
+    api_put "environments/$env_a_id_mx" '{"mode":"passthrough"}' >/dev/null
+    sleep "$MODE_SETTLE_WAIT"
+    mx_env_switched=1
+fi
+
+if [[ "$mx_env_switched" -eq 1 ]]; then
+    # Check broker availability
+    kafka_ready=0
+    jms_ready=0
+    tcp_echo_ready=0
+    pulsar_ready=0
+    kafka_health="$(docker inspect --format='{{.State.Health.Status}}' baafoo-staging-kafka 2>/dev/null)"
+    [[ "$kafka_health" == "healthy" ]] && kafka_ready=1
+    artemis_health="$(docker inspect --format='{{.State.Health.Status}}' baafoo-staging-artemis 2>/dev/null)"
+    [[ "$artemis_health" == "healthy" ]] && jms_ready=1
+    tcp_echo_state="$(docker inspect --format='{{.State.Status}}' baafoo-staging-tcp-echo 2>/dev/null)"
+    [[ "$tcp_echo_state" == "running" ]] && tcp_echo_ready=1
+    pulsar_health="$(docker inspect --format='{{.State.Health.Status}}' baafoo-staging-pulsar 2>/dev/null)"
+    [[ "$pulsar_health" == "healthy" ]] && pulsar_ready=1
+
+    # MX-TCP-PT: TCP PASSTHROUGH to tcp-echo-server:9999
+    if [[ "$tcp_echo_ready" -eq 1 ]]; then
+        resp="$(app_get "$APP_A/api/socket/bio?host=tcp-echo-server&port=9999")"
+        stubbed="$(get_json_value "$resp" "stubbed")"
+        connected="$(get_json_value "$resp" "connected")"
+        if [[ "$connected" == "true" && "$stubbed" != "true" ]]; then
+            test_pass "MX-TCP-PT: TCP PASSTHROUGH to real echo server (connected=true, not stubbed)"
+        elif [[ "$stubbed" == "true" ]]; then
+            test_fail "MX-TCP-PT: TCP PASSTHROUGH still stubbed (agent intercepting in PASSTHROUGH mode?)"
+        else
+            test_fail "MX-TCP-PT: TCP PASSTHROUGH (connected=$connected, stubbed=$stubbed, resp=${resp:0:240})"
+        fi
+    else
+        test_skip "MX-TCP-PT: TCP PASSTHROUGH (tcp-echo container not healthy)"
+    fi
+
+    # MX-KAFKA-PT: Kafka PASSTHROUGH to real kafka-broker:9092
+    if [[ "$kafka_ready" -eq 1 ]]; then
+        resp="$(app_get "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=mx-test-topic&message=mx-kafka-passthrough")"
+        sent="$(get_json_value "$resp" "sent")"
+        error="$(get_json_value "$resp" "error")"
+        if [[ "$sent" == "true" || (-z "$error" && "$resp" =~ sent) ]]; then
+            test_pass "MX-KAFKA-PT: Kafka PASSTHROUGH to real broker (message sent)"
+        elif [[ -n "$error" && "$error" =~ stubbed ]]; then
+            test_fail "MX-KAFKA-PT: Kafka PASSTHROUGH still stubbed (agent intercepting)"
+        else
+            if [[ ! "$resp" =~ \"stubbed\":true && ! "$resp" =~ \"error\" ]]; then
+                test_pass "MX-KAFKA-PT: Kafka PASSTHROUGH (resp indicates no stub: ${resp:0:240})"
+            else
+                test_fail "MX-KAFKA-PT: Kafka PASSTHROUGH (error=$error, resp=${resp:0:240})"
+            fi
+        fi
+    else
+        test_skip "MX-KAFKA-PT: Kafka PASSTHROUGH (kafka-broker container not healthy)"
+    fi
+
+    # MX-JMS-PT: JMS PASSTHROUGH to real artemis-broker:61616
+    if [[ "$jms_ready" -eq 1 ]]; then
+        resp="$(app_get "$APP_A/api/jms/send?brokerUrl=tcp://jms-broker:61616&queueName=MX.TEST.QUEUE&message=mx-jms-passthrough")"
+        sent="$(get_json_value "$resp" "sent")"
+        error="$(get_json_value "$resp" "error")"
+        if [[ "$sent" == "true" || (-z "$error" && "$resp" =~ sent) ]]; then
+            test_pass "MX-JMS-PT: JMS PASSTHROUGH to real Artemis broker (message sent)"
+        elif [[ -n "$error" && "$error" =~ stubbed ]]; then
+            test_fail "MX-JMS-PT: JMS PASSTHROUGH still stubbed (agent intercepting)"
+        else
+            if [[ ! "$resp" =~ \"stubbed\":true && ! "$resp" =~ \"error\" ]]; then
+                test_pass "MX-JMS-PT: JMS PASSTHROUGH (resp indicates no stub: ${resp:0:240})"
+            else
+                test_fail "MX-JMS-PT: JMS PASSTHROUGH (error=$error, resp=${resp:0:240})"
+            fi
+        fi
+    else
+        test_skip "MX-JMS-PT: JMS PASSTHROUGH (artemis-broker container not healthy)"
+    fi
+
+    # MX-PULSAR-PT: Pulsar PASSTHROUGH to real pulsar-broker:6650
+    if [[ "$pulsar_ready" -eq 1 ]]; then
+        resp="$(app_get "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/mx-test-topic&message=mx-pulsar-passthrough")"
+        success="$(get_json_value "$resp" "success")"
+        error="$(get_json_value "$resp" "error")"
+        if [[ "$success" == "true" ]]; then
+            test_pass "MX-PULSAR-PT: Pulsar PASSTHROUGH to real broker (message sent)"
+        elif [[ -n "$error" && "$error" =~ stubbed ]]; then
+            test_fail "MX-PULSAR-PT: Pulsar PASSTHROUGH still stubbed (agent intercepting)"
+        else
+            if [[ ! "$resp" =~ \"stubbed\":true && -z "$error" ]]; then
+                test_pass "MX-PULSAR-PT: Pulsar PASSTHROUGH (resp indicates no stub: ${resp:0:240})"
+            else
+                test_fail "MX-PULSAR-PT: Pulsar PASSTHROUGH (error=$error, resp=${resp:0:240})"
+            fi
+        fi
+    else
+        test_skip "MX-PULSAR-PT: Pulsar PASSTHROUGH (pulsar-broker container not healthy)"
+    fi
+else
+    echo "  WARN: Cannot switch to PASSTHROUGH — skipping MX real broker tests" >&2
+fi
+
+# Restore staging-a to STUB mode
+if [[ "$mx_env_switched" -eq 1 && -n "$env_a_id_mx" ]]; then
+    api_put "environments/$env_a_id_mx" '{"mode":"stub"}' >/dev/null
+    sleep "$MODE_SETTLE_WAIT"
+fi
+
+# -------------------- MX: RECORD mode (forward + record) --------------------
+echo ""
+echo "--- MX: RECORD mode (forward + record) ---"
+# RECORD mode: agent forwards to real backend AND records traffic.
+# Requires real brokers to be available (TCP echo, Kafka, JMS, Pulsar).
+
+mx_rec_ok=0
+rec_before_rec_count=0
+rec_after_rec_json=""
+rec_after_rec_count=0
+
+if [[ -n "$env_a_id_mx" ]]; then
+    rec_before_rec_json="$(api_get "recordings?limit=200")"
+    rec_before_rec_count=$(echo "$rec_before_rec_json" | grep -o '"id"' | wc -l)
+
+    if api_put "environments/$env_a_id_mx" '{"mode":"record"}' >/dev/null 2>&1; then
+        sleep "$MODE_SETTLE_WAIT"
+
+        # Send traffic to real brokers (RECORD forwards + records)
+        if [[ "$tcp_echo_ready" -eq 1 ]]; then app_get "$APP_A/api/socket/bio?host=tcp-echo-server&port=9999" >/dev/null 2>&1; fi
+        if [[ "$kafka_ready" -eq 1 ]];   then app_get "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=mx-record-test&message=mx-kafka-rec" >/dev/null 2>&1; fi
+        if [[ "$jms_ready" -eq 1 ]];     then app_get "$APP_A/api/jms/send?brokerUrl=tcp://jms-broker:61616&queueName=MX.RECORD.TEST&message=mx-jms-rec" >/dev/null 2>&1; fi
+        if [[ "$pulsar_ready" -eq 1 ]];  then app_get "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/mx-record-test&message=mx-pulsar-rec" >/dev/null 2>&1; fi
+
+        sleep 3
+        rec_after_rec_json="$(api_get "recordings?limit=200")"
+        rec_after_rec_count=$(echo "$rec_after_rec_json" | grep -o '"id"' | wc -l)
+        mx_rec_ok=1
+
+        # Restore to STUB
+        api_put "environments/$env_a_id_mx" '{"mode":"stub"}' >/dev/null 2>&1
+        sleep "$MODE_SETTLE_WAIT"
+    else
+        echo "  WARN: Failed to switch to RECORD mode" >&2
+    fi
+fi
+
+rec_increased=0
+[[ "$rec_after_rec_count" -gt "$rec_before_rec_count" ]] && rec_increased=1
+
+# MX-TCP-REC
+if [[ "$tcp_echo_ready" -ne 1 ]]; then
+    test_skip "MX-TCP-REC: (tcp broker not healthy)"
+elif [[ "$mx_rec_ok" -eq 1 && "$rec_increased" -eq 1 && "$rec_after_rec_json" =~ \"protocol\":\"tcp\" ]]; then
+    test_pass "MX-TCP-REC: TCP RECORD mode recording created (count $rec_before_rec_count->$rec_after_rec_count)"
+else
+    test_fail "MX-TCP-REC: TCP RECORD no recording (ok=$mx_rec_ok before=$rec_before_rec_count after=$rec_after_rec_count)"
+fi
+
+# MX-KAFKA-REC
+if [[ "$kafka_ready" -ne 1 ]]; then
+    test_skip "MX-KAFKA-REC: (kafka broker not healthy)"
+elif [[ "$mx_rec_ok" -eq 1 && "$rec_increased" -eq 1 && "$rec_after_rec_json" =~ \"protocol\":\"kafka\" ]]; then
+    test_pass "MX-KAFKA-REC: Kafka RECORD mode recording created (count $rec_before_rec_count->$rec_after_rec_count)"
+else
+    test_fail "MX-KAFKA-REC: Kafka RECORD no recording (ok=$mx_rec_ok before=$rec_before_rec_count after=$rec_after_rec_count)"
+fi
+
+# MX-JMS-REC
+if [[ "$jms_ready" -ne 1 ]]; then
+    test_skip "MX-JMS-REC: (jms broker not healthy)"
+elif [[ "$mx_rec_ok" -eq 1 && "$rec_increased" -eq 1 && "$rec_after_rec_json" =~ \"protocol\":\"jms\" ]]; then
+    test_pass "MX-JMS-REC: JMS RECORD mode recording created (count $rec_before_rec_count->$rec_after_rec_count)"
+else
+    test_fail "MX-JMS-REC: JMS RECORD no recording (ok=$mx_rec_ok before=$rec_before_rec_count after=$rec_after_rec_count)"
+fi
+
+# MX-PUL-REC
+if [[ "$pulsar_ready" -ne 1 ]]; then
+    test_skip "MX-PUL-REC: (pulsar broker not healthy)"
+elif [[ "$mx_rec_ok" -eq 1 && "$rec_increased" -eq 1 && "$rec_after_rec_json" =~ \"protocol\":\"pulsar\" ]]; then
+    test_pass "MX-PUL-REC: Pulsar RECORD mode recording created (count $rec_before_rec_count->$rec_after_rec_count)"
+else
+    test_fail "MX-PUL-REC: Pulsar RECORD no recording (ok=$mx_rec_ok before=$rec_before_rec_count after=$rec_after_rec_count)"
+fi
+
+# -------------------- MX: RECORD_ALL mode (stub + record all) --------------------
+echo ""
+echo "--- MX: RECORD_ALL mode (stub + record all) ---"
+# RECORD_ALL mode: MockBroker returns stub + records ALL traffic (including unmatched).
+# Does NOT require real brokers — agent intercepts MQ connections and routes to MockBroker.
+
+mx_rall_ok=0
+rec_before_rall_count=0
+rec_after_rall_json=""
+rec_after_rall_count=0
+
+if [[ -n "$env_a_id_mx" ]]; then
+    rec_before_rall_json="$(api_get "recordings?limit=200")"
+    rec_before_rall_count=$(echo "$rec_before_rall_json" | grep -o '"id"' | wc -l)
+
+    if api_put "environments/$env_a_id_mx" '{"mode":"record-all"}' >/dev/null 2>&1; then
+        sleep "$MODE_SETTLE_WAIT"
+
+        # Send MQ traffic — agent intercepts, MockBroker stubs + records all
+        app_get "$APP_A/api/socket/bio?host=$TCP_HOST&port=$TCP_PORT" >/dev/null 2>&1
+        app_get "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=baafoo-test-topic&message=mx-rall-kafka" >/dev/null 2>&1
+        app_get "$APP_A/api/jms/send?brokerUrl=tcp://jms-broker:61616&queueName=BAAFOO.TEST.QUEUE&message=mx-rall-jms" >/dev/null 2>&1
+        app_get "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-test-topic&message=mx-rall-pulsar" >/dev/null 2>&1
+
+        sleep 3
+        rec_after_rall_json="$(api_get "recordings?limit=200")"
+        rec_after_rall_count=$(echo "$rec_after_rall_json" | grep -o '"id"' | wc -l)
+        mx_rall_ok=1
+
+        # Restore to STUB
+        api_put "environments/$env_a_id_mx" '{"mode":"stub"}' >/dev/null 2>&1
+        sleep "$MODE_SETTLE_WAIT"
+    else
+        echo "  WARN: Failed to switch to RECORD_ALL mode" >&2
+    fi
+fi
+
+rec_rall_increased=0
+[[ "$rec_after_rall_count" -gt "$rec_before_rall_count" ]] && rec_rall_increased=1
+
+# MX-TCP-RALL
+if [[ "$mx_rall_ok" -eq 1 && "$rec_rall_increased" -eq 1 && "$rec_after_rall_json" =~ \"protocol\":\"tcp\" ]]; then
+    test_pass "MX-TCP-RALL: TCP RECORD_ALL mode recording created (count $rec_before_rall_count->$rec_after_rall_count)"
+else
+    test_fail "MX-TCP-RALL: TCP RECORD_ALL no recording (ok=$mx_rall_ok before=$rec_before_rall_count after=$rec_after_rall_count)"
+fi
+
+# MX-KAFKA-RALL
+if [[ "$mx_rall_ok" -eq 1 && "$rec_rall_increased" -eq 1 && "$rec_after_rall_json" =~ \"protocol\":\"kafka\" ]]; then
+    test_pass "MX-KAFKA-RALL: Kafka RECORD_ALL mode recording created (count $rec_before_rall_count->$rec_after_rall_count)"
+else
+    test_fail "MX-KAFKA-RALL: Kafka RECORD_ALL no recording (ok=$mx_rall_ok before=$rec_before_rall_count after=$rec_after_rall_count)"
+fi
+
+# MX-JMS-RALL
+if [[ "$mx_rall_ok" -eq 1 && "$rec_rall_increased" -eq 1 && "$rec_after_rall_json" =~ \"protocol\":\"jms\" ]]; then
+    test_pass "MX-JMS-RALL: JMS RECORD_ALL mode recording created (count $rec_before_rall_count->$rec_after_rall_count)"
+else
+    test_fail "MX-JMS-RALL: JMS RECORD_ALL no recording (ok=$mx_rall_ok before=$rec_before_rall_count after=$rec_after_rall_count)"
+fi
+
+# MX-PUL-RALL
+if [[ "$mx_rall_ok" -eq 1 && "$rec_rall_increased" -eq 1 && "$rec_after_rall_json" =~ \"protocol\":\"pulsar\" ]]; then
+    test_pass "MX-PUL-RALL: Pulsar RECORD_ALL mode recording created (count $rec_before_rall_count->$rec_after_rall_count)"
+else
+    test_fail "MX-PUL-RALL: Pulsar RECORD_ALL no recording (ok=$mx_rall_ok before=$rec_before_rall_count after=$rec_after_rall_count)"
+fi
+
+# -------------------- MX: TCP RECORD_AND_STUB (stub + record) --------------------
+echo ""
+echo "--- MX: TCP RECORD_AND_STUB (stub + record) ---"
+# RECORD_AND_STUB: MockBroker returns stub + records the interaction.
+# D section already covers Kafka/JMS/Pulsar under RECORD_AND_STUB — here we
+# fill the TCP gap.
+
+mx_ras_ok=0
+rec_before_ras_count=0
+rec_after_ras_json=""
+rec_after_ras_count=0
+ras_resp=""
+
+if [[ -n "$env_a_id_mx" ]]; then
+    rec_before_ras_json="$(api_get "recordings?limit=200")"
+    rec_before_ras_count=$(echo "$rec_before_ras_json" | grep -o '"id"' | wc -l)
+
+    if api_put "environments/$env_a_id_mx" '{"mode":"record-and-stub"}' >/dev/null 2>&1; then
+        sleep "$MODE_SETTLE_WAIT"
+
+        # Send TCP traffic to MockBroker (server:9001)
+        ras_resp="$(app_get "$APP_A/api/socket/bio?host=$TCP_HOST&port=$TCP_PORT")"
+
+        sleep 3
+        rec_after_ras_json="$(api_get "recordings?limit=200")"
+        rec_after_ras_count=$(echo "$rec_after_ras_json" | grep -o '"id"' | wc -l)
+        mx_ras_ok=1
+
+        # Restore to STUB
+        api_put "environments/$env_a_id_mx" '{"mode":"stub"}' >/dev/null 2>&1
+        sleep "$MODE_SETTLE_WAIT"
+    else
+        echo "  WARN: Failed to switch to RECORD_AND_STUB mode" >&2
+    fi
+fi
+
+rec_ras_increased=0
+[[ "$rec_after_ras_count" -gt "$rec_before_ras_count" ]] && rec_ras_increased=1
+
+if [[ "$mx_ras_ok" -eq 1 && "$rec_ras_increased" -eq 1 && "$rec_after_ras_json" =~ \"protocol\":\"tcp\" ]]; then
+    test_pass "MX-TCP-RAS: TCP RECORD_AND_STUB stub + recording (count $rec_before_ras_count->$rec_after_ras_count)"
+else
+    test_fail "MX-TCP-RAS: TCP RECORD_AND_STUB (ok=$mx_ras_ok before=$rec_before_ras_count after=$rec_after_ras_count)"
+fi
 
 # -----------------------------------------------------------------------------
 # 6. Summary report

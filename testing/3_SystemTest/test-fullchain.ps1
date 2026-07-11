@@ -1628,10 +1628,10 @@ try {
 Write-Host ""
 Write-Host "--- MX: Protocol x Mode Matrix (real broker tests) ---" -ForegroundColor White
 # HTTP is fully covered across all 5 modes (see H*/M* sections).
-# With real brokers now in Staging (Kafka, Artemis/JMS, TCP echo), we can
-# exercise PASSTHROUGH mode for TCP/Kafka/JMS. We switch staging-a to
+# With real brokers now in Staging (Kafka, Artemis/JMS, TCP echo, Pulsar), we can
+# exercise PASSTHROUGH mode for TCP/Kafka/JMS/Pulsar. We switch staging-a to
 # PASSTHROUGH mode for these tests, then restore to STUB.
-# Pulsar remains SKIP (no real Pulsar broker in Staging).
+# Pulsar RECORD/RECORD_ALL remain SKIP (recording pipeline verification TBD).
 
 # Switch staging-a to PASSTHROUGH for MX tests
 $mxEnvSwitched = $false
@@ -1652,6 +1652,7 @@ if ($mxEnvSwitched) {
     $kafkaReady = $false
     $jmsReady = $false
     $tcpEchoReady = $false
+    $pulsarReady = $false
     try {
         $kafkaHealth = & docker inspect --format='{{.State.Health.Status}}' baafoo-staging-kafka 2>$null
         if ($kafkaHealth -eq "healthy") { $kafkaReady = $true }
@@ -1663,6 +1664,10 @@ if ($mxEnvSwitched) {
     try {
         $tcpEchoState = & docker inspect --format='{{.State.Status}}' baafoo-staging-tcp-echo 2>$null
         if ($tcpEchoState -eq "running") { $tcpEchoReady = $true }
+    } catch {}
+    try {
+        $pulsarHealth = & docker inspect --format='{{.State.Health.Status}}' baafoo-staging-pulsar 2>$null
+        if ($pulsarHealth -eq "healthy") { $pulsarReady = $true }
     } catch {}
 
 
@@ -1737,6 +1742,30 @@ if ($jmsReady) {
     Test-Skip "MX-JMS-PT: JMS PASSTHROUGH (artemis-broker container not healthy)"
 }
 
+# MX-PULSAR-PT: Pulsar PASSTHROUGH — agent should let Pulsar connection through to real pulsar-broker:6650
+if ($pulsarReady) {
+    try {
+        $resp = Invoke-AppGet "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/mx-test-topic&message=mx-pulsar-passthrough"
+        $success = Get-JsonValue $resp "success"
+        $error = Get-JsonValue $resp "error"
+        if ($success -eq "true") {
+            Test-Pass "MX-PULSAR-PT: Pulsar PASSTHROUGH to real broker (message sent)"
+        } elseif ($error -and $error -match "stubbed") {
+            Test-Fail "MX-PULSAR-PT: Pulsar PASSTHROUGH still stubbed (agent intercepting)"
+        } else {
+            if ($resp -notmatch '"stubbed":true' -and $null -eq $error) {
+                Test-Pass "MX-PULSAR-PT: Pulsar PASSTHROUGH (resp indicates no stub: $(Format-RespShort $resp))"
+            } else {
+                Test-Fail "MX-PULSAR-PT: Pulsar PASSTHROUGH (error=$error, resp=$(Format-RespShort $resp))"
+            }
+        }
+    } catch {
+        Test-Fail "MX-PULSAR-PT: Pulsar PASSTHROUGH (error: $_)"
+    }
+} else {
+    Test-Skip "MX-PULSAR-PT: Pulsar PASSTHROUGH (pulsar-broker container not healthy)"
+}
+
 } else {
     Write-Host "  WARN: Cannot switch to PASSTHROUGH — skipping MX real broker tests" -ForegroundColor Yellow
 }
@@ -1751,26 +1780,161 @@ if ($mxEnvSwitched -and $envAIdMx) {
     }
 }
 
-# Pulsar — still no real broker in Staging, mark SKIP
-$mxPulsarGaps = @(
-    @{p="pulsar"; m="passthrough"},
-    @{p="pulsar"; m="record"},
-    @{p="pulsar"; m="record-all"}
-)
-foreach ($gap in $mxPulsarGaps) {
-    Test-Skip "MX: $($gap.p) x $($gap.m) not exercised (no real Pulsar broker in staging)"
+# -------------------- MX: RECORD mode (forward to real backend + record) --------------------
+Write-Host ""
+Write-Host "--- MX: RECORD mode (forward + record) ---" -ForegroundColor White
+# RECORD mode: agent forwards to real backend AND records traffic.
+# Requires real brokers to be available (TCP echo, Kafka, JMS, Pulsar).
+
+$mxRecOk = $false
+$recBeforeRecJson = ""
+$recAfterRecJson = ""
+$recBeforeRecCount = 0
+$recAfterRecCount = 0
+
+if ($envAIdMx) {
+    try {
+        $recBeforeRecJson = Invoke-ApiGet "recordings?limit=200"
+        $recBeforeRecCount = ([regex]::Matches($recBeforeRecJson, '"id"')).Count
+
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdMx" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"record"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+
+        # Send traffic to real brokers (RECORD forwards + records)
+        if ($tcpEchoReady) { $null = Invoke-AppGet "$APP_A/api/socket/bio?host=tcp-echo-server&port=9999" }
+        if ($kafkaReady)   { $null = Invoke-AppGet "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=mx-record-test&message=mx-kafka-rec" }
+        if ($jmsReady)     { $null = Invoke-AppGet "$APP_A/api/jms/send?brokerUrl=tcp://jms-broker:61616&queueName=MX.RECORD.TEST&message=mx-jms-rec" }
+        if ($pulsarReady)  { $null = Invoke-AppGet "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/mx-record-test&message=mx-pulsar-rec" }
+
+        Start-Sleep -Seconds 3
+        $recAfterRecJson = Invoke-ApiGet "recordings?limit=200"
+        $recAfterRecCount = ([regex]::Matches($recAfterRecJson, '"id"')).Count
+        $mxRecOk = $true
+
+        # Restore to STUB
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdMx" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+    } catch {
+        Write-Host "  WARN: RECORD mode failed: $_" -ForegroundColor Yellow
+        try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdMx" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null; Start-Sleep -Seconds $MODE_SETTLE_WAIT } catch {}
+    }
 }
 
-# TCP/Kafka/JMS RECORD and RECORD_ALL — these require the agent to capture
-# traffic in RECORD mode and store it. This needs the recording pipeline
-# verification which is more complex. Mark as best-effort SKIP for now.
-$mxRecordGaps = @(
-    @{p="tcp";    m="record"},          @{p="tcp";    m="record-and-stub"},  @{p="tcp";    m="record-all"},
-    @{p="kafka";  m="record"},          @{p="kafka";  m="record-all"},
-    @{p="jms";    m="record"},          @{p="jms";    m="record-all"}
+$recIncreased = $recAfterRecCount -gt $recBeforeRecCount
+$mxRecProtocols = @(
+    @{name="MX-TCP-REC";   proto="tcp";    ready=$tcpEchoReady},
+    @{name="MX-KAFKA-REC"; proto="kafka";  ready=$kafkaReady},
+    @{name="MX-JMS-REC";   proto="jms";    ready=$jmsReady},
+    @{name="MX-PUL-REC";   proto="pulsar"; ready=$pulsarReady}
 )
-foreach ($gap in $mxRecordGaps) {
-    Test-Skip "MX: $($gap.p) x $($gap.m) not exercised (recording pipeline verification TBD)"
+foreach ($p in $mxRecProtocols) {
+    if (-not $p.ready) {
+        Test-Skip "$($p.name): ($($p.proto) broker not healthy)"
+    } elseif ($mxRecOk -and $recIncreased -and $recAfterRecJson -match "`"protocol`":`"$($p.proto)`"") {
+        Test-Pass "$($p.name): $($p.proto) RECORD mode recording created (count $recBeforeRecCount->$recAfterRecCount)"
+    } else {
+        Test-Fail "$($p.name): $($p.proto) RECORD no recording (ok=$mxRecOk before=$recBeforeRecCount after=$recAfterRecCount)"
+    }
+}
+
+# -------------------- MX: RECORD_ALL mode (stub + record all traffic) --------------------
+Write-Host ""
+Write-Host "--- MX: RECORD_ALL mode (stub + record all) ---" -ForegroundColor White
+# RECORD_ALL mode: MockBroker returns stub + records ALL traffic (including unmatched).
+# Does NOT require real brokers — agent intercepts MQ connections and routes to MockBroker.
+
+$mxRallOk = $false
+$recBeforeRallJson = ""
+$recAfterRallJson = ""
+$recBeforeRallCount = 0
+$recAfterRallCount = 0
+
+if ($envAIdMx) {
+    try {
+        $recBeforeRallJson = Invoke-ApiGet "recordings?limit=200"
+        $recBeforeRallCount = ([regex]::Matches($recBeforeRallJson, '"id"')).Count
+
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdMx" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"record-all"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+
+        # Send MQ traffic — agent intercepts, MockBroker stubs + records all
+        $null = Invoke-AppGet "$APP_A/api/socket/bio?host=$TCP_HOST&port=$TCP_PORT"
+        $null = Invoke-AppGet "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=baafoo-test-topic&message=mx-rall-kafka"
+        $null = Invoke-AppGet "$APP_A/api/jms/send?brokerUrl=tcp://jms-broker:61616&queueName=BAAFOO.TEST.QUEUE&message=mx-rall-jms"
+        $null = Invoke-AppGet "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-test-topic&message=mx-rall-pulsar"
+
+        Start-Sleep -Seconds 3
+        $recAfterRallJson = Invoke-ApiGet "recordings?limit=200"
+        $recAfterRallCount = ([regex]::Matches($recAfterRallJson, '"id"')).Count
+        $mxRallOk = $true
+
+        # Restore to STUB
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdMx" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+    } catch {
+        Write-Host "  WARN: RECORD_ALL mode failed: $_" -ForegroundColor Yellow
+        try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdMx" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null; Start-Sleep -Seconds $MODE_SETTLE_WAIT } catch {}
+    }
+}
+
+$recRallIncreased = $recAfterRallCount -gt $recBeforeRallCount
+$mxRallProtocols = @(
+    @{name="MX-TCP-RALL";   proto="tcp"},
+    @{name="MX-KAFKA-RALL"; proto="kafka"},
+    @{name="MX-JMS-RALL";   proto="jms"},
+    @{name="MX-PUL-RALL";   proto="pulsar"}
+)
+foreach ($p in $mxRallProtocols) {
+    if ($mxRallOk -and $recRallIncreased -and $recAfterRallJson -match "`"protocol`":`"$($p.proto)`"") {
+        Test-Pass "$($p.name): $($p.proto) RECORD_ALL mode recording created (count $recBeforeRallCount->$recAfterRallCount)"
+    } else {
+        Test-Fail "$($p.name): $($p.proto) RECORD_ALL no recording (ok=$mxRallOk before=$recBeforeRallCount after=$recAfterRallCount)"
+    }
+}
+
+# -------------------- MX: TCP RECORD_AND_STUB (stub + record) --------------------
+Write-Host ""
+Write-Host "--- MX: TCP RECORD_AND_STUB (stub + record) ---" -ForegroundColor White
+# RECORD_AND_STUB: MockBroker returns stub + records the interaction.
+# D section already covers Kafka/JMS/Pulsar under RECORD_AND_STUB — here we
+# fill the TCP gap.
+
+$mxRasOk = $false
+$recBeforeRasCount = 0
+$recAfterRasJson = ""
+$recAfterRasCount = 0
+$rasResp = ""
+
+if ($envAIdMx) {
+    try {
+        $recBeforeRasJson = Invoke-ApiGet "recordings?limit=200"
+        $recBeforeRasCount = ([regex]::Matches($recBeforeRasJson, '"id"')).Count
+
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdMx" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"record-and-stub"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+
+        # Send TCP traffic to MockBroker (server:9001)
+        $rasResp = Invoke-AppGet "$APP_A/api/socket/bio?host=$TCP_HOST&port=$TCP_PORT"
+
+        Start-Sleep -Seconds 3
+        $recAfterRasJson = Invoke-ApiGet "recordings?limit=200"
+        $recAfterRasCount = ([regex]::Matches($recAfterRasJson, '"id"')).Count
+        $mxRasOk = $true
+
+        # Restore to STUB
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdMx" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+    } catch {
+        Write-Host "  WARN: RECORD_AND_STUB mode failed: $_" -ForegroundColor Yellow
+        try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdMx" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null; Start-Sleep -Seconds $MODE_SETTLE_WAIT } catch {}
+    }
+}
+
+$recRasIncreased = $recAfterRasCount -gt $recBeforeRasCount
+if ($mxRasOk -and $recRasIncreased -and $recAfterRasJson -match '"protocol":"tcp"') {
+    Test-Pass "MX-TCP-RAS: TCP RECORD_AND_STUB stub + recording (count $recBeforeRasCount->$recAfterRasCount)"
+} else {
+    Test-Fail "MX-TCP-RAS: TCP RECORD_AND_STUB (ok=$mxRasOk stubbed=$($rasResp -match 'stubbed') before=$recBeforeRasCount after=$recAfterRasCount)"
 }
 
 # ==================== 6. Summary report ====================

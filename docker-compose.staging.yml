@@ -219,6 +219,33 @@ services:
     restart: unless-stopped
 
   # =========================================================================
+  # Pulsar — 真实 broker（MX 矩阵 Pulsar PASSTHROUGH 验证）
+  # Agent 在 PASSTHROUGH 模式下放行原始连接，test-spring 连真实 Pulsar
+  # 发送/消费消息，验证 agent 不拦截。
+  # 镜像版本与 baafoo-server 的 PulsarProtocolCompatibilityTest 保持一致。
+  # =========================================================================
+  pulsar-broker:
+    image: apachepulsar/pulsar:2.10.4
+    container_name: baafoo-staging-pulsar
+    command: ["bin/pulsar", "standalone", "--no-functions-worker"]
+    networks:
+      baafoo-staging-net:
+        aliases:
+          - pulsar-broker
+    ports:
+      - "16650:6650"
+      - "18080:8080"
+    environment:
+      - PULSAR_PREFIX_advertisedAddress=localhost
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/admin/v2/brokers/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 40s
+    restart: unless-stopped
+
+  # =========================================================================
   # TCP Echo — 轻量 socat 容器（MX 矩阵 TCP PASSTHROUGH/RECORD 验证）
   # Agent 在 PASSTHROUGH 模式下放行 TCP 连接到此 echo 服务，
   # 验证 agent 不拦截且响应来自真实后端而非 MockBroker。

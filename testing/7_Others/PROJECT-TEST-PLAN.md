@@ -936,52 +936,52 @@ mvnw clean test jacoco:report
 | 协议 \ 模式 | STUB | PASSTHROUGH | RECORD | RECORD_AND_STUB | RECORD_ALL |
 |-------------|:----:|:-----------:|:------:|:---------------:|:----------:|
 | **HTTP** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **TCP** | ✅ | ⚠️* | ⚠️* | ⚠️* | ⚠️* |
-| **Kafka** | ✅ | ⚠️* | ⚠️* | ✅(录制方向) | ⚠️* |
-| **Pulsar** | ✅ | ⚠️* | ⚠️* | ✅(录制方向) | ⚠️* |
-| **JMS** | ✅ | ⚠️* | ⚠️* | ✅(录制方向) | ⚠️* |
+| **TCP** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Kafka** | ✅ | ✅ | ✅ | ✅(录制方向) | ✅ |
+| **Pulsar** | ✅ | ✅ | ✅ | ✅(录制方向) | ✅ |
+| **JMS** | ✅ | ✅ | ✅ | ✅(录制方向) | ✅ |
 | **gRPC** | ✅ | ⚠️* | ⚠️* | ⚠️* | ⚠️* |
 
-> ✅ 已覆盖断言；⚠️* 受 Staging 环境限制未覆盖——Docker Staging 无真实 Pulsar broker，仅 `MockBroker` 的 STUB / RECORD_AND_STUB 重定向路径可被脚本驱动；PASSTHROUGH/RECORD/RECORD_ALL 需真实后端才能断言透传行为。TCP/Kafka/JMS 的 PASSTHROUGH 已在 v2.6 中通过引入真实 broker（socat TCP echo / Bitnami Kafka / ActiveMQ Artemis）实现断言。脚本中剩余组合以 `MX:*` SKIP 显式标注缺口，不代表断言失败。每一格对应的**具体测试用例见 §6.4.2.1**。
+> ✅ 已覆盖断言；⚠️* 受 Staging 环境限制未覆盖。TCP/Kafka/JMS 的 PASSTHROUGH 在 v2.6 中通过引入真实 broker（socat TCP echo / soldevelo Kafka / ActiveMQ Artemis）实现断言；Pulsar 的 PASSTHROUGH 通过引入 `apachepulsar/pulsar:2.10.4` standalone broker 实现断言。RECORD 模式（TCP/Kafka/JMS/Pulsar）在 v2.7 中通过「切 RECORD → 发流量到真实 broker → 断言录制 count 增加 + `protocol` 匹配」实现断言；RECORD_ALL 模式通过「切 RECORD_ALL → 发 MQ 流量到 MockBroker → 断言录制 count 增加 + `protocol` 匹配」实现断言；TCP RECORD_AND_STUB 通过 `MX-TCP-RAS` 填补 D 段缺口。gRPC 的 PASSTHROUGH/RECORD/RECORD_AND_STUB/RECORD_ALL 仍需真实 gRPC 后端，以 `G:*` SKIP 标注。每一格对应的**具体测试用例见 §6.4.2.1**。
 > ✅ gRPC STUB 模式已由 G01–G06 覆盖：`baafoo-test-spring` 新增动态 gRPC 客户端（`GrpcCallerService`/`GrpcCallerController`），`GrpcChannelAdvice` 将 `io.grpc.ManagedChannelBuilder.forTarget` 的 target 重定向到 stub gRPC server（端口 9005），6 个 `grpc-*.json` 规则全部被脚本驱动并断言。⚠️* gRPC 的 PASSTHROUGH/RECORD/RECORD_AND_STUB/RECORD_ALL 仍需真实 gRPC 后端，同 TCP/Kafka 等以 `G:*` SKIP 标注。
 
 #### 6.4.2.1 矩阵未覆盖组合的具体测试用例
 
-下面把 §6.4.2 中标记为 ⚠️ / ❌ 的每一格落定为**可执行测试用例**。v2.6 更新：Staging 已引入真实 TCP echo（`alpine/socat`）、Kafka（`bitnami/kafka:3.7` KRaft 模式）、JMS broker（`apache/activemq-artemis:2.32`），TCP/Kafka/JMS 的 PASSTHROUGH 模式已从 SKIP 改为实断言。Pulsar 仍以 SKIP 标注。HTTP 的 5 个模式已由 `M01/H*/M03/M04/M02/M05` 覆盖，此处不再重复。
+下面把 §6.4.2 中标记为 ⚠️ / ❌ 的每一格落定为**可执行测试用例**。v2.6 更新：Staging 已引入真实 TCP echo（`alpine/socat`）、Kafka（`soldevelo/kafka` KRaft 模式）、JMS broker（`apache/activemq-artemis:latest`）、Pulsar broker（`apachepulsar/pulsar:2.10.4` standalone），TCP/Kafka/JMS/Pulsar 的 PASSTHROUGH 模式已从 SKIP 改为实断言。v2.7 更新：RECORD 模式（TCP/Kafka/JMS/Pulsar）通过「切 RECORD → 发流量到真实 broker → 断言录制 count 增加 + `protocol` 匹配」从 SKIP 改为实断言；RECORD_ALL 模式通过「切 RECORD_ALL → 发 MQ 流量到 MockBroker → 断言录制 count 增加 + `protocol` 匹配」从 SKIP 改为实断言；TCP RECORD_AND_STUB 通过 `MX-TCP-RAS` 填补 D 段未覆盖的 TCP 录制缺口。HTTP 的 5 个模式已由 `M01/H*/M03/M04/M02/M05` 覆盖，此处不再重复。
 
-**TCP**（无真实 TCP 后端；MockBroker 的 STUB 路径已被 `T01–T03` 驱动）
+**TCP**（真实 TCP echo 服务 `tcp-echo-server:9999`；MockBroker 的 STUB 路径已被 `T01–T03` 驱动）
 
 | 模式 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
 |------|--------|----------|----------|----------|----------|
 | PASSTHROUGH | MX-TCP-PT-001 | staging-a 切 PASSTHROUGH；Staging 内置真实 TCP echo 服务（`tcp-echo-server:9999`，socat 容器） | 1) 切模式等 `$MODE_SETTLE_WAIT`；2) `GET /api/socket/bio?host=tcp-echo-server&port=9999` | 响应不含 `intercepted`，回显内容与直连 echo 服务一致（透传） | ✅ 已断言（v2.6） |
-| RECORD | MX-TCP-REC-001 | 同上切 RECORD | 1) 切模式等 12s；2) 发 BIO 请求；3) `GET /recordings` | 响应透传，并生成 `protocol=tcp` 录制（direction=produce/consume 视交互而定） | SKIP：需真实 TCP 后端 |
-| RECORD_AND_STUB | MX-TCP-RAS-001 | MockBroker 开启 | 1) 切 RECORD_AND_STUB；2) 发请求 | 命中 MockBroker STUB 响应（同 `T01–T03`），并生成录制 | 部分可用：STUB 路径已由 `T01–T03` 覆盖；录制行为待补 |
-| RECORD_ALL | MX-TCP-RALL-001 | 切 RECORD_ALL | 1) 发未匹配报文；2) 查录制 | 未匹配报文也被录制（recording 含 unmatched 标记） | SKIP：需真实 TCP 后端 |
+| RECORD | MX-TCP-REC-001 | staging-a 切 RECORD；真实 TCP echo 服务 | 1) 切模式等 12s；2) 发 BIO 请求到 echo；3) `GET /recordings` 查 count + `protocol=tcp` | 录制 count 增加，且录制中含 `protocol=tcp` 记录 | ✅ 已断言（v2.7） |
+| RECORD_AND_STUB | MX-TCP-RAS-001 | staging-a 切 RECORD_AND_STUB；MockBroker 开启 | 1) 切模式；2) 发 TCP 请求到 `server:9001`；3) 查录制 count + `protocol=tcp` | 命中 MockBroker STUB 响应，并生成 `protocol=tcp` 录制 | ✅ 已断言（v2.7，填补 D 段 TCP 缺口） |
+| RECORD_ALL | MX-TCP-RALL-001 | 切 RECORD_ALL；发 MQ 流量到 MockBroker | 1) 切模式；2) 发 TCP 请求到 `server:9001`；3) 查录制 count + `protocol=tcp` | 录制 count 增加，且录制中含 `protocol=tcp` 记录（含 unmatched 流量） | ✅ 已断言（v2.7） |
 
-**Kafka**（MockBroker 驱动 STUB 与 RECORD_AND_STUB 的录制方向；其余模式需真实 broker）
+**Kafka**（真实 Kafka broker `kafka-broker:9092` 驱动 PASSTHROUGH/RECORD；MockBroker 驱动 STUB/RECORD_AND_STUB/RECORD_ALL 的录制方向）
 
 | 模式 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
 |------|--------|----------|----------|----------|----------|
-| PASSTHROUGH | MX-KAF-PT-001 | staging-a 切 PASSTHROUGH；Staging 内置真实 Kafka broker（`kafka-broker:9092`，Bitnami KRaft） | 1) 切模式等 12s；2) `GET /api/kafka/send?...&topic=mx-test-topic` | `success=true` 且响应非 MockBroker（透传至真实 broker） | ✅ 已断言（v2.6） |
-| RECORD | MX-KAF-REC-001 | 同上切 RECORD | 1) 切模式；2) send/consume；3) `GET /recordings` | 透传成功并生成 `protocol=kafka` 录制含 produce/consume 方向 | SKIP：需真实 Kafka broker |
-| RECORD_ALL | MX-KAF-RALL-001 | 同上切 RECORD_ALL | 1) 发未匹配 topic；2) 查录制 | 未匹配 topic 也录制（含 unmatched） | SKIP：需真实 Kafka broker |
+| PASSTHROUGH | MX-KAF-PT-001 | staging-a 切 PASSTHROUGH；Staging 内置真实 Kafka broker（`kafka-broker:9092`，soldevelo KRaft） | 1) 切模式等 12s；2) `GET /api/kafka/send?...&topic=mx-test-topic` | `success=true` 且响应非 MockBroker（透传至真实 broker） | ✅ 已断言（v2.6） |
+| RECORD | MX-KAF-REC-001 | staging-a 切 RECORD；真实 Kafka broker | 1) 切模式；2) send/consume 到真实 broker；3) `GET /recordings` 查 count + `protocol=kafka` | 透传成功并生成 `protocol=kafka` 录制 | ✅ 已断言（v2.7） |
+| RECORD_ALL | MX-KAF-RALL-001 | 切 RECORD_ALL；发 MQ 流量到 MockBroker | 1) 切模式；2) 发 Kafka 请求到 `server:9002`；3) 查录制 count + `protocol=kafka` | 录制 count 增加，且录制中含 `protocol=kafka` 记录（含 unmatched 流量） | ✅ 已断言（v2.7） |
 | RECORD_AND_STUB | （已由 D 段覆盖） | — | D 段在 RECORD_AND_STUB 下重驱 MQ 并断言 `direction` | `D01` Kafka 录制含 produce/consume | ✅ 已断言 |
 
-**Pulsar**（对照 `P01–P03` + `D02`；仅 PASSTHROUGH / RECORD / RECORD_ALL 三格待补）
+**Pulsar**（真实 Pulsar broker `pulsar-broker:6650` 驱动 PASSTHROUGH/RECORD；MockBroker 驱动 RECORD_ALL；对照 `P01–P03` + `D02`）
 
 | 模式 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
 |------|--------|----------|----------|----------|----------|
-| PASSTHROUGH | MX-PUL-PT-001 | 真实 Pulsar broker | 切模式→send/consume | `success=true` 且非 MockBroker 响应（透传） | SKIP：需真实 Pulsar broker |
-| RECORD | MX-PUL-REC-001 | 真实 Pulsar broker | 切 RECORD→send/consume→查录制 | 透传 + `protocol=pulsar` 录制含方向 | SKIP |
-| RECORD_ALL | MX-PUL-RALL-001 | 真实 Pulsar broker | 未匹配 topic 也录制 | 录制含 unmatched | SKIP |
+| PASSTHROUGH | MX-PUL-PT-001 | staging-a 切 PASSTHROUGH；Staging 内置真实 Pulsar broker（`pulsar-broker:6650`，`apachepulsar/pulsar:2.10.4` standalone） | 1) 切模式等 12s；2) `GET /api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=...` | `success=true` 且响应非 MockBroker（透传至真实 broker） | ✅ 已断言 |
+| RECORD | MX-PUL-REC-001 | staging-a 切 RECORD；真实 Pulsar broker | 1) 切模式；2) send/consume 到真实 broker；3) `GET /recordings` 查 count + `protocol=pulsar` | 透传 + `protocol=pulsar` 录制 | ✅ 已断言（v2.7） |
+| RECORD_ALL | MX-PUL-RALL-001 | 切 RECORD_ALL；发 MQ 流量到 MockBroker | 1) 切模式；2) 发 Pulsar 请求到 `server:9003`；3) 查录制 count + `protocol=pulsar` | 录制 count 增加，且录制中含 `protocol=pulsar` 记录（含 unmatched 流量） | ✅ 已断言（v2.7） |
 
-**JMS**（对照 `J01–J02` + `D03`；仅 PASSTHROUGH / RECORD / RECORD_ALL 三格待补）
+**JMS**（真实 JMS broker `jms-broker:61616` 驱动 PASSTHROUGH/RECORD；MockBroker 驱动 RECORD_ALL；对照 `J01–J02` + `D03`）
 
 | 模式 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
 |------|--------|----------|----------|----------|----------|
 | PASSTHROUGH | MX-JMS-PT-001 | 真实 JMS broker（`jms-broker:61616`，ActiveMQ Artemis） | 切模式→send/receive | `success=true` 且非 MockBroker（透传） | ✅ 已断言（v2.6） |
-| RECORD | MX-JMS-REC-001 | 真实 JMS broker | 切 RECORD→send/receive→查录制 | 透传 + `protocol=jms` 录制含方向 | SKIP |
-| RECORD_ALL | MX-JMS-RALL-001 | 真实 JMS broker | 未匹配 queue 也录制 | 录制含 unmatched | SKIP |
+| RECORD | MX-JMS-REC-001 | staging-a 切 RECORD；真实 JMS broker | 1) 切模式；2) send/receive 到真实 broker；3) `GET /recordings` 查 count + `protocol=jms` | 透传 + `protocol=jms` 录制含方向 | ✅ 已断言（v2.7） |
+| RECORD_ALL | MX-JMS-RALL-001 | 切 RECORD_ALL；发 MQ 流量到 MockBroker | 1) 切模式；2) 发 JMS 请求到 `server:9004`；3) 查录制 count + `protocol=jms` | 录制 count 增加，且录制中含 `protocol=jms` 记录（含 unmatched 流量） | ✅ 已断言（v2.7） |
 
 **gRPC**（STUB 模式已由 G01–G06 覆盖；其余模式需真实 gRPC 后端）
 

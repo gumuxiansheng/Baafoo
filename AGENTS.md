@@ -141,7 +141,7 @@ testing/
 | RU/RST: Undo & Reset | RU01, RST01 | Rule undo, reset-all-state counters |
 | OAPI: OpenAPI Import | OAPI01–OAPI02 | OpenAPI import preview + persist |
 | G: gRPC | G01–G06 | Unary (SayHello, SlowMethod, GetUser-error), server-streaming, client-streaming, bidi-streaming |
-| MX: Protocol×Mode Matrix | (12 skips) | Gap markers — no real MQ broker in staging, only STUB/RECORD_AND_STUB exercised |
+| MX: Protocol×Mode Matrix | 9 real tests | TCP/Kafka/JMS/Pulsar × PASSTHROUGH/RECORD/RECORD_ALL/RECORD_AND_STUB exercised against real brokers + MockBroker recording |
 
 ### Rule File Coverage (39 files)
 
