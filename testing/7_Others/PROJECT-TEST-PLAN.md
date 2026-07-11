@@ -1,4 +1,4 @@
-# Baafoo 项目完整测试计划
+﻿# Baafoo 项目完整测试计划
 
 **版本**: 2.0
 **日期**: 2026-06-29
@@ -941,12 +941,12 @@ mvnw clean test jacoco:report
 | **JMS** | ✅ | ⚠️* | ⚠️* | ✅(录制方向) | ⚠️* |
 | **gRPC** | ✅ | ⚠️* | ⚠️* | ⚠️* | ⚠️* |
 
-> ✅ 已覆盖断言；⚠️* 受 Staging 环境限制未覆盖——Docker Staging 无真实 TCP/Kafka/Pulsar/JMS broker，仅 `MockBroker` 的 STUB / RECORD_AND_STUB 重定向路径可被脚本驱动；PASSTHROUGH/RECORD/RECORD_ALL 需真实后端才能断言透传行为。脚本中这些组合以 `MX:*` SKIP 显式标注缺口，不代表断言失败。每一格对应的**具体测试用例见 §6.4.2.1**。
+> ✅ 已覆盖断言；⚠️* 受 Staging 环境限制未覆盖——Docker Staging 无真实 Pulsar broker，仅 `MockBroker` 的 STUB / RECORD_AND_STUB 重定向路径可被脚本驱动；PASSTHROUGH/RECORD/RECORD_ALL 需真实后端才能断言透传行为。TCP/Kafka/JMS 的 PASSTHROUGH 已在 v2.6 中通过引入真实 broker（socat TCP echo / Bitnami Kafka / ActiveMQ Artemis）实现断言。脚本中剩余组合以 `MX:*` SKIP 显式标注缺口，不代表断言失败。每一格对应的**具体测试用例见 §6.4.2.1**。
 > ✅ gRPC STUB 模式已由 G01–G06 覆盖：`baafoo-test-spring` 新增动态 gRPC 客户端（`GrpcCallerService`/`GrpcCallerController`），`GrpcChannelAdvice` 将 `io.grpc.ManagedChannelBuilder.forTarget` 的 target 重定向到 stub gRPC server（端口 9005），6 个 `grpc-*.json` 规则全部被脚本驱动并断言。⚠️* gRPC 的 PASSTHROUGH/RECORD/RECORD_AND_STUB/RECORD_ALL 仍需真实 gRPC 后端，同 TCP/Kafka 等以 `G:*` SKIP 标注。
 
 #### 6.4.2.1 矩阵未覆盖组合的具体测试用例
 
-下面把 §6.4.2 中标记为 ⚠️ / ❌ 的每一格落定为**可执行测试用例**。当前在 Docker Staging 中这些组合仍以 `MX:*` / `G:*` SKIP 显式跳过（脚本不谎报通过），但用例定义已就绪——一旦 Staging 补齐真实 broker 或 test-spring 增加对应客户端，即可把 SKIP 改为断言。HTTP 的 5 个模式已由 `M01/H*/M03/M04/M02/M05` 覆盖，此处不再重复。
+下面把 §6.4.2 中标记为 ⚠️ / ❌ 的每一格落定为**可执行测试用例**。v2.6 更新：Staging 已引入真实 TCP echo（`alpine/socat`）、Kafka（`bitnami/kafka:3.7` KRaft 模式）、JMS broker（`apache/activemq-artemis:2.32`），TCP/Kafka/JMS 的 PASSTHROUGH 模式已从 SKIP 改为实断言。Pulsar 仍以 SKIP 标注。HTTP 的 5 个模式已由 `M01/H*/M03/M04/M02/M05` 覆盖，此处不再重复。
 
 **TCP**（无真实 TCP 后端；MockBroker 的 STUB 路径已被 `T01–T03` 驱动）
 

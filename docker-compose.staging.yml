@@ -160,6 +160,82 @@ services:
     restart: unless-stopped
 
   # =========================================================================
+  # Kafka — 真实 broker（MX 矩阵 Kafka PASSTHROUGH/RECORD/RECORD_ALL 验证）
+  # Agent 在 PASSTHROUGH 模式下放行原始连接，test-spring 连真实 Kafka
+  # 发送/消费消息，验证 agent 不拦截且 RECORD 模式下正确录制。
+  # 使用 KRaft 模式（无需 ZooKeeper），轻量化。
+  # =========================================================================
+  kafka-broker:
+    image: bitnami/kafka:3.7-debian12
+    container_name: baafoo-staging-kafka
+    networks:
+      baafoo-staging-net:
+        aliases:
+          - kafka-broker
+    ports:
+      - "19092:9092"
+    environment:
+      # KRaft mode — no ZooKeeper needed
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka-broker:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka-broker:9092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    restart: unless-stopped
+
+  # =========================================================================
+  # ActiveMQ Artemis — 真实 JMS broker（MX 矩阵 JMS PASSTHROUGH/RECORD 验证）
+  # =========================================================================
+  artemis-broker:
+    image: apache/activemq-artemis:2.32-alpine
+    container_name: baafoo-staging-artemis
+    networks:
+      baafoo-staging-net:
+        aliases:
+          - artemis-broker
+          - jms-broker
+    ports:
+      - "16161:61616"
+    environment:
+      - ARTEMIS_USER=baafoo
+      - ARTEMIS_PASSWORD=baafoo
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8161/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    restart: unless-stopped
+
+  # =========================================================================
+  # TCP Echo — 轻量 socat 容器（MX 矩阵 TCP PASSTHROUGH/RECORD 验证）
+  # Agent 在 PASSTHROUGH 模式下放行 TCP 连接到此 echo 服务，
+  # 验证 agent 不拦截且响应来自真实后端而非 MockBroker。
+  # =========================================================================
+  tcp-echo:
+    image: alpine/socat:latest
+    container_name: baafoo-staging-tcp-echo
+    command: ["-d", "-d", "TCP-LISTEN:9999,reuseaddr,fork", "SYSTEM:cat"]
+    networks:
+      baafoo-staging-net:
+        aliases:
+          - tcp-echo-server
+    ports:
+      - "19999:9999"
+    restart: unless-stopped
+
+  # =========================================================================
   # Consul — 真实服务发现后端（H09 Consul 规则匹配 / PASSTHROUGH 验证）
   # 作为网络别名 consul-server 出现在 baafoo-staging-net，
   # 使 test-spring 请求 http://consul-server:8500/v1/... 在 STUB 模式下
