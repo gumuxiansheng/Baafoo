@@ -12,7 +12,7 @@ services:
   # Kafka Broker（真实 Kafka，用于 passthrough 模式对比测试）
   # =========================================================================
   kafka:
-    image: bitnami/kafka:3.6.1
+    image: soldevelo/kafka:3.6.1
     container_name: baafoo-enterprise-kafka
     networks:
       - baafoo-enterprise-net
