@@ -198,7 +198,7 @@ services:
   # ActiveMQ Artemis — 真实 JMS broker（MX 矩阵 JMS PASSTHROUGH/RECORD 验证）
   # =========================================================================
   artemis-broker:
-    image: apache/activemq-artemis:2.32-alpine
+    image: apache/activemq-artemis:latest
     container_name: baafoo-staging-artemis
     networks:
       baafoo-staging-net:
