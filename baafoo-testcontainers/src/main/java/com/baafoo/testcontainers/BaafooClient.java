@@ -50,11 +50,10 @@ public class BaafooClient {
 
     public List<Rule> listRules() {
         JsonNode node = doGet("/__baafoo__/api/rules", JsonNode.class);
-        JsonNode data = node != null ? node.get("data") : null;
-        if (data != null && data.has("items")) {
-            JsonNode items = data.get("items");
-            return MAPPER.convertValue(items,
-                    new TypeReference<List<Rule>>() {});
+        // doGet(JsonNode.class) returns the response "data" node, which for
+        // GET /rules (legacy, non-paginated mode) is the rules array itself.
+        if (node != null && node.isArray()) {
+            return MAPPER.convertValue(node, new TypeReference<List<Rule>>() {});
         }
         return Collections.emptyList();
     }
@@ -88,10 +87,10 @@ public class BaafooClient {
 
     public List<Environment> listEnvironments() {
         JsonNode node = doGet("/__baafoo__/api/environments", JsonNode.class);
-        JsonNode data = node != null ? node.get("data") : null;
-        if (data != null && data.isArray()) {
-            return MAPPER.convertValue(data,
-                    new TypeReference<List<Environment>>() {});
+        // doGet(JsonNode.class) returns the response "data" node, which for
+        // GET /environments is the environments array itself.
+        if (node != null && node.isArray()) {
+            return MAPPER.convertValue(node, new TypeReference<List<Environment>>() {});
         }
         return Collections.emptyList();
     }
@@ -124,10 +123,10 @@ public class BaafooClient {
 
     public List<SceneSet> listSceneSets() {
         JsonNode node = doGet("/__baafoo__/api/scenes", JsonNode.class);
-        JsonNode data = node != null ? node.get("data") : null;
-        if (data != null && data.isArray()) {
-            return MAPPER.convertValue(data,
-                    new TypeReference<List<SceneSet>>() {});
+        // doGet(JsonNode.class) returns the response "data" node, which for
+        // GET /scenes is the scene-sets array itself.
+        if (node != null && node.isArray()) {
+            return MAPPER.convertValue(node, new TypeReference<List<SceneSet>>() {});
         }
         return Collections.emptyList();
     }
