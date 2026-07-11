@@ -6,6 +6,7 @@
 
 **版本更新记录**：
 - v2.5 (2026-07-11): 新增 §6.4.5 多编码（Multi-charset）测试用例定义——CH01–CH03 三个全链路用例验证 `Rule.requestCharset` 请求侧 GBK 解码 + `ResponseEntry.charset` 响应侧 GBK 编码 + 模板渲染；扩展 test-spring 新增 `SocketCallerService.testBioSocketWithCharset` 与 `KafkaCallerService.sendMessageWithCharset`（用 `ByteArraySerializer` 保留原始 charset 字节）+ 对应 `/api/socket/bio-charset`、`/api/kafka/send-charset` 端点；新增 `tcp-charset-gbk.json`、`kafka-charset-gbk.json` 两个 GBK 规则文件；用例分组新增 `CH`(多编码/字符集)。
+- v2.6 (2026-07-11): P0 修复——C11 全局规则 priority 100→50 确保优先于环境 catch-all；PL01 日志获取从 docker logs 改为 API /api/agents pluginStatuses；MX 矩阵 PASSTHROUGH 补缺——docker-compose.staging.yml 新增 kafka-broker（Bitnami KRaft）、jms-broker（ActiveMQ Artemis）、tcp-echo-server（socat）三个真实 broker 容器，test-fullchain.ps1 中 MX-TCP/KAFKA/JMS-PT-001 从 SKIP 改为真实 PASSTHROUGH 断言（含 broker 健康检查与独立模式切换），Pulsar 仍 SKIP。
 - v2.4 (2026-07-08): 全链路测试 hermetic 化——移除全部公网 `http://httpbin.org` 依赖（~23 处），改为 Staging 内置 `real-backend` echo 端点（app-env-a 网络别名 + `BackendEchoController`），PASSTHROUGH/RECORD 的"真实后端"验证不再依赖公网，离线/公网抖动均可跑；测试脚本（ps1/sh/run-fullchain-tests.sh）导出 JUnit 兼容 `junit-report.xml`，并新增 `.github/workflows/system-test.yml` 接 GitHub Actions CI（上传 + test-reporter 发布）；规则注册改为 upsert 根治 PostgreSQL 卷 stale 规则，catch-all 规则 `staging-a-http` 现也由测试脚本统一管理。
 - v2.3 (2026-07-08): §6.4 不再只标注缺口——补写全部缺失用例的具体定义：§6.4.2.1 协议×模式矩阵 18 个未覆盖组合（TCP/Kafka/Pulsar/JMS 非 STUB 模式 + gRPC 全列）逐条用例；§6.4.3.1 已补充能力的逐步断言；§6.4.4 其余 P2 缺口（场景集/MCP/故障注入/Consul DNS/fail-open/继承环境/规则分页/优先级/多响应/tags）具体用例。每个缺口用例均含前置条件/步骤/预期/脚本状态。
 - v2.2 (2026-07-07): §6.4 全链路测试重构——补充协议×模式覆盖矩阵、断言红线（禁止 `|mocked` 兜底伪通过、失败态必须判 FAIL、计数器前置重置、模式切换等待）、规则集/录制管理/撤销重置/OpenAPI 导入用例；标注 gRPC 与真实 MQ broker 缺口
@@ -952,7 +953,7 @@ mvnw clean test jacoco:report
 
 | 模式 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
 |------|--------|----------|----------|----------|----------|
-| PASSTHROUGH | MX-TCP-PT-001 | staging-a 切 PASSTHROUGH；Staging 内置真实 TCP echo 服务（如 `server:9100`） | 1) 切模式等 `$MODE_SETTLE_WAIT`；2) `GET /api/socket/bio?host=server&port=9100` | 响应不含 `intercepted`，回显内容与直连 echo 服务一致（透传） | SKIP：需真实 TCP 后端 |
+| PASSTHROUGH | MX-TCP-PT-001 | staging-a 切 PASSTHROUGH；Staging 内置真实 TCP echo 服务（`tcp-echo-server:9999`，socat 容器） | 1) 切模式等 `$MODE_SETTLE_WAIT`；2) `GET /api/socket/bio?host=tcp-echo-server&port=9999` | 响应不含 `intercepted`，回显内容与直连 echo 服务一致（透传） | ✅ 已断言（v2.6） |
 | RECORD | MX-TCP-REC-001 | 同上切 RECORD | 1) 切模式等 12s；2) 发 BIO 请求；3) `GET /recordings` | 响应透传，并生成 `protocol=tcp` 录制（direction=produce/consume 视交互而定） | SKIP：需真实 TCP 后端 |
 | RECORD_AND_STUB | MX-TCP-RAS-001 | MockBroker 开启 | 1) 切 RECORD_AND_STUB；2) 发请求 | 命中 MockBroker STUB 响应（同 `T01–T03`），并生成录制 | 部分可用：STUB 路径已由 `T01–T03` 覆盖；录制行为待补 |
 | RECORD_ALL | MX-TCP-RALL-001 | 切 RECORD_ALL | 1) 发未匹配报文；2) 查录制 | 未匹配报文也被录制（recording 含 unmatched 标记） | SKIP：需真实 TCP 后端 |
@@ -961,7 +962,7 @@ mvnw clean test jacoco:report
 
 | 模式 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
 |------|--------|----------|----------|----------|----------|
-| PASSTHROUGH | MX-KAF-PT-001 | staging-a 切 PASSTHROUGH；Staging 内置真实 Kafka broker | 1) 切模式等 12s；2) `GET /api/kafka/send?...&topic=baafoo-test-topic` | `success=true` 且响应非 MockBroker（透传至真实 broker） | SKIP：需真实 Kafka broker |
+| PASSTHROUGH | MX-KAF-PT-001 | staging-a 切 PASSTHROUGH；Staging 内置真实 Kafka broker（`kafka-broker:9092`，Bitnami KRaft） | 1) 切模式等 12s；2) `GET /api/kafka/send?...&topic=mx-test-topic` | `success=true` 且响应非 MockBroker（透传至真实 broker） | ✅ 已断言（v2.6） |
 | RECORD | MX-KAF-REC-001 | 同上切 RECORD | 1) 切模式；2) send/consume；3) `GET /recordings` | 透传成功并生成 `protocol=kafka` 录制含 produce/consume 方向 | SKIP：需真实 Kafka broker |
 | RECORD_ALL | MX-KAF-RALL-001 | 同上切 RECORD_ALL | 1) 发未匹配 topic；2) 查录制 | 未匹配 topic 也录制（含 unmatched） | SKIP：需真实 Kafka broker |
 | RECORD_AND_STUB | （已由 D 段覆盖） | — | D 段在 RECORD_AND_STUB 下重驱 MQ 并断言 `direction` | `D01` Kafka 录制含 produce/consume | ✅ 已断言 |
@@ -978,7 +979,7 @@ mvnw clean test jacoco:report
 
 | 模式 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
 |------|--------|----------|----------|----------|----------|
-| PASSTHROUGH | MX-JMS-PT-001 | 真实 JMS broker | 切模式→send/receive | `success=true` 且非 MockBroker（透传） | SKIP：需真实 JMS broker |
+| PASSTHROUGH | MX-JMS-PT-001 | 真实 JMS broker（`jms-broker:61616`，ActiveMQ Artemis） | 切模式→send/receive | `success=true` 且非 MockBroker（透传） | ✅ 已断言（v2.6） |
 | RECORD | MX-JMS-REC-001 | 真实 JMS broker | 切 RECORD→send/receive→查录制 | 透传 + `protocol=jms` 录制含方向 | SKIP |
 | RECORD_ALL | MX-JMS-RALL-001 | 真实 JMS broker | 未匹配 queue 也录制 | 录制含 unmatched | SKIP |
 
