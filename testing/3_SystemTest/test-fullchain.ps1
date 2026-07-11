@@ -404,9 +404,26 @@ foreach ($ruleFile in $ruleFiles) {
 }
 Write-OK "Rules registered (success=$registered, failed=$failed)"
 
-# Wait for rules to take effect
-Start-Sleep -Seconds 5
-Write-OK "Rules effective"
+# Wait for the agent to actually load the freshly-registered rules before
+# driving protocol tests. The agent polls server:8084 every pollIntervalSec
+# (10s); a blind `Start-Sleep 5` could start tests before the first
+# post-registration poll, leaving HTTP/Pulsar unintercepted. Poll the canonical
+# GET rule until intercepted (stubbed:true), max ~60s.
+Write-Host "  Waiting for agent (staging-a) to load rules..."
+$agentReady = $false
+$probeWaited = 0
+$probeMaxWait = 60
+while (-not $agentReady -and $probeWaited -lt $probeMaxWait) {
+    Start-Sleep -Seconds 2
+    $probeWaited += 2
+    $pr = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/get"
+    if ((Get-JsonValue $pr "stubbed") -eq "true") { $agentReady = $true }
+}
+if ($agentReady) {
+    Write-OK "Agent loaded rules (HTTP GET intercepted after ${probeWaited}s)"
+} else {
+    Write-Warn "Agent did not load rules within ${probeMaxWait}s — continuing, but protocol tests may fail"
+}
 
 # ==================== 5. Run test cases ====================
 Write-Step "5/6: Run full-chain test cases"

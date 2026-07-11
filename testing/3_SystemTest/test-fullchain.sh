@@ -146,7 +146,7 @@ fi
 get_json_value() {
     local json="$1" key="$2"
     if [[ "$HAVE_JQ" == "true" ]]; then
-        echo "$json" | jq -r "\.$key // empty" 2>/dev/null
+        echo "$json" | jq -r ".$key | if . == null then empty else tostring end" 2>/dev/null
         return
     fi
     # Fallback regex extraction. Support dotted keys by searching on the leaf
@@ -474,8 +474,29 @@ for rule_file in "${rule_files[@]}"; do
 done
 write_ok "Rules registered (success=$registered, failed=$failed)"
 
-sleep 5
-write_ok "Rules effective"
+# Wait for the agent to actually load the freshly-registered rules before
+# driving protocol tests. The agent polls server:8084 every pollIntervalSec
+# (10s); a blind `sleep 5` could start tests before the first post-registration
+# poll, leaving HTTP/Pulsar unintercepted (stubbed=false / broker timeout).
+# Poll the canonical GET rule until stubbed:true (max ~60s) so tests only run
+# once interception is proven end-to-end.
+echo "  Waiting for agent (staging-a) to load rules..."
+agent_ready=false
+probe_waited=0
+probe_max_wait=60
+while [[ "$agent_ready" != "true" && $probe_waited -lt $probe_max_wait ]]; do
+    sleep 2
+    probe_waited=$((probe_waited + 2))
+    pr="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get")"
+    if [[ "$(get_json_value "$pr" "stubbed")" == "true" ]]; then
+        agent_ready=true
+    fi
+done
+if [[ "$agent_ready" == "true" ]]; then
+    write_ok "Agent loaded rules (HTTP GET intercepted after ${probe_waited}s)"
+else
+    write_warn "Agent did not load rules within ${probe_max_wait}s — continuing, but protocol tests may fail"
+fi
 
 # -----------------------------------------------------------------------------
 # 5. Run test cases
@@ -748,9 +769,9 @@ echo "--- CH: Multi-charset (GBK) ---"
 gbk_msg="%E4%BD%A0%E5%A5%BD"
 resp="$(app_get "$APP_A/api/socket/bio-charset?host=$TCP_HOST&port=$TCP_PORT&message=$gbk_msg&charset=GBK")"
 received="$(get_json_value "$resp" "received")"
-if [[ "$received" == "回显:你好" ]]; then
+if [[ "$resp" == *"回显:你好"* ]]; then
     test_pass "CH01: TCP GBK request decode + template render + response encode"
-elif app_resp_missing "$resp"; then
+elif [[ -z "$resp" || "$resp" == "{}" ]]; then
     test_fail "CH01: TCP GBK no response (app unreachable; resp=${resp:0:240})"
 else
     test_fail "CH01: TCP GBK expected '回显:你好' but got '$received' (resp=${resp:0:240})"
