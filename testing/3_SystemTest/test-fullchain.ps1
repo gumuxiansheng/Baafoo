@@ -1137,55 +1137,10 @@ try {
     Test-Skip "AS03: RuleSet delete (error: $_)"
 }
 
-# AS04: Update rule set (rename + change ruleIds)
-$updateSetBody = @{
-    name = "Test RuleSet Updated"
-    description = "Updated description"
-    ruleIds = @("staging-a-http-get", "staging-a-http-post")
-    enabled = $true
-} | ConvertTo-Json -Depth 4
-try {
-    # Re-create if AS03 already deleted
-    try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rulesets" -Method Post -ContentType "application/json" -Headers $headers -Body $setBody -ErrorAction Stop | Out-Null } catch {}
-    $updateSet = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rulesets/$testSetId" -Method Put -ContentType "application/json" -Headers $headers -Body $updateSetBody -ErrorAction Stop
-    if ($updateSet.success -eq $true) {
-        Test-Pass "AS04: RuleSet updated"
-    } else {
-        Test-Skip "AS04: RuleSet update (response: $updateSet)"
-    }
-} catch {
-    Test-Skip "AS04: RuleSet update (error: $_)"
-}
-
-# AS05: Disable rule set (enabled=false)
-try {
-    $disableSet = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rulesets/$testSetId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"enabled":false}' -ErrorAction Stop
-    if ($disableSet.success -eq $true) {
-        $setDetail = Invoke-ApiGet "rulesets/$testSetId"
-        $enabledVal = if ($setDetail -match '"enabled"\s*:\s*(true|false)') { $matches[1] } else { $null }
-        if ($enabledVal -eq "false") {
-            Test-Pass "AS05: RuleSet disabled (enabled=false)"
-        } else {
-            Test-Fail "AS05: RuleSet disable did not take effect (enabled=$enabledVal)"
-        }
-    } else {
-        Test-Skip "AS05: RuleSet disable (response: $disableSet)"
-    }
-} catch {
-    Test-Skip "AS05: RuleSet disable (error: $_)"
-}
-
-# AS06: Re-enable rule set (enabled=true)
-try {
-    $enableSet = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rulesets/$testSetId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"enabled":true}' -ErrorAction Stop
-    if ($enableSet.success -eq $true) {
-        Test-Pass "AS06: RuleSet re-enabled (enabled=true)"
-    } else {
-        Test-Skip "AS06: RuleSet re-enable (response: $enableSet)"
-    }
-} catch {
-    Test-Skip "AS06: RuleSet re-enable (error: $_)"
-}
+# AS04-AS06 (RuleSet update/disable/re-enable) removed: server does not
+# implement PUT /rulesets/{id}. The handler at RuleApiHandler.java only
+# supports POST/GET/DELETE for rulesets. These tests always 404'd and were
+# skipped — removed to keep the test suite honest.
 
 # Clean up the rule set created for testing
 try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rulesets/$testSetId" -Method Delete -Headers $headers -ErrorAction Stop | Out-Null } catch {}
@@ -1235,12 +1190,15 @@ if ($recListItems -and $recListItems.Count -gt 0) {
 Write-Host ""
 Write-Host "--- RU/RST: Undo & Reset ---" -ForegroundColor White
 
-# RU01: rule undo — modify a rule then revert via undo
+# RU01: rule undo — modify a rule then revert via undo.
+# Note: Rule model has no `description` field; use `name` (which is mutable and
+# restored by undo) as the edit target.
 $ruRuleId = "staging-a-http-get"
 try {
     $orig = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/$ruRuleId" -Method Get -Headers $headers -ErrorAction Stop
     $updated = $orig.data
-    $updated.description = "temp-edited-for-undo-test"
+    $origName = $updated.name
+    $updated.name = "temp-edited-for-undo-test"
     Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/$ruRuleId" -Method Put -ContentType "application/json" -Headers $headers -Body ($updated | ConvertTo-Json -Depth 10) -ErrorAction Stop | Out-Null
     $undo = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/$ruRuleId/undo" -Method Post -Headers $headers -ErrorAction Stop
     if ($undo.success -eq $true) { Test-Pass "RU01: rule undo successful" }

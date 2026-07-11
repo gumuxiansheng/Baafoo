@@ -912,46 +912,10 @@ sets_json_after="$(api_get "rulesets")"
 if [[ ! "$sets_json_after" =~ "$test_set_id" ]]; then test_pass "AS03: RuleSet deleted"
 else test_fail "AS03: RuleSet still present after delete (resp: $sets_json_after)"; fi
 
-# AS04: Update rule set (rename + change ruleIds)
-update_set_body='{"name":"Test RuleSet Updated","description":"Updated description","ruleIds":["staging-a-http-get","staging-a-http-post"],"enabled":true}'
-update_set="$(api_put "rulesets/$test_set_id" "$update_set_body")"
-# Re-create if AS03 already deleted (defensive)
-if [[ ! "$update_set" =~ success ]]; then
-    api_post "rulesets" "$set_body" >/dev/null 2>&1
-    update_set="$(api_put "rulesets/$test_set_id" "$update_set_body")"
-fi
-if [[ "$update_set" =~ \"success\"[[:space:]]*:[[:space:]]*true ]]; then
-    test_pass "AS04: RuleSet updated"
-else
-    test_skip "AS04: RuleSet update (response: $update_set)"
-fi
-
-# AS05: Disable rule set (enabled=false)
-disable_set="$(api_put "rulesets/$test_set_id" '{"enabled":false}')"
-if [[ "$disable_set" =~ \"success\"[[:space:]]*:[[:space:]]*true ]]; then
-    # Verify disabled state
-    set_detail="$(api_get "rulesets/$test_set_id")"
-    if [[ "$HAVE_JQ" == "true" ]]; then
-        enabled_val="$(echo "$set_detail" | jq -r '.data.enabled // empty' 2>/dev/null)"
-    else
-        if [[ "$set_detail" =~ \"enabled\"[[:space:]]*:[[:space:]]*(true|false) ]]; then enabled_val="${BASH_REMATCH[1]}"; fi
-    fi
-    if [[ "$enabled_val" == "false" ]]; then
-        test_pass "AS05: RuleSet disabled (enabled=false)"
-    else
-        test_fail "AS05: RuleSet disable did not take effect (enabled=$enabled_val)"
-    fi
-else
-    test_skip "AS05: RuleSet disable (response: $disable_set)"
-fi
-
-# AS06: Re-enable rule set (enabled=true)
-enable_set="$(api_put "rulesets/$test_set_id" '{"enabled":true}')"
-if [[ "$enable_set" =~ \"success\"[[:space:]]*:[[:space:]]*true ]]; then
-    test_pass "AS06: RuleSet re-enabled (enabled=true)"
-else
-    test_skip "AS06: RuleSet re-enable (response: $enable_set)"
-fi
+# AS04-AS06 (RuleSet update/disable/re-enable) removed: server does not
+# implement PUT /rulesets/{id}. The handler at RuleApiHandler.java only
+# supports POST/GET/DELETE for rulesets. These tests always 404'd and were
+# skipped — removed to keep the test suite honest.
 
 # Clean up the rule set created for testing
 api_delete "rulesets/$test_set_id" >/dev/null 2>&1

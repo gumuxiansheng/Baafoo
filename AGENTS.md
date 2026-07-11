@@ -99,43 +99,56 @@ Integration test assets live in `testing/`:
 
 ```
 testing/
-  deploy/staging/       # Agent & Server config for Docker staging env
-  test-rules/           # 31 JSON rule files covering all protocols, condition types, operators, and environment modes
-    rules/              # Individual rule JSON files
-    register-rules.ps1  # PowerShell script to register all rules via API
-    register-all.sh     # Bash equivalent
-  tmp/                  # Scratch dir for test runs (gitignored, never commit)
-  TEST-MANUAL.md        # Full test manual (architecture, matrix, steps, acceptance criteria)
-  TEST-REPORT.md        # Latest test report
-  test-fullchain.ps1    # Full-chain integration test (48 test cases, Docker-based)
-  test-integration.ps1  # End-to-end integration test script
-  fix-env.sql           # SQL fix for environment data
+  1_UnitTest/                  # Mutation testing tooling
+  2_IntegrationTest/           # Integration test scripts + rule JSON files
+    rules/                     # 37 JSON rule files (all protocols, condition types, modes)
+    register-rules.ps1         # PowerShell script to register all rules via API
+    register-all.sh            # Bash equivalent
+    test-integration.ps1/.sh   # End-to-end integration test script
+  3_SystemTest/                # Full-chain system test (Docker staging)
+    test-fullchain.ps1         # Full-chain integration test (88 test cases, Docker-based)
+    test-fullchain.sh          # Bash equivalent
+    TEST-MANUAL.md             # Full test manual (architecture, matrix, steps, acceptance criteria)
+    TEST-REPORT.md             # Latest test report
+    junit-report.xml           # JUnit XML output for CI
+  4_E2ETest/                   # Enterprise end-to-end tests (Kafka, PetClinic, SCA)
+  6_UITest/                    # Playwright UI tests
+  7_Others/                    # Test plan, coverage review, other docs
+    tmp/                       # Scratch dir for test runs (gitignored, never commit)
+    PROJECT-TEST-PLAN.md       # Master test plan
 ```
 
-### Test Categories (48 cases in test-fullchain.ps1)
+### Test Categories (88 cases in test-fullchain.ps1)
 
 | Category | IDs | Description |
 |----------|-----|-------------|
-| F: Framework | F01–F04 | Health check, DB, rule registration, environment setup |
-| H: HTTP | H01–H09 | GET/POST stub, error code, delay, proxy, GraphQL, Feign plugin |
-| G: gRPC | G01–G04 | gRPC Unary stub, service/method matching, grpc-status, delay |
-| T: TCP | T01–T03 | TCP stub, NIO (skip), multi-round |
-| K: Kafka | K01–K03 | Kafka produce/consume, header condition |
+| F: Core | F01–F05 | Health check, DB, rule registration, env-a/b health |
+| A: API Security & CRUD | A01–A07 | API key auth, rule/environment CRUD |
+| H: HTTP | H01–H09 | GET/POST/PUT/DELETE stub, delay, error, GraphQL, request-count, Consul |
+| T: TCP | T01–T03 | TCP BIO stub, NIO socket, multi-round |
+| K: Kafka | K01–K03 | Kafka produce/consume, wildcard topic |
 | P: Pulsar | P01–P03 | Pulsar produce/consume, wildcard topic |
-| J: JMS | J01–J02 | JMS produce/consume |
-| D: Direction | D01–D03 | MQ direction annotation (Kafka/JMS skip, Pulsar) |
-| PL: Plugin | PL01–PL03 | Plugin SPI load, status, Feign functional test |
+| J: JMS | J01–J02 | JMS queue produce/consume |
 | E: Environment | E01–E02 | Environment isolation (staging-a vs staging-b) |
+| PL: Plugin | PL01–PL03 | Plugin SPI load, agent heartbeat, Feign functional test |
+| R: Recording | R01–R03 | Recording list has data, direction/ruleName fields |
+| D: MQ Direction | D01–D03 | Kafka/JMS/Pulsar recording has produce/consume direction |
 | C: Condition Types | C01–C10 | header/query/body/bodyJsonPath/contains/endsWith/regex/exists/caseInsensitive/disabled |
 | M: Environment Modes | M01–M05 | STUB/PASSTHROUGH/RECORD/RECORD_AND_STUB/RECORD_ALL |
+| AS: RuleSet | AS01–AS03 | RuleSet create/list/delete (PUT update/disable not implemented server-side) |
+| REC: Recording Mgmt | REC-PAGE, REC-DEL | Recording pagination, deletion |
+| RU/RST: Undo & Reset | RU01, RST01 | Rule undo, reset-all-state counters |
+| OAPI: OpenAPI Import | OAPI01–OAPI02 | OpenAPI import preview + persist |
+| G: gRPC | G01–G06 | Unary (SayHello, SlowMethod, GetUser-error), server-streaming, client-streaming, bidi-streaming |
+| MX: Protocol×Mode Matrix | (12 skips) | Gap markers — no real MQ broker in staging, only STUB/RECORD_AND_STUB exercised |
 
-### Rule File Coverage (34 files)
+### Rule File Coverage (37 files)
 
-**Protocol rules (19):** http-get, http-post, http-error, http-delay, http-proxy, http-graphql, http-request-count, grpc-greeter, grpc-delay, grpc-error, tcp-hex, tcp-regex, tcp-multiround, kafka-basic, kafka-header, pulsar-basic, pulsar-wildcard, jms-basic, jms-queue
+**Protocol rules (22):** http-get, http-post, http-put, http-delete, http-delay, http-error, http-staging-b, http-consul, http-graphql, http-request-count, http-caseinsensitive, grpc-greeter, grpc-error, grpc-delay, grpc-server-streaming, grpc-client-streaming, grpc-bidirectional-streaming, tcp-hex, tcp-regex, tcp-multiround, kafka-topic, kafka-wildcard, kafka-header, pulsar-topic, pulsar-wildcard, jms-queue, jms-topic
 
 **Condition type rules (9):** http-header, http-query, http-body, http-jsonpath, http-contains, http-endswith, http-path-regex, http-header-exists, http-caseinsensitive
 
-**Special rules (6):** http-disabled (enabled=false), http-no-env (global rule), http-feign (plugin), kafka-direction, pulsar-direction, jms-direction
+**Special rules (4):** http-disabled (enabled=false), http-no-env (global rule), openapi-sample (OpenAPI import test)
 
 **Condition types covered:** method, path, topic, header, query, body, bodyJsonPath, graphqlOperationName, graphqlOperationType, requestCount, grpcService, grpcMethod
 
