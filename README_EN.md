@@ -17,6 +17,8 @@ Zero-Intrusion Microservice Stub Platform
 
 ---
 
+> **🤖 AI-Assisted Disclosure**: This project was developed with AI assistance. All core code has been manually reviewed, and testing combines AI-generated tests with human review and manual functional testing to ensure quality.
+
 Baafoo uses JavaAgent bytecode instrumentation to intercept downstream network calls from applications and return Mock responses based on rules — all without modifying any business code. It supports HTTP, TCP, gRPC, Kafka, Pulsar, JMS, and other protocols, as well as service discovery architectures like Consul, Nacos, Eureka, and Feign.
 
 ## ✨ Core Features

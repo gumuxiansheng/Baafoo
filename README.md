@@ -17,6 +17,8 @@
 
 ---
 
+> **🤖 AI 辅助声明**：本项目由 AI 辅助开发完成。核心代码均经过人工 Review；测试采用「AI 生成 + 人工复核 + 人工功能测试」的方式保障质量。
+
 Baafoo 通过 JavaAgent 字节码增强技术，在不修改任何业务代码的前提下，拦截应用对下游服务的网络调用，按规则返回 Mock 响应。支持 HTTP、TCP、gRPC、Kafka、Pulsar、JMS 等多种协议，以及 Consul / Nacos / Eureka / Feign 等服务发现架构。
 
 ## ✨ 核心特性
