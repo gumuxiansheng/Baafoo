@@ -601,11 +601,24 @@ if ($mb -eq "requestCount") {
 }
 
 # H09: HTTP Consul rule (service discovery stub)
+# Lenient by design: only PASS when the agent matched the consul rule and
+# returned a stub. Any other outcome is a SKIP (never FAIL). We still separate
+# the two skip reasons so local diagnosis is obvious:
+#   - consul unreachable / upstream error: no 2xx wrapper (statusCode 000/4xx/5xx,
+#     or empty response because the app itself could not reach consul-server)
+#   - rule not matched / agent not intercepting: got a real 2xx from consul but
+#     stubbed=false / ruleId=null (request was forwarded, not stubbed)
 $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://consul-server:8500/v1/status/leader"
 if ($resp -match '"stubbed":\s*true') {
     Test-Pass "H09: HTTP Consul rule matched"
 } else {
-    Test-Skip "H09: HTTP Consul rule (response: $resp)"
+    $h09Status = Get-JsonValue $resp "statusCode"
+    $h09RuleId = Get-JsonValue $resp "ruleId"
+    if (-not $h09Status -or $h09Status -match '^(000|4\d\d|5\d\d)$') {
+        Test-Skip "H09: HTTP Consul rule SKIP (consul unreachable / upstream error, statusCode=$h09Status, resp=$resp)"
+    } else {
+        Test-Skip "H09: HTTP Consul rule SKIP (rule not matched / agent not intercepting: stubbed=false, ruleId=$h09RuleId, resp=$resp)"
+    }
 }
 
 # -------------------- T: TCP protocol --------------------
@@ -979,7 +992,12 @@ if ($_c10RuleId -ne "staging-a-http-disabled") {
 
 # C11: No-environment global rule should match regardless of environment
 $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/global-endpoint"
-if ($resp -match '"rule"\s*:\s*"global"') {
+# The stubbed body carries "rule":"global", but it is JSON-escaped inside the
+# `body` field of the outer response ("\"rule\":\"global\""), so the literal
+# regex above can never match the raw response string. Decode the body first
+# (cf. Get-JsonBody already used by C10/H08) before asserting.
+$body = Get-JsonBody $resp
+if ($body -and $body -match '"rule"\s*:\s*"global"') {
     Test-Pass "C11: Global rule (no env) matched"
 } else {
     Test-Skip "C11: Global rule (response: $resp)"

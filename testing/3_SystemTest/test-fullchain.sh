@@ -632,8 +632,23 @@ if [[ "$mb" == "requestCount" ]]; then test_pass "H08: HTTP request-count rule m
 else test_fail "H08: HTTP request-count rule (matchedBy=$mb, resp=$resp)"; fi
 
 resp="$(app_get "$APP_A/api/http/get?url=http://consul-server:8500/v1/status/leader")"
-if [[ "$resp" =~ \"stubbed\"[[:space:]]*:[[:space:]]*true ]]; then test_pass "H09: HTTP Consul rule matched"
-else test_skip "H09: HTTP Consul rule (response: $resp)"; fi
+if [[ "$resp" =~ \"stubbed\"[[:space:]]*:[[:space:]]*true ]]; then
+    test_pass "H09: HTTP Consul rule matched"
+else
+    # Lenient by design (SKIP, never FAIL). Separate the two skip reasons for
+    # local diagnosis:
+    #   - consul unreachable / upstream error: no 2xx wrapper (statusCode 000/4xx/5xx,
+    #     or empty response because the app itself could not reach consul-server)
+    #   - rule not matched / agent not intercepting: real 2xx from consul but
+    #     stubbed=false / ruleId=null (request forwarded, not stubbed)
+    h09_sc="$(get_json_value "$resp" "statusCode")"
+    h09_rid="$(get_json_value "$resp" "ruleId")"
+    if [[ -z "$h09_sc" || "$h09_sc" == "000" || "$h09_sc" =~ ^[45][0-9][0-9]$ ]]; then
+        test_skip "H09: HTTP Consul rule SKIP (consul unreachable / upstream error, statusCode=$h09_sc, resp=$resp)"
+    else
+        test_skip "H09: HTTP Consul rule SKIP (rule not matched / agent not intercepting: stubbed=false, ruleId=$h09_rid, resp=$resp)"
+    fi
+fi
 
 # -------------------- T: TCP protocol --------------------
 echo ""
@@ -867,7 +882,11 @@ else
 fi
 
 resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/global-endpoint")"
-if [[ "$resp" =~ \"rule\"[[:space:]]*:[[:space:]]*\"global\" ]]; then test_pass "C11: Global rule (no env) matched"
+# Decode the escaped `body` field before matching (cf. get_json_body used by
+# the matchedBy assertions). The raw response serializes "rule":"global" as
+# \"rule\":\"global\", which the literal regex above can never match.
+c11_body="$(get_json_body "$resp")"
+if [[ -n "$c11_body" && "$c11_body" =~ \"rule\"[[:space:]]*:[[:space:]]*\"global\" ]]; then test_pass "C11: Global rule (no env) matched"
 else test_skip "C11: Global rule (response: $resp)"; fi
 
 # -------------------- M: Environment Mode --------------------
