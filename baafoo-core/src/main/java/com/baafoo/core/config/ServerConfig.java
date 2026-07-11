@@ -59,9 +59,11 @@ public class ServerConfig {
     private boolean passthroughSslVerifyDisabled;
 
     /** Advertised host for Kafka Metadata and Pulsar LOOKUP responses.
-     *  When clients connect from outside Docker via port mapping, set this
-     *  to a host reachable by those clients (e.g. "localhost").
-     *  Auto-detection (Docker gateway heuristic) is used when this is not set. */
+     *  Set this to a host reachable by EXTERNAL clients — clients that cannot
+     *  reach the server's interface/container IP directly. This covers Docker
+     *  port-mapping, NAT, and bare-metal/VM public access (e.g. "localhost"
+     *  or a public hostname). When unset, auto-detection (gateway heuristic)
+     *  is used. */
     private String messagingAdvertisedHost;
 
     /** Default mode when agent environment cannot be determined (no IP match).

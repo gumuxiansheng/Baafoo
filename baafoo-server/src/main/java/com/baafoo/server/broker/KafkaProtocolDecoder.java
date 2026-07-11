@@ -1221,7 +1221,8 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
 
     /**
      * Resolve the broker host for Metadata/DescribeCluster responses.
-     * Delegates to NetworkUtils for Docker gateway detection.
+     * Delegates to NetworkUtils (IP-reachability based; works for Docker,
+     * bare-metal, and VM clients alike).
      */
     private String resolveBrokerHost(ChannelHandlerContext ctx) {
         java.net.InetSocketAddress remote = (java.net.InetSocketAddress) ctx.channel().remoteAddress();

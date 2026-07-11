@@ -3,18 +3,23 @@ package com.baafoo.core.util;
 import java.net.InetSocketAddress;
 
 /**
- * Network utility methods for Docker environment detection.
+ * Network utility methods for resolving the host address a client can reach.
  *
- * <p>Provides methods to detect whether a client is connecting from
- * outside a Docker container (via port mapping) by examining the
- * remote/local IP addresses. When the client comes through Docker
- * NAT, the remote address is typically the Docker gateway (e.g.
- * 172.19.0.1), which can be detected by checking if the last byte
- * of the IPv4 address is 1 within a private subnet.</p>
+ * <p>Given a client's source IP and the server's local IP, resolves the address
+ * the client should reconnect to (e.g. in a broker LOOKUP / Metadata response).
+ * The logic is based purely on IP reachability and is NOT Docker-specific: it
+ * behaves identically for Docker containers, bare-metal hosts, and VMs — including
+ * multi-NIC hosts where {@code InetAddress.getLocalHost()} may pick a different
+ * interface than the one the client actually connected to.</p>
  *
- * <p><b>Limitation</b>: The gateway heuristic (last byte == 1) is
- * the default Docker convention but may not hold for custom network
- * configurations. For such cases, set {@code messagingAdvertisedHost}
+ * <p>Detection rules: a loopback client reconnects to the local address; a client
+ * appearing to come through a NAT gateway (private-subnet IPv4 whose last byte is
+ * 1) or an external client gets the advertised host; an in-subnet client gets the
+ * local address of the current connection (guaranteed reachable from its subnet).</p>
+ *
+ * <p><b>Limitation</b>: The gateway heuristic (last byte == 1) follows the common
+ * Docker convention but may not hold for custom network configurations (e.g. a
+ * real host whose IP ends in .1). For such cases, set {@code messagingAdvertisedHost}
  * in the server config to explicitly specify the advertised host.</p>
  */
 public final class NetworkUtils {
@@ -27,10 +32,11 @@ public final class NetworkUtils {
      *
      * <p>Logic:
      * <ol>
-     *   <li>External / NAT'd client (remote is the Docker gateway, last byte == 1,
-     *       or a loopback client on the same host): return {@code advertisedHost}
-     *       (localhost / host IP) — the container IP we see is unreachable from
-     *       outside.</li>
+     *   <li>External / NAT'd client (remote is a NAT gateway — last byte == 1 in a
+     *       private subnet, e.g. the Docker gateway 172.x.x.1 — or a loopback client
+     *       on the same host): return {@code advertisedHost}
+     *       (localhost / host IP) — the interface/container IP we see is unreachable
+     *       from outside.</li>
      *   <li>Wildcard-bound server (local address is 0.0.0.0): fall back to
      *       {@code defaultHost} for in-Docker clients (preserves the previous
      *       edge-case behaviour).</li>

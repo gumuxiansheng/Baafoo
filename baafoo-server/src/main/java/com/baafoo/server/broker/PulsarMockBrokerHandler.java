@@ -184,9 +184,10 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
     private void handleLookup(ChannelHandlerContext ctx, PulsarCommand cmd) {
         String topic = cmd.topic;
         // Determine the broker URL that the client can actually reach.
-        // When the client connects from outside Docker (via port mapping), the
-        // brokerHost (container IP) is not reachable. In that case, we return the
-        // IP that the client actually connected to, which is the host-side address.
+        // When the client connects from outside the server's network (Docker port
+        // mapping, NAT, or a bare-metal/VM public client), the brokerHost (the
+        // server's interface/container IP) is not reachable. We then return the
+        // IP the client actually connected to as the reachable address.
         String host = resolveClientReachableHost(ctx);
         String brokerUrl = "pulsar://" + host + ":" + brokerPort;
         log.info("Pulsar LOOKUP: topic={}, returning brokerUrl={}", topic, brokerUrl);
@@ -198,7 +199,8 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
 
     /**
      * Resolve a host that the current client can reach for the LOOKUP response.
-     * Delegates to NetworkUtils for Docker gateway detection.
+     * Delegates to NetworkUtils (IP-reachability based; works for Docker,
+     * bare-metal, and VM clients alike).
      */
     private String resolveClientReachableHost(ChannelHandlerContext ctx) {
         java.net.InetSocketAddress remote = (java.net.InetSocketAddress) ctx.channel().remoteAddress();
