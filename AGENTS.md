@@ -118,7 +118,7 @@ testing/
     PROJECT-TEST-PLAN.md       # Master test plan
 ```
 
-### Test Categories (88 cases in test-fullchain.ps1)
+### Test Categories (91 cases in test-fullchain.ps1)
 
 | Category | IDs | Description |
 |----------|-----|-------------|
@@ -127,6 +127,7 @@ testing/
 | H: HTTP | H01–H09 | GET/POST/PUT/DELETE stub, delay, error, GraphQL, request-count, Consul |
 | T: TCP | T01–T03 | TCP BIO stub, NIO socket, multi-round |
 | K: Kafka | K01–K03 | Kafka produce/consume, wildcard topic |
+| CH: Multi-charset | CH01–CH03 | GBK request decode + response encode (TCP/Kafka), template render, recording verification |
 | P: Pulsar | P01–P03 | Pulsar produce/consume, wildcard topic |
 | J: JMS | J01–J02 | JMS queue produce/consume |
 | E: Environment | E01–E02 | Environment isolation (staging-a vs staging-b) |
@@ -142,17 +143,21 @@ testing/
 | G: gRPC | G01–G06 | Unary (SayHello, SlowMethod, GetUser-error), server-streaming, client-streaming, bidi-streaming |
 | MX: Protocol×Mode Matrix | (12 skips) | Gap markers — no real MQ broker in staging, only STUB/RECORD_AND_STUB exercised |
 
-### Rule File Coverage (37 files)
+### Rule File Coverage (39 files)
 
-**Protocol rules (22):** http-get, http-post, http-put, http-delete, http-delay, http-error, http-staging-b, http-consul, http-graphql, http-request-count, http-caseinsensitive, grpc-greeter, grpc-error, grpc-delay, grpc-server-streaming, grpc-client-streaming, grpc-bidirectional-streaming, tcp-hex, tcp-regex, tcp-multiround, kafka-topic, kafka-wildcard, kafka-header, pulsar-topic, pulsar-wildcard, jms-queue, jms-topic
+**Protocol rules (24):** http-get, http-post, http-put, http-delete, http-delay, http-error, http-staging-b, http-consul, http-graphql, http-request-count, http-caseinsensitive, grpc-greeter, grpc-error, grpc-delay, grpc-server-streaming, grpc-client-streaming, grpc-bidirectional-streaming, tcp-hex, tcp-regex, tcp-multiround, kafka-topic, kafka-wildcard, kafka-header, pulsar-topic, pulsar-wildcard, jms-queue, jms-topic
 
 **Condition type rules (9):** http-header, http-query, http-body, http-jsonpath, http-contains, http-endswith, http-path-regex, http-header-exists, http-caseinsensitive
+
+**Multi-charset rules (2):** tcp-charset-gbk (GBK request decode + response encode + template render), kafka-charset-gbk (GBK request decode + response encode + template render)
 
 **Special rules (4):** http-disabled (enabled=false), http-no-env (global rule), openapi-sample (OpenAPI import test)
 
 **Condition types covered:** method, path, topic, header, query, body, bodyJsonPath, graphqlOperationName, graphqlOperationType, requestCount, grpcService, grpcMethod
 
 **Operators covered:** equals, contains, startsWith, endsWith, regex, exists
+
+**Charset coverage:** GBK (requestCharset + ResponseEntry.charset), verified by 5 unit tests (3 TCP + 2 Kafka) + 3 full-chain cases (CH01–CH03)
 
 **Rule**: All intermediate/temp files generated during test execution (logs, dumps, temp configs, etc.) must be written to `testing/7_Others/tmp/`. This directory is gitignored. Never write test artifacts to the project root or module directories.
 

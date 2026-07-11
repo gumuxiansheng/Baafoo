@@ -5,6 +5,7 @@
 **项目**: Baafoo - JavaAgent-Based API Mock Platform
 
 **版本更新记录**：
+- v2.5 (2026-07-11): 新增 §6.4.5 多编码（Multi-charset）测试用例定义——CH01–CH03 三个全链路用例验证 `Rule.requestCharset` 请求侧 GBK 解码 + `ResponseEntry.charset` 响应侧 GBK 编码 + 模板渲染；扩展 test-spring 新增 `SocketCallerService.testBioSocketWithCharset` 与 `KafkaCallerService.sendMessageWithCharset`（用 `ByteArraySerializer` 保留原始 charset 字节）+ 对应 `/api/socket/bio-charset`、`/api/kafka/send-charset` 端点；新增 `tcp-charset-gbk.json`、`kafka-charset-gbk.json` 两个 GBK 规则文件；用例分组新增 `CH`(多编码/字符集)。
 - v2.4 (2026-07-08): 全链路测试 hermetic 化——移除全部公网 `http://httpbin.org` 依赖（~23 处），改为 Staging 内置 `real-backend` echo 端点（app-env-a 网络别名 + `BackendEchoController`），PASSTHROUGH/RECORD 的"真实后端"验证不再依赖公网，离线/公网抖动均可跑；测试脚本（ps1/sh/run-fullchain-tests.sh）导出 JUnit 兼容 `junit-report.xml`，并新增 `.github/workflows/system-test.yml` 接 GitHub Actions CI（上传 + test-reporter 发布）；规则注册改为 upsert 根治 PostgreSQL 卷 stale 规则，catch-all 规则 `staging-a-http` 现也由测试脚本统一管理。
 - v2.3 (2026-07-08): §6.4 不再只标注缺口——补写全部缺失用例的具体定义：§6.4.2.1 协议×模式矩阵 18 个未覆盖组合（TCP/Kafka/Pulsar/JMS 非 STUB 模式 + gRPC 全列）逐条用例；§6.4.3.1 已补充能力的逐步断言；§6.4.4 其余 P2 缺口（场景集/MCP/故障注入/Consul DNS/fail-open/继承环境/规则分页/优先级/多响应/tags）具体用例。每个缺口用例均含前置条件/步骤/预期/脚本状态。
 - v2.2 (2026-07-07): §6.4 全链路测试重构——补充协议×模式覆盖矩阵、断言红线（禁止 `|mocked` 兜底伪通过、失败态必须判 FAIL、计数器前置重置、模式切换等待）、规则集/录制管理/撤销重置/OpenAPI 导入用例；标注 gRPC 与真实 MQ broker 缺口
@@ -918,7 +919,7 @@ mvnw clean test jacoco:report
 
 #### 6.4.1 用例分组与断言规范
 
-用例按协议 / 能力分组：`F`(核心) `A`(API 安全与 CRUD) `H`(HTTP) `T`(TCP) `K`(Kafka) `P`(Pulsar) `J`(JMS) `E`(环境隔离) `PL`(插件) `R/D`(录制与 MQ 方向) `C`(条件类型) `M`(环境模式) `AS`(规则集) `REC`(录制管理) `RU/RST`(撤销与重置) `OAPI`(OpenAPI 导入) `G`(gRPC) `MX`(协议×模式矩阵缺口)。
+用例按协议 / 能力分组：`F`(核心) `A`(API 安全与 CRUD) `H`(HTTP) `T`(TCP) `K`(Kafka) `P`(Pulsar) `J`(JMS) `E`(环境隔离) `PL`(插件) `R/D`(录制与 MQ 方向) `C`(条件类型) `M`(环境模式) `AS`(规则集) `REC`(录制管理) `RU/RST`(撤销与重置) `OAPI`(OpenAPI 导入) `G`(gRPC) `MX`(协议×模式矩阵缺口) `CH`(多编码/字符集)。
 
 **断言红线（2026-07-07 审查后强制执行）**：
 
@@ -1076,6 +1077,38 @@ mvnw clean test jacoco:report
 | TAG-001 标签筛选 | 规则带 tags | 按 tag 查询 | 仅返回匹配 tag 的规则 | SKIP |
 
 > 上述 P2 用例定义完成后，原审查报告所列"16 个矩阵未覆盖组合 + 场景集/MCP/故障注入/Consul DNS/fail-open/继承环境/分页/优先级/多响应/tags"缺口均已**落到具体用例**，不再只是缺口标注。脚本侧接入对应客户端/环境后，将 `SKIP` 改为断言即可关闭缺口。
+
+#### 6.4.5 多编码（Multi-charset）测试用例
+
+验证 Baafoo 对非 UTF-8 编码（GBK/GB2312/Big5 等）请求/响应的支持。覆盖两类能力：
+
+1. **请求侧解码**：`Rule.requestCharset` 让 server 在规则命中后用指定 charset 重新解码请求字节，使模板变量 `{{request.body}}` 正确渲染（否则非 UTF-8 字节被默认 UTF-8 解码后是乱码）。
+2. **响应侧编码**：`ResponseEntry.charset` 让 server 用指定 charset 编码 stub 响应体字节（否则用默认 UTF-8 编码，GBK 客户端收到的是乱码）。
+
+**单元测试覆盖**（baafoo-server 模块）：
+- `TcpStubHandlerTest`: `testResponseCharsetGBK` / `testRequestCharsetGBKWithTemplate` / `testResponseDefaultCharsetWithGBKRulePresent`（3 个）
+- `KafkaMockBrokerTest`: `testProduceStubUsesResponseCharsetGBK` / `testProduceRecordsGBKRequestWithRequestCharset`（2 个）
+
+**全链路测试用例**（test-fullchain.ps1/.sh，`CH` 段）：
+
+| 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
+|--------|----------|----------|----------|----------|
+| CH01 | 注册规则 `staging-tcp-charset-gbk`（tcpPrefixHex=`c4e3bac3` 即 GBK "你好" hex，requestCharset=GBK，body=`回显:{{request.body}}`，charset=GBK） | 1) `GET /api/socket/bio-charset?host=server&port=9001&message=你好&charset=GBK`（test-spring 用 GBK 编码请求字节、用 GBK 解码响应字节） | `received == "回显:你好"`（证明请求被 GBK 解码、模板渲染正确、响应被 GBK 编码） | ✅ 已断言 |
+| CH02 | 注册规则 `staging-kafka-charset-gbk`（topic=`baafoo-charset-topic`，requestCharset=GBK，body=`回显:{{request.body}}`，charset=GBK） | 1) `GET /api/kafka/send-charset?...&topic=baafoo-charset-topic&message=你好&charset=GBK`（test-spring 用 ByteArraySerializer 发送 GBK 字节） | `success=true`（produce 成功，stub 命中） | ✅ 已断言 |
+| CH03 | 同 CH02 | 1) 切换 staging-a 到 RECORD_AND_STUB；2) 等 5s agent poll；3) 重新发送 GBK produce；4) 等 3s 录制 flush；5) `GET /recordings?limit=20`；6) 查找 `protocol=kafka` & `path=baafoo-charset-topic` & `requestBody="你好"` 的录制；7) 切回 STUB | 录制中存在 `requestBody == "你好"`（证明服务端用 GBK 正确解码了 produce 字节，非乱码） | ✅ 已断言（可能因 ByteArraySerializer 拦截或 agent 同步延迟 SKIP；CH01+CH02 已充分验证核心修复） |
+
+**规则文件**（testing/2_IntegrationTest/rules/）：
+- `tcp-charset-gbk.json`：TCP 规则，GBK hex 前缀匹配 + GBK 请求解码 + GBK 响应编码 + 模板渲染
+- `kafka-charset-gbk.json`：Kafka 规则，topic 匹配 + GBK 请求解码 + GBK 响应编码 + 模板渲染
+
+**test-spring 客户端扩展**（baafoo-test-spring）：
+- `SocketCallerService.testBioSocketWithCharset(host, port, message, charset)` + `/api/socket/bio-charset` 端点
+- `KafkaCallerService.sendMessageWithCharset(bootstrapServers, topic, message, charset)` + `/api/kafka/send-charset` 端点（用 `ByteArraySerializer` 保留原始 charset 字节）
+
+**设计要点**：
+- GBK "你好" 的 hex 编码为 `c4e3bac3`（你=C4E3, 好=BAC3），用于 `tcpPrefixHex` 匹配
+- Kafka 使用 `ByteArraySerializer` 而非 `StringSerializer`，避免 Kafka 客户端强制 UTF-8 编码
+- CH03 通过录制 API（而非 consume）验证请求解码，因为 `StringDeserializer` 默认 UTF-8 解码 GBK 字节会乱码；响应侧字节级编码验证由单元测试 `testProduceStubUsesResponseCharsetGBK` 覆盖
 
 **执行方式**：
 

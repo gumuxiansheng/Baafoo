@@ -8,12 +8,14 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.Charset;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.Future;
@@ -98,6 +100,69 @@ public class KafkaCallerService {
             log.warn("Kafka consume failed: {}", e.getMessage());
         } finally {
             if (consumer != null) consumer.close();
+        }
+        return result;
+    }
+
+    /**
+     * Send a Kafka message with the request bytes encoded using the specified
+     * charset (e.g. GBK). Used by the CH (multi-charset) full-chain test
+     * cases to verify that:
+     * <ol>
+     *   <li>The server decodes the produce request bytes using
+     *       {@code Rule.requestCharset} (so template variables like
+     *       {@code {{request.body}}} render correctly);</li>
+     *   <li>The stub response body is re-encoded using
+     *       {@code ResponseEntry.charset} before being stored in the
+     *       MockBroker's message store.</li>
+     * </ol>
+     *
+     * <p>Uses {@link ByteArraySerializer} so the raw charset-encoded bytes
+     * reach the wire without Kafka's {@code StringSerializer} re-encoding
+     * them as UTF-8.</p>
+     *
+     * @param bootstrapServers Kafka bootstrap.servers (redirected by agent)
+     * @param topic            target topic name
+     * @param message          request text (will be encoded using {@code charset})
+     * @param charset          character set name (e.g. "GBK", "GB2312", "Big5")
+     */
+    public Map<String, Object> sendMessageWithCharset(String bootstrapServers, String topic,
+                                                       String message, String charset) {
+        Map<String, Object> result = new LinkedHashMap<String, Object>();
+        Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        // ByteArraySerializer keeps the raw charset-encoded bytes intact on
+        // the wire — StringSerializer would force UTF-8 and defeat the test.
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+        props.put(ProducerConfig.ACKS_CONFIG, "all");
+        props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000);
+        props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 10000);
+        props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 5000);
+
+        result.put("bootstrapServers", bootstrapServers);
+        result.put("topic", topic);
+        result.put("charset", charset);
+
+        KafkaProducer<byte[], byte[]> producer = null;
+        try {
+            Charset cs = Charset.forName(charset);
+            byte[] valueBytes = message.getBytes(cs);
+            producer = new KafkaProducer<byte[], byte[]>(props);
+            ProducerRecord<byte[], byte[]> record = new ProducerRecord<byte[], byte[]>(topic, valueBytes);
+            Future<RecordMetadata> future = producer.send(record);
+            RecordMetadata metadata = future.get(5, TimeUnit.SECONDS);
+            result.put("success", true);
+            result.put("partition", metadata.partition());
+            result.put("offset", metadata.offset());
+            log.info("Kafka message sent with charset={}: topic={}, partition={}, offset={}",
+                    charset, topic, metadata.partition(), metadata.offset());
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
+            log.warn("Kafka send with charset={} failed: {}", charset, e.getMessage());
+        } finally {
+            if (producer != null) producer.close();
         }
         return result;
     }

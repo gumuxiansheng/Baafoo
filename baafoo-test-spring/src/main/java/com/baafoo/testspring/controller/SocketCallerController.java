@@ -49,4 +49,20 @@ public class SocketCallerController {
             @RequestParam(defaultValue = "9999") int port) {
         return socketCallerService.testMultiroundSocket(host, port);
     }
+
+    /**
+     * BIO socket test with explicit charset — drives the CH (multi-charset)
+     * full-chain test cases. The request {@code message} is encoded to bytes
+     * using {@code charset}; the response bytes are decoded back to a string
+     * using the same {@code charset} (matching the rule's
+     * {@code ResponseEntry.charset}).
+     */
+    @GetMapping("/bio-charset")
+    public Map<String, Object> testBioSocketWithCharset(
+            @RequestParam(defaultValue = "127.0.0.1") String host,
+            @RequestParam(defaultValue = "9999") int port,
+            @RequestParam(defaultValue = "你好世界") String message,
+            @RequestParam(defaultValue = "GBK") String charset) {
+        return socketCallerService.testBioSocketWithCharset(host, port, message, charset);
+    }
 }

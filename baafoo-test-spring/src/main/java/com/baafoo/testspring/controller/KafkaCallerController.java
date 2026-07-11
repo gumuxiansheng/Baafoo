@@ -34,6 +34,22 @@ public class KafkaCallerController {
         return kafkaCallerService.consumeMessage(bootstrapServers, topic);
     }
 
+    /**
+     * Send a Kafka message with the request bytes encoded using the specified
+     * charset (e.g. GBK). Drives the CH (multi-charset) full-chain test
+     * cases: verifies the server decodes the produce bytes via
+     * {@code Rule.requestCharset} and re-encodes the stub response body via
+     * {@code ResponseEntry.charset}.
+     */
+    @GetMapping("/send-charset")
+    public Map<String, Object> sendWithCharset(
+            @RequestParam(defaultValue = "kafka-broker:9092") String bootstrapServers,
+            @RequestParam(defaultValue = "baafoo-charset-topic") String topic,
+            @RequestParam(defaultValue = "你好世界") String message,
+            @RequestParam(defaultValue = "GBK") String charset) {
+        return kafkaCallerService.sendMessageWithCharset(bootstrapServers, topic, message, charset);
+    }
+
     @GetMapping("/all")
     public Map<String, Object> sendAll() {
         Map<String, Object> results = new LinkedHashMap<String, Object>();

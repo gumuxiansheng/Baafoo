@@ -10,6 +10,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -130,6 +131,56 @@ public class SocketCallerService {
             result.put("connected", false);
             result.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
             log.warn("Multiround Socket call failed: {}", e.getMessage());
+        } finally {
+            try { socket.close(); } catch (Exception ignored) {}
+        }
+        return result;
+    }
+
+    /**
+     * BIO socket test with explicit charset for both request encoding and
+     * response decoding. Used by the CH (multi-charset) full-chain test
+     * section to verify that the server correctly decodes GBK/GB2312/Big5
+     * request bytes (via {@code Rule.requestCharset}) and encodes the stub
+     * response body using the configured {@code ResponseEntry.charset}.
+     *
+     * @param host    target host (will be redirected by agent to baafoo-server)
+     * @param port    target port (will be redirected to 9001 TCP stub port)
+     * @param message request payload text (will be encoded using {@code charset})
+     * @param charset character set name (e.g. "GBK", "GB2312", "Big5", "UTF-8")
+     */
+    public Map<String, Object> testBioSocketWithCharset(String host, int port,
+                                                        String message, String charset) {
+        Map<String, Object> result = new LinkedHashMap<String, Object>();
+        Socket socket = new Socket();
+        try {
+            Charset cs = Charset.forName(charset);
+            socket.setSoTimeout(5000);
+            socket.connect(new InetSocketAddress(host, port), 5000);
+            result.put("connected", true);
+            result.put("charset", charset);
+            boolean redirected = socket.getPort() != port
+                    || !socket.getInetAddress().getHostAddress().equals(host);
+            result.put("intercepted", redirected);
+            String request = message + "\r\n";
+            OutputStream os = socket.getOutputStream();
+            os.write(request.getBytes(cs));
+            os.flush();
+            result.put("sent", message);
+            InputStream is = socket.getInputStream();
+            byte[] buf = new byte[4096];
+            int len = is.read(buf);
+            if (len > 0) {
+                // Decode the response bytes using the same charset the rule's
+                // ResponseEntry.charset was set to, so the test can compare
+                // the rendered string directly.
+                result.put("received", new String(buf, 0, len, cs).trim());
+            }
+            log.info("BIO Socket charset={} call complete: intercepted={}", charset, redirected);
+        } catch (Exception e) {
+            result.put("connected", false);
+            result.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
+            log.warn("BIO Socket charset={} call failed: {}", charset, e.getMessage());
         } finally {
             try { socket.close(); } catch (Exception ignored) {}
         }
