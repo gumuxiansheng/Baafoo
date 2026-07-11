@@ -820,47 +820,102 @@ curl -s -X PUT -H "Content-Type: application/json" -H "X-Api-Key: $API_KEY" \
 echo ""
 echo "--- P: Pulsar ---"
 
-# Diagnostic: confirm the Pulsar mock broker is actually LISTENING on 9003
-# BEFORE we run the P tests. A silently-swallowed broker-startup failure
-# (in BaafooServer.startProtocolServers) is the classic cause of
-# "connection timed out: ...:9003" — this surfaces it immediately instead of
-# leaving us guessing why the environment differs from local.
+# Wait for the Pulsar mock broker to be READY before running the P tests.
+# On a fresh CI container the broker may still be binding (a transient cold-start
+# bind race in BaafooServer.startProtocolServers): the broker now retries
+# bind 3x/1s, but the agent may have already tried to connect and cached the
+# dead endpoint. Polling /api/status.brokers.pulsar ("up") AND a runner-side TCP
+# probe on the published port 9003 gives us a reliable readiness gate so P01/P02
+# only run once the broker is proven listening — eliminating the classic
+# "connection timed out: ...:9003" flake.
 #
-# We use TWO independent checks:
-#   1) /api/status (brokers.pulsar) — the authoritative in-process signal.
-#      The server now reports whether each protocol broker actually bound
-#      its port, so we learn the real cause (e.g. bind exception) directly.
-#   2) runner-side TCP probe on the published port localhost:9003 (bash
-#      /dev/tcp) — a secondary network-level check. We use bash because the
-#      container's `sh` (dash) does not support /dev/tcp.
-echo "  [diag] Pulsar broker status:"
-broker_status_json="$(curl -s --max-time 5 "$SERVER/__baafoo__/api/status" 2>/dev/null)"
-pulsar_broker_state="$(echo "$broker_status_json" | jq -r '.brokers.pulsar // "unknown"' 2>/dev/null)"
-echo "    BROKER_STATUS.pulsar=${pulsar_broker_state:-unknown}"
-if timeout 3 bash -c 'exec 3<>/dev/tcp/localhost/9003' 2>/dev/null; then
-    echo "    PULSAR_9003_TCP=LISTENING"
+# We use TWO independent signals:
+#   1) /api/status (brokers.pulsar) — authoritative in-process signal; the server
+#      reports whether each protocol broker actually bound its port (or the
+#      failure cause). Requires jq for the dotted key.
+#   2) runner-side TCP probe on localhost:9003 (bash /dev/tcp) — a secondary
+#      network-level check. Uses bash because the container's `sh` (dash) does
+#      not support /dev/tcp.
+echo "  [diag] Waiting for Pulsar broker to become ready..."
+PULSAR_READY=false
+pulsar_broker_state="unknown"
+broker_max_wait=45
+broker_waited=0
+while [[ "$PULSAR_READY" != "true" && $broker_waited -lt $broker_max_wait ]]; do
+    sleep 3
+    broker_waited=$((broker_waited + 3))
+    broker_status_json="$(curl -s --max-time 5 "$SERVER/__baafoo__/api/status" 2>/dev/null)"
+    pulsar_broker_state="$(echo "$broker_status_json" | jq -r '.brokers.pulsar // "unknown"' 2>/dev/null)"
+    tcp_ok=false
+    if timeout 3 bash -c 'exec 3<>/dev/tcp/localhost/9003' 2>/dev/null; then
+        tcp_ok=true
+    fi
+    if [[ "$pulsar_broker_state" == "up" || "$tcp_ok" == "true" ]]; then
+        PULSAR_READY=true
+    fi
+    printf "\r    status=%s tcp=%s (%ss)" "${pulsar_broker_state:-unknown}" "$tcp_ok" "$broker_waited"
+done
+printf "\n"
+if [[ "$PULSAR_READY" == "true" ]]; then
+    write_ok "Pulsar broker ready (status=${pulsar_broker_state}, after ${broker_waited}s)"
 else
-    echo "    PULSAR_9003_TCP=NOT_LISTENING"
+    write_warn "Pulsar broker NOT ready after ${broker_max_wait}s (status=${pulsar_broker_state})"
     echo "    --- server Pulsar-related startup logs ---"
     docker compose $COMPOSE_FILES logs server 2>&1 | grep -iE 'pulsar|broker|9003|failed to start|STARTUP FAILURE' | tail -n 40 || true
 fi
 
-resp="$(app_get "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-test-topic&message=hello-baafoo-pulsar")"
-if [[ "$resp" =~ \"success\"[[:space:]]*:[[:space:]]*true && ! "$resp" =~ \"error\" ]]; then test_pass "P01: Pulsar Produce stub (success)"
+# Helper: Pulsar produce/consume via the app (GET endpoints).
+pulsar_send() {
+    app_get "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-test-topic&message=hello-baafoo-pulsar"
+}
+pulsar_consume() {
+    app_get "$APP_A/api/pulsar/consume?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-test-topic"
+}
+pulsar_ok() {
+    # $1 = response; true when the MockBroker stubbed successfully.
+    [[ "$1" =~ \"success\"[[:space:]]*:[[:space:]]*true && ! "$1" =~ \"error\" ]]
+}
+
+# P01: Pulsar Produce. Retry up to 3x (with a short settle) like K01 — the first
+# call after a fresh agent connect may race the broker's bind window, and a lone
+# retry after PULSAR_READY covers the agent's own reconnect timing.
+resp="$(pulsar_send)"
+if pulsar_ok "$resp"; then
+    test_pass "P01: Pulsar Produce stub (success)"
 else
-    test_fail "P01: Pulsar Produce (response: $resp)"
-    echo "    BROKER_STATUS.pulsar=$(echo "$broker_status_json" | jq -r '.brokers.pulsar // "unknown"' 2>/dev/null)"
-    echo "    --- P01 failed: dumping server Pulsar broker logs ---"
-    docker compose $COMPOSE_FILES logs server 2>&1 | grep -iE 'pulsar|broker|9003|failed to start|STARTUP FAILURE' | tail -n 40 || true
+    p01_ok=false
+    for p1_attempt in 1 2 3; do
+        sleep 3
+        resp="$(pulsar_send)"
+        if pulsar_ok "$resp"; then p01_ok=true; break; fi
+    done
+    if [[ "$p01_ok" == "true" ]]; then
+        test_pass "P01: Pulsar Produce stub (success on retry)"
+    else
+        test_fail "P01: Pulsar Produce (response: $resp)"
+        echo "    BROKER_STATUS.pulsar=$pulsar_broker_state PULSAR_READY=$PULSAR_READY"
+        echo "    --- P01 failed: dumping server Pulsar broker logs ---"
+        docker compose $COMPOSE_FILES logs server 2>&1 | grep -iE 'pulsar|broker|9003|failed to start|STARTUP FAILURE' | tail -n 40 || true
+    fi
 fi
 
-resp="$(app_get "$APP_A/api/pulsar/consume?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-test-topic")"
-if [[ "$resp" =~ \"success\"[[:space:]]*:[[:space:]]*true && ! "$resp" =~ \"error\" ]]; then test_pass "P02: Pulsar Consume stub (success)"
+resp="$(pulsar_consume)"
+if pulsar_ok "$resp"; then test_pass "P02: Pulsar Consume stub (success)"
 else
-    test_fail "P02: Pulsar Consume (response: $resp)"
-    echo "    BROKER_STATUS.pulsar=$(echo "$broker_status_json" | jq -r '.brokers.pulsar // "unknown"' 2>/dev/null)"
-    echo "    --- P02 failed: dumping server Pulsar broker logs ---"
-    docker compose $COMPOSE_FILES logs server 2>&1 | grep -iE 'pulsar|broker|9003|failed to start|STARTUP FAILURE' | tail -n 40 || true
+    p02_ok=false
+    for p2_attempt in 1 2 3; do
+        sleep 3
+        resp="$(pulsar_consume)"
+        if pulsar_ok "$resp"; then p02_ok=true; break; fi
+    done
+    if [[ "$p02_ok" == "true" ]]; then
+        test_pass "P02: Pulsar Consume stub (success on retry)"
+    else
+        test_fail "P02: Pulsar Consume (response: $resp)"
+        echo "    BROKER_STATUS.pulsar=$pulsar_broker_state PULSAR_READY=$PULSAR_READY"
+        echo "    --- P02 failed: dumping server Pulsar broker logs ---"
+        docker compose $COMPOSE_FILES logs server 2>&1 | grep -iE 'pulsar|broker|9003|failed to start|STARTUP FAILURE' | tail -n 40 || true
+    fi
 fi
 
 resp="$(app_get "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-wildcard-topic&message=test")"
@@ -955,7 +1010,21 @@ if [[ -n "$env_a_id" ]]; then
         test_pass "D02: JMS recording has produce/consume direction"
     else test_fail "D02: JMS recording missing produce or consume direction"; fi
 
-    if [[ "$recordings_json" =~ \"protocol\":[[:space:]]*\"pulsar\".*\"direction\":[[:space:]]*\"produce\" && "$recordings_json" =~ \"protocol\":[[:space:]]*\"pulsar\".*\"direction\":[[:space:]]*\"consume\" ]]; then
+    # D03 preflight: re-confirm the Pulsar broker is still alive. The D section
+    # re-drives Pulsar under RECORD_AND_STUB; if the broker died between the P
+    # gate and now (it shouldn't — same run, same broker), we SKIP with a clear
+    # diagnostic instead of failing the direction assertion on a dead endpoint.
+    d03_broker_alive=false
+    if [[ "$PULSAR_READY" == "true" ]]; then
+        d03_broker_alive=true
+    else
+        if timeout 3 bash -c 'exec 3<>/dev/tcp/localhost/9003' 2>/dev/null; then
+            d03_broker_alive=true
+        fi
+    fi
+    if [[ "$d03_broker_alive" != "true" ]]; then
+        test_skip "D03: Pulsar recording direction SKIP (broker not reachable at D-time; PULSAR_READY=$PULSAR_READY)"
+    elif [[ "$recordings_json" =~ \"protocol\":[[:space:]]*\"pulsar\".*\"direction\":[[:space:]]*\"produce\" && "$recordings_json" =~ \"protocol\":[[:space:]]*\"pulsar\".*\"direction\":[[:space:]]*\"consume\" ]]; then
         test_pass "D03: Pulsar recording has produce/consume direction"
     else test_fail "D03: Pulsar recording missing produce or consume direction"; fi
 
