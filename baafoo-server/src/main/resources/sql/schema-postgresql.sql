@@ -33,6 +33,7 @@ ALTER TABLE rules ADD COLUMN tcp_offset_hex VARCHAR(1024);
 ALTER TABLE rules ADD COLUMN faker_seed BIGINT;
 ALTER TABLE rules ADD COLUMN request_count_reset INT;
 ALTER TABLE rules ADD COLUMN fault_injection_json TEXT;
+ALTER TABLE rules ADD COLUMN request_charset VARCHAR(50);
 
 CREATE TABLE IF NOT EXISTS rule_history (
   id BIGSERIAL PRIMARY KEY,

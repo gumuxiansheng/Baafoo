@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -233,6 +234,37 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
         ctx.writeAndFlush(response);
     }
 
+    /**
+     * Resolve the response charset for encoding a stub body. Falls back to UTF-8.
+     */
+    private static Charset resolveResponseCharset(ResponseEntry resp) {
+        if (resp == null) return StandardCharsets.UTF_8;
+        String cs = resp.getCharset();
+        if (cs == null || cs.isEmpty() || "UTF-8".equalsIgnoreCase(cs)) return StandardCharsets.UTF_8;
+        try {
+            return Charset.forName(cs);
+        } catch (Exception e) {
+            log.warn("Unsupported response charset '{}', falling back to UTF-8", cs);
+            return StandardCharsets.UTF_8;
+        }
+    }
+
+    /**
+     * Re-decode the original request bytes using the matched rule's requestCharset
+     * so that recording captures the correct text when the client used GBK/GB2312/Big5.
+     */
+    private static String decodeRequestBody(byte[] data, Rule rule, String defaultBody) {
+        if (rule == null || data == null) return defaultBody;
+        String cs = rule.getRequestCharset();
+        if (cs == null || cs.isEmpty() || "UTF-8".equalsIgnoreCase(cs)) return defaultBody;
+        try {
+            return new String(data, Charset.forName(cs));
+        } catch (Exception e) {
+            log.warn("Unsupported request charset '{}', falling back to UTF-8", cs);
+            return defaultBody;
+        }
+    }
+
     private void handleSend(ChannelHandlerContext ctx, PulsarCommand cmd, byte[] payload) {
         long producerId = cmd.producerId;
         String producerName = producerNames.get(producerId);
@@ -269,6 +301,10 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
 
         byte[] storedPayload = payload; // default: original payload as produced
         if (m.isMatched()) {
+            // Re-decode request body with the matched rule's charset for recording
+            // so GBK/GB2312/Big5 payloads are captured as readable text.
+            String recordedBody = decodeRequestBody(meta != null ? meta.body : null, m.getRule(), bodyStr);
+
             if (shouldRecord) {
                 // Producer SEND: requestBody = original message, responseBody = stub body (if stub mode)
                 String respBody = null;
@@ -276,14 +312,14 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
                         && m.getResponse() != null && m.getResponse().getBody() != null) {
                     respBody = m.getResponse().getBody();
                 }
-                matchHelper.record(m.getRule().getId(), "pulsar", topic, bodyStr, respBody, agentInfo, "produce");
+                matchHelper.record(m.getRule().getId(), "pulsar", topic, recordedBody, respBody, agentInfo, "produce");
             }
             // STUB / RECORD_AND_STUB: rebuild the payload with the rule's response body so
             // consumers decode a stub message instead of the producer's original body.
             if (mode == EnvironmentMode.STUB || mode == EnvironmentMode.RECORD_AND_STUB) {
                 ResponseEntry resp = m.getResponse();
                 if (resp != null && resp.getBody() != null) {
-                    storedPayload = rebuildPayloadWithBody(meta, resp.getBody().getBytes(StandardCharsets.UTF_8));
+                    storedPayload = rebuildPayloadWithBody(meta, resp.getBody().getBytes(resolveResponseCharset(resp)));
                 }
             }
         } else {
@@ -726,7 +762,7 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
                     if (m.isMatched()) {
                         ResponseEntry resp = m.getResponse();
                         if (resp != null && resp.getBody() != null) {
-                            byte[] stubBody = resp.getBody().getBytes(StandardCharsets.UTF_8);
+                            byte[] stubBody = resp.getBody().getBytes(resolveResponseCharset(resp));
                             byte[] stubPayload = rebuildPayloadWithBody(null, stubBody);
                             StoredMessage stubMsg = messageStore.storeMessage(
                                     topic, "baafoo-stub-producer", 0, stubPayload);

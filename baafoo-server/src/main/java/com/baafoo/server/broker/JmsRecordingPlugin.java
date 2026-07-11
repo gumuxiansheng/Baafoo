@@ -193,6 +193,22 @@ public class JmsRecordingPlugin implements ActiveMQServerPlugin {
             if (bodyBuffer != null && bodyBuffer.readableBytes() > 0) {
                 byte[] bytes = new byte[bodyBuffer.readableBytes()];
                 bodyBuffer.readBytes(bytes);
+                // Check for BaafooCharset property set by JmsMockBroker.sendPresetMessage
+                // when the original rule declared a non-UTF-8 response charset (e.g., GBK).
+                String charsetName = null;
+                try {
+                    charsetName = message.getStringProperty("BaafooCharset");
+                } catch (Exception ignored) {
+                    // Property may not exist — fall through to UTF-8 default.
+                }
+                if (charsetName != null && !charsetName.isEmpty()
+                        && !"UTF-8".equalsIgnoreCase(charsetName)) {
+                    try {
+                        return new String(bytes, java.nio.charset.Charset.forName(charsetName));
+                    } catch (Exception e) {
+                        log.debug("Unsupported charset '{}', falling back to UTF-8", charsetName);
+                    }
+                }
                 return new String(bytes, StandardCharsets.UTF_8);
             }
         } catch (Exception e) {

@@ -849,4 +849,115 @@ public class TcpStubHandlerTest {
 
         verify(storage, never()).addRecording(any(RecordingEntry.class));
     }
+
+    // --- Multi-charset (GBK) support ---
+
+    /**
+     * Response with charset=GBK should be encoded in GBK bytes, not UTF-8.
+     */
+    @Test
+    public void testResponseCharsetGBK() {
+        Rule rule = new Rule();
+        rule.setId("r-gbk-resp");
+        rule.setProtocol("tcp");
+        rule.setEnabled(true);
+        rule.setEnvironments(Arrays.asList("test-env"));
+        rule.setTcpPrefixHex("68656c6c6f"); // "hello" in hex
+
+        ResponseEntry resp = new ResponseEntry();
+        resp.setBody("你好世界"); // Chinese text
+        resp.setCharset("GBK");
+        rule.setResponses(Arrays.asList(resp));
+
+        setupAgentAndEnv("test-env");
+        when(storage.listRules()).thenReturn(Arrays.asList(rule));
+
+        EmbeddedChannel channel = createChannel();
+        channel.writeInbound(Unpooled.copiedBuffer("hello", StandardCharsets.UTF_8));
+        ByteBuf out = channel.readOutbound();
+        assertNotNull(out);
+        byte[] outBytes = new byte[out.readableBytes()];
+        out.readBytes(outBytes);
+        // Decode with GBK to verify the response was GBK-encoded
+        String decoded = new String(outBytes, java.nio.charset.Charset.forName("GBK"));
+        assertEquals("你好世界", decoded);
+    }
+
+    /**
+     * When rule.requestCharset=GBK and the client sends GBK bytes, the handler
+     * should re-decode the payload using GBK after hex-based matching succeeds,
+     * so that template variables like {{request.body}} render correct text.
+     */
+    @Test
+    public void testRequestCharsetGBKWithTemplate() {
+        Rule rule = new Rule();
+        rule.setId("r-gbk-req");
+        rule.setProtocol("tcp");
+        rule.setEnabled(true);
+        rule.setEnvironments(Arrays.asList("test-env"));
+        rule.setRequestCharset("GBK");
+
+        // Use hex prefix matching to avoid body-text matching issues with GBK bytes.
+        // "你好" in GBK is "c4e3bac3" (4 bytes).
+        rule.setTcpPrefixHex("c4e3bac3");
+
+        ResponseEntry resp = new ResponseEntry();
+        resp.setBody("echo:{{request.body}}");
+        resp.setCharset("GBK");
+        rule.setResponses(Arrays.asList(resp));
+
+        setupAgentAndEnv("test-env");
+        when(storage.listRules()).thenReturn(Arrays.asList(rule));
+
+        byte[] gbkBytes = "你好".getBytes(java.nio.charset.Charset.forName("GBK"));
+        EmbeddedChannel channel = createChannel();
+        channel.writeInbound(Unpooled.copiedBuffer(gbkBytes));
+        ByteBuf out = channel.readOutbound();
+        assertNotNull(out);
+        byte[] outBytes = new byte[out.readableBytes()];
+        out.readBytes(outBytes);
+        // The template should render the GBK-decoded body, then encode the result in GBK
+        String decoded = new String(outBytes, java.nio.charset.Charset.forName("GBK"));
+        assertEquals("echo:你好", decoded);
+    }
+
+    /**
+     * Response with default charset (null/UTF-8) should still work correctly
+     * alongside GBK rules — no regression.
+     */
+    @Test
+    public void testResponseDefaultCharsetWithGBKRulePresent() {
+        Rule gbkRule = new Rule();
+        gbkRule.setId("r-gbk-other");
+        gbkRule.setProtocol("tcp");
+        gbkRule.setEnabled(true);
+        gbkRule.setEnvironments(Arrays.asList("other-env"));
+        gbkRule.setTcpPrefixHex("abcdef");
+        ResponseEntry gbkResp = new ResponseEntry();
+        gbkResp.setBody("GBK-rule");
+        gbkResp.setCharset("GBK");
+        gbkRule.setResponses(Arrays.asList(gbkResp));
+
+        Rule utf8Rule = new Rule();
+        utf8Rule.setId("r-utf8");
+        utf8Rule.setProtocol("tcp");
+        utf8Rule.setEnabled(true);
+        utf8Rule.setEnvironments(Arrays.asList("test-env"));
+        utf8Rule.setTcpPrefixHex("68656c6c6f"); // "hello"
+
+        ResponseEntry utf8Resp = new ResponseEntry();
+        utf8Resp.setBody("utf8-response");
+        utf8Rule.setResponses(Arrays.asList(utf8Resp));
+
+        setupAgentAndEnv("test-env");
+        when(storage.listRules()).thenReturn(Arrays.asList(gbkRule, utf8Rule));
+
+        EmbeddedChannel channel = createChannel();
+        channel.writeInbound(Unpooled.copiedBuffer("hello", StandardCharsets.UTF_8));
+        ByteBuf out = channel.readOutbound();
+        assertNotNull(out);
+        byte[] outBytes = new byte[out.readableBytes()];
+        out.readBytes(outBytes);
+        assertEquals("utf8-response", new String(outBytes, StandardCharsets.UTF_8));
+    }
 }

@@ -182,19 +182,19 @@ public class BaafooServerContainer extends GenericContainer<BaafooServerContaine
     }
 
     private static String readClasspathResource(String resource) throws IOException {
-        InputStream is = Thread.currentThread().getContextClassLoader()
-                .getResourceAsStream(resource);
-        if (is == null) {
-            throw new IOException("Resource not found: " + resource);
+        try (InputStream is = Thread.currentThread().getContextClassLoader()
+                .getResourceAsStream(resource)) {
+            if (is == null) {
+                throw new IOException("Resource not found: " + resource);
+            }
+            byte[] buf = new byte[4096];
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            int n;
+            while ((n = is.read(buf)) != -1) {
+                bos.write(buf, 0, n);
+            }
+            return new String(bos.toByteArray(), StandardCharsets.UTF_8);
         }
-        byte[] buf = new byte[4096];
-        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-        int n;
-        while ((n = is.read(buf)) != -1) {
-            bos.write(buf, 0, n);
-        }
-        is.close();
-        return new String(bos.toByteArray(), StandardCharsets.UTF_8);
     }
 
     // ------------------------------------------------------------------

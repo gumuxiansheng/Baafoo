@@ -18,11 +18,14 @@ import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.jms.BytesMessage;
 import javax.jms.Connection;
 import javax.jms.Destination;
 import javax.jms.MessageProducer;
 import javax.jms.Session;
 import javax.jms.TextMessage;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -169,11 +172,18 @@ public class JmsMockBroker {
     /**
      * Send a preset message to a destination with optional delivery delay.
      *
+     * <p>When {@code charset} is non-null and not UTF-8, the message is sent as a
+     * {@link BytesMessage} with the body encoded in the specified charset and a
+     * {@code BaafooCharset} string property so consumers can decode it correctly.
+     * When charset is null or UTF-8, a standard {@link TextMessage} is used.</p>
+     *
      * @param destinationName the queue or topic name
-     * @param body            the message body
+     * @param body            the message body (Java String, will be re-encoded)
      * @param delayMs         delivery delay in milliseconds (0 = no delay)
+     * @param charset         optional body charset for BytesMessage (null = UTF-8 TextMessage)
      */
-    public void sendPresetMessage(String destinationName, String body, long delayMs) throws Exception {
+    public void sendPresetMessage(String destinationName, String body, long delayMs,
+                                   String charset) throws Exception {
         ensureStarted();
         Connection connection = null;
         try {
@@ -182,13 +192,39 @@ public class JmsMockBroker {
 
             Destination destination = resolveDestination(session, destinationName);
             MessageProducer producer = session.createProducer(destination);
-            TextMessage message = session.createTextMessage(body);
 
+            boolean useBytes = charset != null && !charset.isEmpty()
+                    && !"UTF-8".equalsIgnoreCase(charset);
+            if (useBytes) {
+                Charset cs;
+                try {
+                    cs = Charset.forName(charset);
+                } catch (Exception e) {
+                    log.warn("Unsupported preset charset '{}', falling back to UTF-8 TextMessage", charset);
+                    cs = StandardCharsets.UTF_8;
+                    useBytes = false;
+                }
+                if (useBytes) {
+                    BytesMessage message = session.createBytesMessage();
+                    message.writeBytes(body.getBytes(cs));
+                    message.setStringProperty("BaafooCharset", charset);
+                    if (delayMs > 0) {
+                        message.setLongProperty("_AMQ_SCHED_DELIVERY",
+                                System.currentTimeMillis() + delayMs);
+                    }
+                    producer.send(message);
+                    connection.start();
+                    log.info("Sent preset BytesMessage to {}: {} bytes (charset={}), delay={}ms",
+                            destinationName, body.getBytes(cs).length, charset, delayMs);
+                    return;
+                }
+            }
+            // Default: UTF-8 TextMessage (backward compatible)
+            TextMessage message = session.createTextMessage(body);
             if (delayMs > 0) {
                 // Artemis scheduled delivery: absolute timestamp in milliseconds
                 message.setLongProperty("_AMQ_SCHED_DELIVERY", System.currentTimeMillis() + delayMs);
             }
-
             producer.send(message);
             connection.start();
             log.info("Sent preset message to {}: {} bytes, delay={}ms", destinationName, body.length(), delayMs);
@@ -200,6 +236,13 @@ public class JmsMockBroker {
                 }
             }
         }
+    }
+
+    /**
+     * Backward-compatible overload that defaults charset to UTF-8 (TextMessage).
+     */
+    public void sendPresetMessage(String destinationName, String body, long delayMs) throws Exception {
+        sendPresetMessage(destinationName, body, delayMs, null);
     }
 
     /**
@@ -244,7 +287,7 @@ public class JmsMockBroker {
             for (ResponseEntry response : rule.getResponses()) {
                 String body = response.getBody();
                 if (body != null && !body.isEmpty()) {
-                    sendPresetMessage(destName, body, response.getDelayMs());
+                    sendPresetMessage(destName, body, response.getDelayMs(), response.getCharset());
                     loaded++;
                 }
             }

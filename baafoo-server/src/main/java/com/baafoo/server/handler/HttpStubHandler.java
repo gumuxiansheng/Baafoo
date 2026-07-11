@@ -117,7 +117,12 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         String path = extractPath(uri);
         Map<String, String> queryParams = parseQueryParams(uri);
         Map<String, String> headers = extractHeaders(request);
-        String body = request.content().toString(StandardCharsets.UTF_8);
+        // Decode request body using charset from Content-Type header (default UTF-8).
+        // This enables correct handling of GBK/GB2312/Big5 request bodies when the
+        // client declares the charset in Content-Type (e.g., "application/json; charset=GBK").
+        java.nio.charset.Charset reqCharset = StubResponseRenderer.parseCharsetFromContentType(
+                request.headers().get(HttpHeaderNames.CONTENT_TYPE));
+        String body = request.content().toString(reqCharset);
 
         // P2: Fire REQUEST_RECEIVED event
         fireEvent(PluginEvent.requestReceived("http", method, path));

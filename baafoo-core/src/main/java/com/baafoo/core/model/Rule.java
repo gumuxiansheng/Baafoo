@@ -94,6 +94,19 @@ public class Rule {
      */
     private FaultInjection faultInjection;
 
+    /**
+     * Optional charset for decoding the inbound request body (null = UTF-8).
+     *
+     * <p>Used by TCP/Kafka/Pulsar/JMS handlers when the client sends payloads
+     * in a non-UTF-8 encoding (e.g., GBK, GB2312, Big5). Matching is always
+     * performed with UTF-8 first (preserving existing behaviour); after a rule
+     * matches, the request bytes are re-decoded using this charset so that
+     * {@code {{request.body}}} template variables and recording capture the
+     * correct text. HTTP infers the request charset from the
+     * {@code Content-Type} header and does not need this field.</p>
+     */
+    private String requestCharset;
+
     /** Rule version for undo support */
     private int version;
 
@@ -192,6 +205,9 @@ public class Rule {
 
     public FaultInjection getFaultInjection() { return faultInjection; }
     public void setFaultInjection(FaultInjection faultInjection) { this.faultInjection = faultInjection; }
+
+    public String getRequestCharset() { return requestCharset; }
+    public void setRequestCharset(String requestCharset) { this.requestCharset = requestCharset; }
 
     @Override
     public String toString() {

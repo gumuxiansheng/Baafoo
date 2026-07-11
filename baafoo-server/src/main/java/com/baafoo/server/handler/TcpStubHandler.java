@@ -16,6 +16,7 @@ import io.netty.util.AttributeKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
@@ -149,11 +150,12 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                     ResponseEntry response = firstRound.getResponse() != null
                             ? firstRound.getResponse() : getFirstResponse(rule);
 
-                    recordIfNeeded(rule, response, agentEnvironment, agentId, agentIp, payload);
+                    String decodedPayload = decodeWithRuleCharset(data, rule, payload);
+                    recordIfNeeded(rule, response, agentEnvironment, agentId, agentIp, decodedPayload);
 
                     // Close after last round if no loop
                     boolean isLastRound = (rule.getTcpRounds().size() == 1) && !rule.isTcpLoop();
-                    sendTcpResponse(ctx, response, payload, isLastRound, agentEnvironment);
+                    sendTcpResponse(ctx, response, decodedPayload, isLastRound, agentEnvironment);
                     return;
                 }
                 continue;
@@ -162,8 +164,9 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
             // Single-round TCP-specific matching (pattern/prefixHex/offset)
             if (matchTcpRule(rule, data, hexPayload, payload)) {
                 ResponseEntry response = getFirstResponse(rule);
-                recordIfNeeded(rule, response, agentEnvironment, agentId, agentIp, payload);
-                sendTcpResponse(ctx, response, payload, true, agentEnvironment);
+                String decodedPayload = decodeWithRuleCharset(data, rule, payload);
+                recordIfNeeded(rule, response, agentEnvironment, agentId, agentIp, decodedPayload);
+                sendTcpResponse(ctx, response, decodedPayload, true, agentEnvironment);
                 return;
             }
         }
@@ -183,10 +186,13 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
             ResponseEntry entry = result.getResponse();
             EnvironmentMode currentMode = agentResolver.resolveEnvironmentMode(agentEnvironment);
 
+            // Re-decode the request bytes with the matched rule's charset for template/recording.
+            String decodedPayload = decodeWithRuleCharset(data, result.getRule(), payload);
+
             if (currentMode == EnvironmentMode.RECORD || currentMode == EnvironmentMode.RECORD_AND_STUB) {
                 RecordingEntry rec = RecordingHelper.buildFromStub(
                         result, "tcp", "127.0.0.1", 0, null, null,
-                        Collections.<String, String>emptyMap(), payload);
+                        Collections.<String, String>emptyMap(), decodedPayload);
                 rec.setAgentId(agentId);
                 rec.setAgentIp(agentIp);
                 rec.setEnvironmentId(agentEnvironment);
@@ -195,7 +201,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                 fireEvent(PluginEvent.recordingSaved(rec.getId(), "tcp", agentEnvironment));
             }
 
-            sendTcpResponse(ctx, entry, payload, true, agentEnvironment);
+            sendTcpResponse(ctx, entry, decodedPayload, true, agentEnvironment);
             // P2: Fire RESPONSE_SENT event
             fireEvent(PluginEvent.responseSent("tcp", 200, 0));
         } else {
@@ -284,11 +290,12 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
             ResponseEntry response = nextRound.getResponse() != null
                     ? nextRound.getResponse() : getFirstResponse(rule);
 
-            recordIfNeeded(rule, response, agentEnvironment, agentId, agentIp, payload);
+            String decodedPayload = decodeWithRuleCharset(data, rule, payload);
+            recordIfNeeded(rule, response, agentEnvironment, agentId, agentIp, decodedPayload);
 
             // Don't close after response in multi-round (unless it's the last round and no loop)
             boolean isLastRound = (nextRoundIdx == rounds.size() - 1) && !rule.isTcpLoop();
-            sendTcpResponse(ctx, response, payload, isLastRound, agentEnvironment);
+            sendTcpResponse(ctx, response, decodedPayload, isLastRound, agentEnvironment);
         } else {
             log.debug("TCP multi-round: round {} of rule {} did not match, closing connection",
                     nextRoundIdx, ruleId);
@@ -420,6 +427,28 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
     private static String bytesToHex(byte[] bytes) {
         // Delegates to HexUtils — lookup table instead of String.format (Critical 4).
         return HexUtils.bytesToHex(bytes);
+    }
+
+    /**
+     * Re-decode the raw request bytes using the matched rule's {@code requestCharset}
+     * so that {@code {{request.body}}} template variables and recording capture the
+     * correct text when the client sends GBK/GB2312/Big5 payloads.
+     *
+     * <p>Matching is always performed with the UTF-8 decoded payload first (preserving
+     * existing behaviour for hex/path matchers). Only after a rule matches do we
+     * re-decode for template rendering and recording. Returns the original
+     * {@code defaultPayload} when the rule does not declare a non-UTF-8 charset.</p>
+     */
+    private String decodeWithRuleCharset(byte[] data, Rule rule, String defaultPayload) {
+        if (rule == null) return defaultPayload;
+        String cs = rule.getRequestCharset();
+        if (cs == null || cs.isEmpty() || "UTF-8".equalsIgnoreCase(cs)) return defaultPayload;
+        try {
+            return new String(data, Charset.forName(cs));
+        } catch (Exception e) {
+            log.warn("Failed to decode TCP payload with charset {}, falling back to UTF-8", cs);
+            return defaultPayload;
+        }
     }
 
     private Rule findRuleById(String ruleId) {

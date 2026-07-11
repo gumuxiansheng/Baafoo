@@ -83,6 +83,21 @@
           </el-col>
         </el-row>
 
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item :label="$t('rules.requestCharset')">
+              <el-select v-model="form.requestCharset" clearable :placeholder="$t('rules.requestCharsetPlaceholder')" style="width: 100%">
+                <el-option label="UTF-8" value="UTF-8" />
+                <el-option label="GBK" value="GBK" />
+                <el-option label="GB2312" value="GB2312" />
+                <el-option label="Big5" value="Big5" />
+                <el-option label="ISO-8859-1" value="ISO-8859-1" />
+              </el-select>
+              <div class="form-hint">{{ $t('rules.requestCharsetHint') }}</div>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
         <el-form-item :label="$t('rules.tags')">
           <el-input v-model="form.tagsStr" :placeholder="$t('rules.tagsPlaceholder')" />
         </el-form-item>
@@ -524,7 +539,7 @@ export default {
       name: '', protocol: 'http', host: '', port: null,
       serviceName: '', priority: 100, enabled: true,
       tagsStr: '', environments: [], conditions: [], responses: [],
-      fakerSeed: null, requestCountReset: null,
+      fakerSeed: null, requestCountReset: null, requestCharset: null,
       faultInjectionEnabled: false, faults: []
     })
 
@@ -570,6 +585,7 @@ export default {
         form.responses = JSON.parse(JSON.stringify(rule.value.responses || []))
         form.fakerSeed = rule.value.fakerSeed || null
         form.requestCountReset = rule.value.requestCountReset || null
+        form.requestCharset = rule.value.requestCharset || null
         // Load fault injection
         const fi = rule.value.faultInjection
         if (fi && fi.faults && fi.faults.length > 0) {
@@ -818,6 +834,7 @@ export default {
         responses: responsesData,
         fakerSeed: form.fakerSeed || null,
         requestCountReset: form.requestCountReset || null,
+        requestCharset: form.requestCharset || null,
         faultInjection: faultInjection
       }
 

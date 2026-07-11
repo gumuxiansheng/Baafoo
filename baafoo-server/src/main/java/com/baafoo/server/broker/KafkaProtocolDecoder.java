@@ -27,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -400,6 +401,39 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
         return response;
     }
 
+    /**
+     * Resolve the response charset for encoding a stub body. Falls back to UTF-8
+     * when the rule does not declare a non-UTF-8 charset on the matched ResponseEntry.
+     */
+    private static Charset resolveResponseCharset(ResponseEntry resp) {
+        if (resp == null) return StandardCharsets.UTF_8;
+        String cs = resp.getCharset();
+        if (cs == null || cs.isEmpty() || "UTF-8".equalsIgnoreCase(cs)) return StandardCharsets.UTF_8;
+        try {
+            return Charset.forName(cs);
+        } catch (Exception e) {
+            log.warn("Unsupported response charset '{}', falling back to UTF-8", cs);
+            return StandardCharsets.UTF_8;
+        }
+    }
+
+    /**
+     * Re-decode the original request bytes using the matched rule's requestCharset
+     * so that recording captures the correct text when the client used GBK/GB2312/Big5.
+     * Returns {@code defaultBody} when the rule does not declare a non-UTF-8 charset.
+     */
+    private static String decodeRequestBody(byte[] data, Rule rule, String defaultBody) {
+        if (rule == null || data == null) return defaultBody;
+        String cs = rule.getRequestCharset();
+        if (cs == null || cs.isEmpty() || "UTF-8".equalsIgnoreCase(cs)) return defaultBody;
+        try {
+            return new String(data, Charset.forName(cs));
+        } catch (Exception e) {
+            log.warn("Unsupported request charset '{}', falling back to UTF-8", cs);
+            return defaultBody;
+        }
+    }
+
     private long processProducePartition(ChannelHandlerContext ctx, String topic, int partition,
                                            byte[] batchData, AgentResolver.AgentInfo agentInfo,
                                            EnvironmentMode mode, List<Rule> rules, boolean shouldRecord,
@@ -426,6 +460,10 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                     // Evaluate Kafka protocol faults configured on the matched rule.
                     evaluateKafkaFaults(m.getRule().getFaultInjection(), faults);
 
+                    // Re-decode request body with the matched rule's charset for recording
+                    // so GBK/GB2312/Big5 payloads are captured as readable text.
+                    String recordedBody = decodeRequestBody(rec.value, m.getRule(), bodyStr);
+
                     // Record the original payload (so replays show what the app sent).
                     if (shouldRecord) {
                         String respBody = null;
@@ -433,14 +471,14 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                                 && m.getResponse() != null && m.getResponse().getBody() != null) {
                             respBody = m.getResponse().getBody();
                         }
-                        matchHelper.record(m.getRule().getId(), "kafka", topic, bodyStr, respBody, agentInfo, "produce");
+                        matchHelper.record(m.getRule().getId(), "kafka", topic, recordedBody, respBody, agentInfo, "produce");
                     }
                     // In STUB / RECORD_AND_STUB, replace the value with the stub body so
                     // consumers fetch the stub instead of the producer's original payload.
                     if (mode == EnvironmentMode.STUB || mode == EnvironmentMode.RECORD_AND_STUB) {
                         ResponseEntry resp = m.getResponse();
                         byte[] stubValue = resp != null && resp.getBody() != null
-                                ? resp.getBody().getBytes(StandardCharsets.UTF_8) : rec.value;
+                                ? resp.getBody().getBytes(resolveResponseCharset(resp)) : rec.value;
                         lastOffset = messageStore.append(topic, partition, rec.key, stubValue);
                         deriveMqRelationships(ctx, relationships, topic, partition, rec, agentInfo.environment);
                     } else {
@@ -464,7 +502,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 evaluateKafkaFaults(m.getRule().getFaultInjection(), faults);
                 ResponseEntry resp = m.getResponse();
                 if (resp != null && resp.getBody() != null) {
-                    byte[] stubValue = resp.getBody().getBytes(StandardCharsets.UTF_8);
+                    byte[] stubValue = resp.getBody().getBytes(resolveResponseCharset(resp));
                     offset = messageStore.append(topic, partition, null, stubValue);
                     if (shouldRecord) {
                         matchHelper.record(m.getRule().getId(), "kafka", topic, null, resp.getBody(), agentInfo, "produce");
@@ -610,7 +648,7 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                     if (m.isMatched()) {
                         ResponseEntry resp = m.getResponse();
                         if (resp != null && resp.getBody() != null) {
-                            byte[] stubValue = resp.getBody().getBytes(StandardCharsets.UTF_8);
+                            byte[] stubValue = resp.getBody().getBytes(resolveResponseCharset(resp));
                             long offset = messageStore.append(topic.getTopic(), partitionId, null, stubValue);
                             messages = messageStore.fetch(topic.getTopic(), partitionId, offset, maxBytes);
                             if (mode == EnvironmentMode.RECORD_AND_STUB) {

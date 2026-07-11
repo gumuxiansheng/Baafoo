@@ -1424,4 +1424,149 @@ public class KafkaMockBrokerTest {
         assertNull("Should not have error", errorRef.get());
         return responseRef.get();
     }
+
+    // --- Multi-charset (GBK) support ---
+
+    /**
+     * When a Kafka rule declares charset=GBK on its ResponseEntry, the stub body
+     * stored in the message store should be GBK-encoded, not UTF-8.
+     */
+    @Test
+    public void testProduceStubUsesResponseCharsetGBK() throws Exception {
+        Rule rule = new Rule();
+        rule.setId("rule-gbk-stub");
+        rule.setProtocol("kafka");
+        rule.setEnabled(true);
+        rule.setConditions(Collections.singletonList(MatchCondition.topic("equals", "gbk-topic")));
+        ResponseEntry resp = new ResponseEntry();
+        resp.setBody("你好世界");
+        resp.setCharset("GBK");
+        rule.setResponses(Collections.singletonList(resp));
+
+        when(storage.listRules()).thenReturn(Collections.singletonList(rule));
+        when(storage.listEnvironments()).thenReturn(new ArrayList<>());
+
+        ByteBuf produceResponse = sendRequest(buildProduceRequest("gbk-topic", 0, "k1", "real-payload"));
+        consumeProduceResponse(produceResponse);
+
+        List<KafkaMessageStore.StoredMessage> stored =
+                messageStore.fetch("gbk-topic", 0, 0, 1024 * 1024);
+        assertEquals("Should store 1 message", 1, stored.size());
+        assertNotNull(stored.get(0).value);
+        // Decode with GBK — should yield the original Chinese text
+        String gbkDecoded = new String(stored.get(0).value,
+                java.nio.charset.Charset.forName("GBK"));
+        assertEquals("Stored value should be GBK-encoded stub body", "你好世界", gbkDecoded);
+        // Verify it is NOT valid UTF-8 (proves GBK encoding was used)
+        String utf8Decoded = new String(stored.get(0).value, StandardCharsets.UTF_8);
+        assertNotEquals("GBK-encoded body should differ from UTF-8", "你好世界", utf8Decoded);
+    }
+
+    /**
+     * When rule.requestCharset=GBK and the producer sends GBK-encoded bytes,
+     * the recording should capture the correctly decoded text (not mojibake).
+     */
+    @Test
+    public void testProduceRecordsGBKRequestWithRequestCharset() throws Exception {
+        Rule rule = new Rule();
+        rule.setId("rule-gbk-rec");
+        rule.setProtocol("kafka");
+        rule.setEnabled(true);
+        rule.setRequestCharset("GBK");
+        rule.setConditions(Collections.singletonList(MatchCondition.topic("equals", "gbk-rec-topic")));
+        rule.setResponses(Collections.singletonList(resp("STUB")));
+
+        when(storage.listRules()).thenReturn(Collections.singletonList(rule));
+        com.baafoo.core.model.Environment env = new com.baafoo.core.model.Environment();
+        env.setName("default");
+        env.setMode(EnvironmentMode.RECORD);
+        when(storage.listEnvironments()).thenReturn(Collections.singletonList(env));
+
+        // Produce a GBK-encoded Chinese body
+        byte[] gbkBody = "你好".getBytes(java.nio.charset.Charset.forName("GBK"));
+        ByteBuf produceResponse = sendRequest(buildProduceRequestWithBytes("gbk-rec-topic", 0, null, gbkBody));
+        consumeProduceResponse(produceResponse);
+
+        // Verify a recording was added with the correctly decoded GBK payload
+        java.util.concurrent.atomic.AtomicReference<String> recordedBody = new java.util.concurrent.atomic.AtomicReference<>();
+        org.mockito.ArgumentCaptor<com.baafoo.core.model.RecordingEntry> captor =
+                org.mockito.ArgumentCaptor.forClass(com.baafoo.core.model.RecordingEntry.class);
+        verify(storage).addRecording(captor.capture());
+        com.baafoo.core.model.RecordingEntry rec = captor.getValue();
+        assertNotNull("Recording should be added", rec);
+        assertNotNull("Recorded body should not be null", rec.getRequestBody());
+        assertEquals("Recorded body should be GBK-decoded", "你好", rec.getRequestBody());
+    }
+
+    /**
+     * Build a Produce request with raw byte[] value (for non-UTF-8 encodings like GBK).
+     */
+    private ByteBuf buildProduceRequestWithBytes(String topic, int partition, String key, byte[] valueBytes) {
+        ByteBuf buf = Unpooled.buffer();
+        buf.writeShort(0);  // API key: Produce
+        buf.writeShort(3);  // API version
+        buf.writeInt(1);    // correlation ID
+        writeNullableString(buf, "test-client");
+        writeNullableString(buf, null); // transactional_id
+        buf.writeShort(-1); // acks
+        buf.writeInt(30000); // timeout_ms
+        buf.writeInt(1);    // Topics array
+        writeNullableString(buf, topic);
+        buf.writeInt(1);    // Partitions array
+        buf.writeInt(partition);
+        ByteBuf recordBatch = buildRecordBatchWithBytes(key, valueBytes);
+        buf.writeBytes(recordBatch);
+        recordBatch.release();
+        return frameRequest(buf);
+    }
+
+    private ByteBuf buildRecordBatchWithBytes(String key, byte[] valueBytes) {
+        byte[] keyBytes = key != null ? key.getBytes(StandardCharsets.UTF_8) : null;
+        ByteBuf body = Unpooled.buffer();
+        body.writeByte(0); // attributes
+        writeVarint(body, 0); // timestampDelta
+        writeVarint(body, 0); // offsetDelta
+        if (keyBytes != null) {
+            writeVarint(body, keyBytes.length);
+            body.writeBytes(keyBytes);
+        } else {
+            writeVarint(body, -1);
+        }
+        if (valueBytes != null) {
+            writeVarint(body, valueBytes.length);
+            body.writeBytes(valueBytes);
+        } else {
+            writeVarint(body, -1);
+        }
+        writeVarint(body, 0); // headers count
+
+        int recordLen = body.readableBytes();
+        ByteBuf batchBuf = Unpooled.buffer();
+        batchBuf.writeLong(0); // baseOffset
+        int batchLengthPos = batchBuf.writerIndex();
+        batchBuf.writeInt(0); // placeholder
+        batchBuf.writeInt(0); // partitionLeaderEpoch
+        batchBuf.writeByte(2); // magic = 2
+        batchBuf.writeInt(0); // CRC
+        batchBuf.writeShort(0); // attributes
+        batchBuf.writeInt(0); // lastOffsetDelta
+        batchBuf.writeLong(System.currentTimeMillis()); // baseTimestamp
+        batchBuf.writeLong(System.currentTimeMillis()); // maxTimestamp
+        batchBuf.writeLong(0); // producerId
+        batchBuf.writeShort(0); // producerEpoch
+        batchBuf.writeInt(0); // baseSequence
+        batchBuf.writeInt(1); // recordsCount
+        writeVarint(batchBuf, recordLen);
+        batchBuf.writeBytes(body);
+        body.release();
+
+        int batchLength = batchBuf.readableBytes() - 12;
+        batchBuf.setInt(batchLengthPos, batchLength);
+
+        ByteBuf result = Unpooled.buffer();
+        result.writeInt(batchBuf.readableBytes());
+        result.writeBytes(batchBuf);
+        batchBuf.release();
+        return result;
+    }
 }

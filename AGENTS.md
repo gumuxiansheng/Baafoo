@@ -183,3 +183,4 @@ See `.review/deep-code-review-report.md` for 20+ verified findings. The followin
 - ✅ Fixed (P0-6): `RouteManager.rebuildRouteTable` now uses atomic reference swap instead of clear+putAll
 - ✅ Fixed (P0-5): `PassthroughProxy` SSL verification is now secure by default; `sslVerifyDisabled` must be explicitly set to `true` to disable
 - ✅ Fixed (P0): `TcpStubHandler` no longer blocks the Netty EventLoop — delay is now scheduled via `ctx.executor().schedule(...)` instead of `Thread.sleep`
+- ✅ Fixed: Multi-charset support — `Rule.requestCharset` field added for request-side GBK/GB2312/Big5 decoding; `ResponseEntry.charset` now respected by Kafka/Pulsar/JMS stub responses (was dead field); HTTP request body decoded from `Content-Type` header charset; JMS preset messages use `BytesMessage` + `BaafooCharset` property for non-UTF-8

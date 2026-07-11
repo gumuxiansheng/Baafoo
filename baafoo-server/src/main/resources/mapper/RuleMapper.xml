@@ -41,6 +41,7 @@
         <result property="requestCountReset" column="request_count_reset"/>
         <result property="faultInjection" column="fault_injection_json"
                 typeHandler="com.baafoo.server.storage.mybatis.FaultInjectionTypeHandler"/>
+        <result property="requestCharset" column="request_charset"/>
     </resultMap>
 
     <!-- Result map for RuleSet -->
@@ -121,6 +122,7 @@
             environments_json, tcp_rounds_json, tcp_loop, tcp_pattern,
             tcp_prefix_hex, tcp_offset_start, tcp_offset_end, tcp_offset_hex,
             faker_seed, request_count_reset, fault_injection_json,
+            request_charset,
             version, created_at, updated_at)
         VALUES (#{id}, #{name}, #{protocol}, #{serviceName}, #{host}, #{port},
             #{conditions, typeHandler=com.baafoo.server.storage.mybatis.JsonTypeHandler},
@@ -133,6 +135,7 @@
             #{tcpPrefixHex}, #{tcpOffsetStart}, #{tcpOffsetEnd}, #{tcpOffsetHex},
             #{fakerSeed}, #{requestCountReset},
             #{faultInjection, typeHandler=com.baafoo.server.storage.mybatis.FaultInjectionTypeHandler},
+            #{requestCharset},
             #{version}, #{createdAt}, #{updatedAt})
     </insert>
 
@@ -160,6 +163,7 @@
             faker_seed = #{fakerSeed},
             request_count_reset = #{requestCountReset},
             fault_injection_json = #{faultInjection, typeHandler=com.baafoo.server.storage.mybatis.FaultInjectionTypeHandler},
+            request_charset = #{requestCharset},
             version = #{version},
             created_at = #{createdAt},
             updated_at = #{updatedAt}
