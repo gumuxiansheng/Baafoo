@@ -10,6 +10,20 @@ import java.util.List;
 import java.util.Map;
 
 class StatusApiHandler implements ResourceHandler {
+
+    /** Optional supplier that reports per-protocol broker liveness.
+     *  Wired by BaafooServer so /api/status can reveal whether the
+     *  Pulsar/Kafka/JMS mock brokers actually bound their ports. */
+    private final java.util.function.Supplier<java.util.Map<String, String>> brokerStatusSupplier;
+
+    StatusApiHandler() {
+        this(null);
+    }
+
+    StatusApiHandler(java.util.function.Supplier<java.util.Map<String, String>> brokerStatusSupplier) {
+        this.brokerStatusSupplier = brokerStatusSupplier;
+    }
+
     @Override
     public Object handle(String method, String path, String body, ApiContext ctx) throws Exception {
         if (path.equals("/__baafoo__/api/status") && "GET".equals(method)) {
@@ -35,6 +49,17 @@ class StatusApiHandler implements ResourceHandler {
                     .authEnabled(ctx.authService.isAuthEnabled())
                     .requestTrend(dailyCounts)
                     .plugins(buildPluginSummary(allAgents, onlineThreshold));
+            // Surface broker liveness if a supplier was wired in.
+            if (brokerStatusSupplier != null) {
+                try {
+                    status.brokers(brokerStatusSupplier.get());
+                } catch (Exception e) {
+                    // Never let a broker-status hiccup break /api/status itself.
+                    java.util.Map<String, String> err = new java.util.LinkedHashMap<String, String>();
+                    err.put("status", "error: " + e.getMessage());
+                    status.brokers(err);
+                }
+            }
             return ApiResponse.ok(status);
         }
         return null;

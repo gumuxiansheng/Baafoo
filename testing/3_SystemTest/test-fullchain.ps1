@@ -863,12 +863,32 @@ try {
 Write-Host ""
 Write-Host "--- P: Pulsar ---" -ForegroundColor White
 
+# Diagnostic: confirm the Pulsar mock broker is LISTENING on 9003 (published
+# localhost:9003) before the P tests. A silently-swallowed broker-startup
+# failure is the classic cause of "connection timed out: ...:9003".
+# We use two checks: /api/status (authoritative in-process signal) and a
+# Test-NetConnection probe on the published port.
+Write-Host "  [diag] Pulsar broker status:" -ForegroundColor Gray
+$statusJson = & curl.exe -s --max-time 5 "$SERVER/__baafoo__/api/status" 2>$null
+$pulsarState = ($statusJson | ConvertFrom-Json -ErrorAction SilentlyContinue).brokers.pulsar
+Write-Host "    BROKER_STATUS.pulsar=$pulsarState" -ForegroundColor Gray
+$pulsarListening = Test-NetConnection -ComputerName localhost -Port 9003 -InformationLevel Quiet -WarningAction SilentlyContinue
+if ($pulsarListening) {
+    Write-Host "    PULSAR_9003_TCP=LISTENING" -ForegroundColor Green
+} else {
+    Write-Host "    PULSAR_9003_TCP=NOT_LISTENING (broker did not bind — see server logs below)" -ForegroundColor Red
+    Write-Host "    --- server Pulsar-related startup logs ---"
+    & docker compose @COMPOSE_FILES logs server 2>$null | Select-String -Pattern 'pulsar|broker|9003|failed to start|STARTUP FAILURE' | Select-Object -Last 40 | ForEach-Object { $_.Line }
+}
+
 # P01: Pulsar Produce — must succeed (MockBroker stub). error/timeout is a FAIL, not a pass.
 $resp = Invoke-AppGet "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-test-topic&message=hello-baafoo-pulsar"
 if ($resp -match '"success"\s*:\s*true' -and $resp -notmatch '"error"') {
     Test-Pass "P01: Pulsar Produce stub (success)"
 } else {
     Test-Fail "P01: Pulsar Produce (response: $resp)"
+    Write-Host "    BROKER_STATUS.pulsar=$pulsarState" -ForegroundColor Gray
+    & docker compose @COMPOSE_FILES logs server 2>$null | Select-String -Pattern 'pulsar|broker|9003|failed to start|STARTUP FAILURE' | Select-Object -Last 40 | ForEach-Object { $_.Line }
 }
 
 # P02: Pulsar Consume — must succeed (MockBroker stub). error/timeout is a FAIL.
@@ -877,6 +897,8 @@ if ($resp -match '"success"\s*:\s*true' -and $resp -notmatch '"error"') {
     Test-Pass "P02: Pulsar Consume stub (success)"
 } else {
     Test-Fail "P02: Pulsar Consume (response: $resp)"
+    Write-Host "    BROKER_STATUS.pulsar=$pulsarState" -ForegroundColor Gray
+    & docker compose @COMPOSE_FILES logs server 2>$null | Select-String -Pattern 'pulsar|broker|9003|failed to start|STARTUP FAILURE' | Select-Object -Last 40 | ForEach-Object { $_.Line }
 }
 
 # P03: Pulsar wildcard topic

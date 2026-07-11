@@ -33,6 +33,8 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
     private final ServerConfig config;
     /** P2: Event bus for firing plugin events from API handlers */
     private final com.baafoo.core.event.EventBus eventBus;
+    /** Optional supplier reporting per-protocol broker liveness (wired by BaafooServer). */
+    private final java.util.function.Supplier<java.util.Map<String, String>> brokerStatusSupplier;
 
     public ManagementApiHandler(StorageService storage, AuthService authService) {
         this(storage, authService, new ChaosManager(), null);
@@ -59,12 +61,23 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
     public ManagementApiHandler(StorageService storage, AuthService authService,
                                  ChaosManager chaosManager, ServerConfig config,
                                  com.baafoo.core.event.EventBus eventBus) {
+        this(storage, authService, chaosManager, config, eventBus, null);
+    }
+
+    /**
+     * P2: Constructor with EventBus + broker-status supplier for plugin event firing.
+     */
+    public ManagementApiHandler(StorageService storage, AuthService authService,
+                                 ChaosManager chaosManager, ServerConfig config,
+                                 com.baafoo.core.event.EventBus eventBus,
+                                 java.util.function.Supplier<java.util.Map<String, String>> brokerStatusSupplier) {
         this.storage = storage;
         this.authService = authService;
         this.mapper = new ObjectMapper();
         this.chaosManager = chaosManager != null ? chaosManager : new ChaosManager();
         this.config = config;
         this.eventBus = eventBus;
+        this.brokerStatusSupplier = brokerStatusSupplier;
         this.handlers = Arrays.asList(
                 new AuthApiHandler(),
                 new UserApiHandler(),
@@ -74,7 +87,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
                 new SceneApiHandler(),
                 new MqRelationshipApiHandler(),
                 new RecordingApiHandler(),
-                new StatusApiHandler(),
+                new StatusApiHandler(brokerStatusSupplier),
                 new PluginApiHandler(),
                 new ChaosApiHandler(this.chaosManager),
                 new McpApiHandler()

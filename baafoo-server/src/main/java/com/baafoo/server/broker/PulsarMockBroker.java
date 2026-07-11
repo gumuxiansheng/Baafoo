@@ -104,7 +104,40 @@ public class PulsarMockBroker {
                     }
                 });
 
-        serverChannel = b.bind(port).sync().channel();
+        // Bind with retries. In containerized CI environments a transient bind
+        // failure (slower startup, brief accept-race, or a port not yet released)
+        // can otherwise leave port 9003 unlistened and produce an opaque
+        // "connection timed out: ...:9003" from the Pulsar client. Retrying a few
+        // times with a backoff converts a flaky startup into a reliable one
+        // instead of silently leaving the broker down (the caller swallows the
+        // exception, so without this the broker would be permanently dead).
+        Exception lastBindError = null;
+        int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                serverChannel = b.bind(port).sync().channel();
+                lastBindError = null;
+                break;
+            } catch (Exception e) {
+                lastBindError = e;
+                log.warn("Pulsar Mock Broker bind to port {} failed (attempt {}/{}): {}",
+                        port, attempt, maxAttempts, e.getMessage());
+                if (attempt < maxAttempts) {
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        }
+        if (serverChannel == null) {
+            throw new IllegalStateException(
+                    "Pulsar Mock Broker failed to bind port " + port + " after retry",
+                    lastBindError);
+        }
+
         this.actualPort = ((java.net.InetSocketAddress) serverChannel.localAddress()).getPort();
         log.info("Pulsar Mock Broker started on port {}", actualPort);
 

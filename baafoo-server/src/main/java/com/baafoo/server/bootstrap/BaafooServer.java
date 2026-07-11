@@ -64,6 +64,9 @@ public class BaafooServer {
     private PulsarMockBroker pulsarBroker;
     private JmsMockBroker jmsBroker;
     private RecordingCleanupTask recordingCleanupTask;
+    /** Tracks broker-startup failures (protocol -> error message) for diagnostics. */
+    private final java.util.Map<String, String> brokerStartupErrors =
+            new java.util.concurrent.ConcurrentHashMap<String, String>();
 
     public BaafooServer(ServerConfig config) {
         this.config = config;
@@ -175,7 +178,13 @@ public class BaafooServer {
                         p.addLast(new HttpServerCodec());
                         p.addLast(new HttpObjectAggregator(10 * 1024 * 1024));
                         p.addLast(new AuthFilter(authService, config));
-                        p.addLast(new ManagementApiHandler(storage, authService, new com.baafoo.core.util.ChaosManager(), config, eventBus));
+                        p.addLast(new ManagementApiHandler(storage, authService, new com.baafoo.core.util.ChaosManager(), config, eventBus,
+                                new java.util.function.Supplier<java.util.Map<String, String>>() {
+                                    @Override
+                                    public java.util.Map<String, String> get() {
+                                        return getBrokerStatus();
+                                    }
+                                }));
                         p.addLast(new StaticFileHandler(config.getWebConsolePath()));
                     }
                 });
@@ -265,7 +274,8 @@ public class BaafooServer {
                 kafkaBroker = new KafkaMockBroker(kafkaPort, storage, bossGroup, workerGroup, config.getMessagingAdvertisedHost());
                 kafkaBroker.start();
             } catch (Exception e) {
-                log.error("Failed to start Kafka Mock Broker on port {}: {}", kafkaPort, e.getMessage(), e);
+                brokerStartupErrors.put("kafka", e.getClass().getName() + ": " + e.getMessage());
+                log.error("*** BROKER STARTUP FAILURE *** Kafka Mock Broker on port {}: {}", kafkaPort, e.getMessage(), e);
                 kafkaBroker = null;
             }
         }
@@ -277,7 +287,8 @@ public class BaafooServer {
                 pulsarBroker = new PulsarMockBroker(pulsarPort, bossGroup, workerGroup, storage, config.getMessagingAdvertisedHost());
                 pulsarBroker.start();
             } catch (Exception e) {
-                log.error("Failed to start Pulsar Mock Broker on port {}: {}", pulsarPort, e.getMessage(), e);
+                brokerStartupErrors.put("pulsar", e.getClass().getName() + ": " + e.getMessage());
+                log.error("*** BROKER STARTUP FAILURE *** Pulsar Mock Broker on port {}: {}", pulsarPort, e.getMessage(), e);
                 pulsarBroker = null;
             }
         }
@@ -290,10 +301,35 @@ public class BaafooServer {
                 jmsBroker.start();
                 jmsBroker.loadRules(storage.listRules());
             } catch (Exception e) {
-                log.error("Failed to start JMS Mock Broker on port {}: {}", jmsPort, e.getMessage(), e);
+                brokerStartupErrors.put("jms", e.getClass().getName() + ": " + e.getMessage());
+                log.error("*** BROKER STARTUP FAILURE *** JMS Mock Broker on port {}: {}", jmsPort, e.getMessage(), e);
                 jmsBroker = null;
             }
         }
+
+        if (!brokerStartupErrors.isEmpty()) {
+            log.error("*** BROKER STARTUP SUMMARY *** failures={} — the following protocol brokers "
+                    + "did NOT start and their ports are NOT listening: {}", brokerStartupErrors, brokerStartupErrors.keySet());
+        }
+    }
+
+    /**
+     * @return map of protocol -> "up" or the captured startup error message.
+     *         Exposed for health/diagnostics so a silently swallowed
+     *         broker-startup failure becomes observable (e.g. via the
+     *         integration test's port-listening probe).
+     */
+    public java.util.Map<String, String> getBrokerStatus() {
+        java.util.Map<String, String> status = new java.util.LinkedHashMap<String, String>();
+        status.put("kafka", kafkaBroker != null ? "up" : describeBroker("kafka"));
+        status.put("pulsar", pulsarBroker != null ? "up" : describeBroker("pulsar"));
+        status.put("jms", jmsBroker != null ? "up" : describeBroker("jms"));
+        return status;
+    }
+
+    private String describeBroker(String protocol) {
+        String err = brokerStartupErrors.get(protocol);
+        return err != null ? "down (" + err + ")" : "down";
     }
 
     private void ensureDefaultAdmin() {

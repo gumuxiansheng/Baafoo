@@ -820,13 +820,48 @@ curl -s -X PUT -H "Content-Type: application/json" -H "X-Api-Key: $API_KEY" \
 echo ""
 echo "--- P: Pulsar ---"
 
+# Diagnostic: confirm the Pulsar mock broker is actually LISTENING on 9003
+# BEFORE we run the P tests. A silently-swallowed broker-startup failure
+# (in BaafooServer.startProtocolServers) is the classic cause of
+# "connection timed out: ...:9003" — this surfaces it immediately instead of
+# leaving us guessing why the environment differs from local.
+#
+# We use TWO independent checks:
+#   1) /api/status (brokers.pulsar) — the authoritative in-process signal.
+#      The server now reports whether each protocol broker actually bound
+#      its port, so we learn the real cause (e.g. bind exception) directly.
+#   2) runner-side TCP probe on the published port localhost:9003 (bash
+#      /dev/tcp) — a secondary network-level check. We use bash because the
+#      container's `sh` (dash) does not support /dev/tcp.
+echo "  [diag] Pulsar broker status:"
+broker_status_json="$(curl -s --max-time 5 "$SERVER/__baafoo__/api/status" 2>/dev/null)"
+pulsar_broker_state="$(echo "$broker_status_json" | jq -r '.brokers.pulsar // "unknown"' 2>/dev/null)"
+echo "    BROKER_STATUS.pulsar=${pulsar_broker_state:-unknown}"
+if timeout 3 bash -c 'exec 3<>/dev/tcp/localhost/9003' 2>/dev/null; then
+    echo "    PULSAR_9003_TCP=LISTENING"
+else
+    echo "    PULSAR_9003_TCP=NOT_LISTENING"
+    echo "    --- server Pulsar-related startup logs ---"
+    docker compose $COMPOSE_FILES logs server 2>&1 | grep -iE 'pulsar|broker|9003|failed to start|STARTUP FAILURE' | tail -n 40 || true
+fi
+
 resp="$(app_get "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-test-topic&message=hello-baafoo-pulsar")"
 if [[ "$resp" =~ \"success\"[[:space:]]*:[[:space:]]*true && ! "$resp" =~ \"error\" ]]; then test_pass "P01: Pulsar Produce stub (success)"
-else test_fail "P01: Pulsar Produce (response: $resp)"; fi
+else
+    test_fail "P01: Pulsar Produce (response: $resp)"
+    echo "    BROKER_STATUS.pulsar=$(echo "$broker_status_json" | jq -r '.brokers.pulsar // "unknown"' 2>/dev/null)"
+    echo "    --- P01 failed: dumping server Pulsar broker logs ---"
+    docker compose $COMPOSE_FILES logs server 2>&1 | grep -iE 'pulsar|broker|9003|failed to start|STARTUP FAILURE' | tail -n 40 || true
+fi
 
 resp="$(app_get "$APP_A/api/pulsar/consume?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-test-topic")"
 if [[ "$resp" =~ \"success\"[[:space:]]*:[[:space:]]*true && ! "$resp" =~ \"error\" ]]; then test_pass "P02: Pulsar Consume stub (success)"
-else test_fail "P02: Pulsar Consume (response: $resp)"; fi
+else
+    test_fail "P02: Pulsar Consume (response: $resp)"
+    echo "    BROKER_STATUS.pulsar=$(echo "$broker_status_json" | jq -r '.brokers.pulsar // "unknown"' 2>/dev/null)"
+    echo "    --- P02 failed: dumping server Pulsar broker logs ---"
+    docker compose $COMPOSE_FILES logs server 2>&1 | grep -iE 'pulsar|broker|9003|failed to start|STARTUP FAILURE' | tail -n 40 || true
+fi
 
 resp="$(app_get "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-wildcard-topic&message=test")"
 if [[ "$resp" =~ \"success\"[[:space:]]*:[[:space:]]*true && ! "$resp" =~ \"error\" ]]; then test_pass "P03: Pulsar wildcard topic stub (success)"
