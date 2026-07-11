@@ -19,13 +19,21 @@ public class BaafooServerContainerTest {
 
     private static final Logger log = LoggerFactory.getLogger(BaafooServerContainerTest.class);
 
+    /**
+     * API key shared between the test client and the server container. The
+     * container exports it as the BAAFOO_API_KEY environment variable, which the
+     * server registers as an admin key; the client sends it via the X-Api-Key
+     * header so write operations (create rule / environment) are authorized.
+     */
+    private static final String TEST_API_KEY = "baafoo-test-api-key";
+
     private BaafooServerContainer container;
 
     @Before
     public void setUp() {
         assumeTrue("Docker must be available", isDockerAvailable());
 
-        container = new BaafooServerContainer();
+        container = new BaafooServerContainer().withApiKey(TEST_API_KEY);
         container.start();
     }
 
@@ -86,7 +94,8 @@ public class BaafooServerContainerTest {
         rule.setResponses(Collections.singletonList(response));
 
         BaafooServerContainer preloaded = new BaafooServerContainer()
-                .withRule(rule);
+                .withRule(rule)
+                .withApiKey(TEST_API_KEY);
         try {
             preloaded.start();
 

@@ -26,12 +26,18 @@ public class BaafooClient {
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private final String baseUrl;
+    private final String apiKey;
 
     public BaafooClient(String baseUrl) {
+        this(baseUrl, null);
+    }
+
+    public BaafooClient(String baseUrl, String apiKey) {
         if (baseUrl.endsWith("/")) {
             baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
         }
         this.baseUrl = baseUrl;
+        this.apiKey = apiKey;
     }
 
     // ------------------------------------------------------------------
@@ -146,6 +152,7 @@ public class BaafooClient {
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(10000);
             conn.setRequestProperty("Accept", "application/json");
+            applyAuthHeader(conn);
 
             int code = conn.getResponseCode();
             String body = readBody(conn);
@@ -178,6 +185,12 @@ public class BaafooClient {
         return doWrite("PUT", path, request, responseType);
     }
 
+    private void applyAuthHeader(HttpURLConnection conn) {
+        if (apiKey != null && !apiKey.isEmpty()) {
+            conn.setRequestProperty("X-Api-Key", apiKey);
+        }
+    }
+
     private void doDelete(String path) {
         try {
             URL url = new URL(baseUrl + path);
@@ -185,6 +198,7 @@ public class BaafooClient {
             conn.setRequestMethod("DELETE");
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(10000);
+            applyAuthHeader(conn);
 
             int code = conn.getResponseCode();
             if (code < 200 || code >= 300) {
@@ -207,6 +221,7 @@ public class BaafooClient {
             conn.setReadTimeout(10000);
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("Accept", "application/json");
+            applyAuthHeader(conn);
             conn.setDoOutput(true);
 
             byte[] requestBody = MAPPER.writeValueAsBytes(request);

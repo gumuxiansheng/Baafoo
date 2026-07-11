@@ -27,6 +27,8 @@ public class BaafooServerContainer extends GenericContainer<BaafooServerContaine
 
     private final List<PreloadAction> preloadActions = new ArrayList<>();
 
+    private String apiKey;
+
     private BaafooClient client;
 
     public BaafooServerContainer() {
@@ -52,6 +54,7 @@ public class BaafooServerContainer extends GenericContainer<BaafooServerContaine
      * Set the API key for authenticated communication with the server.
      */
     public BaafooServerContainer withApiKey(String apiKey) {
+        this.apiKey = apiKey;
         withEnv("BAAFOO_API_KEY", apiKey);
         return this;
     }
@@ -139,7 +142,7 @@ public class BaafooServerContainer extends GenericContainer<BaafooServerContaine
     @Override
     public void start() {
         super.start();
-        this.client = new BaafooClient(getHttpBaseUrl());
+        this.client = new BaafooClient(getHttpBaseUrl(), apiKey);
         applyPreloadActions();
     }
 
@@ -173,7 +176,7 @@ public class BaafooServerContainer extends GenericContainer<BaafooServerContaine
      */
     public BaafooClient getClient() {
         if (client == null) {
-            client = new BaafooClient(getHttpBaseUrl());
+            client = new BaafooClient(getHttpBaseUrl(), apiKey);
         }
         return client;
     }

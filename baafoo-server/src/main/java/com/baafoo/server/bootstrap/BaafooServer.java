@@ -79,12 +79,24 @@ public class BaafooServer {
         if (authConfig == null) {
             authConfig = new ServerConfig.AuthConfig();
         }
+        // Merge configured API keys with an optional admin key injected via the
+        // BAAFOO_API_KEY environment variable. This is used by integration tests
+        // (Testcontainers) and automation; when the env var is unset the default
+        // config behavior is preserved (no extra key is granted).
+        java.util.Map<String, String> apiKeyRoleMap = new java.util.HashMap<String, String>();
+        if (authConfig.getApiKeys() != null) {
+            apiKeyRoleMap.putAll(authConfig.getApiKeys());
+        }
+        String envApiKey = System.getenv("BAAFOO_API_KEY");
+        if (envApiKey != null && !envApiKey.isEmpty()) {
+            apiKeyRoleMap.put(envApiKey, "admin");
+        }
         return new AuthService(
                 storage,
                 authConfig.getJwtSecret(),
                 authConfig.isEnabled(),
                 authConfig.isLocalBypass(),
-                authConfig.getApiKeys()
+                apiKeyRoleMap
         );
     }
 
