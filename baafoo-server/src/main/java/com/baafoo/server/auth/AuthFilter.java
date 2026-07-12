@@ -197,7 +197,17 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
                 if ((addrBytes[fullBytes] & mask) != (cidrBytes[fullBytes] & mask)) return false;
             }
             return true;
+        } catch (java.net.UnknownHostException e) {
+            // Unresolvable host in either the client IP or the CIDR — log so
+            // misconfigured trustedProxies entries don't silently disable
+            // X-Forwarded-For trust for the affected proxy.
+            log.warn("isInCidr failed (addr={}, cidr={}): {}", addr, cidr, e.getMessage());
+            return false;
+        } catch (NumberFormatException e) {
+            log.warn("Invalid CIDR prefix length in '{}': {}", cidr, e.getMessage());
+            return false;
         } catch (Exception e) {
+            log.warn("isInCidr unexpected error (addr={}, cidr={}): {}", addr, cidr, e.getMessage());
             return false;
         }
     }

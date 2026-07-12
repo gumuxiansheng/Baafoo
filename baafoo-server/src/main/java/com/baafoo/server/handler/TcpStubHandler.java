@@ -111,6 +111,24 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
         String payload = new String(data, StandardCharsets.UTF_8);
         String hexPayload = bytesToHex(data);
 
+        // Resolve the stub server's local host/port from the channel so that
+        // host/port conditions on TCP rules can actually match. Previously
+        // this was hard-coded as "127.0.0.1":0 which made any host/port
+        // condition on a TCP rule unreachable. We use localAddress (the bound
+        // stub port, e.g. 9001) rather than remoteAddress because TCP rules
+        // express the target endpoint the client intended to reach, which
+        // the stub represents via its listening socket.
+        String stubHost = "127.0.0.1";
+        int stubPort = 0;
+        java.net.SocketAddress localAddr = ctx.channel().localAddress();
+        if (localAddr instanceof java.net.InetSocketAddress) {
+            java.net.InetSocketAddress inet = (java.net.InetSocketAddress) localAddr;
+            if (inet.getAddress() != null) {
+                stubHost = inet.getAddress().getHostAddress();
+            }
+            stubPort = inet.getPort();
+        }
+
         // P2: Fire REQUEST_RECEIVED event
         fireEvent(PluginEvent.requestReceived("tcp", null, null));
 
@@ -151,7 +169,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                             ? firstRound.getResponse() : getFirstResponse(rule);
 
                     String decodedPayload = decodeWithRuleCharset(data, rule, payload);
-                    recordIfNeeded(rule, response, agentEnvironment, agentId, agentIp, decodedPayload);
+                    recordIfNeeded(rule, response, agentEnvironment, agentId, agentIp, decodedPayload, stubHost, stubPort);
 
                     // Close after last round if no loop
                     boolean isLastRound = (rule.getTcpRounds().size() == 1) && !rule.isTcpLoop();
@@ -165,7 +183,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
             if (matchTcpRule(rule, data, hexPayload, payload)) {
                 ResponseEntry response = getFirstResponse(rule);
                 String decodedPayload = decodeWithRuleCharset(data, rule, payload);
-                recordIfNeeded(rule, response, agentEnvironment, agentId, agentIp, decodedPayload);
+                recordIfNeeded(rule, response, agentEnvironment, agentId, agentIp, decodedPayload, stubHost, stubPort);
                 sendTcpResponse(ctx, response, decodedPayload, true, agentEnvironment);
                 return;
             }
@@ -173,7 +191,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
         // Fall back to generic MatchEngine matching
         MatchEngine.MatchResult result = matchEngine.match(
-                filteredRules, "tcp", "127.0.0.1", 0, null,
+                filteredRules, "tcp", stubHost, stubPort, null,
                 null, null,
                 Collections.<String, String>emptyMap(),
                 Collections.<String, String>emptyMap(),
@@ -191,7 +209,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
             if (currentMode == EnvironmentMode.RECORD || currentMode == EnvironmentMode.RECORD_AND_STUB || currentMode == EnvironmentMode.RECORD_ALL) {
                 RecordingEntry rec = RecordingHelper.buildFromStub(
-                        result, "tcp", "127.0.0.1", 0, null, null,
+                        result, "tcp", stubHost, stubPort, null, null,
                         Collections.<String, String>emptyMap(), decodedPayload);
                 rec.setAgentId(agentId);
                 rec.setAgentIp(agentIp);
@@ -206,7 +224,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
             fireEvent(PluginEvent.responseSent("tcp", 200, 0));
         } else {
             // P2: Fire RULE_NOT_MATCHED event
-            fireEvent(PluginEvent.ruleNotMatched("tcp", "127.0.0.1", 0));
+            fireEvent(PluginEvent.ruleNotMatched("tcp", stubHost, stubPort));
             // RECORD_ALL: record the unmatched TCP payload as raw hex data.
             //
             // NOTE: In the current design, RECORD_ALL TCP passthrough is handled at the
@@ -221,8 +239,8 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
             if (currentMode == EnvironmentMode.RECORD_ALL) {
                 RecordingEntry rec = new RecordingEntry();
                 rec.setProtocol("tcp");
-                rec.setHost("127.0.0.1");
-                rec.setPort(0);
+                rec.setHost(stubHost);
+                rec.setPort(stubPort);
                 rec.setDirection("request");
                 rec.setDataHex(hexPayload);
                 rec.setRequestBody(payload);
@@ -245,6 +263,19 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
     private void handleMultiRoundRequest(ChannelHandlerContext ctx, String ruleId,
                                           byte[] data, String hexPayload, String payload,
                                           String agentEnvironment, String agentId, String agentIp) {
+        // Resolve stub host/port from the channel for recording (consistent
+        // with channelRead0's resolution — see comment there for rationale).
+        String stubHost = "127.0.0.1";
+        int stubPort = 0;
+        java.net.SocketAddress localAddr = ctx.channel().localAddress();
+        if (localAddr instanceof java.net.InetSocketAddress) {
+            java.net.InetSocketAddress inet = (java.net.InetSocketAddress) localAddr;
+            if (inet.getAddress() != null) {
+                stubHost = inet.getAddress().getHostAddress();
+            }
+            stubPort = inet.getPort();
+        }
+
         // Use the cached Rule object from the channel attribute to avoid an N+1
         // storage lookup on every round of a multi-round TCP interaction.
         Rule rule = ctx.channel().attr(ATTR_RULE).get();
@@ -291,7 +322,7 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                     ? nextRound.getResponse() : getFirstResponse(rule);
 
             String decodedPayload = decodeWithRuleCharset(data, rule, payload);
-            recordIfNeeded(rule, response, agentEnvironment, agentId, agentIp, decodedPayload);
+            recordIfNeeded(rule, response, agentEnvironment, agentId, agentIp, decodedPayload, stubHost, stubPort);
 
             // Don't close after response in multi-round (unless it's the last round and no loop)
             boolean isLastRound = (nextRoundIdx == rounds.size() - 1) && !rule.isTcpLoop();
@@ -471,11 +502,11 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
     private void recordIfNeeded(Rule rule, ResponseEntry entry,
                                 String agentEnvironment, String agentId, String agentIp,
-                                String payload) {
+                                String payload, String stubHost, int stubPort) {
         EnvironmentMode currentMode = agentResolver.resolveEnvironmentMode(agentEnvironment);
         if (currentMode == EnvironmentMode.RECORD || currentMode == EnvironmentMode.RECORD_AND_STUB || currentMode == EnvironmentMode.RECORD_ALL) {
             RecordingEntry rec = RecordingHelper.buildFromStub(
-                    rule, entry, "tcp", "127.0.0.1", 0, null, null,
+                    rule, entry, "tcp", stubHost, stubPort, null, null,
                     Collections.<String, String>emptyMap(), payload);
             rec.setAgentId(agentId);
             rec.setAgentIp(agentIp);

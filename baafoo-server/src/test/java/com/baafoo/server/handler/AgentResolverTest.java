@@ -304,11 +304,16 @@ public class AgentResolverTest {
 
     @Test
     public void deprecatedResolveMethods() {
+        // The deprecated single-arg resolveAgentEnvironment/Id/Ip methods were
+        // removed — they ignored their input parameters and only returned
+        // resolveAll(null) results, which was misleading. Callers should use
+        // resolveAll(ctx) or resolveByIp(ip) instead.
         when(storage.listAgents()).thenReturn(new ArrayList<>());
         AgentResolver resolver = new AgentResolver(storage);
 
-        assertNull(resolver.resolveAgentEnvironment("host", 8080));
-        assertNull(resolver.resolveAgentId("env"));
-        assertNull(resolver.resolveAgentIp("env"));
+        AgentResolver.AgentInfo info = resolver.resolveAll(null);
+        assertNull(info.environment);
+        assertNull(info.agentId);
+        assertNull(info.agentIp);
     }
 }

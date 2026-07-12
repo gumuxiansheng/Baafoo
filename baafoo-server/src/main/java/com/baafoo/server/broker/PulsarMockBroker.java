@@ -111,6 +111,12 @@ public class PulsarMockBroker {
         // times with a backoff converts a flaky startup into a reliable one
         // instead of silently leaving the broker down (the caller swallows the
         // exception, so without this the broker would be permanently dead).
+        //
+        // NOTE: this sleep runs on the server bootstrap thread, NOT on a Netty
+        // EventLoop — b.bind(port).sync() is a synchronous call that blocks the
+        // caller until the bind completes, so the retry backoff here cannot
+        // stall I/O processing. Boss/worker groups continue running on their
+        // own threads.
         Exception lastBindError = null;
         int maxAttempts = 3;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -124,7 +130,9 @@ public class PulsarMockBroker {
                         port, attempt, maxAttempts, e.getMessage());
                 if (attempt < maxAttempts) {
                     try {
-                        Thread.sleep(1000);
+                        // Linear 500ms backoff — short enough to keep startup
+                        // fast, long enough for the OS to release the port.
+                        Thread.sleep(500);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         break;

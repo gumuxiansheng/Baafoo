@@ -9,6 +9,8 @@ import com.baafoo.plugin.RequestAdvice;
 import com.baafoo.plugin.RequestContext;
 import com.baafoo.plugin.ResponseAdvice;
 import com.baafoo.plugin.ResponseContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -40,6 +42,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class FeignPlugin implements AgentPlugin {
 
     private static final String PLUGIN_NAME = "feign-plugin";
+    private static final Logger log = LoggerFactory.getLogger(FeignPlugin.class);
 
     private final AtomicLong interceptCount = new AtomicLong(0);
     private final ConcurrentHashMap<String, StubEntry> stubRegistry = new ConcurrentHashMap<String, StubEntry>();
@@ -57,7 +60,7 @@ public class FeignPlugin implements AgentPlugin {
     @Override
     public void init() {
         registerDefaultStubs();
-        System.out.println("[FeignPlugin] Initialized with " + stubRegistry.size() + " default stubs");
+        log.info("[FeignPlugin] Initialized with {} default stubs", stubRegistry.size());
     }
 
     // ---- New API hooks ----
@@ -96,7 +99,7 @@ public class FeignPlugin implements AgentPlugin {
         String stubKey = buildStubKey(method, path);
         StubEntry stub = stubRegistry.get(stubKey);
         if (stub != null) {
-            System.out.println("[FeignPlugin] Built-in stub HIT: " + stubKey + " -> status=" + stub.statusCode);
+            log.debug("[FeignPlugin] Built-in stub HIT: {} -> status={}", stubKey, stub.statusCode);
             Map<String, String> headers = new HashMap<String, String>(stub.headers);
             headers.put("X-Baafoo-Stub", "true");
             headers.put("X-Baafoo-Plugin", PLUGIN_NAME);
@@ -107,7 +110,7 @@ public class FeignPlugin implements AgentPlugin {
             );
         }
 
-        System.out.println("[FeignPlugin] No stub matched: " + stubKey + " -> proceed to rule matching");
+        log.debug("[FeignPlugin] No stub matched: {} -> proceed to rule matching", stubKey);
         return RequestAdvice.proceed();
     }
 
@@ -138,7 +141,7 @@ public class FeignPlugin implements AgentPlugin {
             case REQUEST_RECEIVED:
             case RULE_MATCHED:
             case RULE_NOT_MATCHED:
-                System.out.println("[FeignPlugin] Event: " + event);
+                log.debug("[FeignPlugin] Event: {}", event);
                 break;
             default:
                 break;
@@ -149,7 +152,7 @@ public class FeignPlugin implements AgentPlugin {
     public void destroy() {
         stubRegistry.clear();
         interceptCount.set(0);
-        System.out.println("[FeignPlugin] Destroyed, all stubs cleared");
+        log.info("[FeignPlugin] Destroyed, all stubs cleared");
     }
 
     // ---- Public API (for tests / demo) ----
@@ -158,7 +161,7 @@ public class FeignPlugin implements AgentPlugin {
         String key = buildStubKey(method, path);
         StubEntry entry = new StubEntry(statusCode, body, headers != null ? headers : new HashMap<String, String>());
         stubRegistry.put(key, entry);
-        System.out.println("[FeignPlugin] Stub registered: " + key + " -> status=" + statusCode);
+        log.debug("[FeignPlugin] Stub registered: {} -> status={}", key, statusCode);
     }
 
     public void removeStub(String method, String path) {

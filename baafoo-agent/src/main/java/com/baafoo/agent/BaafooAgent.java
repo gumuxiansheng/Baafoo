@@ -772,7 +772,8 @@ public class BaafooAgent {
             }
             String sessionId = sessionInfo[0];
             String host = sessionInfo[1];
-            int port = Integer.parseInt(sessionInfo[2]);
+            int port = parseSessionPort(sessionInfo[2]);
+            if (port < 0) return in;
             return new RecordingInputStream(in, sessionId, host, port, recordingBuffer);
         };
 
@@ -784,7 +785,8 @@ public class BaafooAgent {
             }
             String sessionId = sessionInfo[0];
             String host = sessionInfo[1];
-            int port = Integer.parseInt(sessionInfo[2]);
+            int port = parseSessionPort(sessionInfo[2]);
+            if (port < 0) return out;
             return new RecordingOutputStream(out, sessionId, host, port, recordingBuffer);
         };
 
@@ -804,7 +806,8 @@ public class BaafooAgent {
             String direction = (String) args[1];
             String hexData = (String) args[2];
             String host = sessionInfo[1];
-            int port = Integer.parseInt(sessionInfo[2]);
+            int port = parseSessionPort(sessionInfo[2]);
+            if (port < 0) return;
             RecordingEntry entry = new RecordingEntry();
             entry.setSessionId(sessionInfo[0]);
             entry.setHost(host);
@@ -820,6 +823,29 @@ public class BaafooAgent {
         syncRecordingWrappersToBootstrapCL();
 
         log.info("Recording stream wrappers configured and synced to Bootstrap CL");
+    }
+
+    /**
+     * Parse the port component of a recording sessionInfo array.
+     *
+     * <p>sessionInfo[2] is normally a numeric port string but is produced by
+     * advice code that intercepts arbitrary socket connect calls; malformed
+     * values (null, non-numeric, empty) must not propagate as an uncaught
+     * {@link NumberFormatException} — that would tear down the bridge
+     * function and silently disable recording for the affected channel.
+     * Returns -1 on failure so the caller can skip recording gracefully.</p>
+     */
+    private static int parseSessionPort(String portStr) {
+        if (portStr == null || portStr.isEmpty()) {
+            log.warn("Empty port in sessionInfo, skipping recording");
+            return -1;
+        }
+        try {
+            return Integer.parseInt(portStr);
+        } catch (NumberFormatException e) {
+            log.warn("Non-numeric port '{}' in sessionInfo, skipping recording", portStr);
+            return -1;
+        }
     }
 
     /**

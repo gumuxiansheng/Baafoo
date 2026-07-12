@@ -787,15 +787,19 @@ public class MatchEngine {
         // Fast path: for short inputs and simple patterns, run inline to avoid
         // the thread-pool overhead. We only offload to the executor when the
         // input is non-trivial in length.
+        // Uses Matcher.find() (substring match) for consistency with
+        // TcpStubHandler.matchRegex and common mock-tool semantics. Users
+        // who need whole-string anchoring can prefix with '^' and suffix
+        // with '$' in their regex pattern.
         if (input == null) return false;
         if (input.length() < 64) {
-            return pattern.matcher(input).matches();
+            return pattern.matcher(input).find();
         }
 
         java.util.concurrent.Future<Boolean> future;
         try {
             future = REGEX_EXECUTOR.submit(
-                    () -> pattern.matcher(input).matches());
+                    () -> pattern.matcher(input).find());
         } catch (java.util.concurrent.RejectedExecutionException e) {
             // Pool saturated — fail fast rather than queueing (Critical 5).
             // The request will fall through to the next matcher / no-match,

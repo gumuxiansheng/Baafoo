@@ -4,6 +4,7 @@ import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.model.Environment;
 import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.Rule;
+import com.baafoo.server.storage.JdbcStorageService;
 import com.baafoo.server.storage.StorageService;
 import io.netty.channel.ChannelHandlerContext;
 import org.slf4j.Logger;
@@ -32,7 +33,14 @@ public class AgentResolver {
 
     public AgentResolver(StorageService storage) {
         this.storage = storage;
-        this.config = null;
+        // Best-effort: extract ServerConfig from JdbcStorageService so the
+        // single-arg constructor still honours global settings such as
+        // unknownEnvironmentDefault. Falls back to null (→ safe PASSTHROUGH
+        // default) for non-JDBC storage implementations (e.g. in-memory test
+        // doubles). This mirrors the pattern used by ApiContext.getSceneService().
+        this.config = (storage instanceof JdbcStorageService)
+                ? ((JdbcStorageService) storage).getServerConfig()
+                : null;
     }
 
     public AgentResolver(StorageService storage, ServerConfig config) {
@@ -174,27 +182,6 @@ public class AgentResolver {
         return info;
     }
 
-    /** Single-pass agent resolution (compatibility). */
-    @Deprecated
-    public String resolveAgentEnvironment(String host, int port) {
-        AgentInfo info = resolveAll(null);
-        return info.environment;
-    }
-
-    /** Single-pass agent resolution (compatibility). */
-    @Deprecated
-    public String resolveAgentId(String agentEnvironment) {
-        AgentInfo info = resolveAll(null);
-        return info.agentId;
-    }
-
-    /** Single-pass agent resolution (compatibility). */
-    @Deprecated
-    public String resolveAgentIp(String agentEnvironment) {
-        AgentInfo info = resolveAll(null);
-        return info.agentIp;
-    }
-
     public String resolveAgentIpFromChannel(ChannelHandlerContext ctx) {
         if (ctx.channel().remoteAddress() != null) {
             String addr = ctx.channel().remoteAddress().toString();
@@ -317,8 +304,13 @@ public class AgentResolver {
      * baafoo-staging-net) and the MQ connection comes through a different
      * network than the agent's registered IP.
      *
-     * <p>If multiple agents on different environments are found, uses the
-     * one with the most recent heartbeat (best-effort) and logs a warning.</p>
+     * <p>If multiple agents on different environments are found, the match
+     * is ambiguous and this method returns {@code null} — consistent with
+     * {@link #resolveByIp}'s ambiguity handling. Returning a best-effort
+     * agent here would let traffic from environment A pick up environment
+     * B's rules, violating environment isolation. Only agents sharing the
+     * same environment may compete, in which case the most recent heartbeat
+     * wins (container restart scenario).</p>
      */
     private StorageService.AgentRegistration findAgentByServerSubnets(
             List<StorageService.AgentRegistration> agents, long onlineThreshold) {
@@ -343,21 +335,19 @@ public class AgentResolver {
                                 best = agent;
                             }
                         } else {
+                            // Different environments on the same server subnet — ambiguous.
+                            // Do NOT pick a winner; return null so only global rules match.
                             ambiguous = true;
-                            if (agent.lastHeartbeat > best.lastHeartbeat) {
-                                best = agent;
-                                bestEnv = agent.environment;
-                            }
                         }
                     }
                 }
             }
         }
 
-        if (ambiguous && best != null) {
-            log.warn("Multiple agents with different environments found on server subnets; " +
-                    "using agent {} (env={}) with most recent heartbeat as best-effort",
-                    best.agentId, best.environment);
+        if (ambiguous) {
+            log.warn("Multiple online agents on server subnets belong to different environments — " +
+                    "cannot determine environment, only global rules will match");
+            return null;
         }
 
         return best;

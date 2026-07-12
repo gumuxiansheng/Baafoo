@@ -1223,14 +1223,35 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
      * Resolve the broker host for Metadata/DescribeCluster responses.
      * Delegates to NetworkUtils (IP-reachability based; works for Docker,
      * bare-metal, and VM clients alike).
+     *
+     * <p>Fallback order when NetworkUtils cannot resolve a reachable host:
+     * <ol>
+     *   <li>{@code cachedBrokerHost} — resolved from the channel's local
+     *       address on first connection (typically the container IP in Docker)</li>
+     *   <li>{@code advertisedHost} — explicitly configured advertised host</li>
+     *   <li>{@code "127.0.0.1"} — last resort; only reachable from the broker
+     *       process itself. Logged as a warning so Docker deployments where
+     *       clients cannot reach localhost are diagnosable rather than silent.</li>
+     * </ol></p>
      */
     private String resolveBrokerHost(ChannelHandlerContext ctx) {
         java.net.InetSocketAddress remote = (java.net.InetSocketAddress) ctx.channel().remoteAddress();
         java.net.InetSocketAddress local = (java.net.InetSocketAddress) ctx.channel().localAddress();
-        String defaultHost = cachedBrokerHost != null ? cachedBrokerHost : "127.0.0.1";
+        String defaultHost = cachedBrokerHost != null ? cachedBrokerHost
+                : (advertisedHost != null && !advertisedHost.isEmpty() ? advertisedHost : null);
         String resolved = com.baafoo.core.util.NetworkUtils.resolveClientReachableHost(
                 remote, local, defaultHost, advertisedHost);
-        return resolved != null ? resolved : defaultHost;
+        if (resolved != null) {
+            return resolved;
+        }
+        if (defaultHost != null) {
+            return defaultHost;
+        }
+        log.warn("Kafka broker host could not be resolved from channel (remote={}, local={}); " +
+                "falling back to 127.0.0.1 which is NOT reachable from Docker clients. " +
+                "Configure 'advertisedHost' or set cachedBrokerHost via channelActive.",
+                remote, local);
+        return "127.0.0.1";
     }
 
     @Override

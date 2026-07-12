@@ -382,7 +382,11 @@ public class BaafooServer {
             java.nio.file.Path credsPath = credsFile.toPath();
             java.nio.file.Files.write(credsPath, content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
-            // Restrict file permissions on POSIX systems (owner read/write only)
+            // Restrict file permissions on POSIX systems (owner read/write only).
+            // On non-POSIX filesystems (Windows NTFS, FAT32) the JVM cannot
+            // apply POSIX permissions; we still write the file so the operator
+            // can read the one-time password, but we explicitly log a warning
+            // so the security gap is visible rather than silently swallowed.
             try {
                 java.nio.file.attribute.PosixFilePermission[] perms = {
                     java.nio.file.attribute.PosixFilePermission.OWNER_READ,
@@ -391,7 +395,15 @@ public class BaafooServer {
                 java.nio.file.Files.setAttribute(credsPath, "posix:permissions",
                         java.util.EnumSet.copyOf(java.util.Arrays.asList(perms)));
             } catch (UnsupportedOperationException e) {
-                // Non-POSIX filesystem (e.g., FAT32, NTFS) — ignore
+                log.warn("Admin credentials file written to {} on a non-POSIX filesystem; " +
+                        "POSIX owner-only permissions could not be applied. " +
+                        "Restrict file access via OS-level ACLs and delete this file after first login.",
+                        credsFile.getCanonicalPath());
+            } catch (java.nio.file.ProviderNotFoundException e) {
+                // Some filesystems have a provider but no posix attribute view
+                log.warn("Admin credentials file written to {} without POSIX permission support ({}). " +
+                        "Restrict file access via OS-level ACLs and delete this file after first login.",
+                        credsFile.getCanonicalPath(), e.getMessage());
             }
 
             log.info("Admin credentials written to: {}", credsFile.getCanonicalPath());

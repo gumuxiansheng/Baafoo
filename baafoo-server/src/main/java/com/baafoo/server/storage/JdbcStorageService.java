@@ -162,6 +162,19 @@ public class JdbcStorageService implements StorageService {
         return sceneService;
     }
 
+    /**
+     * Public accessor for the {@link ServerConfig} so components that were
+     * constructed with only a {@link StorageService} reference (e.g.
+     * {@link com.baafoo.server.handler.AgentResolver}'s single-arg constructor)
+     * can still read global configuration such as
+     * {@code unknownEnvironmentDefault}. This avoids forcing every broker
+     * and helper class to thread {@code ServerConfig} through their own
+     * constructors.
+     */
+    public ServerConfig getServerConfig() {
+        return config;
+    }
+
     private SqlSessionFactory buildSqlSessionFactory(DataSource ds) {
         org.apache.ibatis.mapping.Environment environment = new org.apache.ibatis.mapping.Environment("baafoo", new JdbcTransactionFactory(), ds);
 
