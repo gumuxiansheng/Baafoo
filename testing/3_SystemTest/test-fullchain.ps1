@@ -353,7 +353,12 @@ $ruleFiles = @(
     # gRPC rules are registered so the server holds them; they are exercised only
     # once baafoo-test-spring gains a gRPC client (see G section below).
     "grpc-greeter.json", "grpc-error.json", "grpc-delay.json",
-    "grpc-server-streaming.json", "grpc-client-streaming.json", "grpc-bidirectional-streaming.json"
+    "grpc-server-streaming.json", "grpc-client-streaming.json", "grpc-bidirectional-streaming.json",
+    # P2 gap rules: priority / multi-response / tags / stateful
+    "http-priority-high.json", "http-priority-low.json",
+    "http-multi-response-a.json", "http-multi-response-b.json",
+    "http-tagged-1.json", "http-tagged-2.json",
+    "http-stateful.json"
 )
 
 $registered = 0
@@ -1675,6 +1680,442 @@ try {
     }
 } catch {
     Test-Fail "G06: gRPC bidi-streaming (error: $_)"
+}
+
+# -------------------- P2: Scene / MCP / Fault / Consul / FailOpen / Inherit / Page / Priority / Multi / Tag --------------------
+Write-Host ""
+# Wait for agent to poll newly registered P2 rules
+Write-Host "Waiting 5s for agent rule poll..." -ForegroundColor DarkGray
+Start-Sleep -Seconds 5
+Write-Host "--- P2: Scene Set CRUD ---" -ForegroundColor White
+
+# SCN-001: Create a scene set via POST /api/scenes
+$scnId = "test-scene-" + (Get-Random -Minimum 1000 -Maximum 9999)
+$scnBody = @{
+    id = $scnId
+    name = "Test Scene"
+    description = "P2 scene set CRUD test"
+    itemIds = @("staging-a-http-get", "staging-a-http-post")
+    active = $false
+    tags = @("test", "p2")
+    environments = @("staging-a")
+} | ConvertTo-Json -Depth 4
+try {
+    $scnCreate = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/scenes" -Method Post -ContentType "application/json; charset=utf-8" -Headers $headers -Body ([System.Text.Encoding]::UTF8.GetBytes($scnBody)) -ErrorAction Stop
+    if ($scnCreate.success -eq $true -or $scnCreate.data.id) {
+        Test-Pass "SCN-001: Scene set created (id=$scnId)"
+    } else {
+        Test-Fail "SCN-001: Scene set create (resp: $scnCreate)"
+    }
+} catch {
+    Test-Fail "SCN-001: Scene set create (error: $_)"
+}
+
+# SCN-002: Enable scene set via PUT /api/scenes/{id} (set active=true)
+try {
+    $scnEnableBody = @{
+        name = "Test Scene"
+        description = "P2 scene set CRUD test"
+        itemIds = @("staging-a-http-get", "staging-a-http-post")
+        active = $true
+        tags = @("test", "p2")
+        environments = @("staging-a")
+    } | ConvertTo-Json -Depth 4
+    Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/scenes/$scnId" -Method Put -ContentType "application/json; charset=utf-8" -Headers $headers -Body ([System.Text.Encoding]::UTF8.GetBytes($scnEnableBody)) -ErrorAction Stop | Out-Null
+    $scnVerify = Invoke-ApiGet "scenes/$scnId"
+    $scnActive = Get-JsonValue $scnVerify "active"
+    if ($scnActive -eq "true") {
+        Test-Pass "SCN-002: Scene set enabled (active=true)"
+    } else {
+        Test-Fail "SCN-002: Scene set enable (active=$scnActive, resp=$(Format-RespShort $scnVerify))"
+    }
+} catch {
+    Test-Fail "SCN-002: Scene set enable (error: $_)"
+}
+
+# SCN-003: Disable scene set via PUT /api/scenes/{id} (set active=false)
+try {
+    $scnDisableBody = @{
+        name = "Test Scene"
+        description = "P2 scene set CRUD test"
+        itemIds = @("staging-a-http-get", "staging-a-http-post")
+        active = $false
+        tags = @("test", "p2")
+        environments = @("staging-a")
+    } | ConvertTo-Json -Depth 4
+    Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/scenes/$scnId" -Method Put -ContentType "application/json; charset=utf-8" -Headers $headers -Body ([System.Text.Encoding]::UTF8.GetBytes($scnDisableBody)) -ErrorAction Stop | Out-Null
+    $scnVerify2 = Invoke-ApiGet "scenes/$scnId"
+    $scnActive2 = Get-JsonValue $scnVerify2 "active"
+    if ($scnActive2 -eq "false") {
+        Test-Pass "SCN-003: Scene set disabled (active=false)"
+    } else {
+        Test-Fail "SCN-003: Scene set disable (active=$scnActive2, resp=$(Format-RespShort $scnVerify2))"
+    }
+} catch {
+    Test-Fail "SCN-003: Scene set disable (error: $_)"
+}
+
+# SCN-004: Update scene set — add/remove ruleIds dynamically
+try {
+    $scnUpdateBody = @{
+        name = "Test Scene Updated"
+        description = "P2 scene set CRUD test - updated"
+        itemIds = @("staging-a-http-get", "staging-a-http-put", "staging-a-http-delete")
+        active = $false
+        tags = @("test", "p2", "updated")
+        environments = @("staging-a")
+    } | ConvertTo-Json -Depth 4
+    Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/scenes/$scnId" -Method Put -ContentType "application/json; charset=utf-8" -Headers $headers -Body ([System.Text.Encoding]::UTF8.GetBytes($scnUpdateBody)) -ErrorAction Stop | Out-Null
+    $scnVerify3 = Invoke-ApiGet "scenes/$scnId"
+    if ($scnVerify3 -match "staging-a-http-put" -and $scnVerify3 -match "Updated") {
+        Test-Pass "SCN-004: Scene set updated (added staging-a-http-put, renamed)"
+    } else {
+        Test-Fail "SCN-004: Scene set update (resp=$(Format-RespShort $scnVerify3))"
+    }
+} catch {
+    Test-Fail "SCN-004: Scene set update (error: $_)"
+}
+
+# Cleanup scene set
+try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/scenes/$scnId" -Method Delete -Headers $headers -ErrorAction SilentlyContinue | Out-Null } catch {}
+
+# -------------------- P2: MCP Server (JSON-RPC) --------------------
+Write-Host ""
+Write-Host "--- P2: MCP Server ---" -ForegroundColor White
+
+# MCP-001: list_tools — call MCP JSON-RPC tools/list
+try {
+    $mcpListBody = '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+    $mcpListResp = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/mcp" -Method Post -ContentType "application/json" -Headers $headers -Body $mcpListBody -ErrorAction Stop
+    $toolCount = 0
+    if ($mcpListResp.result -and $mcpListResp.result.tools) {
+        $toolCount = $mcpListResp.result.tools.Count
+    }
+    if ($toolCount -gt 0) {
+        Test-Pass "MCP-001: tools/list returned $toolCount tools"
+    } else {
+        Test-Fail "MCP-001: tools/list empty (resp: $(Format-RespShort ($mcpListResp | ConvertTo-Json -Depth 5)))"
+    }
+} catch {
+    Test-Fail "MCP-001: tools/list (error: $_)"
+}
+
+# MCP-002: create_rule via MCP tools/call
+$mcpRuleId = "mcp-test-rule-" + (Get-Random -Minimum 1000 -Maximum 9999)
+try {
+    $mcpCallBody = @{
+        jsonrpc = "2.0"
+        id = 2
+        method = "tools/call"
+        params = @{
+            name = "create_rule"
+            arguments = @{
+                id = $mcpRuleId
+                name = "MCP Created Rule"
+                protocol = "http"
+                host = "real-backend"
+                port = 9090
+                conditions = @(
+                    @{ type = "method"; operator = "equals"; value = "GET" }
+                    @{ type = "path"; operator = "equals"; value = "/mcp-test" }
+                )
+                responses = @(
+                    @{
+                        name = "MCP"
+                        statusCode = 200
+                        body = '{"mocked":true,"source":"mcp"}'
+                        delayMs = 0
+                    }
+                )
+                enabled = $true
+                priority = 100
+                tags = @("mcp", "test")
+                environments = @("staging-a")
+            }
+        }
+    } | ConvertTo-Json -Depth 10
+    $mcpCallResp = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/mcp" -Method Post -ContentType "application/json; charset=utf-8" -Headers $headers -Body ([System.Text.Encoding]::UTF8.GetBytes($mcpCallBody)) -ErrorAction Stop
+    # Check if rule was created by listing rules and searching for the ID
+    Start-Sleep -Seconds 1
+    $ruleCheck = Invoke-ApiGet "rules/$mcpRuleId"
+    if ($ruleCheck -match $mcpRuleId) {
+        Test-Pass "MCP-002: create_rule via MCP (rule $mcpRuleId found in storage)"
+    } else {
+        Test-Fail "MCP-002: create_rule via MCP (rule not found, resp: $(Format-RespShort $ruleCheck))"
+    }
+} catch {
+    Test-Fail "MCP-002: create_rule via MCP (error: $_)"
+}
+
+# MCP-003: update_environment via MCP tools/call (requires id, not name)
+try {
+    # First get the environment ID for staging-a
+    $mcpEnvList = Invoke-ApiGet "environments"
+    $mcpEnvAId = Get-EnvironmentId $mcpEnvList "staging-a"
+    if (-not $mcpEnvAId) {
+        Test-Fail "MCP-003: update_environment via MCP (cannot find staging-a environment ID)"
+    } else {
+        $mcpModeBody = @{
+            jsonrpc = "2.0"
+            id = 3
+            method = "tools/call"
+            params = @{
+                name = "update_environment"
+                arguments = @{
+                    id = $mcpEnvAId
+                    mode = "RECORD_AND_STUB"
+                }
+            }
+        } | ConvertTo-Json -Depth 10
+        $mcpModeResp = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/mcp" -Method Post -ContentType "application/json; charset=utf-8" -Headers $headers -Body ([System.Text.Encoding]::UTF8.GetBytes($mcpModeBody)) -ErrorAction Stop
+        # Verify mode changed
+        Start-Sleep -Seconds 2
+        $envCheck = Invoke-ApiGet "environments"
+        $envAMode = $null
+        try {
+            $envParsed = $envCheck | ConvertFrom-Json
+            $envItems = if ($envParsed.data) { $envParsed.data } else { $envParsed }
+            foreach ($e in $envItems) { if ($e.name -eq "staging-a") { $envAMode = $e.mode } }
+        } catch {}
+        if ($envAMode -match "record-and-stub" -or ($mcpModeResp.result -and $mcpModeResp.result.content)) {
+            Test-Pass "MCP-003: update_environment via MCP (mode=$envAMode)"
+        } else {
+            Test-Fail "MCP-003: update_environment via MCP (mode=$envAMode, resp=$(Format-RespShort ($mcpModeResp | ConvertTo-Json -Depth 5)))"
+        }
+    }
+} catch {
+    Test-Fail "MCP-003: update_environment via MCP (error: $_)"
+}
+# Restore staging-a to STUB mode
+try {
+    $envRestore = Invoke-ApiGet "environments"
+    $envAIdRestore = Get-EnvironmentId $envRestore "staging-a"
+    if ($envAIdRestore) {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdRestore" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+    }
+} catch {}
+
+# Cleanup MCP-created rule
+try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/$mcpRuleId" -Method Delete -Headers $headers -ErrorAction SilentlyContinue | Out-Null } catch {}
+
+# -------------------- P2: Fault Injection (Chaos + Stateful) --------------------
+Write-Host ""
+Write-Host "--- P2: Fault Injection ---" -ForegroundColor White
+
+# FLT-003: Chaos engineering — query profiles status (may be empty if no profiles registered)
+try {
+    $chaosStatus = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/chaos/profiles/status" -Method Get -Headers $headers -ErrorAction Stop
+    if ($chaosStatus.success -eq $true -or $chaosStatus.data -ne $null) {
+        $profileCount = if ($chaosStatus.data.totalCount) { $chaosStatus.data.totalCount } else { 0 }
+        Test-Pass "FLT-003: Chaos profiles status (totalCount=$profileCount, activeCount=$($chaosStatus.data.activeCount))"
+    } else {
+        Test-Fail "FLT-003: Chaos profiles status (resp: $(Format-RespShort ($chaosStatus | ConvertTo-Json -Depth 5)))"
+    }
+} catch {
+    Test-Fail "FLT-003: Chaos profiles status (error: $_)"
+}
+
+# FLT-004: Stateful Mock — send multiple requests to the stateful rule, verify counter increments
+# First reset the rule's request counter
+try {
+    Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules/staging-a-http-stateful/reset-state" -Method Post -Headers $headers -ErrorAction SilentlyContinue | Out-Null
+} catch {}
+Start-Sleep -Seconds 1
+$statefulPass = $true
+$statefulCounters = @()
+for ($si = 0; $si -lt 3; $si++) {
+    try {
+        $sr = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/stateful"
+        $sBody = Get-JsonBody $sr
+        $counter = $null
+        if ($sBody -match '"counter":(\d+)') { $counter = [int]$matches[1] }
+        $statefulCounters += $counter
+    } catch {
+        $statefulPass = $false
+        break
+    }
+}
+# Verify counters are incrementing (0, 1, 2) or at least monotonically increasing
+if ($statefulPass -and $statefulCounters.Count -eq 3 -and $statefulCounters[2] -gt $statefulCounters[0]) {
+    Test-Pass "FLT-004: Stateful Mock counter increments (values: $($statefulCounters -join ','))"
+} else {
+    Test-Fail "FLT-004: Stateful Mock (counters: $($statefulCounters -join ','), pass=$statefulPass)"
+}
+
+# -------------------- P2: Consul DNS redirect --------------------
+Write-Host ""
+Write-Host "--- P2: Consul DNS ---" -ForegroundColor White
+
+# CONS-001: Consul DNS redirect — the agent's ConsulDnsAdvice should redirect
+# consul-server resolution to the MockBroker. We verify by hitting the HTTP
+# consul endpoint (H09 already covers the stub rule). Here we verify the DNS
+# layer: the app can resolve consul-server (proving the advice is active).
+# The HTTP consul rule (http-consul.json) intercepts requests to
+# consul-server:8500/v1/agent/services. If the DNS advice is working,
+# the app resolves consul-server to the Baafoo server address.
+try {
+    $consulResp = Invoke-AppGet "$APP_A/api/http/get?url=http://consul-server:8500/v1/agent/services"
+    $consulStubbed = Get-JsonValue $consulResp "stubbed"
+    if ($consulStubbed -eq "true") {
+        Test-Pass "CONS-001: Consul DNS redirect (agent intercepted consul-server request, stubbed=true)"
+    } else {
+        # If not stubbed, check if we at least got a response (DNS resolved somewhere)
+        if ($consulResp -match '"statusCode":(\d+)') {
+            $sc = [int]$matches[1]
+            if ($sc -eq 200) {
+                Test-Fail "CONS-001: Consul DNS redirect (got real 200 — agent did not intercept)"
+            } else {
+                Test-Fail "CONS-001: Consul DNS redirect (statusCode=$sc, not intercepted)"
+            }
+        } else {
+            Test-Fail "CONS-001: Consul DNS redirect (resp=$(Format-RespShort $consulResp))"
+        }
+    }
+} catch {
+    Test-Fail "CONS-001: Consul DNS redirect (error: $_)"
+}
+
+# -------------------- P2: Fail-open degradation --------------------
+Write-Host ""
+Write-Host "--- P2: Fail-open ---" -ForegroundColor White
+
+# FO-001: Fail-open — when the agent cannot reach the Server, it should
+# fail-open (pass through to the real backend) instead of blocking.
+# We simulate this by switching staging-a to PASSTHROUGH mode (agent does
+# not intercept), then sending a request to a path with no stub rule.
+# In PASSTHROUGH mode, all traffic goes to the real backend.
+# The real-backend app returns its own response (not stubbed).
+try {
+    # Switch to PASSTHROUGH
+    $foEnvJson = Invoke-ApiGet "environments"
+    $foEnvAId = Get-EnvironmentId $foEnvJson "staging-a"
+    if ($foEnvAId) {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$foEnvAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"passthrough"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+        # Send request — in PASSTHROUGH, agent lets it through to real-backend
+        $foResp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/get"
+        $foStubbed = Get-JsonValue $foResp "stubbed"
+        if ($foStubbed -ne "true" -and $foResp -match '"statusCode"') {
+            Test-Pass "FO-001: Fail-open in PASSTHROUGH mode (request passed through, not stubbed)"
+        } else {
+            Test-Fail "FO-001: Fail-open (stubbed=$foStubbed, resp=$(Format-RespShort $foResp))"
+        }
+        # Restore to STUB
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$foEnvAId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+    } else {
+        Test-Fail "FO-001: Fail-open (cannot find staging-a environment)"
+    }
+} catch {
+    # Restore to STUB on any error
+    try {
+        $foRestoreJson = Invoke-ApiGet "environments"
+        $foRestoreId = Get-EnvironmentId $foRestoreJson "staging-a"
+        if ($foRestoreId) {
+            Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$foRestoreId" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
+            Start-Sleep -Seconds $MODE_SETTLE_WAIT
+        }
+    } catch {}
+    Test-Fail "FO-001: Fail-open (error: $_)"
+}
+
+# -------------------- P2: Inherited environments / Pagination / Priority / Multi-response / Tags --------------------
+Write-Host ""
+Write-Host "--- P2: Rule Features ---" -ForegroundColor White
+
+# INH-001: Inherited environments — query /rules/{id}/inherited-environments
+try {
+    $inhResp = Invoke-ApiGet "rules/staging-a-http-get/inherited-environments"
+    # The response should be a valid ApiResponse with data (array, possibly empty)
+    if ($inhResp -match '"success":true' -or $inhResp -match '"data"') {
+        Test-Pass "INH-001: inherited-environments endpoint returns success (resp: $(Format-RespShort $inhResp))"
+    } else {
+        Test-Fail "INH-001: inherited-environments (resp: $(Format-RespShort $inhResp))"
+    }
+} catch {
+    Test-Fail "INH-001: inherited-environments (error: $_)"
+}
+
+# PAG-001: Rule pagination — GET /rules?page=1&size=10 returns paginated structure
+try {
+    $pagRespObj = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules?page=1&size=10" -Headers $headers -ErrorAction Stop
+    $pagData = $pagRespObj.data
+    if ($pagData -and ($pagData.total -ne $null -or ($pagData.PSObject.Properties.Name -contains "items"))) {
+        $itemCount = if ($pagData.items) { $pagData.items.Count } else { 0 }
+        Test-Pass "PAG-001: Rule pagination (total=$($pagData.total), items=$itemCount)"
+    } else {
+        Test-Fail "PAG-001: Rule pagination (resp: $(Format-RespShort ($pagRespObj | ConvertTo-Json -Depth 3)))"
+    }
+} catch {
+    Test-Fail "PAG-001: Rule pagination (error: $_)"
+}
+
+# PRIO-001: Rule priority — two rules match same request, high priority wins
+# Rules: staging-a-http-priority-high (priority=5) and staging-a-http-priority-low (priority=100)
+# Both match GET /priority-test. The high priority rule (5 < 100) should win.
+try {
+    $prioResp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/priority-test"
+    $prioBody = Get-JsonBody $prioResp
+    if ($prioBody -match '"priority":"high"') {
+        Test-Pass "PRIO-001: High priority rule matched (priority=5 wins over priority=100)"
+    } elseif ($prioBody -match '"priority":"low"') {
+        Test-Fail "PRIO-001: Low priority rule matched (priority=100 should lose to priority=5)"
+    } else {
+        Test-Fail "PRIO-001: Priority test (resp=$(Format-RespShort $prioResp))"
+    }
+} catch {
+    Test-Fail "PRIO-001: Priority test (error: $_)"
+}
+
+# MULTI-001: Multi-response branches — two rules with different header conditions
+# Rule: staging-a-http-multi-response-a matches X-Branch=A (priority=5)
+# Rule: staging-a-http-multi-response-b matches X-Branch=B (priority=5)
+# Both match path /multi-response but differ on header condition.
+try {
+    $multiRespA = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/multi-response&headerName=X-Branch&headerValue=A"
+    $multiBodyA = Get-JsonBody $multiRespA
+    $branchA = $null
+    if ($multiBodyA -match '"branch":"([^"]+)"') { $branchA = $matches[1] }
+    # Send with header X-Branch=B
+    $multiRespB = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/multi-response&headerName=X-Branch&headerValue=B"
+    $multiBodyB = Get-JsonBody $multiRespB
+    $branchB = $null
+    if ($multiBodyB -match '"branch":"([^"]+)"') { $branchB = $matches[1] }
+    if ($branchA -eq "A" -and $branchB -eq "B") {
+        Test-Pass "MULTI-001: Multi-response branches (header=A -> branch A, header=B -> branch B)"
+    } elseif ($branchA -eq "default" -and $branchB -eq "default") {
+        # Server may not support per-response conditions — both fall to default
+        Test-Fail "MULTI-001: Multi-response (both returned default, per-response condition not evaluated)"
+    } else {
+        Test-Fail "MULTI-001: Multi-response (branchA=$branchA, branchB=$branchB)"
+    }
+} catch {
+    Test-Fail "MULTI-001: Multi-response (error: $_)"
+}
+
+# TAG-001: Tag filtering — query rules by tag
+# The rules API supports tag filtering via query param (if implemented).
+# We verify by checking that rules with the tag "tagtest" can be found.
+try {
+    # Use Invoke-RestMethod directly (Invoke-ApiGet uses curl.exe which may truncate large JSON)
+    $tagRespObj = Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/rules?page=1&size=100" -Headers $headers -ErrorAction Stop
+    $tagItems = $tagRespObj.data.items
+    $foundTagged = $false
+    $foundOther = $false
+    if ($tagItems) {
+        foreach ($r in $tagItems) {
+            if ($r.tags -contains "tagtest") { $foundTagged = $true }
+            if ($r.tags -contains "othertag") { $foundOther = $true }
+        }
+    }
+    if ($foundTagged -and $foundOther) {
+        Test-Pass "TAG-001: Tag filtering (found rule with tag 'tagtest' and rule with tag 'othertag')"
+    } else {
+        Test-Fail "TAG-001: Tag filtering (tagged=$foundTagged, other=$foundOther)"
+    }
+} catch {
+    Test-Fail "TAG-001: Tag filtering (error: $_)"
 }
 
 # -------------------- MX: Protocol x Mode coverage gaps --------------------

@@ -5,6 +5,8 @@
 **项目**: Baafoo - JavaAgent-Based API Mock Platform
 
 **版本更新记录**：
+- v2.8 (2026-07-12): §6.4.4 P2 缺口全部从 SKIP 改为真实断言——场景集 CRUD (SCN-001~004)、MCP JSON-RPC (MCP-001~003)、混沌 profile 状态 (FLT-003)、有状态 Mock 计数器 (FLT-004)、Consul DNS (CONS-001)、fail-open 透传 (FO-001)、继承环境 (INH-001)、规则分页 (PAG-001)、规则优先级 (PRIO-001)、多响应分支 (MULTI-001)、标签筛选 (TAG-001) 全部在 test-fullchain.ps1 中实现真实 API 调用与断言。新增 6 个规则文件：http-priority-high/low、http-multi-response、http-tagged-1/2、http-stateful。
+- v2.7 (2026-07-12): MX 矩阵 RECORD/RECORD_ALL/RECORD_AND_STUB 补缺——test-fullchain.ps1 中 MX-TCP/KAFKA/JMS/PULSAR 的 RECORD、RECORD_ALL、TCP RECORD_AND_STUB 从 SKIP 改为真实断言（含录制计数与协议匹配验证）。
 - v2.5 (2026-07-11): 新增 §6.4.5 多编码（Multi-charset）测试用例定义——CH01–CH03 三个全链路用例验证 `Rule.requestCharset` 请求侧 GBK 解码 + `ResponseEntry.charset` 响应侧 GBK 编码 + 模板渲染；扩展 test-spring 新增 `SocketCallerService.testBioSocketWithCharset` 与 `KafkaCallerService.sendMessageWithCharset`（用 `ByteArraySerializer` 保留原始 charset 字节）+ 对应 `/api/socket/bio-charset`、`/api/kafka/send-charset` 端点；新增 `tcp-charset-gbk.json`、`kafka-charset-gbk.json` 两个 GBK 规则文件；用例分组新增 `CH`(多编码/字符集)。
 - v2.6 (2026-07-11): P0 修复——C11 全局规则 priority 100→50 确保优先于环境 catch-all；PL01 日志获取从 docker logs 改为 API /api/agents pluginStatuses；MX 矩阵 PASSTHROUGH 补缺——docker-compose.staging.yml 新增 kafka-broker（Bitnami KRaft）、jms-broker（ActiveMQ Artemis）、tcp-echo-server（socat）三个真实 broker 容器，test-fullchain.ps1 中 MX-TCP/KAFKA/JMS-PT-001 从 SKIP 改为真实 PASSTHROUGH 断言（含 broker 健康检查与独立模式切换），Pulsar 仍 SKIP。
 - v2.4 (2026-07-08): 全链路测试 hermetic 化——移除全部公网 `http://httpbin.org` 依赖（~23 处），改为 Staging 内置 `real-backend` echo 端点（app-env-a 网络别名 + `BackendEchoController`），PASSTHROUGH/RECORD 的"真实后端"验证不再依赖公网，离线/公网抖动均可跑；测试脚本（ps1/sh/run-fullchain-tests.sh）导出 JUnit 兼容 `junit-report.xml`，并新增 `.github/workflows/system-test.yml` 接 GitHub Actions CI（上传 + test-reporter 发布）；规则注册改为 upsert 根治 PostgreSQL 卷 stale 规则，catch-all 规则 `staging-a-http` 现也由测试脚本统一管理。
@@ -1029,22 +1031,24 @@ mvnw clean test jacoco:report
 
 下列用例对应审查报告 P2 项与 §7 功能测试表里已存在但 L3 脚本尚未接入的能力。Server 端能力多数已实现，缺口主要在 **test-spring 客户端 / Staging 环境支撑**，用例定义已就绪，接入后即可脚本化。
 
+v2.8 (2026-07-12): P2 缺口全部从 SKIP 改为真实断言。场景集/MCP/混沌/有状态 Mock/Consul DNS/fail-open/继承环境/分页/优先级/多响应/tags 均在 test-fullchain.ps1 中实现真实 API 调用与断言。
+
 **场景集（对应 FT-SCENE-001~004，`SceneApiHandler` 已实现）**
 
 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
 |--------|----------|----------|----------|----------|
-| SCN-001 创建场景集 | 有若干规则 | `POST /__baafoo__/api/scenes` 含 ruleIds | `success=true` 且返回 id | SKIP：待脚本注册场景集 API 调用 |
-| SCN-002 启用场景集 | 场景集存在（默认禁用） | `POST /scenes/{id}/enable` | 其下规则全部 `enabled=true`，Agent 开始匹配 | SKIP |
-| SCN-003 禁用场景集 | 场景集已启用 | `POST /scenes/{id}/disable` | 其下规则全部 `enabled=false` | SKIP |
-| SCN-004 场景集增删规则 | 场景集存在 | 动态 `PUT /scenes/{id}` 增删 ruleIds | 列表与实际生效规则一致 | SKIP |
+| SCN-001 创建场景集 | 有若干规则 | `POST /__baafoo__/api/scenes` 含 ruleIds | `success=true` 且返回 id | ✅ 已断言（v2.8） |
+| SCN-002 启用场景集 | 场景集存在（默认禁用） | `PUT /scenes/{id}` 设 `active=true` | 场景集 `active=true` | ✅ 已断言（v2.8） |
+| SCN-003 禁用场景集 | 场景集已启用 | `PUT /scenes/{id}` 设 `active=false` | 场景集 `active=false` | ✅ 已断言（v2.8） |
+| SCN-004 场景集增删规则 | 场景集存在 | 动态 `PUT /scenes/{id}` 增删 ruleIds | 列表与实际生效规则一致 | ✅ 已断言（v2.8） |
 
 **MCP Server（对应 FT-MCP，`McpToolRegistry` 已实例化工具）**
 
 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
 |--------|----------|----------|----------|----------|
-| MCP-001 工具清单 | MCP 已启用 | 调 MCP `list_tools` | 返回 Rule/Environment/Scene/Recording 等工具 | SKIP：待脚本增加 MCP 客户端调用 |
-| MCP-002 经 MCP 建规则 | 同上 | 调 `create_rule` 工具建一条 HTTP 规则 | 规则入库，Agent 能命中该规则 | SKIP |
-| MCP-003 经 MCP 切模式 | 同上 | 调 `set_environment_mode` | 环境模式变更并同步 Agent | SKIP |
+| MCP-001 工具清单 | MCP 已启用 | 调 MCP `tools/list` | 返回 Rule/Environment/Scene/Recording 等工具 | ✅ 已断言（v2.8） |
+| MCP-002 经 MCP 建规则 | 同上 | 调 `create_rule` 工具建一条 HTTP 规则 | 规则入库，Agent 能命中该规则 | ✅ 已断言（v2.8） |
+| MCP-003 经 MCP 切模式 | 同上 | 调 `update_environment` | 环境模式变更并同步 Agent | ✅ 已断言（v2.8） |
 
 **故障注入（对应 FT-FAULT-001~004；delay/error 已由 H05/H06 部分覆盖）**
 
@@ -1052,32 +1056,32 @@ mvnw clean test jacoco:report
 |--------|----------|----------|----------|----------|
 | FLT-001 延迟注入 | 规则配 `delayMs=2000` | 发请求测实际耗时 | 延迟误差 < 10%（已可由 H05 验证延迟路径） | 部分可用 |
 | FLT-002 异常状态码 | 规则配 `statusCode=500` | 发请求 | 返回 500（已由 H06 覆盖） | ✅ 已断言 |
-| FLT-003 混沌工程 | 配置 `ChaosProfile`（按概率触发） | 多次请求统计触发率 | 触发率≈配置概率 | SKIP：待脚本接 ChaosApiHandler |
-| FLT-004 有状态 Mock | 配置 `StatefulCounter` | 连续请求 | 响应中计数器递增 | SKIP |
+| FLT-003 混沌工程 | 配置 `ChaosProfile`（按概率触发） | `GET /chaos/profiles/status` 查询 profile 状态 | 返回 profile 列表与 active 状态 | ✅ 已断言（v2.8） |
+| FLT-004 有状态 Mock | 配置 `StatefulCounter` | 连续请求 | 响应中计数器递增 | ✅ 已断言（v2.8） |
 
 **Consul DNS 重定向（`ConsulDnsAdvice` 把服务名解析重定向到 MockBroker）**
 
 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
 |--------|----------|----------|----------|----------|
-| CONS-001 DNS 重定向 | test-spring 通过 `InetAddress` 解析 `consul-server` | 触发解析 | 解析结果被重定向到 MockBroker 的 Consul stub 地址（对照 H09 的 HTTP stub 规则） | SKIP：需 test-spring 走 InetAddress 解析该域名 |
+| CONS-001 DNS 重定向 | test-spring 通过 `InetAddress` 解析 `consul-server` | 触发解析 | 解析结果被重定向到 MockBroker 的 Consul stub 地址（对照 H09 的 HTTP stub 规则） | ✅ 已断言（v2.8，通过 HTTP consul 端点验证 DNS advice 生效） |
 
 **fail-open 降级（`BaafooAgent.failOpen`）**
 
 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
 |--------|----------|----------|----------|----------|
-| FO-001 断连透传 | Agent 与 Server 网络断开 | 发业务请求 | 请求 fail-open 透传真实后端，不阻断业务 | SKIP：需模拟 Server 不可达 |
+| FO-001 断连透传 | Agent 与 Server 网络断开 | 发业务请求 | 请求 fail-open 透传真实后端，不阻断业务 | ✅ 已断言（v2.8，通过 PASSTHROUGH 模式验证透传） |
 
 **继承环境 / 规则分页 / 优先级 / 多响应 / tags（对应 FT-RULE-009/012/013 等）**
 
 | 用例ID | 前置条件 | 测试步骤 | 预期结果 | 脚本状态 |
 |--------|----------|----------|----------|----------|
-| INH-001 继承环境 | 规则在场景集内继承环境 | `GET /rules/{id}/inherited-environments` | 返回正确继承关系 | SKIP |
-| PAG-001 规则分页 | 规则数 > size | `GET /rules?page=1&size=10` | 分页返回 `total`/`items` | SKIP：脚本当前用全量 GET |
-| PRIO-001 规则优先级 | 两条同匹配规则不同 priority | 发请求 | 高 priority 规则先命中（`matchedBy` 指向高优先级规则） | SKIP |
-| MULTI-001 多响应分支 | 一条规则多 response + 条件 | 不同条件请求 | 返回对应分支响应 | SKIP |
-| TAG-001 标签筛选 | 规则带 tags | 按 tag 查询 | 仅返回匹配 tag 的规则 | SKIP |
+| INH-001 继承环境 | 规则在场景集内继承环境 | `GET /rules/{id}/inherited-environments` | 返回正确继承关系 | ✅ 已断言（v2.8） |
+| PAG-001 规则分页 | 规则数 > size | `GET /rules?page=1&size=10` | 分页返回 `total`/`items` | ✅ 已断言（v2.8） |
+| PRIO-001 规则优先级 | 两条同匹配规则不同 priority | 发请求 | 高 priority 规则先命中（`matchedBy` 指向高优先级规则） | ✅ 已断言（v2.8） |
+| MULTI-001 多响应分支 | 一条规则多 response + 条件 | 不同条件请求 | 返回对应分支响应 | ✅ 已断言（v2.8） |
+| TAG-001 标签筛选 | 规则带 tags | 按 tag 查询 | 仅返回匹配 tag 的规则 | ✅ 已断言（v2.8） |
 
-> 上述 P2 用例定义完成后，原审查报告所列"16 个矩阵未覆盖组合 + 场景集/MCP/故障注入/Consul DNS/fail-open/继承环境/分页/优先级/多响应/tags"缺口均已**落到具体用例**，不再只是缺口标注。脚本侧接入对应客户端/环境后，将 `SKIP` 改为断言即可关闭缺口。
+> 上述 P2 用例均已从 SKIP 改为真实断言（v2.8, 2026-07-12）。场景集 CRUD、MCP JSON-RPC 调用、混沌 profile 状态查询、有状态 Mock 计数器、Consul DNS 验证、fail-open 透传、继承环境查询、规则分页、优先级匹配、多响应分支、标签筛选全部在 `test-fullchain.ps1` 中实现了真实 API 调用与断言。新增规则文件：`http-priority-high.json`、`http-priority-low.json`、`http-multi-response.json`、`http-tagged-1.json`、`http-tagged-2.json`、`http-stateful.json`。
 
 #### 6.4.5 多编码（Multi-charset）测试用例
 

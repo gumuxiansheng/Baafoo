@@ -1,0 +1,37 @@
+{
+  "id": "staging-a-http-priority-low",
+  "name": "HTTP Priority Low",
+  "protocol": "http",
+  "host": "real-backend",
+  "port": 9090,
+  "conditions": [
+    {
+      "type": "method",
+      "operator": "equals",
+      "value": "GET"
+    },
+    {
+      "type": "path",
+      "operator": "equals",
+      "value": "/priority-test"
+    }
+  ],
+  "responses": [
+    {
+      "name": "LowPriority",
+      "statusCode": 200,
+      "body": "{\"mocked\":true,\"priority\":\"low\",\"matchedBy\":\"priority-low\"}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 100,
+  "tags": [
+    "http",
+    "priority-test",
+    "staging-a"
+  ],
+  "environments": [
+    "staging-a"
+  ]
+}

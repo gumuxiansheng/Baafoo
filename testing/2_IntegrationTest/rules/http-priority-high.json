@@ -1,0 +1,37 @@
+{
+  "id": "staging-a-http-priority-high",
+  "name": "HTTP Priority High",
+  "protocol": "http",
+  "host": "real-backend",
+  "port": 9090,
+  "conditions": [
+    {
+      "type": "method",
+      "operator": "equals",
+      "value": "GET"
+    },
+    {
+      "type": "path",
+      "operator": "equals",
+      "value": "/priority-test"
+    }
+  ],
+  "responses": [
+    {
+      "name": "HighPriority",
+      "statusCode": 200,
+      "body": "{\"mocked\":true,\"priority\":\"high\",\"matchedBy\":\"priority-high\"}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 5,
+  "tags": [
+    "http",
+    "priority-test",
+    "staging-a"
+  ],
+  "environments": [
+    "staging-a"
+  ]
+}

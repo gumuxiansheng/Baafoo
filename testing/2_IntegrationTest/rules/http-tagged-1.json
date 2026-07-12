@@ -1,0 +1,37 @@
+{
+  "id": "staging-a-http-tagged-1",
+  "name": "HTTP Tagged Rule 1",
+  "protocol": "http",
+  "host": "real-backend",
+  "port": 9090,
+  "conditions": [
+    {
+      "type": "method",
+      "operator": "equals",
+      "value": "GET"
+    },
+    {
+      "type": "path",
+      "operator": "equals",
+      "value": "/tag-test-1"
+    }
+  ],
+  "responses": [
+    {
+      "name": "Tag1",
+      "statusCode": 200,
+      "body": "{\"mocked\":true,\"tag\":\"tagtest\"}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 100,
+  "tags": [
+    "http",
+    "tagtest",
+    "staging-a"
+  ],
+  "environments": [
+    "staging-a"
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "staging-a-http-multi-response-b",
+  "name": "HTTP Multi Response B",
+  "protocol": "http",
+  "host": "real-backend",
+  "port": 9090,
+  "conditions": [
+    {
+      "type": "method",
+      "operator": "equals",
+      "value": "GET"
+    },
+    {
+      "type": "path",
+      "operator": "equals",
+      "value": "/multi-response"
+    },
+    {
+      "type": "header",
+      "operator": "equals",
+      "key": "X-Branch",
+      "value": "B"
+    }
+  ],
+  "responses": [
+    {
+      "name": "BranchB",
+      "statusCode": 200,
+      "body": "{\"mocked\":true,\"branch\":\"B\",\"matchedBy\":\"multi-response-b\"}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 5,
+  "tags": [
+    "http",
+    "multi-response",
+    "staging-a"
+  ],
+  "environments": [
+    "staging-a"
+  ]
+}

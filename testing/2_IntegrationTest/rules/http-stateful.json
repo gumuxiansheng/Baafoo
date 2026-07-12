@@ -1,0 +1,37 @@
+{
+  "id": "staging-a-http-stateful",
+  "name": "HTTP Stateful Counter",
+  "protocol": "http",
+  "host": "real-backend",
+  "port": 9090,
+  "conditions": [
+    {
+      "type": "method",
+      "operator": "equals",
+      "value": "GET"
+    },
+    {
+      "type": "path",
+      "operator": "equals",
+      "value": "/stateful"
+    }
+  ],
+  "responses": [
+    {
+      "name": "StatefulResponse",
+      "statusCode": 200,
+      "body": "{\"mocked\":true,\"counter\":{{requestCount}},\"matchedBy\":\"stateful\"}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 10,
+  "tags": [
+    "http",
+    "stateful",
+    "staging-a"
+  ],
+  "environments": [
+    "staging-a"
+  ]
+}

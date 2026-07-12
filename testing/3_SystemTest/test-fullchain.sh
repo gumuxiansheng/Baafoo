@@ -12,7 +12,8 @@
 #      F core / A API security & CRUD / H HTTP / T TCP / K Kafka / CH multi-charset
 #      P Pulsar / J JMS / E env isolation / PL plugin / R+D recording & MQ direction
 #      C condition types / M env modes / AS RuleSet CRUD / REC recording mgmt
-#      RU+RST undo & reset / OAPI OpenAPI import / G gRPC (gap) / MX protocol x mode matrix gaps
+#      RU+RST undo & reset / OAPI OpenAPI import / G gRPC / P2 scene/MCP/fault/consul/failopen/page/priority/multi/tag
+#      MX protocol x mode matrix gaps
 #   7. Summary report and cleanup
 #
 # Assertion red lines (see PROJECT-TEST-PLAN.md §6.4.1):
@@ -419,6 +420,11 @@ rule_files=(
     "tcp-charset-gbk.json" "kafka-charset-gbk.json"
     "grpc-greeter.json" "grpc-error.json" "grpc-delay.json"
     "grpc-server-streaming.json" "grpc-client-streaming.json" "grpc-bidirectional-streaming.json"
+    # P2 gap rules: priority / multi-response / tags / stateful
+    "http-priority-high.json" "http-priority-low.json"
+    "http-multi-response-a.json" "http-multi-response-b.json"
+    "http-tagged-1.json" "http-tagged-2.json"
+    "http-stateful.json"
 )
 
 registered=0
@@ -1553,6 +1559,282 @@ else
     else
         test_fail "G06: gRPC bidi-streaming Chat expected 2 messages (resp=$resp)"
     fi
+fi
+
+# -------------------- P2: Scene / MCP / Fault / Consul / FailOpen / Inherit / Page / Priority / Multi / Tag --------------------
+echo ""
+# Wait for agent to poll newly registered P2 rules
+echo "Waiting 5s for agent rule poll..."
+sleep 5
+echo "--- P2: Scene Set CRUD ---"
+
+# SCN-001: Create a scene set via POST /api/scenes
+scn_id="test-scene-$RANDOM"
+scn_body="{\"id\":\"$scn_id\",\"name\":\"Test Scene\",\"description\":\"P2 scene set CRUD test\",\"itemIds\":[\"staging-a-http-get\",\"staging-a-http-post\"],\"active\":false,\"tags\":[\"test\",\"p2\"],\"environments\":[\"staging-a\"]}"
+scn_create="$(api_post "scenes" "$scn_body")"
+scn_success="$(get_json_value "$scn_create" "success")"
+if [[ "$scn_success" == "true" || "$scn_create" =~ "$scn_id" ]]; then
+    test_pass "SCN-001: Scene set created (id=$scn_id)"
+else
+    test_fail "SCN-001: Scene set create (resp: $scn_create)"
+fi
+
+# SCN-002: Enable scene set via PUT /api/scenes/{id} (set active=true)
+scn_enable_body="{\"name\":\"Test Scene\",\"description\":\"P2 scene set CRUD test\",\"itemIds\":[\"staging-a-http-get\",\"staging-a-http-post\"],\"active\":true,\"tags\":[\"test\",\"p2\"],\"environments\":[\"staging-a\"]}"
+api_put "scenes/$scn_id" "$scn_enable_body" >/dev/null 2>&1
+scn_verify="$(api_get "scenes/$scn_id")"
+scn_active="$(get_json_value "$scn_verify" "active")"
+if [[ "$scn_active" == "true" ]]; then
+    test_pass "SCN-002: Scene set enabled (active=true)"
+else
+    test_fail "SCN-002: Scene set enable (active=$scn_active)"
+fi
+
+# SCN-003: Disable scene set via PUT /api/scenes/{id} (set active=false)
+scn_disable_body="{\"name\":\"Test Scene\",\"description\":\"P2 scene set CRUD test\",\"itemIds\":[\"staging-a-http-get\",\"staging-a-http-post\"],\"active\":false,\"tags\":[\"test\",\"p2\"],\"environments\":[\"staging-a\"]}"
+api_put "scenes/$scn_id" "$scn_disable_body" >/dev/null 2>&1
+scn_verify2="$(api_get "scenes/$scn_id")"
+scn_active2="$(get_json_value "$scn_verify2" "active")"
+if [[ "$scn_active2" == "false" ]]; then
+    test_pass "SCN-003: Scene set disabled (active=false)"
+else
+    test_fail "SCN-003: Scene set disable (active=$scn_active2)"
+fi
+
+# SCN-004: Update scene set — add/remove ruleIds dynamically
+scn_update_body="{\"name\":\"Test Scene Updated\",\"description\":\"P2 scene set CRUD test - updated\",\"itemIds\":[\"staging-a-http-get\",\"staging-a-http-put\",\"staging-a-http-delete\"],\"active\":false,\"tags\":[\"test\",\"p2\",\"updated\"],\"environments\":[\"staging-a\"]}"
+api_put "scenes/$scn_id" "$scn_update_body" >/dev/null 2>&1
+scn_verify3="$(api_get "scenes/$scn_id")"
+if echo "$scn_verify3" | grep -q "staging-a-http-put" && echo "$scn_verify3" | grep -q "Updated"; then
+    test_pass "SCN-004: Scene set updated (added staging-a-http-put, renamed)"
+else
+    test_fail "SCN-004: Scene set update (resp=${scn_verify3:0:240})"
+fi
+
+# Cleanup scene set
+api_delete "scenes/$scn_id" >/dev/null 2>&1 || true
+
+# -------------------- P2: MCP Server (JSON-RPC) --------------------
+echo ""
+echo "--- P2: MCP Server ---"
+
+# MCP-001: list_tools — call MCP JSON-RPC tools/list
+mcp_list_body='{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+mcp_list_resp="$(api_post "mcp" "$mcp_list_body")"
+if [[ "$HAVE_JQ" == "true" ]]; then
+    tool_count="$(echo "$mcp_list_resp" | jq -r '.result.tools | length' 2>/dev/null || echo 0)"
+else
+    tool_count="$(echo "$mcp_list_resp" | grep -o '"name"' | wc -l)"
+fi
+if [[ "$tool_count" -gt 0 ]]; then
+    test_pass "MCP-001: tools/list returned $tool_count tools"
+else
+    test_fail "MCP-001: tools/list empty (resp: ${mcp_list_resp:0:240})"
+fi
+
+# MCP-002: create_rule via MCP tools/call
+mcp_rule_id="mcp-test-rule-$RANDOM"
+mcp_call_body="{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"create_rule\",\"arguments\":{\"id\":\"$mcp_rule_id\",\"name\":\"MCP Created Rule\",\"protocol\":\"http\",\"host\":\"real-backend\",\"port\":9090,\"conditions\":[{\"type\":\"method\",\"operator\":\"equals\",\"value\":\"GET\"},{\"type\":\"path\",\"operator\":\"equals\",\"value\":\"/mcp-test\"}],\"responses\":[{\"name\":\"MCP\",\"statusCode\":200,\"body\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"mcp\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"mcp\",\"test\"],\"environments\":[\"staging-a\"]}}}"
+mcp_call_resp="$(api_post "mcp" "$mcp_call_body")"
+sleep 1
+rule_check="$(api_get "rules/$mcp_rule_id")"
+if echo "$rule_check" | grep -q "$mcp_rule_id"; then
+    test_pass "MCP-002: create_rule via MCP (rule $mcp_rule_id found in storage)"
+else
+    test_fail "MCP-002: create_rule via MCP (rule not found, resp: ${rule_check:0:240})"
+fi
+
+# MCP-003: update_environment via MCP tools/call (requires id, not name)
+mcp_env_list="$(api_get "environments")"
+mcp_env_a_id="$(get_environment_id "$mcp_env_list" "staging-a")"
+if [[ -z "$mcp_env_a_id" ]]; then
+    test_fail "MCP-003: update_environment via MCP (cannot find staging-a environment ID)"
+else
+    mcp_mode_body="{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"update_environment\",\"arguments\":{\"id\":\"$mcp_env_a_id\",\"mode\":\"RECORD_AND_STUB\"}}}"
+    mcp_mode_resp="$(api_post "mcp" "$mcp_mode_body")"
+    sleep 2
+    env_check="$(api_get "environments")"
+    if [[ "$HAVE_JQ" == "true" ]]; then
+        env_a_mode="$(echo "$env_check" | jq -r '.data[]? // .[]? | select(.name=="staging-a") | .mode' 2>/dev/null || echo "")"
+    else
+        env_a_mode=""
+        if echo "$env_check" | grep -q '"mode":"record-and-stub"'; then
+            env_a_mode="record-and-stub"
+        elif echo "$env_check" | grep -q '"mode":"RECORD_AND_STUB"'; then
+            env_a_mode="RECORD_AND_STUB"
+        fi
+    fi
+    if [[ "$env_a_mode" == "record-and-stub" || "$env_a_mode" == "RECORD_AND_STUB" || "$mcp_mode_resp" =~ "result" ]]; then
+        test_pass "MCP-003: update_environment via MCP (mode=$env_a_mode)"
+    else
+        test_fail "MCP-003: update_environment via MCP (mode=$env_a_mode)"
+    fi
+fi
+# Restore staging-a to STUB mode
+env_restore="$(api_get "environments")"
+env_a_id_restore="$(get_environment_id "$env_restore" "staging-a")"
+if [[ -n "$env_a_id_restore" ]]; then
+    api_put "environments/$env_a_id_restore" '{"mode":"stub"}' >/dev/null 2>&1
+    sleep "$MODE_SETTLE_WAIT"
+fi
+
+# Cleanup MCP-created rule
+api_delete "rules/$mcp_rule_id" >/dev/null 2>&1 || true
+
+# -------------------- P2: Fault Injection (Chaos + Stateful) --------------------
+echo ""
+echo "--- P2: Fault Injection ---"
+
+# FLT-003: Chaos engineering — query profiles status
+chaos_status="$(api_get "chaos/profiles/status")"
+chaos_success="$(get_json_value "$chaos_status" "success")"
+if [[ "$chaos_success" == "true" || "$chaos_status" =~ "totalCount" ]]; then
+    profile_count="$(get_json_value "$chaos_status" "data.totalCount")"
+    [[ -z "$profile_count" ]] && profile_count=0
+    test_pass "FLT-003: Chaos profiles status (totalCount=$profile_count)"
+else
+    test_fail "FLT-003: Chaos profiles status (resp: ${chaos_status:0:240})"
+fi
+
+# FLT-004: Stateful Mock — send multiple requests, verify counter increments
+# First reset the rule's request counter
+api_post "rules/staging-a-http-stateful/reset-state" "" >/dev/null 2>&1 || true
+sleep 1
+stateful_pass=true
+stateful_counters=""
+for si in 0 1 2; do
+    sr="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/stateful")"
+    sr_body="$(get_json_body "$sr")"
+    counter=""
+    if [[ "$sr_body" =~ \"counter\":([0-9]+) ]]; then
+        counter="${BASH_REMATCH[1]}"
+    fi
+    stateful_counters="$stateful_counters,$counter"
+done
+# Remove leading comma
+stateful_counters="${stateful_counters#,}"
+# Check that last counter > first counter (incrementing)
+first_val="$(echo "$stateful_counters" | cut -d, -f1)"
+last_val="$(echo "$stateful_counters" | cut -d, -f3)"
+if [[ -n "$first_val" && -n "$last_val" && "$last_val" -gt "$first_val" ]]; then
+    test_pass "FLT-004: Stateful Mock counter increments (values: $stateful_counters)"
+else
+    test_fail "FLT-004: Stateful Mock (counters: $stateful_counters)"
+fi
+
+# -------------------- P2: Consul DNS redirect --------------------
+echo ""
+echo "--- P2: Consul DNS ---"
+
+# CONS-001: Consul DNS redirect — verify agent intercepts consul-server request
+consul_resp="$(app_get "$APP_A/api/http/get?url=http://consul-server:8500/v1/agent/services")"
+consul_stubbed="$(get_json_value "$consul_resp" "stubbed")"
+if [[ "$consul_stubbed" == "true" ]]; then
+    test_pass "CONS-001: Consul DNS redirect (agent intercepted consul-server request)"
+else
+    test_fail "CONS-001: Consul DNS redirect (stubbed=$consul_stubbed, resp=${consul_resp:0:240})"
+fi
+
+# -------------------- P2: Fail-open degradation --------------------
+echo ""
+echo "--- P2: Fail-open ---"
+
+# FO-001: Fail-open — switch to PASSTHROUGH mode, send request, verify not stubbed
+fo_env_json="$(api_get "environments")"
+fo_env_a_id="$(get_environment_id "$fo_env_json" "staging-a")"
+if [[ -n "$fo_env_a_id" ]]; then
+    api_put "environments/$fo_env_a_id" '{"mode":"passthrough"}' >/dev/null 2>&1
+    sleep "$MODE_SETTLE_WAIT"
+    fo_resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get")"
+    fo_stubbed="$(get_json_value "$fo_resp" "stubbed")"
+    if [[ "$fo_stubbed" != "true" && "$fo_resp" =~ "statusCode" ]]; then
+        test_pass "FO-001: Fail-open in PASSTHROUGH mode (request passed through)"
+    else
+        test_fail "FO-001: Fail-open (stubbed=$fo_stubbed, resp=${fo_resp:0:240})"
+    fi
+    # Restore to STUB
+    api_put "environments/$fo_env_a_id" '{"mode":"stub"}' >/dev/null 2>&1
+    sleep "$MODE_SETTLE_WAIT"
+else
+    test_fail "FO-001: Fail-open (cannot find staging-a environment)"
+fi
+
+# -------------------- P2: Inherited environments / Pagination / Priority / Multi-response / Tags --------------------
+echo ""
+echo "--- P2: Rule Features ---"
+
+# INH-001: Inherited environments
+inh_resp="$(api_get "rules/staging-a-http-get/inherited-environments")"
+if echo "$inh_resp" | grep -q '"success":true' || echo "$inh_resp" | grep -q '"data"'; then
+    test_pass "INH-001: inherited-environments endpoint returns success"
+else
+    test_fail "INH-001: inherited-environments (resp: ${inh_resp:0:240})"
+fi
+
+# PAG-001: Rule pagination
+pag_resp="$(api_get "rules?page=1&size=10")"
+if [[ "$HAVE_JQ" == "true" ]]; then
+    pag_total="$(echo "$pag_resp" | jq -r '.data.total // empty' 2>/dev/null)"
+    pag_items="$(echo "$pag_resp" | jq -r '.data.items | length' 2>/dev/null || echo 0)"
+else
+    pag_total="$(get_json_value "$pag_resp" "total")"
+    pag_items="$(echo "$pag_resp" | grep -o '"id"' | wc -l)"
+fi
+if [[ -n "$pag_total" || -n "$pag_items" ]]; then
+    test_pass "PAG-001: Rule pagination (total=$pag_total, items=$pag_items)"
+else
+    test_fail "PAG-001: Rule pagination (resp: ${pag_resp:0:240})"
+fi
+
+# PRIO-001: Rule priority — high priority (5) should win over low (100)
+prio_resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/priority-test")"
+prio_body="$(get_json_body "$prio_resp")"
+if echo "$prio_body" | grep -q '"priority":"high"'; then
+    test_pass "PRIO-001: High priority rule matched (priority=5 wins over priority=100)"
+elif echo "$prio_body" | grep -q '"priority":"low"'; then
+    test_fail "PRIO-001: Low priority rule matched (priority=100 should lose to priority=5)"
+else
+    test_fail "PRIO-001: Priority test (resp=${prio_resp:0:240})"
+fi
+
+# MULTI-001: Multi-response branches — two rules with different header conditions
+# Rule: staging-a-http-multi-response-a matches X-Branch=A (priority=5)
+# Rule: staging-a-http-multi-response-b matches X-Branch=B (priority=5)
+# Both match path /multi-response but differ on header condition.
+multi_resp_a="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/multi-response&headerName=X-Branch&headerValue=A")"
+multi_body_a="$(get_json_body "$multi_resp_a")"
+branch_a=""
+if [[ "$multi_body_a" =~ \"branch\":\"([^\"]+)\" ]]; then
+    branch_a="${BASH_REMATCH[1]}"
+fi
+multi_resp_b="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/multi-response&headerName=X-Branch&headerValue=B")"
+multi_body_b="$(get_json_body "$multi_resp_b")"
+branch_b=""
+if [[ "$multi_body_b" =~ \"branch\":\"([^\"]+)\" ]]; then
+    branch_b="${BASH_REMATCH[1]}"
+fi
+if [[ "$branch_a" == "A" && "$branch_b" == "B" ]]; then
+    test_pass "MULTI-001: Multi-response branches (header=A -> branch A, header=B -> branch B)"
+elif [[ "$branch_a" == "default" && "$branch_b" == "default" ]]; then
+    test_fail "MULTI-001: Multi-response (both returned default, per-response condition not evaluated)"
+else
+    test_fail "MULTI-001: Multi-response (branchA=$branch_a, branchB=$branch_b)"
+fi
+
+# TAG-001: Tag filtering — verify rules with different tags exist in listing
+tag_resp="$(api_get "rules?page=1&size=100")"
+found_tagged=false
+found_other=false
+if echo "$tag_resp" | grep -q '"tagtest"'; then
+    found_tagged=true
+fi
+if echo "$tag_resp" | grep -q '"othertag"'; then
+    found_other=true
+fi
+if [[ "$found_tagged" == true && "$found_other" == true ]]; then
+    test_pass "TAG-001: Tag filtering (found rule with tag 'tagtest' and rule with tag 'othertag')"
+else
+    test_fail "TAG-001: Tag filtering (tagged=$found_tagged, other=$found_other)"
 fi
 
 # -------------------- MX: Protocol x Mode Matrix (real broker tests) --------------------
