@@ -103,5 +103,21 @@ else
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# Two-step build (required for inter-module dependencies like baafoo-plugin-api)
+#
+# Running `mvn org.pitest:pitest-maven:mutationCoverage -pl <module> -am` invokes
+# ONLY the mutationCoverage goal on each reactor module, so upstream modules are
+# never packaged/installed. The target module then fails to resolve them:
+#   Could not find artifact com.baafoo:baafoo-plugin-api:jar:1.1.0-SNAPSHOT
+#
+# Step 1 installs the module and its upstream dependencies (with tests skipped,
+# since PIT runs the tests itself in step 2) so their jars land in the local
+# Maven repo. Step 2 runs PIT on the target module only, which now resolves its
+# dependencies normally and avoids a duplicate (wasteful) PIT run upstream.
+# ---------------------------------------------------------------------------
 # shellcheck disable=SC2086
-"$MVN" org.pitest:pitest-maven:mutationCoverage -pl "$MODULE" -am $EXTRA_ARGS
+"$MVN" -pl "$MODULE" -am install -DskipTests $EXTRA_ARGS
+
+# shellcheck disable=SC2086
+"$MVN" org.pitest:pitest-maven:mutationCoverage -pl "$MODULE" $EXTRA_ARGS

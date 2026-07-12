@@ -49,12 +49,18 @@ while (-not (Test-Path (Join-Path $projectRoot "pom.xml")) -or
 }
 Push-Location $projectRoot
 try {
+    # Two-step build (required for inter-module deps like baafoo-plugin-api):
+    # Step 1 installs the module + upstream deps (tests skipped; PIT runs them
+    # in step 2) so their jars exist in the local Maven repo. Step 2 runs PIT
+    # only on the target module so it can resolve those dependencies.
     if (Get-Command mvn -ErrorAction SilentlyContinue) {
-        mvn org.pitest:pitest-maven:mutationCoverage -pl $Module -am $ExtraArgs
+        mvn -pl $Module -am install -DskipTests $ExtraArgs
+        mvn org.pitest:pitest-maven:mutationCoverage -pl $Module $ExtraArgs
     } elseif (Test-Path (Join-Path $projectRoot "mvnw")) {
         $mvnwPath = Join-Path $projectRoot "mvnw"
         Write-Host "Using Maven wrapper: $mvnwPath"
-        & "$mvnwPath" org.pitest:pitest-maven:mutationCoverage -pl $Module -am $ExtraArgs
+        & "$mvnwPath" -pl $Module -am install -DskipTests $ExtraArgs
+        & "$mvnwPath" org.pitest:pitest-maven:mutationCoverage -pl $Module $ExtraArgs
     } else {
         Write-Error "Neither mvn nor mvnw found."
     }
