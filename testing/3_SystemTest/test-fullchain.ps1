@@ -207,8 +207,16 @@ Write-OK "Old environment cleaned"
 if (-not $SkipBuild) {
     Write-Step "2/6: Build all JAR files"
 
-    Write-Host "  Building project (mvnw clean package -DskipTests)..."
-    & .\mvnw.cmd clean package -DskipTests -q 2>&1 | Out-Null
+    # Use `install` (not `package`) so that baafoo-plugin-api is published to
+    # the local Maven repository. The Feign plugin is built as a STANDALONE
+    # reactor (see -f baafoo-example-plugins/feign/pom.xml below), which means
+    # it cannot resolve com.baafoo:baafoo-plugin-api from the reactor's
+    # target/ directories — it needs the artifact in the local ~/.m2 repo.
+    # `package` only builds to target/, leaving the local repo empty on a
+    # clean CI runner, causing the Feign build to silently fail and PL01 to
+    # SKIP/FAIL with "no plugin evidence".
+    Write-Host "  Building project (mvnw clean install -DskipTests)..."
+    & .\mvnw.cmd clean install -DskipTests -q 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Err "Project build failed"
         exit 1
