@@ -62,11 +62,39 @@ public class AuthFilterTest {
     }
 
     @Test
-    public void unauthenticatedReturns401() throws Exception {
+    public void unauthenticatedGetAllowedAsGuest() throws Exception {
         when(authService.authenticate(any(), any(), any())).thenReturn(
                 new AuthService.AuthResult(false, null, "Invalid credentials"));
 
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/rules");
+        channel.writeInbound(request);
+        Object out = channel.readOutbound();
+        assertNull(out);
+
+        FullHttpRequest captured = channel.readInbound();
+        assertNotNull(captured);
+        assertEquals("guest", captured.headers().get("X-Baafoo-Auth-Role"));
+    }
+
+    @Test
+    public void unauthenticatedPostReturns401() throws Exception {
+        when(authService.authenticate(any(), any(), any())).thenReturn(
+                new AuthService.AuthResult(false, null, "Invalid credentials"));
+
+        FullHttpRequest request = createRequest("POST", "/__baafoo__/api/rules");
+        channel.writeInbound(request);
+        FullHttpResponse response = channel.readOutbound();
+
+        assertNotNull(response);
+        assertEquals(401, response.status().code());
+    }
+
+    @Test
+    public void unauthenticatedGetUsersReturns401() throws Exception {
+        when(authService.authenticate(any(), any(), any())).thenReturn(
+                new AuthService.AuthResult(false, null, "Invalid credentials"));
+
+        FullHttpRequest request = createRequest("GET", "/__baafoo__/api/users");
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
 

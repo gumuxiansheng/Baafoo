@@ -51,7 +51,7 @@ public class BaafooCli {
                 }
                 break;
             case "version":
-                System.out.println("Baafoo CLI v1.0.0-SNAPSHOT");
+                System.out.println("Baafoo CLI v1.1.0-SNAPSHOT");
                 break;
             default:
                 System.err.println("Unknown command: " + command);
@@ -157,6 +157,15 @@ public class BaafooCli {
             writeStartServerBat(startServerBat);
             System.out.println("  [OK] start-server.bat");
 
+            File stopServerSh = new File(dir, "stop-server.sh");
+            writeStopServerScript(stopServerSh);
+            stopServerSh.setExecutable(true);
+            System.out.println("  [OK] stop-server.sh");
+
+            File stopServerBat = new File(dir, "stop-server.bat");
+            writeStopServerBat(stopServerBat);
+            System.out.println("  [OK] stop-server.bat");
+
             System.out.println();
             System.out.println("=== Baafoo initialized! ===");
             System.out.println();
@@ -173,6 +182,7 @@ public class BaafooCli {
             System.out.println("  2. Start the server:    ./start-server.sh");
             System.out.println("  3. Start your app with the JVM parameter above");
             System.out.println("  4. Open Web console:    http://" + serverHost + ":8084/__baafoo__/");
+            System.out.println("  5. Stop the server:     ./stop-server.sh");
             System.out.println();
 
         } catch (Exception e) {
@@ -284,7 +294,7 @@ public class BaafooCli {
             System.out.println("  [OK] baafoo-agent.yml");
 
             File serverConfig = new File(dir, "baafoo-server.yml");
-            writeServerConfig(serverConfig, Arrays.asList("http", "tcp", "kafka", "pulsar", "jms"));
+            writeServerConfig(serverConfig, Arrays.asList("http", "tcp", "kafka", "pulsar", "jms", "grpc"));
             System.out.println("  [OK] baafoo-server.yml");
 
             File rulesFile = new File(dir, "baafoo-rules.yml");
@@ -309,6 +319,15 @@ public class BaafooCli {
             writeStartServerBat(startServerBat);
             System.out.println("  [OK] start-server.bat");
 
+            File stopServerSh = new File(dir, "stop-server.sh");
+            writeStopServerScript(stopServerSh);
+            stopServerSh.setExecutable(true);
+            System.out.println("  [OK] stop-server.sh");
+
+            File stopServerBat = new File(dir, "stop-server.bat");
+            writeStopServerBat(stopServerBat);
+            System.out.println("  [OK] stop-server.bat");
+
             System.out.println();
             System.out.println("=== Baafoo initialized! ===");
             System.out.println();
@@ -318,6 +337,7 @@ public class BaafooCli {
             System.out.println("  3. Start the server:    ./start-server.sh");
             System.out.println("  4. Start your app with: java -javaagent:baafoo-agent.jar -jar your-app.jar");
             System.out.println("  5. Open Web console:    http://localhost:8084/__baafoo__/");
+            System.out.println("  6. Stop the server:     ./stop-server.sh");
             System.out.println();
 
         } catch (Exception e) {
@@ -330,19 +350,42 @@ public class BaafooCli {
 
     private static void writeAgentConfig(File file, String serverHost, String environment, List<String> protocols) throws Exception {
         Map<String, Object> config = new LinkedHashMap<String, Object>();
+        
+        // Server connection configuration (nested block)
+        Map<String, Object> server = new LinkedHashMap<String, Object>();
+        server.put("host", serverHost);
+        server.put("useSsl", false);
+        server.put("apiPort", 8084);
+        server.put("httpPort", 9000);
+        server.put("tcpPort", 9001);
+        server.put("kafkaPort", 9002);
+        server.put("pulsarPort", 9003);
+        server.put("jmsPort", 9004);
+        server.put("grpcPort", 9005);
+        config.put("server", server);
+        
         config.put("agentId", "agent-" + UUID.randomUUID().toString().substring(0, 8));
         config.put("environment", environment);
-        config.put("serverUrl", "http://" + serverHost + ":8084");
         config.put("heartbeatIntervalSec", 30);
         config.put("pollIntervalSec", 10);
         config.put("protocols", Collections.emptyList());
+        config.put("maxRecordingSize", 10485760); // 10MB
+        config.put("rulesFilePath", "");
         config.put("hotReload", true);
+        config.put("failOpen", false);
         config.put("connectionRetries", 3);
         config.put("retryBackoffMs", 1000);
+        
+        // Plugin system configuration
+        Map<String, Object> plugins = new LinkedHashMap<String, Object>();
+        plugins.put("enabled", true);
+        plugins.put("directory", "./plugins");
+        plugins.put("configs", Collections.emptyMap());
+        config.put("plugins", plugins);
 
         try (FileWriter w = new FileWriter(file)) {
             w.write("# Baafoo Agent Configuration\n");
-            w.write("# See docs for full configuration reference\n\n");
+            w.write("# Loaded by com.baafoo.core.config.ConfigLoader\n\n");
             YAML_MAPPER.writeValue(w, config);
         }
     }
@@ -357,19 +400,41 @@ public class BaafooCli {
         if (protocols.contains("kafka")) ports.put("kafka", 9002);
         if (protocols.contains("pulsar")) ports.put("pulsar", 9003);
         if (protocols.contains("jms")) ports.put("jms", 9004);
+        if (protocols.contains("grpc")) ports.put("grpc", 9005);
         config.put("protocolPorts", ports);
 
         config.put("dataDir", "./data");
         config.put("rulesDir", "./data/rules");
         config.put("recordingsDir", "./data/recordings");
         config.put("recordingRetentionDays", 7);
+        config.put("recordingMaxSizeMb", 500);
+        config.put("maxRulesPerPage", 100);
         config.put("corsEnabled", true);
+        config.put("corsOrigins", Collections.emptyList());
+        config.put("webConsolePath", "");
         config.put("requestLogging", true);
         config.put("agentHeartbeatTimeoutSec", 60);
+        config.put("maxAgentsPerEnvironment", 50);
+        config.put("unmatchedDefault", "passthrough");
+        
+        // Database configuration
+        Map<String, Object> database = new LinkedHashMap<String, Object>();
+        database.put("type", "h2");
+        database.put("url", "jdbc:h2:mem:baafoo;DB_CLOSE_DELAY=-1");
+        database.put("username", "sa");
+        database.put("password", "");
+        config.put("database", database);
+        
+        // Authentication configuration
+        Map<String, Object> auth = new LinkedHashMap<String, Object>();
+        auth.put("enabled", false);
+        auth.put("localBypass", false);
+        auth.put("tokenExpiryHours", 24);
+        config.put("auth", auth);
 
         try (FileWriter w = new FileWriter(file)) {
             w.write("# Baafoo Server Configuration\n");
-            w.write("# See docs for full configuration reference\n\n");
+            w.write("# Loaded by com.baafoo.core.config.ConfigLoader\n\n");
             YAML_MAPPER.writeValue(w, config);
         }
     }
@@ -387,10 +452,10 @@ public class BaafooCli {
             rule1.put("id", "example-http-1");
             rule1.put("name", "GET /api/users");
             rule1.put("protocol", "http");
-            rule1.put("host", "api.example.com");
-            rule1.put("port", 8084);
+            rule1.put("host", "real-backend");
+            rule1.put("port", 9090);
             rule1.put("enabled", true);
-            rule1.put("priority", 10);
+            rule1.put("priority", 100);
 
             List<Map<String, String>> conditions1 = new ArrayList<Map<String, String>>();
             Map<String, String> c1 = new LinkedHashMap<String, String>();
@@ -409,9 +474,22 @@ public class BaafooCli {
             Map<String, Object> r1 = new LinkedHashMap<String, Object>();
             r1.put("name", "Success");
             r1.put("statusCode", 200);
-            r1.put("body", "{\"code\":0,\"data\":[],\"message\":\"success\"}");
+            Map<String, String> headers1 = new LinkedHashMap<String, String>();
+            headers1.put("X-Baafoo-Method", "GET");
+            r1.put("headers", headers1);
+            r1.put("body", "{\"mocked\":true,\"env\":\"{{environment}}\",\"protocol\":\"http\",\"method\":\"GET\",\"path\":\"{{request.path}}\"}");
+            r1.put("delayMs", 0);
             responses1.add(r1);
             rule1.put("responses", responses1);
+            
+            List<String> tags1 = new ArrayList<String>();
+            tags1.add("http");
+            tags1.add("example");
+            rule1.put("tags", tags1);
+            
+            List<String> envs1 = new ArrayList<String>();
+            envs1.add("dev");
+            rule1.put("environments", envs1);
 
             rules.add(rule1);
         } else {
@@ -427,7 +505,7 @@ public class BaafooCli {
                 rule.put("host", svc.name);
                 rule.put("port", svc.port);
                 rule.put("enabled", true);
-                rule.put("priority", 10);
+                rule.put("priority", 100);
 
                 List<Map<String, String>> conditions = new ArrayList<Map<String, String>>();
                 if ("http".equals(protocol)) {
@@ -443,9 +521,22 @@ public class BaafooCli {
                 Map<String, Object> resp = new LinkedHashMap<String, Object>();
                 resp.put("name", "Default response");
                 resp.put("statusCode", 200);
-                resp.put("body", "{\"code\":0,\"message\":\"mocked\"}");
+                Map<String, String> headers = new LinkedHashMap<String, String>();
+                headers.put("X-Baafoo-Protocol", protocol);
+                resp.put("headers", headers);
+                resp.put("body", "{\"mocked\":true,\"protocol\":\"" + protocol + "\"}");
+                resp.put("delayMs", 0);
                 responses.add(resp);
                 rule.put("responses", responses);
+                
+                List<String> tags = new ArrayList<String>();
+                tags.add(protocol);
+                tags.add("example");
+                rule.put("tags", tags);
+                
+                List<String> envs = new ArrayList<String>();
+                envs.add("dev");
+                rule.put("environments", envs);
 
                 rules.add(rule);
                 idx++;
@@ -457,10 +548,15 @@ public class BaafooCli {
         // Append comments
         try (FileWriter w = new FileWriter(file, true)) {
             w.write("\n# Add more rules below:\n");
-            w.write("# - name: POST /api/users\n");
+            w.write("# - id: example-http-2\n");
+            w.write("#   name: POST /api/users\n");
             w.write("#   protocol: http\n");
+            w.write("#   host: real-backend\n");
+            w.write("#   port: 9090\n");
             w.write("#   conditions: [{type: method, operator: equals, value: POST}]\n");
             w.write("#   responses: [{name: Success, statusCode: 201, body: '{\"code\":0}'}]\n");
+            w.write("#   tags: [http, example]\n");
+            w.write("#   environments: [dev]\n");
         }
     }
 
@@ -520,6 +616,39 @@ public class BaafooCli {
         }
     }
 
+    private static void writeStopServerScript(File file) throws Exception {
+        try (PrintWriter w = new PrintWriter(file)) {
+            w.println("#!/bin/bash");
+            w.println("# Baafoo Server Stop Script");
+            w.println("");
+            w.println("PID=$(lsof -t -i:8084 2>/dev/null)");
+            w.println("if [ -n \"$PID\" ]; then");
+            w.println("  echo \"Stopping Baafoo Server (PID: $PID)...\"");
+            w.println("  kill \"$PID\"");
+            w.println("  sleep 2");
+            w.println("  if kill -0 \"$PID\" 2>/dev/null; then");
+            w.println("    echo \"Force killing...\"");
+            w.println("    kill -9 \"$PID\"");
+            w.println("  fi");
+            w.println("  echo \"Server stopped.\"");
+            w.println("else");
+            w.println("  echo \"No Baafoo Server running on port 8084.\"");
+            w.println("fi");
+        }
+    }
+
+    private static void writeStopServerBat(File file) throws Exception {
+        try (PrintWriter w = new PrintWriter(file)) {
+            w.println("@echo off");
+            w.println("REM Baafoo Server Stop Script");
+            w.println("for /f \"tokens=5\" %%a in ('netstat -aon ^| findstr :8084 ^| findstr LISTENING') do (");
+            w.println("  echo Stopping Baafoo Server (PID: %%a)...");
+            w.println("  taskkill /F /PID %%a");
+            w.println("  echo Server stopped.");
+            w.println(")");
+        }
+    }
+
     private static void printHelp() {
         System.out.println("Baafoo CLI - API Mock Platform");
         System.out.println();
@@ -532,6 +661,10 @@ public class BaafooCli {
         System.out.println();
         System.out.println("Options:");
         System.out.println("  --non-interactive   Skip interactive prompts, use defaults");
+        System.out.println();
+        System.out.println("Generated scripts:");
+        System.out.println("  start-server.sh/bat   Start Baafoo Server");
+        System.out.println("  stop-server.sh/bat    Stop Baafoo Server");
         System.out.println();
         System.out.println("Quick start:");
         System.out.println("  baafoo init my-project");

@@ -136,7 +136,15 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         AuthService.AuthResult auth = authenticate(request, remoteAddr);
 
         if (!auth.isSuccess() && !path.startsWith(API_PREFIX + "auth/") && !path.equals(API_PREFIX + "status")) {
-            throw new ApiException(401, "Authentication failed: " + auth.getMessage());
+            // Allow unauthenticated read-only access (guest browsing) for
+            // non-sensitive endpoints, consistent with AuthFilter logic.
+            boolean isReadMethod = "GET".equals(method) || "HEAD".equals(method);
+            boolean isSensitivePath = path.startsWith(API_PREFIX + "users");
+            if (isReadMethod && !isSensitivePath) {
+                auth = new AuthService.AuthResult(true, "guest", "Guest read access");
+            } else {
+                throw new ApiException(401, "Authentication failed: " + auth.getMessage());
+            }
         }
 
         ApiContext apiCtx = new ApiContext(storage, authService, mapper, uri, auth, remoteAddr, eventBus, resolveI18n(request));

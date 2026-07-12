@@ -19,10 +19,13 @@ http.interceptors.response.use(
   (response) => response.data,
   (error) => {
     if (error.response?.status === 401) {
+      const hasToken = !!localStorage.getItem('baafoo_token')
       localStorage.removeItem('baafoo_token')
       localStorage.removeItem('baafoo_role')
       localStorage.removeItem('baafoo_username')
-      if (window.location.hash !== '#/login') {
+      // Only redirect to login if the user was previously authenticated.
+      // Guest users (no token) should stay on the current page.
+      if (hasToken && window.location.hash !== '#/login') {
         window.location.hash = '#/login'
       }
     }

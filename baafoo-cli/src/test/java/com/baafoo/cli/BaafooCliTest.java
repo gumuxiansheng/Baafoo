@@ -58,7 +58,7 @@ public class BaafooCliTest {
         try {
             BaafooCli.main(new String[]{"version"});
             String output = out.toString();
-            assertTrue(output.contains("v1.0.0"));
+            assertTrue(output.contains("v1.1.0"));
         } finally {
             System.setOut(originalOut);
         }
@@ -87,9 +87,12 @@ public class BaafooCliTest {
             assertTrue(new File(tempDir, "start-agent.bat").exists());
             assertTrue(new File(tempDir, "start-server.sh").exists());
             assertTrue(new File(tempDir, "start-server.bat").exists());
+            assertTrue(new File(tempDir, "stop-server.sh").exists());
+            assertTrue(new File(tempDir, "stop-server.bat").exists());
 
             assertTrue(new File(tempDir, "start-agent.sh").canExecute());
             assertTrue(new File(tempDir, "start-server.sh").canExecute());
+            assertTrue(new File(tempDir, "stop-server.sh").canExecute());
         } finally {
             System.setOut(originalOut);
             deleteDirectory(tempDir);

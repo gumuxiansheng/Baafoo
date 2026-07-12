@@ -91,8 +91,18 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
         AuthService.AuthResult auth = authService.authenticate(authHeader, apiKeyHeader, remoteAddr);
 
         if (!auth.isSuccess()) {
-            sendJson(ctx, 401, ApiResponse.fail(401, "Authentication failed: " + auth.getMessage()));
-            return;
+            // Allow unauthenticated read-only access (guest browsing) for
+            // non-sensitive endpoints. The RBAC matrix already grants READ
+            // to any role including guest. Sensitive paths like /users
+            // still require proper authentication.
+            boolean isReadMethod = "GET".equals(method) || "HEAD".equals(method);
+            boolean isSensitivePath = path.startsWith("/__baafoo__/api/users");
+            if (isReadMethod && !isSensitivePath) {
+                auth = new AuthService.AuthResult(true, "guest", "Guest read access");
+            } else {
+                sendJson(ctx, 401, ApiResponse.fail(401, "Authentication failed: " + auth.getMessage()));
+                return;
+            }
         }
 
         // Check permission using the simplified checkPermission method
