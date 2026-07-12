@@ -1096,7 +1096,7 @@ mvnw clean test jacoco:report
 |--------|----------|----------|----------|----------|
 | CH01 | 注册规则 `staging-tcp-charset-gbk`（tcpPrefixHex=`c4e3bac3` 即 GBK "你好" hex，requestCharset=GBK，body=`回显:{{request.body}}`，charset=GBK） | 1) `GET /api/socket/bio-charset?host=server&port=9001&message=你好&charset=GBK`（test-spring 用 GBK 编码请求字节、用 GBK 解码响应字节） | `received == "回显:你好"`（证明请求被 GBK 解码、模板渲染正确、响应被 GBK 编码） | ✅ 已断言 |
 | CH02 | 注册规则 `staging-kafka-charset-gbk`（topic=`baafoo-charset-topic`，requestCharset=GBK，body=`回显:{{request.body}}`，charset=GBK） | 1) `GET /api/kafka/send-charset?...&topic=baafoo-charset-topic&message=你好&charset=GBK`（test-spring 用 ByteArraySerializer 发送 GBK 字节） | `success=true`（produce 成功，stub 命中） | ✅ 已断言 |
-| CH03 | 同 CH02 | 1) 切换 staging-a 到 RECORD_AND_STUB；2) 等 5s agent poll；3) 重新发送 GBK produce；4) 等 3s 录制 flush；5) `GET /recordings?limit=20`；6) 查找 `protocol=kafka` & `path=baafoo-charset-topic` & `requestBody="你好"` 的录制；7) 切回 STUB | 录制中存在 `requestBody == "你好"`（证明服务端用 GBK 正确解码了 produce 字节，非乱码） | ✅ 已断言（可能因 ByteArraySerializer 拦截或 agent 同步延迟 SKIP；CH01+CH02 已充分验证核心修复） |
+| CH03 | 同 CH02 | 1) 切换 staging-a 到 RECORD_AND_STUB；2) 等 5s agent poll；3) 重新发送 GBK produce；4) 等 3s 录制 flush；5) `GET /recordings?limit=20`；6) 查找 `protocol=kafka` & `path=baafoo-charset-topic` & `requestBody="你好"` 的录制；7) 切回 STUB | 录制中存在 `requestBody == "你好"`（证明服务端用 GBK 正确解码了 produce 字节，非乱码） | ✅ 已断言（kafka-charset-gbk 优先级 20 < kafka-wildcard 50，确保 charset 规则优先匹配；录制轮询覆盖 30s flush 间隔） |
 
 **规则文件**（testing/2_IntegrationTest/rules/）：
 - `tcp-charset-gbk.json`：TCP 规则，GBK hex 前缀匹配 + GBK 请求解码 + GBK 响应编码 + 模板渲染

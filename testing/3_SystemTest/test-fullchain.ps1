@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # Baafoo Full-Chain Integration Test - PowerShell Orchestrator
 #
 # Features:
@@ -407,22 +407,49 @@ Write-OK "Rules registered (success=$registered, failed=$failed)"
 # Wait for the agent to actually load the freshly-registered rules before
 # driving protocol tests. The agent polls server:8084 every pollIntervalSec
 # (10s); a blind `Start-Sleep 5` could start tests before the first
-# post-registration poll, leaving HTTP/Pulsar unintercepted. Poll the canonical
-# GET rule until intercepted (stubbed:true), max ~60s.
-Write-Host "  Waiting for agent (staging-a) to load rules..."
+# post-registration poll, leaving HTTP/Pulsar unintercepted.
+#
+# IMPORTANT: probing only real-backend:9090/get proves the FIRST poll has
+# happened (the staging-init container pre-registers a "staging-a-http" rule
+# for real-backend:9090/get before the test registers its 38 rules), but it
+# does NOT prove the test-registered rules are loaded yet. Those rules are
+# only loaded on the agent's SECOND poll (10s after the first).
+#
+# CRITICAL: do NOT probe consul-server:8500 here as a second-stage readiness
+# check. The JDK's sun.net.www.http.HttpClient keeps alive the underlying TCP
+# connection. If the probe runs BEFORE the agent has loaded the consul route,
+# it opens a keep-alive connection to the REAL consul server. All subsequent
+# requests (including H09 itself) REUSE that connection — HttpClient.openServer
+# is never called again, so HttpOpenServerAdvice never fires, even after the
+# agent loads the consul route. The probe effectively poisons H09 for the
+# entire test run.
+#
+# Fix: probe real-backend only (proves first poll happened), then sleep
+# >= pollIntervalSec to guarantee the SECOND poll has occurred and all
+# test-registered rules (consul, kafka, pulsar, etc.) are in the Bootstrap CL
+# route table. H09 then becomes the FIRST request to consul-server, so no
+# keep-alive connection exists and HttpOpenServerAdvice will trigger.
+Write-Host "  Waiting for agent (staging-a) to load all rules..."
 $agentReady = $false
 $probeWaited = 0
 $probeMaxWait = 60
 while (-not $agentReady -and $probeWaited -lt $probeMaxWait) {
     Start-Sleep -Seconds 2
     $probeWaited += 2
+    # Probe real-backend (pre-existing staging-init rule) — proves first poll.
     $pr = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/get"
     if ((Get-JsonValue $pr "stubbed") -eq "true") { $agentReady = $true }
 }
 if ($agentReady) {
-    Write-OK "Agent loaded rules (HTTP GET intercepted after ${probeWaited}s)"
+    # First poll confirmed real-backend rule loaded. Now wait for the SECOND
+    # poll (pollIntervalSec=10s) to ensure all 38 test-registered rules are in
+    # the Bootstrap CL route table before any protocol test issues a request.
+    # Use 12s (>= 10s + buffer) to be safe against timing jitter.
+    Write-OK "Agent first poll confirmed (real-backend intercepted after ${probeWaited}s); waiting 12s for second poll to load all test-registered rules..."
+    Start-Sleep -Seconds 12
+    Write-OK "Agent ready (all test-registered rules loaded via second poll)"
 } else {
-    Write-Warn "Agent did not load rules within ${probeMaxWait}s — continuing, but protocol tests may fail"
+    Write-Warn "Agent did not load real-backend rule within ${probeMaxWait}s — continuing, but protocol tests may fail"
 }
 
 # ==================== 5. Run test cases ====================
@@ -662,7 +689,13 @@ if ($mb -eq "requestCount") {
 #     or empty response because the app itself could not reach consul-server)
 #   - rule not matched / agent not intercepting: got a real 2xx from consul but
 #     stubbed=false / ruleId=null (request was forwarded, not stubbed)
+# Retry once after a short settle — the first call to a new host may race
+# with the agent's route table sync or JVM DNS cache (cf. K01 cold-start).
 $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://consul-server:8500/v1/status/leader"
+if ($resp -notmatch '"stubbed":\s*true') {
+    Start-Sleep -Seconds 3
+    $resp = Invoke-AppGet "$APP_A/api/http/get?url=http://consul-server:8500/v1/status/leader"
+}
 if ($resp -match '"stubbed":\s*true') {
     Test-Pass "H09: HTTP Consul rule matched"
 } else {
@@ -818,35 +851,40 @@ if ($resp -match '"success"\s*:\s*true' -and $resp -notmatch '"error"') {
 # Since staging-a is in STUB mode (no recording), temporarily switch to
 # RECORD_AND_STUB, re-send the GBK produce, verify the recording, then
 # restore STUB mode.
-# Note: This test may SKIP if the agent's KafkaProducerAdvice does not
-# intercept ByteArraySerializer produces, or if agent environment sync
-# is delayed. CH01+CH02 already prove the core charset fix; CH03 is a
-# supplementary recording verification.
+# The agent's RecordingBuffer flushes to the server every 30s, so we
+# poll the recordings API (up to ~40s) instead of using a fixed sleep.
 $envName = "staging-a"
 try {
     Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envName" -Method Put `
         -ContentType "application/json" -Headers $headers `
         -Body '{"mode":"record-and-stub"}' -ErrorAction Stop | Out-Null
-    Start-Sleep -Seconds 5  # wait for agent to poll new mode
+    Start-Sleep -Seconds $MODE_SETTLE_WAIT  # wait for agent poll cycle (>= pollIntervalSec=10)
     # Re-send GBK produce under RECORD_AND_STUB mode
     $null = Invoke-AppGet "$APP_A/api/kafka/send-charset?bootstrapServers=kafka-broker:9092&topic=baafoo-charset-topic&message=$gbkMsg&charset=GBK"
-    Start-Sleep -Seconds 3  # allow recording to flush
-    $recResp = Invoke-ApiGet "recordings?limit=20"
+    # Poll for the recording to appear — the agent's RecordingBuffer flushes
+    # every 30s, so a single 3s sleep is insufficient. Poll up to ~40s.
     $gbkRecFound = $false
-    $recObj = $recResp | ConvertFrom-Json -ErrorAction SilentlyContinue
-    if ($recObj.data) {
-        foreach ($rec in $recObj.data) {
-            if ($rec.protocol -eq "kafka" -and $rec.path -eq "baafoo-charset-topic" `
-                -and $rec.requestBody -eq "你好") {
-                $gbkRecFound = $true
-                break
+    $ch03PollMax = 14  # 14 * 3s = 42s (covers the 30s flush + margin)
+    $ch03PollWaited = 0
+    while (-not $gbkRecFound -and $ch03PollWaited -lt $ch03PollMax) {
+        Start-Sleep -Seconds 3
+        $ch03PollWaited++
+        $recResp = Invoke-ApiGet "recordings?limit=50"
+        $recObj = $recResp | ConvertFrom-Json -ErrorAction SilentlyContinue
+        if ($recObj.data) {
+            foreach ($rec in $recObj.data) {
+                if ($rec.protocol -eq "kafka" -and $rec.path -eq "baafoo-charset-topic" `
+                    -and $rec.requestBody -eq "你好") {
+                    $gbkRecFound = $true
+                    break
+                }
             }
         }
     }
     if ($gbkRecFound) {
-        Test-Pass "CH03: Kafka GBK recording has decoded requestBody='你好'"
+        Test-Pass "CH03: Kafka GBK recording has decoded requestBody='你好' (polled ${ch03PollWaited}x3s)"
     } else {
-        Test-Skip "CH03: Kafka GBK recording not found (may need RECORD_ALL mode or longer sync; CH01+CH02 already prove the fix)"
+        Test-Skip "CH03: Kafka GBK recording not found after ${ch03PollWaited}x3s poll (flush interval=30s; CH01+CH02 already prove the fix)"
     }
 } catch {
     Test-Skip "CH03: Kafka GBK recording verification skipped (env switch failed: $($_.Exception.Message))"

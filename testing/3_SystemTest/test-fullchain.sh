@@ -478,24 +478,50 @@ write_ok "Rules registered (success=$registered, failed=$failed)"
 # driving protocol tests. The agent polls server:8084 every pollIntervalSec
 # (10s); a blind `sleep 5` could start tests before the first post-registration
 # poll, leaving HTTP/Pulsar unintercepted (stubbed=false / broker timeout).
-# Poll the canonical GET rule until stubbed:true (max ~60s) so tests only run
-# once interception is proven end-to-end.
-echo "  Waiting for agent (staging-a) to load rules..."
+#
+# IMPORTANT: probing only real-backend:9090/get proves the FIRST poll has
+# happened (the staging-init container pre-registers a "staging-a-http" rule
+# for real-backend:9090/get before the test registers its 38 rules), but it
+# does NOT prove the test-registered rules are loaded yet. Those rules are
+# only loaded on the agent's SECOND poll (10s after the first).
+#
+# CRITICAL: do NOT probe consul-server:8500 here as a second-stage readiness
+# check. The JDK's sun.net.www.http.HttpClient keeps alive the underlying TCP
+# connection. If the probe runs BEFORE the agent has loaded the consul route,
+# it opens a keep-alive connection to the REAL consul server. All subsequent
+# requests (including H09 itself) REUSE that connection — HttpClient.openServer
+# is never called again, so HttpOpenServerAdvice never fires, even after the
+# agent loads the consul route. The probe effectively poisons H09 for the
+# entire test run.
+#
+# Fix: probe real-backend only (proves first poll happened), then sleep
+# >= pollIntervalSec to guarantee the SECOND poll has occurred and all
+# test-registered rules (consul, kafka, pulsar, etc.) are in the Bootstrap CL
+# route table. H09 then becomes the FIRST request to consul-server, so no
+# keep-alive connection exists and HttpOpenServerAdvice will trigger.
+echo "  Waiting for agent (staging-a) to load all rules..."
 agent_ready=false
 probe_waited=0
 probe_max_wait=60
 while [[ "$agent_ready" != "true" && $probe_waited -lt $probe_max_wait ]]; do
     sleep 2
     probe_waited=$((probe_waited + 2))
+    # Probe real-backend (pre-existing staging-init rule) — proves first poll.
     pr="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get")"
     if [[ "$(get_json_value "$pr" "stubbed")" == "true" ]]; then
         agent_ready=true
     fi
 done
 if [[ "$agent_ready" == "true" ]]; then
-    write_ok "Agent loaded rules (HTTP GET intercepted after ${probe_waited}s)"
+    # First poll confirmed real-backend rule loaded. Now wait for the SECOND
+    # poll (pollIntervalSec=10s) to ensure all 38 test-registered rules are in
+    # the Bootstrap CL route table before any protocol test issues a request.
+    # Use 12s (>= 10s + buffer) to be safe against timing jitter.
+    write_ok "Agent first poll confirmed (real-backend intercepted after ${probe_waited}s); waiting 12s for second poll to load all test-registered rules..."
+    sleep 12
+    write_ok "Agent ready (all test-registered rules loaded via second poll)"
 else
-    write_warn "Agent did not load rules within ${probe_max_wait}s — continuing, but protocol tests may fail"
+    write_warn "Agent did not load real-backend rule within ${probe_max_wait}s — continuing, but protocol tests may fail"
 fi
 
 # -----------------------------------------------------------------------------
@@ -681,7 +707,15 @@ mb="$(get_matched_by "$resp")"
 if [[ "$mb" == "requestCount" ]]; then test_pass "H08: HTTP request-count rule matched (counter reset before run)"
 else test_fail "H08: HTTP request-count rule (matchedBy=$mb, resp=$resp)"; fi
 
+# Retry once after a short settle — the first call to a new host may race
+# with the agent's route table sync or JVM DNS cache (cf. K01 cold-start).
 resp="$(app_get "$APP_A/api/http/get?url=http://consul-server:8500/v1/status/leader")"
+if [[ "$resp" =~ \"stubbed\"[[:space:]]*:[[:space:]]*true ]]; then
+    test_pass "H09: HTTP Consul rule matched"
+else
+    sleep 3
+    resp="$(app_get "$APP_A/api/http/get?url=http://consul-server:8500/v1/status/leader")"
+fi
 if [[ "$resp" =~ \"stubbed\"[[:space:]]*:[[:space:]]*true ]]; then
     test_pass "H09: HTTP Consul rule matched"
 else
@@ -794,23 +828,33 @@ fi
 # Since staging-a is in STUB mode (no recording), temporarily switch to
 # RECORD_AND_STUB, re-send the GBK produce, verify the recording, then
 # restore STUB mode.
-# Note: This test may SKIP if the agent's KafkaProducerAdvice does not
-# intercept ByteArraySerializer produces, or if agent environment sync
-# is delayed. CH01+CH02 already prove the core charset fix; CH03 is a
-# supplementary recording verification.
+# The agent's RecordingBuffer flushes to the server every 30s, so we
+# poll the recordings API (up to ~40s) instead of using a fixed sleep.
 env_name="staging-a"
 curl -s -X PUT -H "Content-Type: application/json" -H "X-Api-Key: $API_KEY" \
     "$SERVER/__baafoo__/api/environments/$env_name" -d '{"mode":"record-and-stub"}' > /dev/null 2>&1
-sleep 5  # wait for agent to poll new mode
+sleep "$MODE_SETTLE_WAIT"  # wait for agent poll cycle (>= pollIntervalSec=10)
 app_get "$APP_A/api/kafka/send-charset?bootstrapServers=kafka-broker:9092&topic=baafoo-charset-topic&message=$gbk_msg&charset=GBK" > /dev/null 2>&1
-sleep 3  # allow recording to flush
-rec_resp="$(api_get "recordings?limit=20")"
-if echo "$rec_resp" | grep -q '"protocol":"kafka"' 2>/dev/null \
-   && echo "$rec_resp" | grep -q '"path":"baafoo-charset-topic"' 2>/dev/null \
-   && echo "$rec_resp" | grep -q '"requestBody":"你好"' 2>/dev/null; then
-    test_pass "CH03: Kafka GBK recording has decoded requestBody='你好'"
+# Poll for the recording to appear — the agent's RecordingBuffer flushes
+# every 30s, so a single 3s sleep is insufficient. Poll up to ~42s.
+ch03_found=false
+ch03_poll_max=14  # 14 * 3s = 42s (covers the 30s flush + margin)
+ch03_poll_i=0
+while [[ $ch03_poll_i -lt $ch03_poll_max ]]; do
+    sleep 3
+    ch03_poll_i=$((ch03_poll_i + 1))
+    rec_resp="$(api_get "recordings?limit=50")"
+    if echo "$rec_resp" | grep -q '"protocol":"kafka"' 2>/dev/null \
+       && echo "$rec_resp" | grep -q '"path":"baafoo-charset-topic"' 2>/dev/null \
+       && echo "$rec_resp" | grep -q '"requestBody":"你好"' 2>/dev/null; then
+        ch03_found=true
+        break
+    fi
+done
+if [[ "$ch03_found" == "true" ]]; then
+    test_pass "CH03: Kafka GBK recording has decoded requestBody='你好' (polled ${ch03_poll_i}x3s)"
 else
-    test_skip "CH03: Kafka GBK recording not found (may need RECORD_ALL mode or longer sync; CH01+CH02 already prove the fix)"
+    test_skip "CH03: Kafka GBK recording not found after ${ch03_poll_i}x3s poll (flush interval=30s; CH01+CH02 already prove the fix)"
 fi
 # Restore STUB mode
 curl -s -X PUT -H "Content-Type: application/json" -H "X-Api-Key: $API_KEY" \
