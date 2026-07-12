@@ -1002,11 +1002,39 @@ else test_fail "E02: staging-b isolation (resp: $resp_b)"; fi
 echo ""
 echo "--- PL: Plugin ---"
 
-agent_logs="$(docker logs baafoo-app-env-a 2>&1 | tail -n 50 || true)"
-if [[ "$agent_logs" =~ Plugin[[:space:]]loaded ]]; then test_pass "PL01: Plugin loaded (log shows Plugin loaded)"
-elif [[ "$agent_logs" =~ No[[:space:]]plugin ]]; then test_pass "PL01: PluginManager initialized (no plugins loaded)"
-elif [[ "$agent_logs" =~ Plugin ]]; then test_pass "PL01: PluginManager initialized"
-else test_skip "PL01: Plugin loading check (cannot get container logs)"; fi
+# PL01: Verify plugin status via Agent API (primary) + container logs (fallback).
+# The agent reports pluginStatuses in its heartbeat to the server, which
+# exposes them via GET /api/agents. This is more reliable than scraping
+# container logs — `docker logs` may fail or return no matches in CI
+# environments (GitHub Actions ubuntu-latest has hit this, causing PL01 SKIP).
+agents_json="$(api_get "agents")"
+pl01_has_plugin=false
+pl01_detail=""
+if [[ "$HAVE_JQ" == "true" ]]; then
+    # Extract the first non-empty pluginStatuses object across all agents.
+    pl01_detail="$(echo "$agents_json" | jq -c '
+        [.data[]? | .pluginStatuses // empty]
+        | map(select(. | keys | length > 0))
+        | .[0] // empty
+    ' 2>/dev/null)"
+    [[ -n "$pl01_detail" ]] && pl01_has_plugin=true
+else
+    # No jq — regex fallback: look for pluginStatuses with at least one key.
+    if [[ "$agents_json" =~ \"pluginStatuses\"[[:space:]]*:[[:space:]]*\{[[:space:]]*\"[^\"]+\"[[:space:]]*:[[:space:]]*\{ ]]; then
+        pl01_has_plugin=true
+        pl01_detail="pluginStatuses present (non-empty, jq unavailable)"
+    fi
+fi
+if [[ "$pl01_has_plugin" == "true" ]]; then
+    test_pass "PL01: Plugin loaded (pluginStatuses reported: $pl01_detail)"
+else
+    # Fallback: check container logs for plugin-related messages.
+    agent_logs="$(docker logs baafoo-app-env-a 2>&1 | tail -n 50 || true)"
+    if [[ "$agent_logs" =~ Plugin[[:space:]]loaded ]]; then test_pass "PL01: Plugin loaded (log shows Plugin loaded)"
+    elif [[ "$agent_logs" =~ No[[:space:]]plugin ]]; then test_pass "PL01: PluginManager initialized (no plugins loaded)"
+    elif [[ "$agent_logs" =~ Plugin ]]; then test_pass "PL01: PluginManager initialized"
+    else test_fail "PL01: No plugin evidence (API pluginStatuses empty, no log match; agentsJson=${agents_json:0:240})"; fi
+fi
 
 agents_json="$(api_get "agents")"
 if [[ "$agents_json" =~ agent|staging ]]; then test_pass "PL02: Agent heartbeat registered"
