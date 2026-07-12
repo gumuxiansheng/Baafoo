@@ -155,6 +155,9 @@ jobs:
       - name: Make mvnw executable
         run: chmod +x mvnw
 
+      - name: Make run-mutation.sh executable
+        run: chmod +x testing/1_UnitTest/run-mutation.sh
+
       - name: Run mutation testing (PIT) on baafoo-core
         # Delegate to the canonical mutation entry script; -Dnpm.skip=true keeps
         # the server's frontend build out of the core module's -am reactor.
