@@ -33,7 +33,20 @@ if (Test-Path $jdk8) {
     Write-Host "Set JAVA_HOME to a JDK 8 installation before running."
 }
 
-$projectRoot = Split-Path $PSScriptRoot -Parent
+# PROJECT_ROOT is the repository root — the directory holding the baafoo-parent
+# aggregator pom.xml (the one that declares the <modules> including baafoo-core).
+# This script lives at testing/1_UnitTest/, so the root is two levels up. Walk
+# up defensively in case the script is relocated.
+$projectRoot = $PSScriptRoot
+while (-not (Test-Path (Join-Path $projectRoot "pom.xml")) -or
+       -not ((Get-Content (Join-Path $projectRoot "pom.xml") -Raw) -match "baafoo-parent")) {
+    $parent = Split-Path $projectRoot -Parent
+    if ($parent -eq $projectRoot) {
+        Write-Error "ERROR: could not locate the baafoo-parent pom.xml (repository root)."
+        exit 1
+    }
+    $projectRoot = $parent
+}
 Push-Location $projectRoot
 try {
     if (Get-Command mvn -ErrorAction SilentlyContinue) {

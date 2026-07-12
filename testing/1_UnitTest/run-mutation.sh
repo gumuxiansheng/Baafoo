@@ -47,28 +47,49 @@ done
 JDK8_PATHS=(
     "C:/Program Files/Java/jdk1.8.0_202"
     "/usr/lib/jvm/java-8-openjdk"
+    "/usr/lib/jvm/temurin-8-jdk"*
     "/Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home"
 )
 
 FOUND_JDK8=""
 for path in "${JDK8_PATHS[@]}"; do
-    if [[ -d "$path" ]]; then
-        FOUND_JDK8="$path"
-        break
-    fi
+    # Expand globs (e.g. temurin-8-jdk-amd64) if present.
+    for expanded in $path; do
+        if [[ -d "$expanded" ]]; then
+            FOUND_JDK8="$expanded"
+            break 2
+        fi
+    done
 done
 
 if [[ -n "$FOUND_JDK8" ]]; then
     echo "Using JDK 8 at: $FOUND_JDK8"
     export JAVA_HOME="$FOUND_JDK8"
+elif [[ -n "${JAVA_HOME:-}" ]] && ("$JAVA_HOME/bin/java" -version 2>&1 | grep -Eq "1\.8\.|version \"8\."); then
+    # GitHub Actions / CNB set a JDK 8 JAVA_HOME explicitly — reuse it.
+    echo "Using JDK 8 from JAVA_HOME: $JAVA_HOME"
 else
-    echo "JDK 8 not found at common paths. Using current JAVA_HOME (${JAVA_HOME:-not set})."
-    echo "Set JAVA_HOME to a JDK 8 installation before running."
+    echo "WARNING: JDK 8 not found at common paths and JAVA_HOME does not look like JDK 8."
+    echo "         Current JAVA_HOME=${JAVA_HOME:-not set}. PIT requires JDK 8; continuing anyway."
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# PROJECT_ROOT is the repository root — the directory holding the baafoo-parent
+# aggregator pom.xml (the one that declares the <modules> including baafoo-core).
+# This script lives at testing/1_UnitTest/, so the root is two levels up. We
+# walk up defensively in case the script is relocated, because running
+# `mvn -pl baafoo-core` from any other directory makes Maven fail with
+# "Could not find the selected project in the reactor: baafoo-core".
+PROJECT_ROOT="$SCRIPT_DIR"
+while [[ ! -f "$PROJECT_ROOT/pom.xml" ]] || ! grep -q "baafoo-parent" "$PROJECT_ROOT/pom.xml" 2>/dev/null; do
+    PARENT="$(cd "$PROJECT_ROOT/.." && pwd)"
+    if [[ "$PARENT" == "$PROJECT_ROOT" ]]; then
+        echo "ERROR: could not locate the baafoo-parent pom.xml (repository root)." >&2
+        exit 1
+    fi
+    PROJECT_ROOT="$PARENT"
+done
 cd "$PROJECT_ROOT"
 
 # Use a system `mvn` when available (CNB's maven image), otherwise fall back to
