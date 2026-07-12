@@ -228,6 +228,39 @@ get_environment_id() {
     done
 }
 
+# Extract an arbitrary attribute of a named environment from server API JSON.
+get_environment_attr() {
+    local json="$1" name="$2" attr="$3"
+    if [[ "$HAVE_JQ" == "true" ]]; then
+        echo "$json" | jq -r --arg n "$name" --arg a "$attr" '(.data[]? // .[]?) | select(.name == $n) | .[$a] // empty' 2>/dev/null
+        return
+    fi
+    # Fallback: crude — find the named env object and its attribute.
+    local val
+    if [[ "$json" =~ \"name\"[[:space:]]*:[[:space:]]*\"$name\"[[:space:]]*,\"description\"[[:space:]]*:\"[^\"]*\"[[:space:]]*,\"mode\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
+        val="${BASH_REMATCH[1]}"
+    fi
+    echo "$val"
+}
+
+# Emit a compact root-cause diagnostic when the agent is not stub-ready.
+# Surfaces the three facts that explain a uniform "stubbed=false" HTTP failure
+# while TCP/Kafka/Pulsar/JMS still pass (broker-level):
+#   1. staging-a / staging-b mode on the server (should be "stub" / "record-and-stub")
+#   2. which environment app-env-a's agent actually resolved to (via /api/agents)
+#   3. the raw probe response (so we can see stubbed= vs real-backend=)
+dump_agent_diagnostics() {
+    echo "==================== AGENT READINESS DIAGNOSTIC ===================="
+    local envs_json agents_json
+    envs_json="$(api_get "environments")"
+    echo "[env] staging-a mode = $(get_environment_attr "$envs_json" "staging-a" "mode")"
+    echo "[env] staging-b mode = $(get_environment_attr "$envs_json" "staging-b" "mode")"
+    agents_json="$(api_get "agents")"
+    echo "[agents] $(echo "$agents_json" | head -c 900)"
+    echo "[probe] APP_A real-backend/get = $(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get" | head -c 500)"
+    echo "==================================================================="
+}
+
 # -----------------------------------------------------------------------------
 # HTTP helpers
 # -----------------------------------------------------------------------------
@@ -516,7 +549,7 @@ write_ok "Rules registered (success=$registered, failed=$failed)"
 echo "  Waiting for agent (staging-a) to load all rules..."
 agent_ready=false
 probe_waited=0
-probe_max_wait=60
+probe_max_wait=90
 while [[ "$agent_ready" != "true" && $probe_waited -lt $probe_max_wait ]]; do
     sleep 2
     probe_waited=$((probe_waited + 2))
@@ -526,17 +559,38 @@ while [[ "$agent_ready" != "true" && $probe_waited -lt $probe_max_wait ]]; do
         agent_ready=true
     fi
 done
-if [[ "$agent_ready" == "true" ]]; then
-    # First poll confirmed real-backend rule loaded. Now wait for the SECOND
-    # poll (pollIntervalSec=10s) to ensure all 38 test-registered rules are in
-    # the Bootstrap CL route table before any protocol test issues a request.
-    # Use 12s (>= 10s + buffer) to be safe against timing jitter.
-    write_ok "Agent first poll confirmed (real-backend intercepted after ${probe_waited}s); waiting 12s for second poll to load all test-registered rules..."
-    sleep 12
-    write_ok "Agent ready (all test-registered rules loaded via second poll)"
-else
-    write_warn "Agent did not load real-backend rule within ${probe_max_wait}s — continuing, but protocol tests may fail"
+
+if [[ "$agent_ready" != "true" ]]; then
+    # The agent never reached a stub-ready state. Every HTTP case would now
+    # fail uniformly with stubbed=false while TCP/Kafka/Pulsar/JMS still pass
+    # (broker-level). Abort up front with a root-cause dump instead of letting
+    # the run produce a wall of misleading HTTP failures.
+    write_err "Agent did not load staging-a rules within ${probe_max_wait}s — HTTP cases would all fail (stubbed=false). Aborting with diagnostics."
+    dump_agent_diagnostics
+    exit 1
 fi
+
+# First poll confirmed real-backend rule loaded. Now wait for the SECOND
+# poll (pollIntervalSec=10s) to ensure all 38 test-registered rules are in
+# the Bootstrap CL route table before any protocol test issues a request.
+# Use 12s (>= 10s + buffer) to be safe against timing jitter.
+write_ok "Agent first poll confirmed (real-backend intercepted after ${probe_waited}s); waiting 12s for second poll to load all test-registered rules..."
+sleep 12
+
+# RE-VERIFY after the second poll. The loop above only proved the FIRST poll
+# loaded staging-init's single catch-all rule; it never proved the 38
+# test-registered rules (or the stub mode) are actually live on the agent.
+# If the agent failed to load them — e.g. it resolved to the wrong
+# environment, or the rule-load poll raced the registration — every HTTP case
+# would fail identically. Re-probe and HARD-FAIL here so CI shows ONE clear
+# root cause (and a diagnostic) rather than 50 misleading failures.
+post_pr="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get")"
+if [[ "$(get_json_value "$post_pr" "stubbed")" != "true" ]]; then
+    write_err "Agent NOT stub-ready after second poll (stubbed=$(get_json_value "$post_pr" "stubbed")) — aborting before HTTP cases."
+    dump_agent_diagnostics
+    exit 1
+fi
+write_ok "Agent ready (real-backend rule still stubbed after second poll; proceeding)"
 
 # -----------------------------------------------------------------------------
 # 5. Run test cases
