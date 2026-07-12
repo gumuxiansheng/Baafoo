@@ -572,11 +572,19 @@ fi
 echo ""
 echo "--- A: API Security & CRUD ---"
 
-invalid_key_status="$(curl -s -o /dev/null -w "%{http_code}" -H "X-Api-Key: invalid-key" "$SERVER/__baafoo__/api/rules" 2>/dev/null || echo 0)"
+# A01: Invalid API key should be rejected on a write endpoint
+# GET requests fall back to "guest" browse mode (AuthFilter allows
+# unauthenticated GET/HEAD for non-sensitive paths), so testing GET
+# /api/rules with an invalid key always returns 200. Use a PUT request
+# instead — PUT requires authentication and has no guest fallback, so
+# an invalid API key must be rejected with 401. AuthFilter checks auth
+# before the request reaches the handler, so the rule ID and body are
+# irrelevant (the 401 is returned before any resource lookup).
+invalid_key_status="$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "X-Api-Key: invalid-key" -H "Content-Type: application/json" -d "{}" "$SERVER/__baafoo__/api/rules/a01-auth-test" 2>/dev/null || echo 0)"
 if [[ "$invalid_key_status" == "401" || "$invalid_key_status" == "403" ]]; then
-    test_pass "A01: API rejects invalid API key"
+    test_pass "A01: API rejects invalid API key on write (PUT, status=$invalid_key_status)"
 else
-    test_skip "A01: API invalid key rejection (status=$invalid_key_status)"
+    test_skip "A01: API invalid key rejection (PUT status=$invalid_key_status, expected 401/403)"
 fi
 
 # A02-A04: Rule CRUD
