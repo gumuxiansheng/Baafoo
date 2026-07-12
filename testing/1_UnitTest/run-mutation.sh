@@ -71,5 +71,16 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
+# Use a system `mvn` when available (CNB's maven image), otherwise fall back to
+# the Maven wrapper ./mvnw (GitHub Actions, which has no system maven).
+if command -v mvn >/dev/null 2>&1; then
+    MVN="mvn"
+elif [[ -x "./mvnw" ]]; then
+    MVN="./mvnw"
+else
+    echo "ERROR: neither mvn nor ./mvnw found." >&2
+    exit 1
+fi
+
 # shellcheck disable=SC2086
-mvn org.pitest:pitest-maven:mutationCoverage -pl "$MODULE" -am $EXTRA_ARGS
+"$MVN" org.pitest:pitest-maven:mutationCoverage -pl "$MODULE" -am $EXTRA_ARGS

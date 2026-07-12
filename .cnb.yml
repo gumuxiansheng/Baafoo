@@ -33,6 +33,17 @@ master:
             lines: COVERAGE_LINES
         - name: coverage-result
           script: echo "单元测试行覆盖率:${COVERAGE_LINES}%"
+        - name: mutation-testing
+          script: bash testing/1_UnitTest/run-mutation.sh --module baafoo-core
+        - name: mutation-summary
+          script: |
+            REPORT=$(ls -t baafoo-core/target/pit-reports/mutations.xml 2>/dev/null | head -1)
+            if [ -n "$REPORT" ]; then
+              echo "PIT mutation XML: $REPORT"
+              grep -o 'mutationScore="[0-9.]*"' "$REPORT" | head -1 || true
+            else
+              echo "No PIT mutation report generated"
+            fi
         - name: package
           script: ./mvnw package -DskipTests -Dnpm.skip=true
       endStages:
@@ -85,6 +96,17 @@ master:
             lines: COVERAGE_LINES
         - name: coverage-result
           script: echo "本次 PR 单元测试行覆盖率:${COVERAGE_LINES}%"
+        - name: mutation-testing
+          script: bash testing/1_UnitTest/run-mutation.sh --module baafoo-core
+        - name: mutation-summary
+          script: |
+            REPORT=$(ls -t baafoo-core/target/pit-reports/mutations.xml 2>/dev/null | head -1)
+            if [ -n "$REPORT" ]; then
+              echo "PIT mutation XML: $REPORT"
+              grep -o 'mutationScore="[0-9.]*"' "$REPORT" | head -1 || true
+            else
+              echo "No PIT mutation report generated"
+            fi
         - name: package
           script: ./mvnw package -DskipTests -Dnpm.skip=true
       failStages:
@@ -136,6 +158,17 @@ master:
       stages:
         - name: test-all
           script: ./mvnw test -Dnpm.skip=true
+        - name: mutation-testing
+          script: bash testing/1_UnitTest/run-mutation.sh --module baafoo-core
+        - name: mutation-summary
+          script: |
+            REPORT=$(ls -t baafoo-core/target/pit-reports/mutations.xml 2>/dev/null | head -1)
+            if [ -n "$REPORT" ]; then
+              echo "PIT mutation XML: $REPORT"
+              grep -o 'mutationScore="[0-9.]*"' "$REPORT" | head -1 || true
+            else
+              echo "No PIT mutation report generated"
+            fi
         - name: package
           script: ./mvnw package -DskipTests -Dnpm.skip=true
 

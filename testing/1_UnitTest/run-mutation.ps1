@@ -36,7 +36,15 @@ if (Test-Path $jdk8) {
 $projectRoot = Split-Path $PSScriptRoot -Parent
 Push-Location $projectRoot
 try {
-    mvn org.pitest:pitest-maven:mutationCoverage -pl $Module -am $ExtraArgs
+    if (Get-Command mvn -ErrorAction SilentlyContinue) {
+        mvn org.pitest:pitest-maven:mutationCoverage -pl $Module -am $ExtraArgs
+    } elseif (Test-Path (Join-Path $projectRoot "mvnw")) {
+        $mvnwPath = Join-Path $projectRoot "mvnw"
+        Write-Host "Using Maven wrapper: $mvnwPath"
+        & "$mvnwPath" org.pitest:pitest-maven:mutationCoverage -pl $Module -am $ExtraArgs
+    } else {
+        Write-Error "Neither mvn nor mvnw found."
+    }
 } finally {
     Pop-Location
 }
