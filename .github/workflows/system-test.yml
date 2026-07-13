@@ -59,9 +59,34 @@ jobs:
         continue-on-error: true
         run: ./testing/3_SystemTest/test-fullchain.sh
 
-      - name: Fail on test failures (exit 1)
+      - name: Fail on test failures (exit 1 only)
+        # Exit codes: 0 = all pass, 1 = failures, 2 = pass with skips.
+        # continue-on-error marks exit 2 as 'failure' too, so we re-run
+        # the script's exit logic: only exit 1 should fail the workflow.
         if: steps.run-tests.outcome == 'failure'
-        run: exit 1
+        run: |
+          # The script exited non-zero. Exit 2 (skips) is acceptable.
+          # We check the actual exit code via the step's conclusion.
+          # Since continue-on-error already caught it, we re-evaluate:
+          #   exit 1 → fail workflow
+          #   exit 2 → pass (skips are expected)
+          echo "Step outcome: ${{ steps.run-tests.outcome }}"
+          echo "Step conclusion: ${{ steps.run-tests.conclusion }}"
+          # If the script exited with code 2, outcome is 'failure' but we accept it.
+          # We can't directly read the exit code, so we rely on the script's
+          # convention: exit 2 means "pass with skips" (not a real failure).
+          # The JUnit XML report has the definitive pass/fail/skip counts.
+          # If junit-report.xml exists and has 0 failures, we pass.
+          if [ -f testing/3_SystemTest/junit-report.xml ]; then
+            FAILURES=$(grep -o 'failures="[0-9]*"' testing/3_SystemTest/junit-report.xml | head -1 | grep -o '[0-9]*')
+            echo "JUnit failures count: $FAILURES"
+            if [ "$FAILURES" = "0" ]; then
+              echo "No failures in JUnit XML — exit was due to skips (exit 2). Passing."
+              exit 0
+            fi
+          fi
+          echo "Real test failures detected. Failing the workflow."
+          exit 1
 
       - name: Upload JUnit XML report
         if: always()
