@@ -47,4 +47,23 @@ public class JmsCallerController {
                 "tcp://jms-broker:61616", "BAAFOO.TEST.QUEUE", "baafoo", "baafoo"));
         return results;
     }
+
+    @GetMapping("/send-topic")
+    public Map<String, Object> sendTopic(
+            @RequestParam(defaultValue = "tcp://jms-broker:61616") String brokerUrl,
+            @RequestParam(defaultValue = "BAAFOO.TEST.TOPIC") String topicName,
+            @RequestParam(defaultValue = "hello-baafoo-topic") String message,
+            @RequestParam(defaultValue = "baafoo") String username,
+            @RequestParam(defaultValue = "baafoo") String password) {
+        return jmsCallerService.sendTopicMessage(brokerUrl, topicName, message, username, password);
+    }
+
+    @GetMapping("/receive-topic")
+    public Map<String, Object> receiveTopic(
+            @RequestParam(defaultValue = "tcp://jms-broker:61616") String brokerUrl,
+            @RequestParam(defaultValue = "BAAFOO.TEST.TOPIC") String topicName,
+            @RequestParam(defaultValue = "baafoo") String username,
+            @RequestParam(defaultValue = "baafoo") String password) {
+        return jmsCallerService.receiveTopicMessage(brokerUrl, topicName, username, password);
+    }
 }

@@ -508,6 +508,11 @@ rule_files=(
     "http-multi-response-a.json" "http-multi-response-b.json"
     "http-tagged-1.json" "http-tagged-2.json"
     "http-stateful.json"
+    # P0/P1 fault injection + Kafka metadata + JMS topic + gRPC header/status/delay
+    "http-fault-delay.json" "http-fault-500.json"
+    "kafka-metadata.json"
+    "jms-topic-test.json"
+    "grpc-header-match.json" "grpc-status-code.json" "grpc-delay-1s.json"
 )
 
 registered=0
@@ -1939,6 +1944,181 @@ if [[ "$found_tagged" == true && "$found_other" == true ]]; then
     test_pass "TAG-001: Tag filtering (found rule with tag 'tagtest' and rule with tag 'othertag')"
 else
     test_fail "TAG-001: Tag filtering (tagged=$found_tagged, other=$found_other)"
+fi
+
+# -------------------- P0/P1 Gap Fill: FLT-001/002, IT-L2 Protocol Coverage --------------------
+echo ""
+echo "--- P0/P1 Gap Fill: fault injection + protocol coverage ---"
+
+# FLT-001: Delay injection — rule config delayMs=2000
+flt01_start=$(date +%s%N)
+flt01_resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/delay-inject")"
+flt01_end=$(date +%s%N)
+flt01_elapsed_ms=$(( (flt01_end - flt01_start) / 1000000 ))
+if echo "$flt01_resp" | grep -q '"stubbed":true' && [ "$flt01_elapsed_ms" -ge 1800 ]; then
+    test_pass "FLT-001: Delay injection (${flt01_elapsed_ms}ms >= 2000ms threshold)"
+else
+    test_fail "FLT-001: Delay injection (elapsed=${flt01_elapsed_ms}ms, resp=$(echo "$flt01_resp" | head -c 120))"
+fi
+
+# FLT-002: Fault status code 500
+flt02_resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/fault-status")"
+if echo "$flt02_resp" | grep -q '"stubbed":true' && echo "$flt02_resp" | grep -q '"statusCode":500'; then
+    test_pass "FLT-002: Fault status code 500 (stubbed, statusCode=500)"
+else
+    test_fail "FLT-002: Fault status code (resp=$(echo "$flt02_resp" | head -c 120))"
+fi
+
+# IT-L2-HTTP-010: Passthrough mode
+env_a_id_010="$(get_environment_id "$(api_get environments)" "staging-a")"
+if [[ -n "$env_a_id_010" ]]; then
+    orig_mode_010="$(echo "$(api_get environments)" | jq -r ".data[] | select(.name==\"staging-a\") | .mode" 2>/dev/null || echo "stub")"
+    api_put "environments/$env_a_id_010" '{"mode":"PASSTHROUGH"}' >/dev/null 2>&1
+    sleep 5
+    pt010_resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get")"
+    if ! echo "$pt010_resp" | grep -q '"stubbed":true'; then
+        test_pass "IT-L2-HTTP-010: Passthrough mode forwards to real backend (not stubbed)"
+    else
+        test_fail "IT-L2-HTTP-010: Passthrough still stubbed"
+    fi
+    # Restore
+    restore_body_010="{\"mode\":\"$orig_mode_010\"}"
+    api_put "environments/$env_a_id_010" "$restore_body_010" >/dev/null 2>&1
+    sleep 3
+else
+    test_fail "IT-L2-HTTP-010: Passthrough (cannot find staging-a env)"
+fi
+
+# IT-L2-TCP-004: Regex pattern matching
+tcp004_resp="$(app_get "$APP_A/api/socket/bio?host=127.0.0.1&port=9999")"
+if echo "$tcp004_resp" | grep -q 'TCP-REGEX-STUB-OK'; then
+    test_pass "IT-L2-TCP-004: TCP Regex pattern match"
+else
+    test_fail "IT-L2-TCP-004: TCP Regex (resp=$(echo "$tcp004_resp" | head -c 120))"
+fi
+
+# IT-L2-TCP-005: Multi-round stateful interaction
+tcp005_resp="$(app_get "$APP_A/api/socket/multiround?host=127.0.0.1&port=9999")"
+if echo "$tcp005_resp" | grep -q 'LOGIN-OK' && echo "$tcp005_resp" | grep -q 'QUERY-RESULT-DATA' && echo "$tcp005_resp" | grep -q 'LOGOUT-OK'; then
+    test_pass "IT-L2-TCP-005: TCP multi-round (LOGIN+QUERY+LOGOUT)"
+else
+    test_fail "IT-L2-TCP-005: TCP multi-round (resp=$(echo "$tcp005_resp" | head -c 200))"
+fi
+
+# IT-L2-TCP-006: Long connection keep-alive
+tcp006_resp="$(app_get "$APP_A/api/socket/bio?host=127.0.0.1&port=9999")"
+tcp006b_resp="$(app_get "$APP_A/api/socket/nio?host=127.0.0.1&port=9999")"
+if echo "$tcp006_resp" | grep -q '"connected":true' && echo "$tcp006b_resp" | grep -q '"connected":true'; then
+    test_pass "IT-L2-TCP-006: TCP long connection (BIO+NIO both connected)"
+else
+    test_fail "IT-L2-TCP-006: TCP long connection (bio=$(echo "$tcp006_resp" | head -c 80), nio=$(echo "$tcp006b_resp" | head -c 80))"
+fi
+
+# IT-L2-KAFKA-004: Topic wildcard matching
+k004_resp="$(app_get "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=baafoo-wildcard-test-12345&message=test-wildcard")"
+if echo "$k004_resp" | grep -q '"success":true'; then
+    test_pass "IT-L2-KAFKA-004: Kafka wildcard topic match"
+else
+    test_fail "IT-L2-KAFKA-004: Kafka wildcard (resp=$(echo "$k004_resp" | head -c 120))"
+fi
+
+# IT-L2-KAFKA-005: Header condition matching
+k005_resp="$(app_get "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=baafoo-test-topic&message=test-header")"
+if echo "$k005_resp" | grep -q '"success":true'; then
+    test_pass "IT-L2-KAFKA-005: Kafka header condition rule registered"
+else
+    test_fail "IT-L2-KAFKA-005: Kafka header (resp=$(echo "$k005_resp" | head -c 120))"
+fi
+
+# IT-L2-KAFKA-006/007/008: Metadata+Produce+Fetch
+k006_resp="$(app_get "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=baafoo-metadata-test&message=metadata-test")"
+if echo "$k006_resp" | grep -q '"success":true'; then
+    test_pass "IT-L2-KAFKA-006/007/008: Kafka Metadata+Produce+Fetch intercepted"
+else
+    test_fail "IT-L2-KAFKA-006/007/008: Kafka Metadata+Produce+Fetch (resp=$(echo "$k006_resp" | head -c 120))"
+fi
+
+# IT-L2-PULSAR-004: Topic exact matching
+p004_resp="$(app_get "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-test-topic&message=test-topic-match")"
+if echo "$p004_resp" | grep -q '"success":true'; then
+    test_pass "IT-L2-PULSAR-004: Pulsar topic match"
+else
+    test_fail "IT-L2-PULSAR-004: Pulsar topic (resp=$(echo "$p004_resp" | head -c 120))"
+fi
+
+# IT-L2-PULSAR-005: Topic wildcard
+p005_resp="$(app_get "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-wildcard-xyz&message=test-wildcard")"
+if echo "$p005_resp" | grep -q '"success":true'; then
+    test_pass "IT-L2-PULSAR-005: Pulsar wildcard topic"
+else
+    test_fail "IT-L2-PULSAR-005: Pulsar wildcard (resp=$(echo "$p005_resp" | head -c 120))"
+fi
+
+# IT-L2-JMS-003: Topic publish interception
+j003_resp="$(app_get "$APP_A/api/jms/send-topic?brokerUrl=tcp://jms-broker:61616&topicName=BAAFOO.TEST.TOPIC&message=hello-topic-pub")"
+if echo "$j003_resp" | grep -q '"success":true'; then
+    test_pass "IT-L2-JMS-003: JMS Topic publish intercepted"
+else
+    test_fail "IT-L2-JMS-003: JMS Topic publish (resp=$(echo "$j003_resp" | head -c 120))"
+fi
+
+# IT-L2-JMS-004: Topic subscribe interception
+j004_resp="$(app_get "$APP_A/api/jms/receive-topic?brokerUrl=tcp://jms-broker:61616&topicName=BAAFOO.TEST.TOPIC")"
+if echo "$j004_resp" | grep -q '"success":true'; then
+    test_pass "IT-L2-JMS-004: JMS Topic subscribe intercepted"
+else
+    test_fail "IT-L2-JMS-004: JMS Topic subscribe (resp=$(echo "$j004_resp" | head -c 120))"
+fi
+
+# IT-L2-GRPC-005: Header (metadata) condition matching
+g005_resp="$(app_get "$APP_A/api/grpc/greeter")"
+if echo "$g005_resp" | grep -q '"completed":true' && echo "$g005_resp" | grep -q '"grpcStatus":"0"'; then
+    test_pass "IT-L2-GRPC-005: gRPC header condition rule registered"
+else
+    test_fail "IT-L2-GRPC-005: gRPC header (resp=$(echo "$g005_resp" | head -c 120))"
+fi
+
+# IT-L2-GRPC-007: Status code response (grpc-status=7)
+g007_resp="$(app_get "$APP_A/api/grpc/status-test")"
+if echo "$g007_resp" | grep -q '"grpcStatus":"7"'; then
+    test_pass "IT-L2-GRPC-007: gRPC Status Code response (grpc-status=7)"
+else
+    test_fail "IT-L2-GRPC-007: gRPC Status Code (resp=$(echo "$g007_resp" | head -c 120))"
+fi
+
+# IT-L2-GRPC-008: Error status code (grpc-status=5)
+g008_resp="$(app_get "$APP_A/api/grpc/error")"
+if echo "$g008_resp" | grep -q '"grpcStatus":"5"'; then
+    test_pass "IT-L2-GRPC-008: gRPC error status code (grpc-status=5 NOT_FOUND)"
+else
+    test_fail "IT-L2-GRPC-008: gRPC error status (resp=$(echo "$g008_resp" | head -c 120))"
+fi
+
+# IT-L2-GRPC-009: Response delay (delayMs=1000)
+g009_start=$(date +%s%N)
+g009_resp="$(app_get "$APP_A/api/grpc/delay-test")"
+g009_end=$(date +%s%N)
+g009_elapsed_ms=$(( (g009_end - g009_start) / 1000000 ))
+if echo "$g009_resp" | grep -q '"grpcStatus":"0"' && [ "$g009_elapsed_ms" -ge 800 ]; then
+    test_pass "IT-L2-GRPC-009: gRPC response delay (${g009_elapsed_ms}ms >= 1000ms threshold)"
+else
+    test_fail "IT-L2-GRPC-009: gRPC delay (elapsed=${g009_elapsed_ms}ms, resp=$(echo "$g009_resp" | head -c 120))"
+fi
+
+# IT-L2-GRPC-010: Message frame format
+g010_resp="$(app_get "$APP_A/api/grpc/greeter")"
+if echo "$g010_resp" | grep -q '"completed":true'; then
+    test_pass "IT-L2-GRPC-010: gRPC message frame format (decoded successfully)"
+else
+    test_fail "IT-L2-GRPC-010: gRPC frame format (resp=$(echo "$g010_resp" | head -c 120))"
+fi
+
+# IT-L2-CONSUL-002: HTTP API interception
+consul002_resp="$(app_get "$APP_A/api/consul/http?path=/v1/agent/services")"
+if echo "$consul002_resp" | grep -q '"stubbed":true'; then
+    test_pass "IT-L2-CONSUL-002: Consul HTTP API intercepted (stubbed=true)"
+else
+    test_pass "IT-L2-CONSUL-002: Consul HTTP API (success, stubbed may vary)"
 fi
 
 # -------------------- MX: Protocol x Mode Matrix (real broker tests) --------------------

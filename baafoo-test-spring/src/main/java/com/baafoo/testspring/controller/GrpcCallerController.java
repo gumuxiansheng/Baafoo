@@ -82,4 +82,16 @@ public class GrpcCallerController {
         return grpcCallerService.callBidi(
                 "chat.ChatService", "Chat", "chat.example.com", 50051, requests);
     }
+
+    @GetMapping("/status-test")
+    public Map<String, Object> statusTest() {
+        return grpcCallerService.callUnary(
+                "helloworld.Greeter", "StatusTest", "greeter.example.com", 50051, "test");
+    }
+
+    @GetMapping("/delay-test")
+    public Map<String, Object> delayTest() {
+        return grpcCallerService.callUnary(
+                "helloworld.Greeter", "DelayTest", "greeter.example.com", 50051, "test");
+    }
 }
