@@ -56,7 +56,7 @@
             </el-table-column>
             <el-table-column prop="method" :label="$t('dashboard.method')" width="80">
               <template #default="{ row }">
-                <template v-if="isMqProtocol(row.protocol)">
+                <template v-if="isNonHttpProtocol(row.protocol)">
                   <el-tag v-if="row.direction" size="small" :type="directionType(row.direction)">{{ $t(directionLabel(row.direction)) }}</el-tag>
                   <el-tag v-else size="small" type="info">{{ row.method }}</el-tag>
                 </template>
@@ -97,7 +97,7 @@ export default {
 
     const formatTime = (ts) => ts ? new Date(ts).toLocaleString() : '-'
 
-    const isMqProtocol = (protocol) => {
+    const isNonHttpProtocol = (protocol) => {
       const mqProtocols = ['kafka', 'pulsar', 'jms', 'tcp', 'udp', 'grpc', 'dubbo']
       return mqProtocols.includes((protocol || '').toLowerCase())
     }
@@ -210,7 +210,7 @@ export default {
       if (trendChartInstance) trendChartInstance.dispose()
     })
 
-    return { stats, recentRecordings, rulesChart, trendChart, formatTime, isMqProtocol, directionLabel, directionType }
+    return { stats, recentRecordings, rulesChart, trendChart, formatTime, isNonHttpProtocol, directionLabel, directionType }
   }
 }
 </script>

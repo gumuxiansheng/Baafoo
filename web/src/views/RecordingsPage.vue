@@ -66,7 +66,7 @@
         </el-table-column>
         <el-table-column prop="method" :label="$t('recordings.method')" width="80">
           <template #default="{ row }">
-            <template v-if="isMqProtocol(row.protocol)">
+            <template v-if="isNonHttpProtocol(row.protocol)">
               <el-tag v-if="row.direction" size="small" :type="directionType(row.direction)">{{ $t(directionLabel(row.direction)) }}</el-tag>
               <el-tag v-else size="small" type="info">{{ row.method }}</el-tag>
             </template>
@@ -218,7 +218,7 @@
         </template>
 
         <!-- MQ: Kafka / Pulsar / JMS -->
-        <template v-else-if="isMqProtocol(currentRecording.protocol)">
+        <template v-else-if="isNonHttpProtocol(currentRecording.protocol)">
           <div class="detail-section">
             <div class="section-header">
               <span class="section-title">{{ $t('recordings.direction') }}</span>
@@ -376,9 +376,9 @@ export default {
       return (protocol || '').toLowerCase() === 'jms'
     }
 
-    const isMqProtocol = (protocol) => {
-      const p = (protocol || '').toLowerCase()
-      return p === 'kafka' || p === 'pulsar' || p === 'jms'
+    const isNonHttpProtocol = (protocol) => {
+      const mqProtocols = ['kafka', 'pulsar', 'jms', 'tcp', 'udp', 'grpc', 'dubbo']
+      return mqProtocols.includes((protocol || '').toLowerCase())
     }
 
     const directionLabel = (d) => {
@@ -447,7 +447,7 @@ export default {
       currentPage, pageSize, total, searchParams,
       loadRecordings, onSearch, onReset, onPageChange, onSizeChange,
       viewDetail, deleteItem, formatHeaders, formatTime,
-      isHttpProtocol, isGrpcProtocol, isTcpUdpProtocol, isMqProtocol, isJmsProtocol,
+      isHttpProtocol, isGrpcProtocol, isTcpUdpProtocol, isNonHttpProtocol, isJmsProtocol,
       directionLabel, directionType,
       protocolLabel, protocolTagType, statusTagType,
       hasRequestHeaders, hasResponseHeaders,
