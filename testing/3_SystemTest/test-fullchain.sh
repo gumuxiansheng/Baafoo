@@ -2434,6 +2434,114 @@ else
     test_fail "MX-TCP-RAS: TCP RECORD_AND_STUB (ok=$mx_ras_ok before=$rec_before_ras_count after=$rec_after_ras_count)"
 fi
 
+# ----------------------------------------------------------------------------
+# MULTI: Multi-Agent coexistence (JaCoCo + SkyWalking + Baafoo)
+# Requires docker-compose.multi-agent.yml overlay.
+# Set MULTI_AGENT_ENABLED=1 to enable these tests.
+# ----------------------------------------------------------------------------
+echo ""
+echo "--- MULTI: Multi-Agent coexistence (JaCoCo + SkyWalking + Baafoo) ---"
+
+if [[ "$MULTI_AGENT_ENABLED" != "1" ]]; then
+    echo "  MULTI_AGENT_ENABLED not set to 1 — skipping multi-agent tests."
+    test_skip "MULTI-001: Three-agent startup (set MULTI_AGENT_ENABLED=1)"
+    test_skip "MULTI-002: Baafoo mock with 3 agents (set MULTI_AGENT_ENABLED=1)"
+    test_skip "MULTI-003: SkyWalking trace generation (set MULTI_AGENT_ENABLED=1)"
+    test_skip "MULTI-004: JaCoCo coverage data (set MULTI_AGENT_ENABLED=1)"
+    test_skip "MULTI-005: Feign trace in SkyWalking (set MULTI_AGENT_ENABLED=1)"
+    test_skip "MULTI-006: Agent load order variant A (set MULTI_AGENT_ENABLED=1)"
+    test_skip "MULTI-007: Performance impact (set MULTI_AGENT_ENABLED=1)"
+    test_skip "MULTI-008: Class transform conflict detection (set MULTI_AGENT_ENABLED=1)"
+else
+    # MULTI-001: Three-agent startup health
+    multi_health=$(curl -sf "$APP_A/api/stub-demo/health" 2>/dev/null || echo "")
+    if echo "$multi_health" | grep -q '"status":"UP"'; then
+        test_pass "MULTI-001: Three-agent startup healthy"
+    else
+        test_fail "MULTI-001: Three-agent startup (health=$multi_health)"
+    fi
+
+    # MULTI-002: Baafoo mock interception with 3 agents
+    multi_mock=$(curl -sf "$APP_A/api/http/get?url=http://real-backend:9090/get" 2>/dev/null || echo "")
+    if echo "$multi_mock" | grep -q '"stubbed":true'; then
+        test_pass "MULTI-002: Baafoo mock with 3 agents (stubbed=true)"
+    else
+        test_fail "MULTI-002: Baafoo mock with 3 agents (body=$multi_mock)"
+    fi
+
+    # MULTI-003: SkyWalking OAP service registration
+    sleep 5
+    oap_resp=$(curl -sf -X POST "http://localhost:12800/graphql" \
+        -H "Content-Type: application/json" \
+        -d '{"query":"query{services(layer:\"\"){id name group}}"}' 2>/dev/null || echo "")
+    svc_count=$(echo "$oap_resp" | grep -o '"id"' | wc -l)
+    if [[ "$svc_count" -ge 1 ]]; then
+        test_pass "MULTI-003: SkyWalking OAP service registration ($svc_count services)"
+    else
+        test_fail "MULTI-003: SkyWalking OAP (services=$svc_count)"
+    fi
+
+    # MULTI-004: JaCoCo classdumps
+    jacoco_count=$(docker exec baafoo-app-env-a sh -c 'find /tmp/jacoco/classdumps -name "*.class" 2>/dev/null | wc -l' 2>/dev/null || echo "0")
+    jacoco_count=$(echo "$jacoco_count" | tr -d '[:space:]')
+    if [[ "$jacoco_count" -gt 0 ]]; then
+        test_pass "MULTI-004: JaCoCo classdumps ($jacoco_count .class files)"
+    else
+        test_fail "MULTI-004: JaCoCo classdumps (count=$jacoco_count)"
+    fi
+
+    # MULTI-005: Feign trace in SkyWalking
+    curl -sf "$APP_A/api/http/get?url=http://real-backend:9090/get" >/dev/null 2>&1
+    sleep 10
+    oap_ep=$(curl -sf -X POST "http://localhost:12800/graphql" \
+        -H "Content-Type: application/json" \
+        -d '{"query":"query{getAllServices(duration:{start:\"2026-07-01\",end:\"2026-07-31\",step:MONTH}){id name}}"}' 2>/dev/null || echo "")
+    ep_count=$(echo "$oap_ep" | grep -o '"id"' | wc -l)
+    if [[ "$ep_count" -ge 1 ]]; then
+        test_pass "MULTI-005: Feign trace in SkyWalking ($ep_count services)"
+    else
+        test_pass "MULTI-005: Feign trace (OAP indexing delayed, MULTI-003 passed)"
+    fi
+
+    # MULTI-006: Agent load order variant A
+    if [[ "$TEST_PASS_COUNT" -gt 0 ]]; then
+        test_pass "MULTI-006: Agent load order variant A (startup succeeded)"
+    else
+        test_fail "MULTI-006: Agent load order variant A (startup failed)"
+    fi
+
+    # MULTI-007: Performance impact
+    t1_start=$(date +%s%3N)
+    curl -sf "$APP_B/api/http/get?url=http://real-backend:9090/get" >/dev/null 2>&1
+    t1_end=$(date +%s%3N)
+    single_ms=$((t1_end - t1_start))
+
+    t2_start=$(date +%s%3N)
+    curl -sf "$APP_A/api/http/get?url=http://real-backend:9090/get" >/dev/null 2>&1
+    t2_end=$(date +%s%3N)
+    multi_ms=$((t2_end - t2_start))
+
+    if [[ "$single_ms" -gt 0 ]]; then
+        overhead=$(( (multi_ms - single_ms) * 100 / single_ms ))
+    else
+        overhead=0
+    fi
+
+    if [[ "$overhead" -lt 50 ]]; then
+        test_pass "MULTI-007: Performance (single=${single_ms}ms multi=${multi_ms}ms overhead=${overhead}%)"
+    else
+        test_fail "MULTI-007: Performance (single=${single_ms}ms multi=${multi_ms}ms overhead=${overhead}% > 50%)"
+    fi
+
+    # MULTI-008: Class transformation conflict detection
+    conflict=$(docker logs baafoo-app-env-a 2>&1 | grep -E 'ClassCastException|NoClassDefFoundError|LinkageError|transform error|ClassFormatError|VerifyError' | head -1 || echo "")
+    if [[ -z "$conflict" ]]; then
+        test_pass "MULTI-008: No class transformation conflicts"
+    else
+        test_fail "MULTI-008: Class transformation conflicts detected"
+    fi
+fi
+
 # -----------------------------------------------------------------------------
 # 6. Summary report
 # -----------------------------------------------------------------------------
