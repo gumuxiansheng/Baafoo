@@ -1,0 +1,79 @@
+name: Multi-Agent Coexistence Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: '触发原因'
+        required: false
+        default: 'manual'
+  schedule:
+    # 每天北京时间 04:00 (UTC 20:00) 跑一次
+    - cron: '0 20 * * *'
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+concurrency:
+  group: multi-agent-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  multi-agent-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      MULTI_AGENT_ENABLED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Make build scripts executable
+        run: chmod +x mvnw testing/3_SystemTest/test-fullchain.sh testing/2_IntegrationTest/run-fullchain-tests.sh
+
+      - name: Ensure jq is available
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+          jq --version
+
+      - name: Run multi-agent coexistence test
+        # 启动三 Agent 叠加栈（JaCoCo + SkyWalking + Baafoo），
+        # MULTI_AGENT_ENABLED=1 激活 MULTI-001~008 用例。
+        # SkyWalking OAP 启动较慢（~90s），timeout 设为 90 分钟。
+        run: ./testing/3_SystemTest/test-fullchain.sh
+
+      - name: Upload JUnit XML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: multi-agent-junit-report
+          path: testing/3_SystemTest/junit-report.xml
+          if-no-files-found: warn
+
+      - name: Publish Test Report
+        if: always()
+        uses: dorny/test-reporter@v1
+        continue-on-error: true
+        with:
+          name: Multi-Agent Test Report
+          path: testing/3_SystemTest/junit-report.xml
+          reporter: java-junit
+
+      - name: Upload SkyWalking OAP logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skywalking-oap-logs
+          path: |
+            testing/3_SystemTest/logs/
+          if-no-files-found: warn
