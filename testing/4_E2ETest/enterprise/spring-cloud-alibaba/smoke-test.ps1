@@ -24,9 +24,12 @@ $passed = 0
 $failed = 0
 $skipped = 0
 $MODE_SETTLE_WAIT = 12
+$script:TestResults = @()   # JUnit XML source of truth
 
 function Write-Result {
     param([string]$testName, [string]$status, [string]$detail = "")
+    $statusLower = $status.ToLower()
+    $script:TestResults += [PSCustomObject]@{ Name = $testName; Status = $statusLower; Message = $detail }
     switch ($status) {
         "PASS" {
             Write-Host "[PASS] $testName" -ForegroundColor Green
@@ -43,6 +46,29 @@ function Write-Result {
             $script:skipped++
         }
     }
+}
+
+function Export-JUnitXml {
+    param([string]$path)
+    $ts = (Get-Date -Format "yyyy-MM-ddTHH:mm:ss")
+    $sb = New-Object System.Text.StringBuilder
+    $null = $sb.Append('<?xml version="1.0" encoding="UTF-8"?>')
+    $null = $sb.AppendFormat('<testsuites name="baafoo-enterprise-sca" tests="{0}" failures="{1}" skipped="{2}" errors="0">', $script:TestResults.Count, $script:failed, $script:skipped)
+    $null = $sb.AppendFormat('<testsuite name="EnterpriseSCA" tests="{0}" failures="{1}" skipped="{2}" errors="0" timestamp="{3}">', $script:TestResults.Count, $script:failed, $script:skipped, $ts)
+    foreach ($t in $script:TestResults) {
+        $nameEsc = [Security.SecurityElement]::Escape($t.Name)
+        $msgEsc = [Security.SecurityElement]::Escape($t.Message)
+        $null = $sb.AppendFormat('<testcase name="{0}" classname="EnterpriseSCA" status="{1}">', $nameEsc, $t.Status)
+        if ($t.Status -eq "fail") {
+            $null = $sb.AppendFormat('<failure message="{0}">{0}</failure>', $msgEsc)
+        } elseif ($t.Status -eq "skip") {
+            $null = $sb.AppendFormat('<skipped message="{0}"/>', $msgEsc)
+        }
+        $null = $sb.Append('</testcase>')
+    }
+    $null = $sb.Append('</testsuite></testsuites>')
+    [System.IO.File]::WriteAllText($path, $sb.ToString(), [System.Text.Encoding]::UTF8)
+    Write-Host "  [OK] JUnit XML written: $path" -ForegroundColor Gray
 }
 
 function Get-EnvId {
@@ -340,6 +366,9 @@ Write-Host ""
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host "  测试结果: $passed 通过, $failed 失败, $skipped 跳过" -ForegroundColor $(if ($failed -eq 0) { "Green" } else { "Red" })
 Write-Host "============================================" -ForegroundColor Cyan
+
+# ==================== JUnit XML report (CI consumption) ====================
+Export-JUnitXml (Join-Path $PSScriptRoot "junit-report.xml")
 
 if ($failed -gt 0) {
     exit 1
