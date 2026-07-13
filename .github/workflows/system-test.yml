@@ -51,7 +51,17 @@ jobs:
         # protocol/mode, writes testing/3_SystemTest/junit-report.xml, then
         # tears the stack down. No external network is touched — the only
         # "real backend" is the in-Staging echo endpoint (host: real-backend).
+        #
+        # Exit codes: 0 = all pass, 1 = failures, 2 = pass with skips.
+        # Skips are expected for env-dependent tests (MULTI-001~008, Pulsar
+        # broker, gRPC non-STUB). We accept exit 2 as green; exit 1 fails CI.
+        id: run-tests
+        continue-on-error: true
         run: ./testing/3_SystemTest/test-fullchain.sh
+
+      - name: Fail on test failures (exit 1)
+        if: steps.run-tests.outcome == 'failure'
+        run: exit 1
 
       - name: Upload JUnit XML report
         if: always()

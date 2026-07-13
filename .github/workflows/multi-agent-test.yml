@@ -50,7 +50,14 @@ jobs:
         # 启动三 Agent 叠加栈（JaCoCo + SkyWalking + Baafoo），
         # MULTI_AGENT_ENABLED=1 激活 MULTI-001~008 用例。
         # SkyWalking OAP 启动较慢（~90s），timeout 设为 90 分钟。
+        # Exit codes: 0 = all pass, 1 = failures, 2 = pass with skips.
+        id: run-tests
+        continue-on-error: true
         run: ./testing/3_SystemTest/test-fullchain.sh
+
+      - name: Fail on test failures (exit 1)
+        if: steps.run-tests.outcome == 'failure'
+        run: exit 1
 
       - name: Upload JUnit XML report
         if: always()
