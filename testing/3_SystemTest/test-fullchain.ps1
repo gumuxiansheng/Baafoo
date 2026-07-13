@@ -2183,7 +2183,7 @@ try {
 
 # IT-L2-TCP-004: Regex pattern matching (rule staging-tcp-regex already registered)
 try {
-    $tcp004Resp = Invoke-AppGet "$APP_A/api/socket/bio?host=127.0.0.1&port=9999"
+    $tcp004Resp = Invoke-AppGet "$APP_A/api/socket/bio?host=$TCP_HOST&port=$TCP_PORT"
     if ($tcp004Resp.connected -and $tcp004Resp.received -eq "TCP-REGEX-STUB-OK") {
         Test-Pass "IT-L2-TCP-004: TCP Regex pattern match (received=$($tcp004Resp.received))"
     } else {
@@ -2195,7 +2195,7 @@ try {
 
 # IT-L2-TCP-005: Multi-round stateful interaction
 try {
-    $tcp005Resp = Invoke-AppGet "$APP_A/api/socket/multiround?host=127.0.0.1&port=9999"
+    $tcp005Resp = Invoke-AppGet "$APP_A/api/socket/multiround?host=$TCP_HOST&port=$TCP_PORT"
     if ($tcp005Resp.connected -and $tcp005Resp.round1_received -eq "LOGIN-OK" -and $tcp005Resp.round2_received -eq "QUERY-RESULT-DATA" -and $tcp005Resp.round3_received -eq "LOGOUT-OK") {
         Test-Pass "IT-L2-TCP-005: TCP multi-round (r1=$($tcp005Resp.round1_received), r2=$($tcp005Resp.round2_received), r3=$($tcp005Resp.round3_received))"
     } else {
@@ -2207,10 +2207,10 @@ try {
 
 # IT-L2-TCP-006: Long connection keep-alive — connect, wait, verify still connected
 try {
-    $tcp006Resp = Invoke-AppGet "$APP_A/api/socket/bio?host=127.0.0.1&port=9999"
+    $tcp006Resp = Invoke-AppGet "$APP_A/api/socket/bio?host=$TCP_HOST&port=$TCP_PORT"
     if ($tcp006Resp.connected) {
         # Second call to verify connection persistence (agent keeps socket alive)
-        $tcp006bResp = Invoke-AppGet "$APP_A/api/socket/nio?host=127.0.0.1&port=9999"
+        $tcp006bResp = Invoke-AppGet "$APP_A/api/socket/nio?host=$TCP_HOST&port=$TCP_PORT"
         if ($tcp006bResp.connected) {
             Test-Pass "IT-L2-TCP-006: TCP long connection (BIO+NIO both connected)"
         } else {

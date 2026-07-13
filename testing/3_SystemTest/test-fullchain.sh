@@ -1990,7 +1990,7 @@ else
 fi
 
 # IT-L2-TCP-004: Regex pattern matching
-tcp004_resp="$(app_get "$APP_A/api/socket/bio?host=127.0.0.1&port=9999")"
+tcp004_resp="$(app_get "$APP_A/api/socket/bio?host=$TCP_HOST&port=$TCP_PORT")"
 if echo "$tcp004_resp" | grep -q 'TCP-REGEX-STUB-OK'; then
     test_pass "IT-L2-TCP-004: TCP Regex pattern match"
 else
@@ -1998,7 +1998,7 @@ else
 fi
 
 # IT-L2-TCP-005: Multi-round stateful interaction
-tcp005_resp="$(app_get "$APP_A/api/socket/multiround?host=127.0.0.1&port=9999")"
+tcp005_resp="$(app_get "$APP_A/api/socket/multiround?host=$TCP_HOST&port=$TCP_PORT")"
 if echo "$tcp005_resp" | grep -q 'LOGIN-OK' && echo "$tcp005_resp" | grep -q 'QUERY-RESULT-DATA' && echo "$tcp005_resp" | grep -q 'LOGOUT-OK'; then
     test_pass "IT-L2-TCP-005: TCP multi-round (LOGIN+QUERY+LOGOUT)"
 else
@@ -2006,8 +2006,8 @@ else
 fi
 
 # IT-L2-TCP-006: Long connection keep-alive
-tcp006_resp="$(app_get "$APP_A/api/socket/bio?host=127.0.0.1&port=9999")"
-tcp006b_resp="$(app_get "$APP_A/api/socket/nio?host=127.0.0.1&port=9999")"
+tcp006_resp="$(app_get "$APP_A/api/socket/bio?host=$TCP_HOST&port=$TCP_PORT")"
+tcp006b_resp="$(app_get "$APP_A/api/socket/nio?host=$TCP_HOST&port=$TCP_PORT")"
 if echo "$tcp006_resp" | grep -q '"connected":true' && echo "$tcp006b_resp" | grep -q '"connected":true'; then
     test_pass "IT-L2-TCP-006: TCP long connection (BIO+NIO both connected)"
 else

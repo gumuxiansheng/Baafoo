@@ -359,7 +359,16 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
                 final boolean isLast = (i == responseMessages.size() - 1);
                 final byte[] msgBytes = responseMessages.get(i);
 
-                if (delayMs > 0 && i > 0) {
+                if (delayMs > 0 && i == 0 && responseMessages.size() == 1) {
+                    // Unary call delay — sleep before the single response message
+                    final ChannelHandlerContext finalCtx = ctx;
+                    final int finalGrpcStatus = grpcStatus;
+                    final String finalGrpcMessage = grpcMessage;
+                    ctx.executor().schedule(() -> {
+                        sendGrpcMessage(finalCtx, msgBytes);
+                        sendGrpcTrailers(finalCtx, finalGrpcStatus, finalGrpcMessage);
+                    }, delayMs, TimeUnit.MILLISECONDS);
+                } else if (delayMs > 0 && i > 0) {
                     // Delay between streaming messages
                     final ChannelHandlerContext finalCtx = ctx;
                     ctx.executor().schedule(() -> {
