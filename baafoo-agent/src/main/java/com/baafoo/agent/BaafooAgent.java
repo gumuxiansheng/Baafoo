@@ -99,7 +99,17 @@ public class BaafooAgent {
 
             controlChannel = new ControlChannel(config);
             controlChannel.setAgentIdCallback(id -> config.setAgentId(id));
-            controlChannel.start();
+            // NOTE: controlChannel.start() is deferred to AFTER installTransforms.
+            // The control channel uses HttpURLConnection, which loads
+            // sun.net.www.http.HttpClient. If this class is loaded BEFORE
+            // installTransforms runs, ByteBuddy must RETRANSFORM the already-
+            // loaded class. Retransformation of sun.* classes can fail silently
+            // on some JVM implementations (observed on eclipse-temurin:8-jre-
+            // alpine in CI), causing HttpOpenServerAdvice to never fire and
+            // all HTTP stub cases to return stubbed=false. By deferring
+            // controlChannel.start() to after installTransforms, HttpClient
+            // is loaded AFTER the ByteBuddy transform is installed, so the
+            // transform applies on first load — no retransformation needed.
 
             pluginManager = new PluginManager(config.getPlugins());
 
@@ -198,6 +208,12 @@ public class BaafooAgent {
             initRecording(config);
 
             installTransforms(config, inst);
+
+            // Start the control channel AFTER transforms are installed.
+            // See the note at controlChannel construction above: deferring
+            // start() ensures HttpClient is loaded after ByteBuddy transforms
+            // are in place, avoiding the need for class retransformation.
+            controlChannel.start();
 
             AgentManifest.agentLoaded = true;
             initialized = true;

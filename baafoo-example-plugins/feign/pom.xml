@@ -115,6 +115,18 @@
                                     <include>io.github.openfeign:*</include>
                                     <include>com.squareup.okhttp3:okhttp</include>
                                     <include>com.fasterxml.jackson.core:*</include>
+                                    <!-- SLF4J + Logback must be bundled into the
+                                         plugin JAR because PluginClassLoader has
+                                         parent=null (full isolation). Without
+                                         these, FeignPlugin's static initializer
+                                         (which uses LoggerFactory.getLogger)
+                                         throws NoClassDefFoundError, which
+                                         surfaces as ServiceConfigurationError
+                                         and previously took down the entire
+                                         agent. -->
+                                    <include>org.slf4j:slf4j-api</include>
+                                    <include>ch.qos.logback:logback-classic</include>
+                                    <include>ch.qos.logback:logback-core</include>
                                 </includes>
                             </artifactSet>
                             <filters>

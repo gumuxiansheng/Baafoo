@@ -113,7 +113,16 @@ services:
       - BAAFOO_SERVER_HOST=server
       - BAAFOO_ENV=staging-a
       - SERVER_PORT=9090
-      - JAVA_OPTS=-Xms128m -Xmx256m
+      # -Dhttp.keepAlive=false disables the JDK's internal keep-alive cache
+      # (sun.net.www.http.HttpClient.KeepAliveCache). When keep-alive is on,
+      # a connection opened in PASSTHROUGH mode (to the real backend) is cached
+      # under host:port and reused by later STUB-mode requests WITHOUT calling
+      # HttpClient.openServer, so HttpOpenServerAdvice never fires and the
+      # request bypasses Baafoo interception — returning stubbed=false. This
+      # caused intermittent failures in FLT-004, PRIO-001, MULTI-001 after M03
+      # and FO-001 PASSTHROUGH tests poisoned the cache. Disabling keep-alive
+      # forces every request to call openServer, guaranteeing the advice runs.
+      - JAVA_OPTS=-Xms128m -Xmx256m -Dhttp.keepAlive=false -Dhttp.maxConnections=1
     volumes:
       - ./deploy/staging/baafoo-agent-env-a.yml:/app/baafoo-agent.yml:ro
       - ./plugins:/app/plugins:ro
@@ -144,7 +153,9 @@ services:
       - BAAFOO_SERVER_HOST=server
       - BAAFOO_ENV=staging-b
       - SERVER_PORT=9091
-      - JAVA_OPTS=-Xms128m -Xmx256m
+      # Disable keep-alive cache (see app-env-a comment above) to prevent
+      # PASSTHROUGH-mode connections from poisoning STUB-mode interception.
+      - JAVA_OPTS=-Xms128m -Xmx256m -Dhttp.keepAlive=false -Dhttp.maxConnections=1
     volumes:
       - ./deploy/staging/baafoo-agent-env-b.yml:/app/baafoo-agent.yml:ro
       - ./plugins:/app/plugins:ro

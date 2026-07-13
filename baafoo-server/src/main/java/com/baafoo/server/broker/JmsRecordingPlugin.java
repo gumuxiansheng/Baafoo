@@ -67,26 +67,28 @@ public class JmsRecordingPlugin implements ActiveMQServerPlugin {
         // ServerConsumer doesn't expose ServerSession directly; resolve the
         // RemotingConnection via the broker's RemotingService using the
         // consumer's connection ID so we can still extract the client IP.
+        //
+        // TYPE MISMATCH NOTE: consumer.getConnectionID() returns a String
+        // (e.g., "482ba29b"), but RemotingConnection.getID() may return a
+        // different type (e.g., io.netty.channel.DefaultChannelId). The values
+        // are equal but Object.equals() returns false across types. We compare
+        // by toString() to handle both String and non-String ID types.
         if (consumer != null && server != null) {
             try {
                 Object connId = consumer.getConnectionID();
                 if (connId != null) {
+                    String connIdStr = connId.toString();
                     Set<RemotingConnection> conns = server.getRemotingService().getConnections();
                     if (conns != null) {
                         for (RemotingConnection conn : conns) {
-                            if (conn != null && connId.equals(conn.getID())) {
-                                // RemotingConnection doesn't expose ServerSession, but we
-                                // only need the remote address for IP resolution. Pass a
-                                // null session and resolve IP directly from the connection.
+                            if (conn == null) continue;
+                            Object connGetId = conn.getID();
+                            if (connGetId != null && connIdStr.equals(connGetId.toString())) {
                                 String remoteIp = extractIp(conn.getRemoteAddress());
                                 recordMessageWithIp(remoteIp, message, "consume");
                                 return;
                             }
                         }
-                        // Connection ID not found in active connections (connection may
-                        // have been closed between delivery and this callback). Fall
-                        // through to the null-IP path — resolveByIp will try the
-                        // unique-environment fallback.
                         log.debug("afterDeliver: connection ID {} not found among {} active connections, using null-IP fallback",
                                 connId, conns.size());
                     }

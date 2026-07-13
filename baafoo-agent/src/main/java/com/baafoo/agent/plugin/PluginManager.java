@@ -390,8 +390,14 @@ public class PluginManager {
         for (File jar : jarFiles) {
             try {
                 loadPlugin(jar);
-            } catch (Exception e) {
-                log.error("Failed to load plugin from {}: {}", jar.getName(), e.getMessage());
+            } catch (Throwable t) {
+                // Catch Throwable (not Exception) because ServiceConfigurationError
+                // extends Error, not Exception. A single broken plugin (e.g.,
+                // NoClassDefFoundError in its static initializer) must NOT take
+                // down the entire agent — that would skip installTransforms()
+                // and cause ALL HTTP stub cases to return stubbed=false.
+                log.error("Failed to load plugin from {}: {}",
+                        jar.getName(), t.toString());
             }
         }
 

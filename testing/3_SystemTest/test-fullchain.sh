@@ -244,20 +244,48 @@ get_environment_attr() {
 }
 
 # Emit a compact root-cause diagnostic when the agent is not stub-ready.
-# Surfaces the three facts that explain a uniform "stubbed=false" HTTP failure
-# while TCP/Kafka/Pulsar/JMS still pass (broker-level):
-#   1. staging-a / staging-b mode on the server (should be "stub" / "record-and-stub")
-#   2. which environment app-env-a's agent actually resolved to (via /api/agents)
-#   3. the raw probe response (so we can see stubbed= vs real-backend=)
+# Surfaces the facts needed to distinguish between:
+#   - staging-init didn't register rules (rule count = 0)
+#   - ByteBuddy transforms failed to install (no transform log lines)
+#   - agent polled but route table is empty (poll log shows 0 rules)
 dump_agent_diagnostics() {
     echo "==================== AGENT READINESS DIAGNOSTIC ===================="
-    local envs_json agents_json
+    local envs_json agents_json rules_json
     envs_json="$(api_get "environments")"
     echo "[env] staging-a mode = $(get_environment_attr "$envs_json" "staging-a" "mode")"
     echo "[env] staging-b mode = $(get_environment_attr "$envs_json" "staging-b" "mode")"
+
+    # Rule count — if 0, staging-init failed or rules were never registered
+    rules_json="$(api_get "rules")"
+    local rule_count=0
+    if [[ "$HAVE_JQ" == "true" ]]; then
+        rule_count="$(echo "$rules_json" | jq '.data | length' 2>/dev/null || echo 0)"
+    else
+        rule_count="$(echo "$rules_json" | grep -o '"id"' | wc -l)"
+    fi
+    echo "[rules] count=$rule_count (expected >=2 from staging-init: staging-a-http, staging-b-http)"
+
     agents_json="$(api_get "agents")"
     echo "[agents] $(echo "$agents_json" | head -c 900)"
+
     echo "[probe] APP_A real-backend/get = $(app_get "$APP_A/api/http/get?url=http://real-backend:9090/get" | head -c 500)"
+
+    # Agent container logs — shows ByteBuddy transform status, rule polling,
+    # route table rebuilds, and any errors. This is the SINGLE most important
+    # diagnostic for "stubbed=false" — it tells us whether the agent's
+    # ByteBuddy transforms installed and whether rules were loaded.
+    echo "[agent-logs] baafoo-app-env-a (last 50 lines):"
+    docker logs baafoo-app-env-a --tail 50 2>&1 | head -60 || echo "  (failed to get logs)"
+
+    # staging-init status — if it didn't exit successfully, rules may not be registered
+    local init_status init_exit
+    init_status="$(docker inspect --format='{{.State.Status}}' baafoo-staging-init 2>/dev/null || echo 'not found')"
+    init_exit="$(docker inspect --format='{{.State.ExitCode}}' baafoo-staging-init 2>/dev/null || echo '?')"
+    echo "[staging-init] status=$init_status exitCode=$init_exit"
+    if [[ "$init_exit" != "0" && "$init_exit" != "?" ]]; then
+        echo "[staging-init] logs (last 20 lines):"
+        docker logs baafoo-staging-init --tail 20 2>&1 || true
+    fi
     echo "==================================================================="
 }
 
@@ -416,6 +444,25 @@ if [[ "$init_done" == "true" ]]; then
     write_ok "Staging initialization complete"
 else
     write_warn "Staging-init still running or not found (continuing anyway)"
+fi
+
+# Verify staging-init actually registered rules. If the staging-init
+# container exited with a non-zero code or failed to register its
+# pre-configured rules (staging-a-http, staging-b-http), the agent has
+# nothing to poll and the readiness probe will time out with stubbed=false.
+rules_check="$(api_get "rules")"
+rules_count_init=0
+if [[ "$HAVE_JQ" == "true" ]]; then
+    rules_count_init="$(echo "$rules_check" | jq '.data | length' 2>/dev/null || echo 0)"
+else
+    rules_count_init="$(echo "$rules_check" | grep -o '"id"' | wc -l | tr -d ' ')"
+fi
+if [[ "$rules_count_init" -ge 2 ]]; then
+    write_ok "Staging-init rules registered (count=$rules_count_init)"
+else
+    write_warn "Staging-init registered only $rules_count_init rules (expected >=2). staging-init logs:"
+    docker logs baafoo-staging-init --tail 20 2>&1 || true
+    # Continue anyway — the test will register its own rules below
 fi
 
 # Verify environments were created
