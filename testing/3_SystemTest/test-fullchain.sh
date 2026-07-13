@@ -1684,7 +1684,7 @@ fi
 scn_enable_body="{\"name\":\"Test Scene\",\"description\":\"P2 scene set CRUD test\",\"itemIds\":[\"staging-a-http-get\",\"staging-a-http-post\"],\"active\":true,\"tags\":[\"test\",\"p2\"],\"environments\":[\"staging-a\"]}"
 api_put "scenes/$scn_id" "$scn_enable_body" >/dev/null 2>&1
 scn_verify="$(api_get "scenes/$scn_id")"
-scn_active="$(get_json_value "$scn_verify" "active")"
+scn_active="$(get_json_value "$scn_verify" "data.active")"
 if [[ "$scn_active" == "true" ]]; then
     test_pass "SCN-002: Scene set enabled (active=true)"
 else
@@ -1695,7 +1695,7 @@ fi
 scn_disable_body="{\"name\":\"Test Scene\",\"description\":\"P2 scene set CRUD test\",\"itemIds\":[\"staging-a-http-get\",\"staging-a-http-post\"],\"active\":false,\"tags\":[\"test\",\"p2\"],\"environments\":[\"staging-a\"]}"
 api_put "scenes/$scn_id" "$scn_disable_body" >/dev/null 2>&1
 scn_verify2="$(api_get "scenes/$scn_id")"
-scn_active2="$(get_json_value "$scn_verify2" "active")"
+scn_active2="$(get_json_value "$scn_verify2" "data.active")"
 if [[ "$scn_active2" == "false" ]]; then
     test_pass "SCN-003: Scene set disabled (active=false)"
 else
