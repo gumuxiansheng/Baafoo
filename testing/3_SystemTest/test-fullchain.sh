@@ -85,7 +85,9 @@ write_err()  { echo "  [ERR] $1" >&2; }
 
 record_result() {
   local msg="$1" status="$2" id
-  if [[ "$msg" =~ ^([A-Z]{1,4}[0-9]{1,3})[:[:space:]] ]]; then
+  # Match test IDs like F01, H01, SCN-002, MX-TCP-PT, PRIO-001, REC-PAGE, etc.
+  # (uppercase letters, digits, hyphens, underscores) followed by : or whitespace.
+  if [[ "$msg" =~ ^([A-Z][A-Z0-9_-]{1,30})[:[:space:]] ]]; then
     id="${BASH_REMATCH[1]}"
   else
     id="$msg"
@@ -120,7 +122,8 @@ write_junit_xml() {
         status="${rest%%|*}"
         msg="${rest#*|}"
         esc="$(printf '%s' "$msg" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g")"
-        echo "<testcase name=\"$name\" classname=\"FullChain\" status=\"$status\">"
+        name_esc="$(printf '%s' "$name" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g")"
+        echo "<testcase name=\"$name_esc\" classname=\"FullChain\" status=\"$status\">"
         if [ "$status" = "fail" ]; then
           echo "<failure message=\"$esc\">$esc</failure>"
         elif [ "$status" = "skip" ]; then

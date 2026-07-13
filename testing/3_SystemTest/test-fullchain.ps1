@@ -69,7 +69,9 @@ function Write-Err($msg)  { Write-Host "  [ERR] $msg" -ForegroundColor Red }
 
 # Record a test result for JUnit XML emission (CI consumption).
 function Add-TestResult($msg, $status) {
-    $id = if ($msg -match '^([A-Z]{1,4}\d{1,3})[:\s]') { $matches[1] } else { $msg }
+    # Match test IDs like F01, H01, SCN-002, MX-TCP-PT, PRIO-001, REC-PAGE, etc.
+    # (uppercase letters, digits, hyphens, underscores) followed by : or whitespace.
+    $id = if ($msg -match '^([A-Z][A-Z0-9_-]{1,30})[:\s]') { $matches[1] } else { $msg }
     $script:TestResults += [PSCustomObject]@{ Name = $id; Status = $status; Message = $msg }
 }
 
@@ -100,7 +102,8 @@ function Export-JUnitXml($path) {
     $null = $sb.AppendFormat('<testsuite name="FullChain" tests="{0}" failures="{1}" skipped="{2}" errors="0" timestamp="{3}">', $script:TestResults.Count, $script:Fail, $script:Skip, $ts)
     foreach ($t in $script:TestResults) {
         $esc = [Security.SecurityElement]::Escape($t.Message)
-        $null = $sb.AppendFormat('<testcase name="{0}" classname="FullChain" status="{1}">', $t.Name, $t.Status)
+        $nameEsc = [Security.SecurityElement]::Escape($t.Name)
+        $null = $sb.AppendFormat('<testcase name="{0}" classname="FullChain" status="{1}">', $nameEsc, $t.Status)
         if ($t.Status -eq "fail") {
             $null = $sb.AppendFormat('<failure message="{0}">{0}</failure>', $esc)
         } elseif ($t.Status -eq "skip") {
