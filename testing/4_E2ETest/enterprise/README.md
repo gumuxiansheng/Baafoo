@@ -1,22 +1,23 @@
-# Baafoo 企业级应用测试
+﻿# Baafoo 企业级应用测试
 
 使用真实的企业级应用验证 Baafoo Agent 的兼容性、有效性、性能影响和稳定性。
 
 ## 测试应用清单
 
 ### P0 优先级（必须）
-| 应用 | 目录 | 协议覆盖 | 状态 |
-|------|------|---------|------|
-| Apache Kafka | [kafka/](./kafka) | Kafka | 待搭建 |
-| Spring Boot PetClinic | [petclinic/](./petclinic) | HTTP | 待搭建 |
+| 应用 | 目录 | 协议覆盖 | 用例数 | 状态 |
+|------|------|---------|--------|------|
+| Apache Kafka | [kafka/](./kafka) | Kafka | 11 (10 PASS + 1 SKIP) | ✅ 已完成 |
+| Spring Boot PetClinic | [petclinic/](./petclinic) | HTTP | 13 (10 PASS + 1 SKIP + 2 SKIP) | ✅ 已完成 |
+| Spring Cloud Alibaba | [spring-cloud-alibaba/](./spring-cloud-alibaba) | HTTP + Feign + Nacos | 12 | ✅ 已完成 |
 
 ### P1 优先级（重要）
 | 应用 | 目录 | 协议覆盖 | 状态 |
 |------|------|---------|------|
-| Spring Cloud Gateway | [spring-cloud-gateway/](./spring-cloud-gateway) | HTTP | 待搭建 |
-| Nacos | [nacos/](./nacos) | HTTP + TCP | 待搭建 |
-| ActiveMQ Artemis | [artemis/](./artemis) | JMS | 待搭建 |
-| Keycloak | [keycloak/](./keycloak) | HTTP | 待搭建 |
+| Spring Cloud Gateway | — | HTTP | 待搭建 |
+| Nacos (独立) | — | HTTP + TCP | 待搭建 |
+| ActiveMQ Artemis | — | JMS | 待搭建 |
+| Keycloak | — | HTTP | 待搭建 |
 
 ## 通用测试项
 
@@ -30,7 +31,7 @@
 6. **环境模式热切换**：运行中切换模式，应用无影响
 7. **应用功能完整性**：应用核心功能均正常工作
 8. **无类加载冲突**：无 ClassNotFoundException / NoClassDefFoundError
-9. **内存泄漏检查**：运行 1 小时后，内存趋势平稳
+9. **内存泄漏检查**：短期运行后，内存趋势平稳
 10. **CPU 开销评估**：与无 Agent 对比，CPU 增加在可接受范围
 
 ## 快速开始
@@ -43,17 +44,38 @@
 ### 运行单个应用测试
 
 ```powershell
-# 进入应用目录
+# Kafka
 cd testing/4_E2ETest/enterprise/kafka
-
-# 启动环境
 docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml up --build
-
-# 运行冒烟测试
 .\smoke-test.ps1
-
-# 停止环境
 docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -v
+
+# PetClinic
+cd testing/4_E2ETest/enterprise/petclinic
+docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml up --build
+.\smoke-test.ps1
+docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -v
+
+# Spring Cloud Alibaba
+cd testing/4_E2ETest/enterprise/spring-cloud-alibaba
+docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml up --build
+.\smoke-test.ps1
+docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -v
+```
+
+### 运行所有应用测试
+
+```powershell
+cd testing/4_E2ETest/enterprise
+
+# 启动所有环境
+.\enterprise-env.ps1 -Action start -Apps all
+
+# 运行统一冒烟测试
+.\run-all-smoke-tests.ps1
+
+# 停止所有环境
+.\enterprise-env.ps1 -Action stop -Apps all
 ```
 
 ### 通用配置
@@ -63,3 +85,8 @@ docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -
 - Baafoo Server 内部地址: `baafoo-server:8084`
 - API Key: `enterprise-admin-key`
 - 网络: `baafoo-enterprise-net`
+
+## 测试报告
+
+- [ENTERPRISE-TEST-REPORT.md](./ENTERPRISE-TEST-REPORT.md) — Kafka + PetClinic 测试报告
+- [MULTI-AGENT-TEST-REPORT.md](./MULTI-AGENT-TEST-REPORT.md) — 多 Agent 共存测试报告

@@ -1,4 +1,4 @@
-# Baafoo 企业级应用测试 - 统一冒烟测试脚本
+﻿# Baafoo 企业级应用测试 - 统一冒烟测试脚本
 # 运行所有企业级应用的冒烟测试
 #
 # 用法:
@@ -9,7 +9,7 @@
 param(
     [string]$ServerUrl = "http://localhost:18084",
     [string]$ApiKey = "enterprise-admin-key",
-    [string[]]$Apps = @("kafka", "petclinic")
+    [string[]]$Apps = @("kafka", "petclinic", "spring-cloud-alibaba")
 )
 
 $ErrorActionPreference = "Continue"
@@ -42,6 +42,7 @@ foreach ($app in $Apps) {
 
     try {
         & $smokeTestScript -ServerBaseUrl $ServerUrl -ApiKey $ApiKey
+        # spring-cloud-alibaba smoke-test uses ServerBaseUrl param too
         $exitCode = $LASTEXITCODE
 
         if ($exitCode -eq 0) {

@@ -1,4 +1,4 @@
-# Baafoo 企业级应用测试 - 环境管理脚本
+﻿# Baafoo 企业级应用测试 - 环境管理脚本
 # 用于快速启动/停止企业级应用测试环境
 #
 # 用法:
@@ -21,7 +21,7 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $baseComposeFile = Join-Path $scriptDir "common\docker-compose.base.yml"
 
-$allApps = @("kafka", "petclinic", "spring-cloud-gateway", "nacos", "artemis", "keycloak")
+$allApps = @("kafka", "petclinic", "spring-cloud-alibaba")
 
 if ($Apps -contains "all") {
     $Apps = $allApps
