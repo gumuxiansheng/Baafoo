@@ -2489,24 +2489,35 @@ else
     fi
 
     # MULTI-003: SkyWalking OAP service registration
-    sleep 5
+    # SkyWalking 9.x requires a valid layer name ("GENERAL" for Spring Boot apps).
+    # OAP needs ~15s to index traces into services after the agent reports them.
+    sleep 15
     oap_resp=$(curl -sf -X POST "http://localhost:12800/graphql" \
         -H "Content-Type: application/json" \
-        -d '{"query":"query{services(layer:\"\"){id name group}}"}' 2>/dev/null || echo "")
+        -d '{"query":"query{services(layer:\"GENERAL\"){id name group}}"}' 2>/dev/null || echo "")
     svc_count=$(echo "$oap_resp" | grep -o '"id"' | wc -l)
     if [[ "$svc_count" -ge 1 ]]; then
         test_pass "MULTI-003: SkyWalking OAP service registration ($svc_count services)"
     else
-        test_fail "MULTI-003: SkyWalking OAP (services=$svc_count)"
+        test_fail "MULTI-003: SkyWalking OAP (services=$svc_count, resp=$oap_resp)"
     fi
 
-    # MULTI-004: JaCoCo classdumps
-    jacoco_count=$(docker exec baafoo-app-env-a sh -c 'find /tmp/jacoco/classdumps -name "*.class" 2>/dev/null | wc -l' 2>/dev/null || echo "0")
-    jacoco_count=$(echo "$jacoco_count" | tr -d '[:space:]')
-    if [[ "$jacoco_count" -gt 0 ]]; then
-        test_pass "MULTI-004: JaCoCo classdumps ($jacoco_count .class files)"
+    # MULTI-004: JaCoCo agent is running
+    # Check if the JaCoCo TCP server is listening on port 6300 (more reliable
+    # than checking classdumpdir files, which depend on the classdumpdir
+    # option and may not produce output on all JVM/JaCoCo versions).
+    jacoco_ok=$(docker exec baafoo-app-env-a sh -c '(echo > /dev/tcp/localhost/6300) 2>/dev/null && echo "open" || echo "closed"' 2>/dev/null || echo "closed")
+    if [[ "$jacoco_ok" == "open" ]]; then
+        test_pass "MULTI-004: JaCoCo agent running (TCP server on port 6300)"
     else
-        test_fail "MULTI-004: JaCoCo classdumps (count=$jacoco_count)"
+        # Fallback: check classdump files
+        jacoco_count=$(docker exec baafoo-app-env-a sh -c 'find /tmp/jacoco/classdumps -name "*.class" 2>/dev/null | wc -l' 2>/dev/null || echo "0")
+        jacoco_count=$(echo "$jacoco_count" | tr -d '[:space:]')
+        if [[ "$jacoco_count" -gt 0 ]]; then
+            test_pass "MULTI-004: JaCoCo classdumps ($jacoco_count .class files)"
+        else
+            test_fail "MULTI-004: JaCoCo agent not detected (port=$jacoco_ok, classdumps=$jacoco_count)"
+        fi
     fi
 
     # MULTI-005: Feign trace in SkyWalking
