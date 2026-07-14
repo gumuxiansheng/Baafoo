@@ -1,6 +1,6 @@
 package com.baafoo.server.storage.mapper;
 
-import com.baafoo.server.storage.StorageService.AgentRegistration;
+import com.baafoo.server.storage.AgentRegistration;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;

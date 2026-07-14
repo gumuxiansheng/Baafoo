@@ -3,6 +3,7 @@ package com.baafoo.server.handler;
 import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.model.*;
 import com.baafoo.core.util.MatchEngine;
+import com.baafoo.server.storage.AgentRegistration;
 import com.baafoo.server.storage.StorageService;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -47,7 +48,7 @@ public class HttpStubHandlerTest {
 
         when(storage.listRules()).thenReturn(new ArrayList<Rule>());
         when(storage.listEnvironments()).thenReturn(new ArrayList<Environment>());
-        when(storage.listAgents()).thenReturn(new ArrayList<StorageService.AgentRegistration>());
+        when(storage.listAgents()).thenReturn(new ArrayList<AgentRegistration>());
 
         HttpStubHandler handler = new HttpStubHandler(storage, config);
         EmbeddedChannel channel = new EmbeddedChannel(handler);
@@ -84,7 +85,7 @@ public class HttpStubHandlerTest {
         env.setName("test-env");
         env.setMode(EnvironmentMode.STUB);
 
-        StorageService.AgentRegistration agentReg = new StorageService.AgentRegistration();
+        AgentRegistration agentReg = new AgentRegistration();
         agentReg.agentId = "test-agent";
         agentReg.environment = "test-env";
         agentReg.agentIp = "127.0.0.1";
@@ -139,7 +140,7 @@ public class HttpStubHandlerTest {
         env.setName("test-env");
         env.setMode(EnvironmentMode.RECORD_AND_STUB);
 
-        StorageService.AgentRegistration agentReg = new StorageService.AgentRegistration();
+        AgentRegistration agentReg = new AgentRegistration();
         agentReg.agentId = "test-agent";
         agentReg.environment = "test-env";
         agentReg.agentIp = "127.0.0.1";
@@ -188,7 +189,7 @@ public class HttpStubHandlerTest {
         env.setName("test-env");
         env.setMode(EnvironmentMode.RECORD_ALL);
 
-        StorageService.AgentRegistration agentReg = new StorageService.AgentRegistration();
+        AgentRegistration agentReg = new AgentRegistration();
         agentReg.agentId = "test-agent";
         agentReg.environment = "test-env";
         agentReg.agentIp = "127.0.0.1";
@@ -237,7 +238,7 @@ public class HttpStubHandlerTest {
         env.setName("test-env");
         env.setMode(EnvironmentMode.STUB);
 
-        StorageService.AgentRegistration agentReg = new StorageService.AgentRegistration();
+        AgentRegistration agentReg = new AgentRegistration();
         agentReg.agentId = "test-agent";
         agentReg.environment = "test-env";
         agentReg.agentIp = "127.0.0.1";

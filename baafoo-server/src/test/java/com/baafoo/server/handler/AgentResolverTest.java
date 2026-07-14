@@ -4,6 +4,7 @@ import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.model.Environment;
 import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.Rule;
+import com.baafoo.server.storage.AgentRegistration;
 import com.baafoo.server.storage.StorageService;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.Channel;
@@ -43,8 +44,8 @@ public class AgentResolverTest {
 
     @Test
     public void resolveByIpMatchesExactIp() {
-        List<StorageService.AgentRegistration> agents = new ArrayList<>();
-        StorageService.AgentRegistration reg = new StorageService.AgentRegistration();
+        List<AgentRegistration> agents = new ArrayList<>();
+        AgentRegistration reg = new AgentRegistration();
         reg.agentId = "agent-1";
         reg.environment = "staging";
         reg.agentIp = "10.0.0.1";
@@ -62,8 +63,8 @@ public class AgentResolverTest {
 
     @Test
     public void resolveByIpSkipsOfflineAgents() {
-        List<StorageService.AgentRegistration> agents = new ArrayList<>();
-        StorageService.AgentRegistration reg = new StorageService.AgentRegistration();
+        List<AgentRegistration> agents = new ArrayList<>();
+        AgentRegistration reg = new AgentRegistration();
         reg.agentId = "agent-1";
         reg.environment = "staging";
         reg.agentIp = "10.0.0.1";
@@ -92,15 +93,15 @@ public class AgentResolverTest {
 
     @Test
     public void resolveByIpPrefersMostRecentHeartbeatForSameEnv() {
-        List<StorageService.AgentRegistration> agents = new ArrayList<>();
-        StorageService.AgentRegistration oldReg = new StorageService.AgentRegistration();
+        List<AgentRegistration> agents = new ArrayList<>();
+        AgentRegistration oldReg = new AgentRegistration();
         oldReg.agentId = "agent-old";
         oldReg.environment = "staging";
         oldReg.agentIp = "10.0.0.1";
         oldReg.lastHeartbeat = System.currentTimeMillis() - 10000;
         agents.add(oldReg);
 
-        StorageService.AgentRegistration newReg = new StorageService.AgentRegistration();
+        AgentRegistration newReg = new AgentRegistration();
         newReg.agentId = "agent-new";
         newReg.environment = "staging";
         newReg.agentIp = "10.0.0.1";
@@ -117,15 +118,15 @@ public class AgentResolverTest {
 
     @Test
     public void resolveByIpAmbiguousEnvironmentsReturnsNull() {
-        List<StorageService.AgentRegistration> agents = new ArrayList<>();
-        StorageService.AgentRegistration reg1 = new StorageService.AgentRegistration();
+        List<AgentRegistration> agents = new ArrayList<>();
+        AgentRegistration reg1 = new AgentRegistration();
         reg1.agentId = "agent-a";
         reg1.environment = "staging-a";
         reg1.agentIp = "10.0.0.5";
         reg1.lastHeartbeat = System.currentTimeMillis();
         agents.add(reg1);
 
-        StorageService.AgentRegistration reg2 = new StorageService.AgentRegistration();
+        AgentRegistration reg2 = new AgentRegistration();
         reg2.agentId = "agent-b";
         reg2.environment = "staging-b";
         reg2.agentIp = "10.0.0.5";

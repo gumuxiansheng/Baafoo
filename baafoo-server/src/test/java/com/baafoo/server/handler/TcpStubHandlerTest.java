@@ -1,6 +1,7 @@
 package com.baafoo.server.handler;
 
 import com.baafoo.core.model.*;
+import com.baafoo.server.storage.AgentRegistration;
 import com.baafoo.server.storage.StorageService;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -43,7 +44,7 @@ public class TcpStubHandlerTest {
         env.setName(envName);
         env.setMode(mode);
 
-        StorageService.AgentRegistration agentReg = new StorageService.AgentRegistration();
+        AgentRegistration agentReg = new AgentRegistration();
         agentReg.agentId = "test-agent";
         agentReg.environment = envName;
         agentReg.agentIp = "127.0.0.1";

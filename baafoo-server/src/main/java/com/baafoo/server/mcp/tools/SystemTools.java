@@ -17,10 +17,10 @@ public class SystemTools {
         }
         @Override public McpSafetyLevel getSafetyLevel() { return McpSafetyLevel.READ_ONLY; }
         @Override public Object execute(Map<String, Object> args, McpToolContext ctx) {
-            List<com.baafoo.server.storage.StorageService.AgentRegistration> allAgents = ctx.getStorage().listAgents();
+            List<com.baafoo.server.storage.AgentRegistration> allAgents = ctx.getStorage().listAgents();
             long onlineThreshold = System.currentTimeMillis() - 60000;
             long onlineCount = 0;
-            for (com.baafoo.server.storage.StorageService.AgentRegistration agent : allAgents) {
+            for (com.baafoo.server.storage.AgentRegistration agent : allAgents) {
                 if (agent.getLastHeartbeat() > onlineThreshold) onlineCount++;
             }
 

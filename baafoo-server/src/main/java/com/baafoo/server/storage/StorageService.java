@@ -1,189 +1,31 @@
 package com.baafoo.server.storage;
 
-import com.baafoo.core.api.PaginatedResult;
-import com.baafoo.core.model.*;
-import java.util.List;
-import java.util.Map;
-
 /**
- * Storage service interface.
- * Decouples storage implementation from business logic.
+ * Storage service 接口，组合了所有聚合根维度的子接口。
+ *
+ * <p>历史上下文：此接口曾经包含 50+ 个方法，混合了 Rule、Environment、
+ * Scene、RuleSet、MqRelationship、Recording、Agent、User 共 8 个聚合根。
+ * P0-4 拆分后，每个聚合根的方法被提取到独立的子接口
+ * （{@link RuleService}、{@link EnvironmentService}、{@link SceneService}、
+ * {@link RuleSetService}、{@link MqRelationshipService}、{@link RecordingService}、
+ * {@link AgentService}、{@link UserService}），本接口仅保留生命周期方法
+ * （{@link #init()} / {@link #shutdown()}）并作为组合接口继承所有子接口。</p>
+ *
+ * <p><b>向后兼容</b>：现有依赖 {@code StorageService} 的调用方无需改动——
+ * 通过接口继承，所有子接口的方法仍然可以通过 {@code StorageService} 访问。
+ * 新代码应优先依赖具体的子接口（如 {@link UserService}）以减少耦合。</p>
+ *
+ * <p>{@link AgentRegistration} DTO 已从本接口的内部类提升为顶层类，
+ * 旧代码中的 {@code StorageService.AgentRegistration} 引用需更新为
+ * {@code AgentRegistration}。</p>
  */
-public interface StorageService {
+public interface StorageService extends
+        RuleService, RuleSetService, EnvironmentService, SceneService,
+        RecordingService, AgentService, UserService, MqRelationshipService {
 
     // --- Lifecycle ---
 
     void init() throws Exception;
 
     void shutdown();
-
-    // --- Rule CRUD ---
-
-    List<Rule> listRules();
-
-    PaginatedResult<Rule> listRulesPaged(String protocol, String keyword, String environment, String host, String sortBy, String sortOrder, int page, int size);
-
-    Rule getRule(String id);
-
-    Rule createRule(Rule rule);
-
-    Rule updateRule(String id, Rule update);
-
-    boolean deleteRule(String id);
-
-    boolean undoRule(String id);
-
-    // --- Environment CRUD ---
-
-    List<Environment> listEnvironments();
-
-    Environment getEnvironment(String id);
-
-    Environment getEnvironmentByName(String name);
-
-    Environment createEnvironment(Environment env);
-
-    Environment updateEnvironment(String id, Environment update);
-
-    boolean deleteEnvironment(String id);
-
-    // --- Scene Set CRUD ---
-
-    List<SceneSet> listScenes();
-
-    SceneSet getScene(String id);
-
-    SceneSet createScene(SceneSet scene);
-
-    SceneSet updateScene(String id, SceneSet update);
-
-    boolean deleteScene(String id);
-
-    // --- Rule Set CRUD ---
-
-    List<RuleSet> listRuleSets();
-
-    RuleSet createRuleSet(RuleSet ruleSet);
-
-    boolean deleteRuleSet(String id);
-
-    // --- MQ Relationship CRUD ---
-
-    List<MqRelationship> listMqRelationships();
-
-    List<MqRelationship> listMqRelationshipsByFrom(String fromProtocol, String fromTopic);
-
-    MqRelationship getMqRelationship(String id);
-
-    MqRelationship createMqRelationship(MqRelationship relationship);
-
-    MqRelationship updateMqRelationship(String id, MqRelationship update);
-
-    boolean deleteMqRelationship(String id);
-
-    // --- Recording ---
-
-    List<RecordingEntry> listRecordings(String ruleId, int limit);
-
-    PaginatedResult<RecordingEntry> listRecordingsPaged(String ruleId, String agentId, String agentIp,
-                                                         String protocol, String method, String path,
-                                                         Integer statusCode, String keyword,
-                                                         int page, int size);
-
-    void addRecording(RecordingEntry recording);
-
-    void addRecordings(List<RecordingEntry> batch);
-
-    boolean deleteRecording(String id);
-
-    /**
-     * Delete recordings older than the specified number of days.
-     * @param retentionDays number of days to retain
-     * @return number of recordings deleted
-     */
-    int deleteRecordingsOlderThan(int retentionDays);
-
-    /**
-     * Get the total count of recordings.
-     * @return total recording count
-     */
-    long getRecordingCount();
-
-    /**
-     * Get the total size of recordings in bytes (estimated).
-     * @return estimated total size in bytes
-     */
-    long getRecordingTotalSizeBytes();
-
-    /**
-     * Get recording counts grouped by day since the given start time.
-     * @param startTime start time in milliseconds
-     * @return list of maps with "day" (epoch millis) and "count" keys
-     */
-    List<Map<String, Object>> getRecordingCountsByDay(long startTime);
-
-    // --- Agent Management ---
-
-    AgentRegistration registerAgent(String agentId, String environment, String hostname, String version, List<String> protocols, String agentIp);
-
-    void agentHeartbeat(String agentId, String agentIp);
-
-    /**
-     * P3: Update plugin health statuses for an agent (in-memory, not persisted).
-     * Called from heartbeat handler when agent reports plugin statuses.
-     */
-    void updateAgentPluginStatuses(String agentId, Map<String, Object> pluginStatuses);
-
-    List<AgentRegistration> listAgents();
-
-    List<AgentRegistration> getAgentsForEnvironment(String envName);
-
-    // --- Environment-Rule Association ---
-
-    void associateRulesToEnvironment(String envName, List<String> ruleIds);
-
-    void dissociateRulesFromEnvironment(String envName, List<String> ruleIds);
-
-    // --- User CRUD ---
-
-    List<User> listUsers();
-
-    User getUserByUsername(String username);
-
-    User getUserByApiKey(String apiKey);
-
-    User createUser(User user);
-
-    boolean updateUserRole(String username, String role);
-
-    boolean updateUserApiKey(String username, String apiKey);
-
-    boolean updateUserPassword(String username, String passwordHash);
-
-    boolean updateUserLastLogin(String username);
-
-    boolean deleteUser(String username);
-
-    // --- DTO ---
-
-    /**
-     * Agent registration info.
-     */
-    class AgentRegistration {
-        public String agentId;
-        public String environment;
-        public String hostname;
-        public String version;
-        public List<String> protocols;
-        public String agentIp;
-        public long registeredAt;
-        public long lastHeartbeat;
-
-        /** P3: Plugin health statuses (in-memory only, refreshed via heartbeat). */
-        public Map<String, Object> pluginStatuses;
-
-        public String getAgentId() { return agentId; }
-        public long getLastHeartbeat() { return lastHeartbeat; }
-        public Map<String, Object> getPluginStatuses() { return pluginStatuses; }
-    }
 }

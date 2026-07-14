@@ -7,6 +7,7 @@ import com.baafoo.core.model.Rule;
 import com.baafoo.server.api.dto.AgentPollResponseDto;
 import com.baafoo.server.api.dto.AgentRegisterResponseDto;
 import com.baafoo.server.handler.AgentResolver;
+import com.baafoo.server.storage.AgentRegistration;
 import com.baafoo.server.storage.StorageService;
 
 import java.util.ArrayList;
@@ -35,7 +36,7 @@ class AgentApiHandler implements ResourceHandler {
             @SuppressWarnings("unchecked")
             List<String> protocols = (List<String>) reqBody.getOrDefault("protocols", new ArrayList<String>());
 
-            StorageService.AgentRegistration reg = ctx.storage.registerAgent(agentId, env, hostname, version, protocols, agentIp);
+            AgentRegistration reg = ctx.storage.registerAgent(agentId, env, hostname, version, protocols, agentIp);
 
             Environment environment = ctx.storage.getEnvironmentByName(env);
             String mode = environment != null ? environment.getMode().getValue() : "record-and-stub";
@@ -67,7 +68,7 @@ class AgentApiHandler implements ResourceHandler {
             // Resolve agent's environment and mode
             String agentEnvironment = null;
             String mode = "record-and-stub";
-            for (StorageService.AgentRegistration reg : ctx.storage.listAgents()) {
+            for (AgentRegistration reg : ctx.storage.listAgents()) {
                 if (reg.getAgentId() != null && reg.getAgentId().equals(agentId)) {
                     agentEnvironment = reg.environment;
                     Environment env = ctx.storage.getEnvironmentByName(reg.environment);
@@ -126,7 +127,7 @@ class AgentApiHandler implements ResourceHandler {
     private String resolveAgentIp(ApiContext ctx) {
         String agentId = ctx.queryParam("agentId");
         if (agentId != null && !agentId.isEmpty()) {
-            for (StorageService.AgentRegistration agent : ctx.storage.listAgents()) {
+            for (AgentRegistration agent : ctx.storage.listAgents()) {
                 if (agentId.equals(agent.getAgentId()) && agent.agentIp != null && !agent.agentIp.isEmpty()) {
                     return agent.agentIp;
                 }

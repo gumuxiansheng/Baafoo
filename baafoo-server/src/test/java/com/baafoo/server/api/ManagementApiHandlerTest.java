@@ -3,6 +3,7 @@ package com.baafoo.server.api;
 import com.baafoo.core.api.ApiResponse;
 import com.baafoo.core.model.*;
 import com.baafoo.server.auth.AuthService;
+import com.baafoo.server.storage.AgentRegistration;
 import com.baafoo.server.storage.StorageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -212,7 +213,7 @@ public class ManagementApiHandlerTest {
 
     @Test
     public void testAgentRegister() throws Exception {
-        StorageService.AgentRegistration reg = new StorageService.AgentRegistration();
+        AgentRegistration reg = new AgentRegistration();
         reg.agentId = "agent-1";
         when(storage.registerAgent(anyString(), anyString(), anyString(), anyString(), anyList(), anyString()))
                 .thenReturn(reg);
@@ -245,7 +246,7 @@ public class ManagementApiHandlerTest {
     @Test
     public void testAgentPoll() throws Exception {
         when(storage.listRules()).thenReturn(new ArrayList<Rule>());
-        when(storage.listAgents()).thenReturn(new ArrayList<StorageService.AgentRegistration>());
+        when(storage.listAgents()).thenReturn(new ArrayList<AgentRegistration>());
 
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/agent/poll?agentId=agent-1", null);
         channel.writeInbound(request);
@@ -331,7 +332,7 @@ public class ManagementApiHandlerTest {
 
     @Test
     public void testSystemStatus() throws Exception {
-        when(storage.listAgents()).thenReturn(new ArrayList<StorageService.AgentRegistration>());
+        when(storage.listAgents()).thenReturn(new ArrayList<AgentRegistration>());
         when(storage.listRules()).thenReturn(new ArrayList<Rule>());
         when(storage.listEnvironments()).thenReturn(new ArrayList<Environment>());
         when(storage.listScenes()).thenReturn(new ArrayList<SceneSet>());
@@ -369,7 +370,7 @@ public class ManagementApiHandlerTest {
 
     @Test
     public void testListAgents() throws Exception {
-        when(storage.listAgents()).thenReturn(new ArrayList<StorageService.AgentRegistration>());
+        when(storage.listAgents()).thenReturn(new ArrayList<AgentRegistration>());
 
         FullHttpRequest request = createRequest("GET", "/__baafoo__/api/agents", null);
         channel.writeInbound(request);

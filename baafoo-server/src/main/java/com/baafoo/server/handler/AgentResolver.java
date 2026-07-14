@@ -5,6 +5,7 @@ import com.baafoo.core.model.Environment;
 import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.Rule;
 import com.baafoo.server.storage.JdbcStorageService;
+import com.baafoo.server.storage.AgentRegistration;
 import com.baafoo.server.storage.StorageService;
 import io.netty.channel.ChannelHandlerContext;
 import org.slf4j.Logger;
@@ -79,17 +80,17 @@ public class AgentResolver {
      */
     public AgentInfo resolveByIp(String channelIp) {
         AgentInfo info = new AgentInfo();
-        List<StorageService.AgentRegistration> agents = storage.listAgents();
+        List<AgentRegistration> agents = storage.listAgents();
         long onlineThreshold = System.currentTimeMillis() - 90000;
 
         // Collect all agents that match by IP.
         // When multiple agents share the same IP:
         //  - same environment → pick the one with the most recent heartbeat (container restart)
         //  - different environments → mark ambiguous (safety: don't guess)
-        StorageService.AgentRegistration ipMatched = null;
+        AgentRegistration ipMatched = null;
         boolean ipMatchAmbiguous = false;
 
-        for (StorageService.AgentRegistration agent : agents) {
+        for (AgentRegistration agent : agents) {
             if (agent.lastHeartbeat > onlineThreshold) {
                 if (channelIp != null && channelIp.equals(agent.agentIp)) {
                     if (ipMatched == null) {
@@ -108,7 +109,7 @@ public class AgentResolver {
         }
 
         // Resolve environment: only use IP-matched agent, never fall back to "first online"
-        StorageService.AgentRegistration resolved = null;
+        AgentRegistration resolved = null;
         if (ipMatched != null && !ipMatchAmbiguous) {
             resolved = ipMatched;
         } else if (ipMatchAmbiguous) {
@@ -149,7 +150,7 @@ public class AgentResolver {
                     if (env != null) {
                         log.info("IP {} not matched; all online agents share environment '{}', using as fallback",
                                 ipLabel, env);
-                        for (StorageService.AgentRegistration agent : agents) {
+                        for (AgentRegistration agent : agents) {
                             if (agent.lastHeartbeat > onlineThreshold && env.equals(agent.environment)) {
                                 if (resolved == null || agent.lastHeartbeat > resolved.lastHeartbeat) {
                                     resolved = agent;
@@ -196,9 +197,9 @@ public class AgentResolver {
      * If all online agents belong to the same environment, return it.
      * Returns null if there are zero online agents or multiple environments.
      */
-    private String findUniqueOnlineEnvironment(List<StorageService.AgentRegistration> agents, long onlineThreshold) {
+    private String findUniqueOnlineEnvironment(List<AgentRegistration> agents, long onlineThreshold) {
         String env = null;
-        for (StorageService.AgentRegistration agent : agents) {
+        for (AgentRegistration agent : agents) {
             if (agent.lastHeartbeat > onlineThreshold) {
                 if (env == null) {
                     env = agent.environment;
@@ -215,8 +216,8 @@ public class AgentResolver {
      * container IP is in the same /24 subnet (e.g. 172.19.0.x). Find the
      * most recent online agent in that subnet.
      */
-    private StorageService.AgentRegistration findAgentByGatewaySubnet(
-            List<StorageService.AgentRegistration> agents, String channelIp, long onlineThreshold) {
+    private AgentRegistration findAgentByGatewaySubnet(
+            List<AgentRegistration> agents, String channelIp, long onlineThreshold) {
         // Only apply this heuristic for IPs ending in the configured gateway octet
         // (default "1" — typical Docker gateway). Override via -Dbaafoo.gateway.octet=...
         String gatewayOctet = System.getProperty("baafoo.gateway.octet", "1");
@@ -226,8 +227,8 @@ public class AgentResolver {
         if (!gatewayOctet.equals(lastOctet)) return null;
 
         String subnet = channelIp.substring(0, lastDot); // e.g. "172.19.0"
-        StorageService.AgentRegistration best = null;
-        for (StorageService.AgentRegistration agent : agents) {
+        AgentRegistration best = null;
+        for (AgentRegistration agent : agents) {
             if (agent.lastHeartbeat > onlineThreshold
                     && agent.agentIp != null
                     && agent.agentIp.startsWith(subnet + ".")) {
@@ -312,16 +313,16 @@ public class AgentResolver {
      * same environment may compete, in which case the most recent heartbeat
      * wins (container restart scenario).</p>
      */
-    private StorageService.AgentRegistration findAgentByServerSubnets(
-            List<StorageService.AgentRegistration> agents, long onlineThreshold) {
+    private AgentRegistration findAgentByServerSubnets(
+            List<AgentRegistration> agents, long onlineThreshold) {
         List<String> serverSubnets = getServerSubnets();
         if (serverSubnets.isEmpty()) return null;
 
-        StorageService.AgentRegistration best = null;
+        AgentRegistration best = null;
         String bestEnv = null;
         boolean ambiguous = false;
 
-        for (StorageService.AgentRegistration agent : agents) {
+        for (AgentRegistration agent : agents) {
             if (agent.lastHeartbeat > onlineThreshold && agent.agentIp != null) {
                 int lastDot = agent.agentIp.lastIndexOf('.');
                 if (lastDot > 0) {

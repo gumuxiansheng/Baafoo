@@ -1,6 +1,7 @@
 package com.baafoo.server.api;
 
 import com.baafoo.core.api.ApiResponse;
+import com.baafoo.server.storage.AgentRegistration;
 import com.baafoo.server.storage.StorageService;
 
 import java.util.*;
@@ -28,12 +29,12 @@ class PluginApiHandler implements ResourceHandler {
         }
 
         String agentIdFilter = ctx.queryParam("agentId");
-        List<StorageService.AgentRegistration> agents = ctx.storage.listAgents();
+        List<AgentRegistration> agents = ctx.storage.listAgents();
         long now = System.currentTimeMillis();
 
         List<Map<String, Object>> result = new ArrayList<Map<String, Object>>();
 
-        for (StorageService.AgentRegistration agent : agents) {
+        for (AgentRegistration agent : agents) {
             // Only include online agents
             if (agent.getLastHeartbeat() <= now - ONLINE_THRESHOLD_MS) continue;
             // Filter by agentId if specified

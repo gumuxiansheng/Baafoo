@@ -2,6 +2,7 @@ package com.baafoo.server.api;
 
 import com.baafoo.core.api.ApiResponse;
 import com.baafoo.server.api.dto.SystemStatusResponse;
+import com.baafoo.server.storage.AgentRegistration;
 import com.baafoo.server.storage.StorageService;
 
 import java.util.HashMap;
@@ -27,10 +28,10 @@ class StatusApiHandler implements ResourceHandler {
     @Override
     public Object handle(String method, String path, String body, ApiContext ctx) throws Exception {
         if (path.equals("/__baafoo__/api/status") && "GET".equals(method)) {
-            List<StorageService.AgentRegistration> allAgents = ctx.storage.listAgents();
+            List<AgentRegistration> allAgents = ctx.storage.listAgents();
             long onlineThreshold = System.currentTimeMillis() - 60000;
             long onlineCount = 0;
-            for (StorageService.AgentRegistration agent : allAgents) {
+            for (AgentRegistration agent : allAgents) {
                 if (agent.getLastHeartbeat() > onlineThreshold) onlineCount++;
             }
 
@@ -69,7 +70,7 @@ class StatusApiHandler implements ResourceHandler {
      * Build a plugin health summary from online agents' plugin statuses.
      */
     @SuppressWarnings("unchecked")
-    private Map<String, Object> buildPluginSummary(List<StorageService.AgentRegistration> agents, long onlineThreshold) {
+    private Map<String, Object> buildPluginSummary(List<AgentRegistration> agents, long onlineThreshold) {
         Map<String, Object> summary = new LinkedHashMap<String, Object>();
         int totalPlugins = 0;
         int agentsWithPlugins = 0;
@@ -80,7 +81,7 @@ class StatusApiHandler implements ResourceHandler {
         healthCounts.put("DISABLED", 0);
         healthCounts.put("UNKNOWN", 0);
 
-        for (StorageService.AgentRegistration agent : agents) {
+        for (AgentRegistration agent : agents) {
             if (agent.getLastHeartbeat() <= onlineThreshold) continue;
             Map<String, Object> statuses = agent.pluginStatuses;
             if (statuses == null || statuses.isEmpty()) continue;

@@ -1,6 +1,7 @@
 package com.baafoo.server.mcp.tools;
 
 import com.baafoo.server.mcp.*;
+import com.baafoo.server.storage.AgentRegistration;
 import com.baafoo.server.storage.StorageService;
 
 import java.util.*;
@@ -18,12 +19,12 @@ public class AgentTools {
         }
         @Override public McpSafetyLevel getSafetyLevel() { return McpSafetyLevel.READ_ONLY; }
         @Override public Object execute(Map<String, Object> args, McpToolContext ctx) {
-            List<StorageService.AgentRegistration> agents = ctx.getStorage().listAgents();
+            List<AgentRegistration> agents = ctx.getStorage().listAgents();
             long now = System.currentTimeMillis();
             long onlineThreshold = now - 60000;
 
             List<Map<String, Object>> result = new ArrayList<>();
-            for (StorageService.AgentRegistration agent : agents) {
+            for (AgentRegistration agent : agents) {
                 Map<String, Object> info = new LinkedHashMap<>();
                 info.put("agentId", agent.getAgentId());
                 info.put("environment", agent.environment);
@@ -51,7 +52,7 @@ public class AgentTools {
         @Override public McpSafetyLevel getSafetyLevel() { return McpSafetyLevel.READ_ONLY; }
         @Override public Object execute(Map<String, Object> args, McpToolContext ctx) {
             String agentId = McpToolContext.requireString(args, "agentId");
-            for (StorageService.AgentRegistration agent : ctx.getStorage().listAgents()) {
+            for (AgentRegistration agent : ctx.getStorage().listAgents()) {
                 if (agentId.equals(agent.getAgentId())) {
                     Map<String, Object> info = new LinkedHashMap<>();
                     info.put("agentId", agent.getAgentId());

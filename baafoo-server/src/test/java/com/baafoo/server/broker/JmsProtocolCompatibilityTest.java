@@ -5,6 +5,7 @@ import com.baafoo.core.model.EnvironmentMode;
 import com.baafoo.core.model.MatchCondition;
 import com.baafoo.core.model.ResponseEntry;
 import com.baafoo.core.model.Rule;
+import com.baafoo.server.storage.AgentRegistration;
 import com.baafoo.server.storage.StorageService;
 import org.apache.activemq.ActiveMQConnectionFactory;
 import org.junit.After;
@@ -80,7 +81,7 @@ public class JmsProtocolCompatibilityTest {
     public void setUp() throws Exception {
         storage = mock(StorageService.class);
         when(storage.listRules()).thenReturn(Collections.<Rule>emptyList());
-        when(storage.listAgents()).thenReturn(Collections.<StorageService.AgentRegistration>emptyList());
+        when(storage.listAgents()).thenReturn(Collections.<AgentRegistration>emptyList());
         when(storage.listEnvironments()).thenReturn(Collections.<Environment>emptyList());
 
         // Use a fixed port different from the existing JmsMockBrokerTest (19004)
