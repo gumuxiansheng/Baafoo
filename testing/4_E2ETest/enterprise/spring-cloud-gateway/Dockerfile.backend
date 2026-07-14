@@ -7,7 +7,7 @@ FROM eclipse-temurin:8-jre-alpine
 
 LABEL maintainer="Baafoo Enterprise Gateway Backend"
 
-RUN apk add --no-cache tzdata && \
+RUN apk add --no-cache tzdata wget && \
     cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     echo "Asia/Shanghai" > /etc/timezone && \
     apk del tzdata

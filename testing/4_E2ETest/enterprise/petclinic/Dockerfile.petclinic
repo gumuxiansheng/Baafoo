@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
 COPY baafoo-agent/target/baafoo-agent-*.jar /app/baafoo-agent.jar
 
 # 复制 PetClinic 专用 Agent 配置（不再通过 volume 挂载，避免 Windows Docker Desktop 问题）
-COPY testing/enterprise/petclinic/baafoo-agent-petclinic.yml /app/baafoo-agent.yml
+COPY testing/4_E2ETest/enterprise/petclinic/baafoo-agent-petclinic.yml /app/baafoo-agent.yml
 
 # 创建数据目录（基础镜像以 root 运行，无需 chown）
 RUN mkdir -p /root/.baafoo/data

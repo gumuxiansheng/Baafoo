@@ -1,5 +1,5 @@
 # =============================================================================
-# Spring Cloud Alibaba Provider Dockerfile (独立 Maven 项目版本)
+# Spring Cloud Alibaba Provider Dockerfile (鐙珛 Maven 椤圭洰鐗堟湰)
 # Build context: c:\Dev\Projects\Baafoo
 # =============================================================================
 
@@ -16,9 +16,9 @@ RUN addgroup -S baafoo && adduser -S baafoo -G baafoo
 
 WORKDIR /app
 
-COPY testing/enterprise/spring-cloud-alibaba/baafoo-sca-test/baafoo-sca-provider/target/baafoo-sca-provider.jar ./app.jar
+COPY testing/4_E2ETest/enterprise/spring-cloud-alibaba/baafoo-sca-test/baafoo-sca-provider/target/baafoo-sca-provider.jar ./app.jar
 COPY baafoo-agent/target/baafoo-agent-*.jar ./baafoo-agent.jar
-COPY testing/enterprise/spring-cloud-alibaba/baafoo-agent-provider.yml ./baafoo-agent.yml
+COPY testing/4_E2ETest/enterprise/spring-cloud-alibaba/baafoo-agent-provider.yml ./baafoo-agent.yml
 
 RUN mkdir -p /home/baafoo/.baafoo/data && \
     chown -R baafoo:baafoo /app /home/baafoo/.baafoo

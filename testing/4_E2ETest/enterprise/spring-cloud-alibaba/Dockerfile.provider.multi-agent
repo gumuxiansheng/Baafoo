@@ -17,17 +17,17 @@ RUN addgroup -S baafoo && adduser -S baafoo -G baafoo
 WORKDIR /app
 
 # Copy application jar
-COPY testing/enterprise/spring-cloud-alibaba/baafoo-sca-test/baafoo-sca-provider/target/baafoo-sca-provider.jar ./app.jar
+COPY testing/4_E2ETest/enterprise/spring-cloud-alibaba/baafoo-sca-test/baafoo-sca-provider/target/baafoo-sca-provider.jar ./app.jar
 
 # Copy Baafoo agent
 COPY baafoo-agent/target/baafoo-agent-*.jar ./baafoo-agent.jar
-COPY testing/enterprise/spring-cloud-alibaba/baafoo-agent-provider.yml ./baafoo-agent.yml
+COPY testing/4_E2ETest/enterprise/spring-cloud-alibaba/baafoo-agent-provider.yml ./baafoo-agent.yml
 
 # Copy JaCoCo agent
-COPY testing/enterprise/spring-cloud-alibaba/agents/jacoco-agent.jar ./agents/jacoco-agent.jar
+COPY testing/4_E2ETest/enterprise/spring-cloud-alibaba/agents/jacoco-agent.jar ./agents/jacoco-agent.jar
 
 # Copy SkyWalking agent
-COPY testing/enterprise/spring-cloud-alibaba/agents/skywalking-agent ./agents/skywalking
+COPY testing/4_E2ETest/enterprise/spring-cloud-alibaba/agents/skywalking-agent ./agents/skywalking
 
 RUN mkdir -p /home/baafoo/.baafoo/data /tmp/jacoco/classdumps && \
     chown -R baafoo:baafoo /app /home/baafoo/.baafoo /tmp/jacoco

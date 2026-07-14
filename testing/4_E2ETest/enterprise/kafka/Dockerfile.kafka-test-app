@@ -1,14 +1,14 @@
 # =============================================================================
-# Baafo 企业级 Kafka 测试应用 Dockerfile
-# 复用 baafoo-test-spring 测试应用，但 COPY Kafka 专用 Agent 配置
-# 直接嵌入镜像以避免 Windows Docker Desktop 单文件 volume 挂载问题
+# Baafo 浼佷笟绾?Kafka 娴嬭瘯搴旂敤 Dockerfile
+# 澶嶇敤 baafoo-test-spring 娴嬭瘯搴旂敤锛屼絾 COPY Kafka 涓撶敤 Agent 閰嶇疆
+# 鐩存帴宓屽叆闀滃儚浠ラ伩鍏?Windows Docker Desktop 鍗曟枃浠?volume 鎸傝浇闂
 # =============================================================================
 
 FROM eclipse-temurin:8-jre-alpine
 
 LABEL maintainer="Baafoo Enterprise Kafka Test"
 
-RUN apk add --no-cache tzdata && \
+RUN apk add --no-cache tzdata wget && \
     cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     echo "Asia/Shanghai" > /etc/timezone && \
     apk del tzdata
@@ -17,12 +17,11 @@ RUN addgroup -S baafoo && adduser -S baafoo -G baafoo
 
 WORKDIR /app
 
-# 复制本地构建好的 JAR 文件
+# 澶嶅埗鏈湴鏋勫缓濂界殑 JAR 鏂囦欢
 COPY baafoo-test-spring/target/baafoo-test-spring-*.jar ./baafoo-test-spring.jar
 COPY baafoo-agent/target/baafoo-agent-*.jar ./baafoo-agent.jar
 
-# 复制 Kafka 专用 Agent 配置（不再通过 volume 挂载）
-COPY testing/enterprise/kafka/baafoo-agent-kafka.yml ./baafoo-agent.yml
+# 澶嶅埗 Kafka 涓撶敤 Agent 閰嶇疆锛堜笉鍐嶉€氳繃 volume 鎸傝浇锛?COPY testing/4_E2ETest/enterprise/kafka/baafoo-agent-kafka.yml ./baafoo-agent.yml
 
 RUN mkdir -p /home/baafoo/.baafoo/data && \
     chown -R baafoo:baafoo /app /home/baafoo/.baafoo
@@ -36,7 +35,7 @@ ENV JAVA_OPTS="" \
     BAAFOO_ENV="enterprise-kafka" \
     SERVER_PORT=9090
 
-# 以 Agent 模式启动 Spring Boot 测试应用
+# 浠?Agent 妯″紡鍚姩 Spring Boot 娴嬭瘯搴旂敤
 ENTRYPOINT ["sh", "-c", \
     "java ${JAVA_OPTS} \
      -javaagent:/app/baafoo-agent.jar=config=/app/baafoo-agent.yml \
