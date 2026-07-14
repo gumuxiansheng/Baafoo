@@ -1,14 +1,14 @@
 # =============================================================================
-# Baafoo 娴间椒绗熺痪褍绨查悽銊︾ゴ鐠?- Spring Cloud Gateway
-# 妤犲矁鐦?Agent 閸︺劎缍夐崗鍐茬湴閹凤附鍩呴妴浣界箖濠娿倕娅掗柧鎯у悑鐎瑰箍鈧浇鐭鹃悽杈祮閸欐垵婧€閺咁垯绗呴惃鍕厴閸?#
-# 閻劍纭?
+# Baafoo 濞撮棿妞掔粭鐔虹棯瑜嶇花鏌ユ偨閵婏妇銈撮悹?- Spring Cloud Gateway
+# 濡ょ姴鐭侀惁?Agent 闁革负鍔庣紞澶愬礂閸愯尙婀撮柟鍑ら檮閸╁懘濡存担鐣岀畺婵犲鍊曞▍鎺楁煣閹冩倯閻庣懓绠嶉埀顑挎祰閻箖鎮芥潏顐ｇギ闁告瑦鍨靛┃鈧柡鍜佸灟缁楀懘鎯冮崟顔煎幋闁?#
+# 闁活潿鍔嶇涵?
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml up --build
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -v
 # =============================================================================
 
 services:
   # =========================================================================
-  # 閸氬海顏張宥呭閿涘牐鐭鹃悽杈╂窗閺嶅浄绱濇径宥囨暏 baafoo-test-spring閿?  # =========================================================================
+  # 闁告艾娴烽顒勫嫉瀹ュ懎顫ら柨娑樼墣閻箖鎮芥潏鈺傜獥闁哄秴娴勭槐婵囧緞瀹ュ洦鏆?baafoo-test-spring闁?  # =========================================================================
   backend-service:
     build:
       context: ../../../..
@@ -35,7 +35,7 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # Spring Cloud Gateway閿涘牊瀵曟潪?Baafoo Agent閿?  # 娴ｈ法鏁ょ€规ɑ鏌?spring-cloud-gateway 闂€婊冨剼閿涘矂鈧俺绻冮悳顖氼暔閸欐﹢鍣洪柊宥囩枂鐠侯垳鏁?  # =========================================================================
+  # Spring Cloud Gateway闁挎稑鐗婄€垫洘娼?Baafoo Agent闁?  # 濞达綀娉曢弫銈団偓瑙勆戦弻?spring-cloud-gateway 闂傗偓濠婂啫鍓奸柨娑樼焸閳ь剚淇虹换鍐偝椤栨凹鏆旈柛娆愶耿閸ｆ椽鏌婂鍥╂瀭閻犱警鍨抽弫?  # =========================================================================
   gateway:
     build:
       context: ../../../..
@@ -65,7 +65,7 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # 濞村鐦崚婵嗩潗閸栨牕顔愰崳?- 閸掓稑缂撳ù瀣槸閻滎垰顣ㄩ崪宀冾潐閸?  # =========================================================================
+  # 婵炴潙顑堥惁顖炲礆濠靛棭娼楅柛鏍ㄧ墪椤旀劙宕?- 闁告帗绋戠紓鎾趁圭€ｎ厾妲搁柣婊庡灠椤ｃ劑宕畝鍐炬綈闁?  # =========================================================================
   gateway-test-init:
     image: curlimages/curl:latest
     container_name: baafoo-enterprise-gateway-init
@@ -80,54 +80,54 @@ services:
     command:
       - |
         echo "============================================"
-        echo "  Spring Cloud Gateway 娴间椒绗熺痪褎绁寸拠鏇犲箚婢у啫鍨垫慨瀣"
+        echo "  Spring Cloud Gateway 濞撮棿妞掔粭鐔虹棯瑜庣粊瀵告嫚閺囩姴绠氬褍鍟崹鍨叏鐎ｎ亜顕?
         echo "============================================"
         echo ""
 
-        echo "[1/5] 閸掓稑缂?enterprise-gateway 閻滎垰顣?.."
+        echo "[1/5] 闁告帗绋戠紓?enterprise-gateway 闁绘粠鍨伴。?.."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"name":"enterprise-gateway","mode":"stub","description":"Gateway娴间椒绗熺痪褎绁寸拠鏇犲箚婢?}' && echo "  OK" || echo "  瀹告彃鐡ㄩ崷?
+          -d '{"name":"enterprise-gateway","mode":"stub","description":"Gateway濞撮棿妞掔粭鐔虹棯瑜庣粊瀵告嫚閺囩姴绠氬?}' && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
         echo ""
 
-        echo "[2/5] 閸掓稑缂?enterprise-gateway-backend 閻滎垰顣?.."
+        echo "[2/5] 闁告帗绋戠紓?enterprise-gateway-backend 闁绘粠鍨伴。?.."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"name":"enterprise-gateway-backend","mode":"stub","description":"Gateway閸氬海顏ù瀣槸閻滎垰顣?}' && echo "  OK" || echo "  瀹告彃鐡ㄩ崷?
+          -d '{"name":"enterprise-gateway-backend","mode":"stub","description":"Gateway闁告艾娴烽顒€霉鐎ｎ厾妲搁柣婊庡灠椤?}' && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
         echo ""
 
-        echo "[3/5] 閸掓稑缂?Gateway 鐠侯垳鏁?Mock 鐟欏嫬鍨敍鍫熷閹?/api/mock/** 鐠侯垰绶為敍?.."
+        echo "[3/5] 闁告帗绋戠紓?Gateway 閻犱警鍨抽弫?Mock 閻熸瑥瀚崹顖炴晬閸喎顏￠柟?/api/mock/** 閻犱警鍨扮欢鐐烘晬?.."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"gateway-route-mock","name":"Gateway鐠侯垳鏁盡ock","protocol":"http","host":"gateway","port":8080,"conditions":[{"type":"path","operator":"startsWith","value":"/api/mock/"}],"responses":[{"name":"Mock缂冩垵鍙ч崫宥呯安","statusCode":200,"body":"{\"mocked\":true,\"source\":\"baafoo-gateway\",\"path\":\"{{path}}\",\"timestamp\":\"{{now}}\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","gateway","route"],"environments":["enterprise-gateway"]}' && echo "  OK" || echo "  瀹告彃鐡ㄩ崷?
+          -d '{"id":"gateway-route-mock","name":"Gateway閻犱警鍨抽弫鐩ck","protocol":"http","host":"gateway","port":8080,"conditions":[{"type":"path","operator":"startsWith","value":"/api/mock/"}],"responses":[{"name":"Mock缂傚啯鍨甸崣褔宕鍛畨","statusCode":200,"body":"{\"mocked\":true,\"source\":\"baafoo-gateway\",\"path\":\"{{path}}\",\"timestamp\":\"{{now}}\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","gateway","route"],"environments":["enterprise-gateway"]}' && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
         echo ""
 
-        echo "[4/5] 閸掓稑缂撻崥搴ｎ伂 API Mock 鐟欏嫬鍨敍鍫熷閹搭亜鎮楃粩?/api/http/** 鐠侯垰绶為敍?.."
+        echo "[4/5] 闁告帗绋戠紓鎾诲触鎼达綆浼?API Mock 閻熸瑥瀚崹顖炴晬閸喎顏￠柟鎼簻閹绮?/api/http/** 閻犱警鍨扮欢鐐烘晬?.."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"backend-api-mock","name":"閸氬海顏珹PI Mock","protocol":"http","host":"backend-service","port":9090,"conditions":[{"type":"path","operator":"startsWith","value":"/api/http/"}],"responses":[{"name":"Mock閸氬海顏崫宥呯安","statusCode":200,"body":"{\"mocked\":true,\"source\":\"baafoo-backend\",\"method\":\"{{method}}\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","gateway","backend"],"environments":["enterprise-gateway-backend"]}' && echo "  OK" || echo "  瀹告彃鐡ㄩ崷?
+          -d '{"id":"backend-api-mock","name":"闁告艾娴烽鐝筆I Mock","protocol":"http","host":"backend-service","port":9090,"conditions":[{"type":"path","operator":"startsWith","value":"/api/http/"}],"responses":[{"name":"Mock闁告艾娴烽顒勫传瀹ュ懐瀹?,"statusCode":200,"body":"{\"mocked\":true,\"source\":\"baafoo-backend\",\"method\":\"{{method}}\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","gateway","backend"],"environments":["enterprise-gateway-backend"]}' && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
         echo ""
 
-        echo "[5/5] 妤犲矁鐦?Gateway 閸嬨儱鎮?.."
-        curl -sf http://gateway:8080/actuator/health && echo "  OK" || echo "  娑撳秴褰叉潏?
+        echo "[5/5] 濡ょ姴鐭侀惁?Gateway 闁稿鍎遍幃?.."
+        curl -sf http://gateway:8080/actuator/health && echo "  OK" || echo "  濞戞挸绉磋ぐ鍙夋綇?
         echo ""
 
         echo "============================================"
-        echo "  Spring Cloud Gateway 娴间椒绗熺痪褎绁寸拠鏇犲箚婢у啫姘ㄧ紒?
+        echo "  Spring Cloud Gateway 濞撮棿妞掔粭鐔虹棯瑜庣粊瀵告嫚閺囩姴绠氬褍鍟銊х磼?
         echo "============================================"
         echo ""
-        echo "  Baafoo閹貉冨煑閸? http://localhost:18084"
+        echo "  Baafoo闁硅矇鍐ㄧ厬闁? http://localhost:18084"
         echo "  Gateway:      http://localhost:18080"
-        echo "  閸氬海顏張宥呭:     http://localhost:18092"
+        echo "  闁告艾娴烽顒勫嫉瀹ュ懎顫?     http://localhost:18092"
         echo "  API Key:      enterprise-admin-key"
         echo ""
-        echo "  濞村鐦捄顖滄暠:"
-        echo "    GET  /api/http/health          -> 闁繋绱堕崚鏉挎倵缁?
-        echo "    GET  /api/http/get?url=...     -> 闁繋绱堕崚鏉挎倵缁?HTTP 鐠嬪啰鏁?
-        echo "    GET  /api/mock/test            -> 鐞?Gateway Agent Mock"
-        echo "    GET  /api/backend/test         -> 闁繋绱堕崚鏉挎倵缁旑垰鎮楃悮?Mock"
+        echo "  婵炴潙顑堥惁顖滄崉椤栨粍鏆?"
+        echo "    GET  /api/http/health          -> 闂侇偄绻嬬槐鍫曞礆閺夋寧鍊电紒?
+        echo "    GET  /api/http/get?url=...     -> 闂侇偄绻嬬槐鍫曞礆閺夋寧鍊电紒?HTTP 閻犲鍟伴弫?
+        echo "    GET  /api/mock/test            -> 閻?Gateway Agent Mock"
+        echo "    GET  /api/backend/test         -> 闂侇偄绻嬬槐鍫曞礆閺夋寧鍊电紒鏃戝灠閹鎮?Mock"
         echo "============================================"

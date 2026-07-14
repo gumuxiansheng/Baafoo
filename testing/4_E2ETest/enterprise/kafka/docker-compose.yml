@@ -1,15 +1,15 @@
 # =============================================================================
-# Baafoo 娴间椒绗熺痪褍绨查悽銊︾ゴ鐠?- Apache Kafka
-# 妤犲矁鐦?Agent 閸︺劎婀＄€?Kafka 閻滎垰顣ㄦ稉瀣畱閹凤附鍩呴懗钘夊閸滃苯鍚嬬€硅鈧?
+# Baafoo 濞撮棿妞掔粭鐔虹棯瑜嶇花鏌ユ偨閵婏妇銈撮悹?- Apache Kafka
+# 濡ょ姴鐭侀惁?Agent 闁革负鍔庡﹢锛勨偓?Kafka 闁绘粠鍨伴。銊︾▔鐎ｎ剚鐣遍柟鍑ら檮閸╁懘鎳楅挊澶婎潝闁告粌鑻崥瀣偓纭咁潐閳?
 #
-# 閻劍纭?
+# 闁活潿鍔嶇涵?
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml up --build
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -v
 # =============================================================================
 
 services:
   # =========================================================================
-  # Kafka Broker閿涘牏婀＄€?Kafka閿涘瞼鏁ゆ禍?passthrough 濡€崇础鐎佃鐦ù瀣槸閿?
+  # Kafka Broker闁挎稑鐗忓﹢锛勨偓?Kafka闁挎稑鐬奸弫銈嗙?passthrough 婵☆垪鈧磭纭€閻庝絻顫夐惁顔济圭€ｎ厾妲搁柨?
   # =========================================================================
   kafka:
     # Apache official Kafka image (KRaft mode). Previously used soldevelo/kafka
@@ -37,10 +37,10 @@ services:
       - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
       - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
       - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
-      # Stable cluster ID 閳?prevents random ID regeneration on restart
+      # Stable cluster ID 闁?prevents random ID regeneration on restart
       - CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
     healthcheck:
-      # apache/kafka doesn't put kafka-topics.sh on PATH for CMD-SHELL 閳?use absolute path
+      # apache/kafka doesn't put kafka-topics.sh on PATH for CMD-SHELL 闁?use absolute path
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
       interval: 10s
       timeout: 5s
@@ -49,8 +49,8 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # Kafka 鐎广垺鍩涚粩顖涚ゴ鐠囨洖绨查悽顭掔礄閹稿倽娴?Baafoo Agent閿?
-  # 婢跺秶鏁?baafoo-test-spring閿涘苯瀵橀崥?Kafka Producer/Consumer 濞村鐦幒銉ュ經
+  # Kafka 閻庡箍鍨洪崺娑氱博椤栨稓銈撮悹鍥ㄦ礀缁ㄦ煡鎮介…鎺旂闁圭鍊藉ù?Baafoo Agent闁?
+  # 濠㈣泛绉堕弫?baafoo-test-spring闁挎稑鑻€垫﹢宕?Kafka Producer/Consumer 婵炴潙顑堥惁顖炲箳閵夈儱缍?
   # =========================================================================
   kafka-test-app:
     build:
@@ -80,7 +80,7 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # 濞村鐦崚婵嗩潗閸栨牕顔愰崳?- 閸掓稑缂撳ù瀣槸閻滎垰顣ㄩ崪宀冾潐閸?
+  # 婵炴潙顑堥惁顖炲礆濠靛棭娼楅柛鏍ㄧ墪椤旀劙宕?- 闁告帗绋戠紓鎾趁圭€ｎ厾妲搁柣婊庡灠椤ｃ劑宕畝鍐炬綈闁?
   # =========================================================================
   kafka-test-init:
     image: curlimages/curl:latest
@@ -95,51 +95,51 @@ services:
     entrypoint: >
       sh -c '
         echo "============================================"
-        echo "  Kafka 娴间椒绗熺痪褎绁寸拠鏇犲箚婢у啫鍨垫慨瀣"
+        echo "  Kafka 濞撮棿妞掔粭鐔虹棯瑜庣粊瀵告嫚閺囩姴绠氬褍鍟崹鍨叏鐎ｎ亜顕?
         echo "============================================"
         echo ""
 
-        echo "[1/5] 閸掓稑缂?enterprise-kafka 閻滎垰顣?.."
+        echo "[1/5] 闁告帗绋戠紓?enterprise-kafka 闁绘粠鍨伴。?.."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d "{\"name\":\"enterprise-kafka\",\"mode\":\"stub\",\"description\":\"Kafka娴间椒绗熺痪褎绁寸拠鏇犲箚婢у儨"}" && echo "  OK" || echo "  瀹告彃鐡ㄩ崷?
+          -d "{\"name\":\"enterprise-kafka\",\"mode\":\"stub\",\"description\":\"Kafka濞撮棿妞掔粭鐔虹棯瑜庣粊瀵告嫚閺囩姴绠氬褍鍎?}" && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
         echo ""
 
-        echo "[2/5] 閸掓稑缂?Kafka Topic 缁墽鈥橀崠褰掑帳鐟欏嫬鍨?.."
+        echo "[2/5] 闁告帗绋戠紓?Kafka Topic 缂侇喖澧介垾姗€宕犺ぐ鎺戝赋閻熸瑥瀚崹?.."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d "{\"id\":\"kafka-enterprise-topic-exact\",\"name\":\"Kafka娴间椒绗熺痪?Topic缁墽鈥橀崠褰掑帳\",\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"equals\",\"value\":\"enterprise-test-topic\"}],\"responses\":[{\"name\":\"Mock閸濆秴绨瞈",\"body\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-enterprise-kafka\\\",\\\"timestamp\\\":\\\"{{now}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  瀹告彃鐡ㄩ崷?
+          -d "{\"id\":\"kafka-enterprise-topic-exact\",\"name\":\"Kafka濞撮棿妞掔粭鐔虹棯?Topic缂侇喖澧介垾姗€宕犺ぐ鎺戝赋\",\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"equals\",\"value\":\"enterprise-test-topic\"}],\"responses\":[{\"name\":\"Mock闁告繂绉寸花鐬?,\"body\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-enterprise-kafka\\\",\\\"timestamp\\\":\\\"{{now}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
         echo ""
 
-        echo "[3/5] 閸掓稑缂?Kafka Topic 闁岸鍘ょ粭锕€灏柊宥堫潐閸?.."
+        echo "[3/5] 闁告帗绋戠紓?Kafka Topic 闂侇偅宀搁崢銈囩箔閿曗偓鐏忣噣鏌婂鍫綈闁?.."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d "{\"id\":\"kafka-enterprise-topic-wildcard\",\"name\":\"Kafka娴间椒绗熺痪?Topic闁岸鍘ょ粭锕€灏柊宄?,\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"startsWith\",\"value\":\"enterprise-\"}],\"responses\":[{\"name\":\"Mock閸濆秴绨?闁岸鍘ょ粭?\",\"body\":\"{\\\"mocked\\\":true,\\\"wildcard\\\":true,\\\"topic\\\":\\\"{{topic}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":50,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  瀹告彃鐡ㄩ崷?
+          -d "{\"id\":\"kafka-enterprise-topic-wildcard\",\"name\":\"Kafka濞撮棿妞掔粭鐔虹棯?Topic闂侇偅宀搁崢銈囩箔閿曗偓鐏忣噣鏌婂畡?,\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"startsWith\",\"value\":\"enterprise-\"}],\"responses\":[{\"name\":\"Mock闁告繂绉寸花?闂侇偅宀搁崢銈囩箔?\",\"body\":\"{\\\"mocked\\\":true,\\\"wildcard\\\":true,\\\"topic\\\":\\\"{{topic}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":50,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
         echo ""
 
-        echo "[4/5] 妤犲矁鐦夊ù瀣槸鎼存梻鏁ら崑銉ユ倣閻樿埖鈧?.."
-        curl -sf http://kafka-test-app:9090/api/stub-demo/health && echo "  OK" || echo "  娑撳秴褰叉潏?
+        echo "[4/5] 濡ょ姴鐭侀惁澶娒圭€ｎ厾妲搁幖瀛樻⒒閺併倝宕戦妷銉﹀€ｉ柣妯垮煐閳?.."
+        curl -sf http://kafka-test-app:9090/api/stub-demo/health && echo "  OK" || echo "  濞戞挸绉磋ぐ鍙夋綇?
         echo ""
 
-        echo "[5/5] 閸︺劎婀＄€?Kafka 閸掓稑缂撳ù瀣槸 Topic..."
-        echo "  缁涘绶?Kafka 閼奉亜濮╅崚娑樼紦 Topic..."
+        echo "[5/5] 闁革负鍔庡﹢锛勨偓?Kafka 闁告帗绋戠紓鎾趁圭€ｎ厾妲?Topic..."
+        echo "  缂佹稑顦欢?Kafka 闁煎浜滄慨鈺呭礆濞戞绱?Topic..."
         echo ""
 
         echo "============================================"
-        echo "  Kafka 娴间椒绗熺痪褎绁寸拠鏇犲箚婢у啫姘ㄧ紒?
+        echo "  Kafka 濞撮棿妞掔粭鐔虹棯瑜庣粊瀵告嫚閺囩姴绠氬褍鍟銊х磼?
         echo "============================================"
         echo ""
-        echo "  Baafoo閹貉冨煑閸? http://localhost:18084"
-        echo "  濞村鐦惔鏃傛暏:      http://localhost:18090"
-        echo "  Kafka:         localhost:19092 (婢舵牠鍎?"
-        echo "                 kafka:9092 (鐎圭懓娅掗崘?"
+        echo "  Baafoo闁硅矇鍐ㄧ厬闁? http://localhost:18084"
+        echo "  婵炴潙顑堥惁顖涙償閺冨倹鏆?      http://localhost:18090"
+        echo "  Kafka:         localhost:19092 (濠㈣埖鐗犻崕?"
+        echo "                 kafka:9092 (閻庡湱鎳撳▍鎺楀礃?"
         echo "  API Key:       enterprise-admin-key"
         echo ""
-        echo "  濞村鐦幒銉ュ經:"
-        echo "    POST /api/stub-demo/kafka/send - 閸欐垿鈧甫afka濞戝牊浼?
-        echo "    POST /api/stub-demo/kafka/consume - 濞戝牐鍨侹afka濞戝牊浼?
+        echo "  婵炴潙顑堥惁顖炲箳閵夈儱缍?"
+        echo "    POST /api/stub-demo/kafka/send - 闁告瑦鍨块埀顑跨敨afka婵炴垵鐗婃导?
+        echo "    POST /api/stub-demo/kafka/consume - 婵炴垵鐗愰崹渚筧fka婵炴垵鐗婃导?
         echo "============================================"
       '

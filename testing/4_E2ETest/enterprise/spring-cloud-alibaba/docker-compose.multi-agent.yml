@@ -1,7 +1,7 @@
 # =============================================================================
-# Spring Cloud Alibaba 澶?Agent 鍏卞瓨娴嬭瘯 - Docker Compose Override
-# 鍦ㄥ師 docker-compose.yml 鍩虹涓婅拷鍔?SkyWalking OAP + UI 鏈嶅姟
-# 浣跨敤鏂瑰紡:
+# Spring Cloud Alibaba 婢?Agent 閸忓崬鐡ㄥù瀣槸 - Docker Compose Override
+# 閸︺劌甯?docker-compose.yml 閸╄櫣顢呮稉濠呮嫹閸?SkyWalking OAP + UI 閺堝秴濮?
+# 娴ｈ法鏁ら弬鐟扮础:
 #   docker compose -f ../common/docker-compose.base.yml \
 #                  -f docker-compose.yml \
 #                  -f docker-compose.multi-agent.yml up -d --build
@@ -9,9 +9,9 @@
 
 services:
   # ====================================================================
-  # SkyWalking OAP (Observability Analysis Platform) 鍚庣
-  # 鎺ユ敹 Agent 涓婃姤鐨?trace/metric 鏁版嵁
-  # 浣跨敤 H2 瀛樺偍妯″紡锛堥粯璁わ級锛岄伩鍏嶉澶栦笅杞?Elasticsearch
+  # SkyWalking OAP (Observability Analysis Platform) 閸氬海顏?
+  # 閹恒儲鏁?Agent 娑撳﹥濮ら惃?trace/metric 閺佺増宓?
+  # 娴ｈ法鏁?H2 鐎涙ê鍋嶅Ο鈥崇础閿涘牓绮拋銈忕礆閿涘矂浼╅崗宥夘杺婢舵牔绗呮潪?Elasticsearch
   # ====================================================================
   baafoo-enterprise-oap:
     image: apache/skywalking-oap-server:9.4.0-java17
@@ -19,8 +19,8 @@ services:
     networks:
       - baafoo-enterprise-net
     ports:
-      - "11800:11800"   # gRPC port (agent 鈫?OAP)
-      - "12800:12800"   # HTTP port (UI 鈫?OAP)
+      - "11800:11800"   # gRPC port (agent 閳?OAP)
+      - "12800:12800"   # HTTP port (UI 閳?OAP)
     environment:
       - JAVA_OPTS=-Xms256m -Xmx512m -XX:MaxMetaspaceSize=256m
       - SW_STORAGE=h2
