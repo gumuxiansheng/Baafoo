@@ -2805,19 +2805,24 @@ if (-not $multiAgentEnabled) {
     }
 
     # --- MULTI-003: SkyWalking OAP receives service registration ---
-    # SkyWalking 9.x requires a valid layer name ("GENERAL" for Spring Boot apps).
-    # The OAP /internal/l7check health endpoint can return 200 before the
-    # GraphQL endpoint is fully ready, and H2 storage needs time to index
-    # traces into services. Retry with delays instead of a single sleep.
+    # SkyWalking 9.4.0 uses getAllServices(duration: Duration!, group: String),
+    # NOT services(layer: ...). The 'services' query with 'layer' param was
+    # added in SkyWalking 10.x. Duration format for MINUTE step:
+    # "yyyy-MM-dd HHmm" (note the space between date and time).
+    # OAP also needs time to index traces into services after the agent
+    # reports them, so we retry with delays instead of a single sleep.
     $oapUrl = "http://localhost:12800/graphql"
-    $gqlQuery = '{"query":"query{services(layer:\"GENERAL\"){id name group}}"}'
     $svcCount = 0
     $oapRespRaw = ""
     for ($attempt = 1; $attempt -le 3; $attempt++) {
         Start-Sleep -Seconds 15
+        $endTime = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HHmm")
+        $startTime = (Get-Date).AddMinutes(-30).ToUniversalTime().ToString("yyyy-MM-dd HHmm")
+        $gqlQuery = "query{getAllServices(duration:{start:`"$startTime`",end:`"$endTime`",step:MINUTE}){id name group}}"
+        $gqlBody = @{ query = $gqlQuery } | ConvertTo-Json -Compress
         try {
-            $oapResp = Invoke-RestMethod -Uri $oapUrl -Method Post -ContentType "application/json" -Body $gqlQuery -TimeoutSec 15 -ErrorAction Stop
-            if ($oapResp.data.services) { $svcCount = @($oapResp.data.services).Count }
+            $oapResp = Invoke-RestMethod -Uri $oapUrl -Method Post -ContentType "application/json" -Body $gqlBody -TimeoutSec 15 -ErrorAction Stop
+            if ($oapResp.data.getAllServices) { $svcCount = @($oapResp.data.getAllServices).Count }
             $oapRespRaw = $oapResp | ConvertTo-Json -Compress
         } catch {
             $oapRespRaw = "error: $_"
@@ -2830,8 +2835,7 @@ if (-not $multiAgentEnabled) {
     } else {
         $oapStatus = docker inspect --format='{{.State.Status}}' baafoo-staging-oap 2>$null
         if (-not $oapStatus) { $oapStatus = 'not_found' }
-        try { $oapL7check = (Invoke-WebRequest -Uri "http://localhost:12800/internal/l7check" -UseBasicParsing -TimeoutSec 5).StatusCode } catch { $oapL7check = '000' }
-        Test-Fail "MULTI-003: SkyWalking OAP (services=$svcCount, oap_status=$oapStatus, l7check=$oapL7check, resp=$oapRespRaw)"
+        Test-Fail "MULTI-003: SkyWalking OAP (services=$svcCount, oap_status=$oapStatus, resp=$oapRespRaw)"
     }
 
     # --- MULTI-004: JaCoCo agent is running ---
@@ -2864,9 +2868,12 @@ if (-not $multiAgentEnabled) {
         Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/get" | Out-Null
         Start-Sleep -Seconds 10  # Wait for SkyWalking trace reporting cycle
 
-        # Query OAP for endpoint inventory
-        $gqlEndpoints = '{"query":"query{getAllServices(duration:{start:\"2026-07-01\",end:\"2026-07-31\",step:MONTH}){id name}}"}'
-        $oapEpResp = Invoke-RestMethod -Uri "http://localhost:12800/graphql" -Method Post -ContentType "application/json" -Body $gqlEndpoints -TimeoutSec 15 -ErrorAction Stop
+        # Query OAP for endpoint inventory using getAllServices with dynamic Duration
+        $endTime5 = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HHmm")
+        $startTime5 = (Get-Date).AddMinutes(-30).ToUniversalTime().ToString("yyyy-MM-dd HHmm")
+        $gqlQuery5 = "query{getAllServices(duration:{start:`"$startTime5`",end:`"$endTime5`",step:MINUTE}){id name}}"
+        $gqlBody5 = @{ query = $gqlQuery5 } | ConvertTo-Json -Compress
+        $oapEpResp = Invoke-RestMethod -Uri "http://localhost:12800/graphql" -Method Post -ContentType "application/json" -Body $gqlBody5 -TimeoutSec 15 -ErrorAction Stop
         $epSvcCount = 0
         if ($oapEpResp.data.getAllServices) { $epSvcCount = @($oapEpResp.data.getAllServices).Count }
 

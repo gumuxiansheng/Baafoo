@@ -2504,19 +2504,29 @@ else
     fi
 
     # MULTI-003: SkyWalking OAP service registration
-    # SkyWalking 9.x requires a valid layer name ("GENERAL" for Spring Boot apps).
-    # The OAP /internal/l7check health endpoint can return 200 before the
-    # GraphQL endpoint is fully ready, and H2 storage needs time to index
-    # traces into services. Retry with delays instead of a single sleep.
+    # SkyWalking 9.4.0 uses getAllServices(duration: Duration!, group: String),
+    # NOT services(layer: ...). The 'services' query with 'layer' param was
+    # added in SkyWalking 10.x. Duration format for MINUTE step:
+    # "yyyy-MM-dd HHmm" (note the space between date and time).
+    # OAP also needs time to index traces into services after the agent
+    # reports them, so we retry with delays instead of a single sleep.
     svc_count=0
     oap_resp=""
     for attempt in 1 2 3; do
         sleep 15
+        end_time=$(date -u +"%Y-%m-%d %H%M")
+        start_time=$(date -u -d "30 minutes ago" +"%Y-%m-%d %H%M")
+        gql_query="query{getAllServices(duration:{start:\"${start_time}\",end:\"${end_time}\",step:MINUTE}){id name group}}"
+        if [[ "$HAVE_JQ" == "true" ]]; then
+            gql_body=$(jq -nc --arg q "$gql_query" '{query:$q}')
+        else
+            gql_body="{\"query\":\"query{getAllServices(duration:{start:\\\"${start_time}\\\",end:\\\"${end_time}\\\",step:MINUTE}){id name group}}\"}"
+        fi
         # Note: do NOT use -f here; OAP may return HTTP 200 with GraphQL
         # errors in the body. We want the raw response for diagnostics.
         oap_resp=$(curl -s -X POST "http://localhost:12800/graphql" \
             -H "Content-Type: application/json" \
-            -d '{"query":"query{services(layer:\"GENERAL\"){id name group}}"}' 2>/dev/null || echo "")
+            -d "$gql_body" 2>/dev/null || echo "")
         svc_count=$(echo "$oap_resp" | grep -o '"id"' | wc -l)
         if [[ "$svc_count" -ge 1 ]]; then
             break
@@ -2527,8 +2537,7 @@ else
         test_pass "MULTI-003: SkyWalking OAP service registration ($svc_count services)"
     else
         oap_status="$(docker inspect --format='{{.State.Status}}' baafoo-staging-oap 2>/dev/null || echo 'not_found')"
-        oap_l7check=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:12800/internal/l7check 2>/dev/null || echo "000")
-        test_fail "MULTI-003: SkyWalking OAP (services=$svc_count, oap_status=$oap_status, l7check=$oap_l7check, resp=$oap_resp)"
+        test_fail "MULTI-003: SkyWalking OAP (services=$svc_count, oap_status=$oap_status, resp=$oap_resp)"
     fi
 
     # MULTI-004: JaCoCo agent is running
@@ -2552,9 +2561,17 @@ else
     # MULTI-005: Feign trace in SkyWalking
     curl -sf "$APP_A/api/http/get?url=http://real-backend:9090/get" >/dev/null 2>&1
     sleep 10
-    oap_ep=$(curl -sf -X POST "http://localhost:12800/graphql" \
+    end_time=$(date -u +"%Y-%m-%d %H%M")
+    start_time=$(date -u -d "30 minutes ago" +"%Y-%m-%d %H%M")
+    gql_query5="query{getAllServices(duration:{start:\"${start_time}\",end:\"${end_time}\",step:MINUTE}){id name}}"
+    if [[ "$HAVE_JQ" == "true" ]]; then
+        gql_body5=$(jq -nc --arg q "$gql_query5" '{query:$q}')
+    else
+        gql_body5="{\"query\":\"query{getAllServices(duration:{start:\\\"${start_time}\\\",end:\\\"${end_time}\\\",step:MINUTE}){id name}}\"}"
+    fi
+    oap_ep=$(curl -s -X POST "http://localhost:12800/graphql" \
         -H "Content-Type: application/json" \
-        -d '{"query":"query{getAllServices(duration:{start:\"2026-07-01\",end:\"2026-07-31\",step:MONTH}){id name}}"}' 2>/dev/null || echo "")
+        -d "$gql_body5" 2>/dev/null || echo "")
     ep_count=$(echo "$oap_ep" | grep -o '"id"' | wc -l)
     if [[ "$ep_count" -ge 1 ]]; then
         test_pass "MULTI-005: Feign trace in SkyWalking ($ep_count services)"
