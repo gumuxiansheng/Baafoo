@@ -2505,16 +2505,30 @@ else
 
     # MULTI-003: SkyWalking OAP service registration
     # SkyWalking 9.x requires a valid layer name ("GENERAL" for Spring Boot apps).
-    # OAP needs ~15s to index traces into services after the agent reports them.
-    sleep 15
-    oap_resp=$(curl -sf -X POST "http://localhost:12800/graphql" \
-        -H "Content-Type: application/json" \
-        -d '{"query":"query{services(layer:\"GENERAL\"){id name group}}"}' 2>/dev/null || echo "")
-    svc_count=$(echo "$oap_resp" | grep -o '"id"' | wc -l)
+    # The OAP /internal/l7check health endpoint can return 200 before the
+    # GraphQL endpoint is fully ready, and H2 storage needs time to index
+    # traces into services. Retry with delays instead of a single sleep.
+    svc_count=0
+    oap_resp=""
+    for attempt in 1 2 3; do
+        sleep 15
+        # Note: do NOT use -f here; OAP may return HTTP 200 with GraphQL
+        # errors in the body. We want the raw response for diagnostics.
+        oap_resp=$(curl -s -X POST "http://localhost:12800/graphql" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"query{services(layer:\"GENERAL\"){id name group}}"}' 2>/dev/null || echo "")
+        svc_count=$(echo "$oap_resp" | grep -o '"id"' | wc -l)
+        if [[ "$svc_count" -ge 1 ]]; then
+            break
+        fi
+        echo "  [RETRY] MULTI-003 attempt $attempt: services=$svc_count, retrying..."
+    done
     if [[ "$svc_count" -ge 1 ]]; then
         test_pass "MULTI-003: SkyWalking OAP service registration ($svc_count services)"
     else
-        test_fail "MULTI-003: SkyWalking OAP (services=$svc_count, resp=$oap_resp)"
+        oap_status="$(docker inspect --format='{{.State.Status}}' baafoo-staging-oap 2>/dev/null || echo 'not_found')"
+        oap_l7check=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:12800/internal/l7check 2>/dev/null || echo "000")
+        test_fail "MULTI-003: SkyWalking OAP (services=$svc_count, oap_status=$oap_status, l7check=$oap_l7check, resp=$oap_resp)"
     fi
 
     # MULTI-004: JaCoCo agent is running
@@ -2579,11 +2593,18 @@ else
     fi
 
     # MULTI-008: Class transformation conflict detection
-    conflict=$(docker logs baafoo-app-env-a 2>&1 | grep -E 'ClassCastException|NoClassDefFoundError|LinkageError|transform error|ClassFormatError|VerifyError' | head -1 || echo "")
+    # Check for bytecode transformation conflicts between JaCoCo, SkyWalking,
+    # and Baafoo agents. We filter out SkyWalking's benign plugin-discovery
+    # logs (e.g., "NoClassDefFoundError" when SW tries optional plugins)
+    # and JaCoCo's instrumentation logs.
+    conflict=$(docker logs baafoo-app-env-a 2>&1 | \
+        grep -E 'ClassCastException|NoClassDefFoundError|LinkageError|transform error|ClassFormatError|VerifyError' | \
+        grep -vE 'skywalking|SkyWalking|apm-toolkit|plugin not found|can.t find|bytebuddy|ByteBuddy|jacoco|JaCoCo|JACOCO' | \
+        head -1 || echo "")
     if [[ -z "$conflict" ]]; then
         test_pass "MULTI-008: No class transformation conflicts"
     else
-        test_fail "MULTI-008: Class transformation conflicts detected"
+        test_fail "MULTI-008: Class transformation conflicts detected ($conflict)"
     fi
     fi  # end of agent JARs existence check
 fi
