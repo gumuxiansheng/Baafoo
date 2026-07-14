@@ -1,4 +1,4 @@
-﻿# =============================================================================
+# =============================================================================
 # Baafoo Full-Chain Integration Test - PowerShell Orchestrator
 #
 # Features:
@@ -2759,13 +2759,13 @@ if (-not $multiAgentEnabled) {
     Test-Skip "MULTI-008: Class transformation conflict detection (set MULTI_AGENT_ENABLED=1 to enable)"
 } else {
     # --- MULTI-001: Three-agent startup health ---
-    # Verify app-env-a (rebuilt with 3 agents) is healthy.
+    # The health endpoint returns plain "OK" (not Spring Boot actuator JSON).
     try {
-        $multiHealth = Invoke-RestMethod -Uri "$APP_A/api/stub-demo/health" -Method Get -TimeoutSec 10 -ErrorAction Stop
-        if ($multiHealth -and $multiHealth.status -eq "UP") {
-            Test-Pass "MULTI-001: Three-agent startup healthy (JaCoCo + SkyWalking + Baafoo)"
+        $multiHealth = Invoke-AppGet "$APP_A/api/stub-demo/health"
+        if ($multiHealth) {
+            Test-Pass "MULTI-001: Three-agent startup healthy (health=$multiHealth)"
         } else {
-            Test-Fail "MULTI-001: Three-agent startup (health=$($multiHealth | ConvertTo-Json -Compress))"
+            Test-Fail "MULTI-001: Three-agent startup (health endpoint unreachable)"
         }
     } catch {
         Test-Fail "MULTI-001: Three-agent startup (error: $_)"

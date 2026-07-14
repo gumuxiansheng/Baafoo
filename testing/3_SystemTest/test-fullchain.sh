@@ -2453,12 +2453,31 @@ if [[ "$MULTI_AGENT_ENABLED" != "1" ]]; then
     test_skip "MULTI-007: Performance impact (set MULTI_AGENT_ENABLED=1)"
     test_skip "MULTI-008: Class transform conflict detection (set MULTI_AGENT_ENABLED=1)"
 else
-    # MULTI-001: Three-agent startup health
-    multi_health=$(curl -sf "$APP_A/api/stub-demo/health" 2>/dev/null || echo "")
-    if echo "$multi_health" | grep -q '"status":"UP"'; then
-        test_pass "MULTI-001: Three-agent startup healthy"
+    # Check that the required external agent JARs exist.
+    # These are NOT committed to git (*.jar is gitignored) and must be
+    # downloaded by CI before running multi-agent tests.
+    JACOCO_JAR="testing/4_E2ETest/enterprise/spring-cloud-alibaba/agents/jacoco-agent.jar"
+    SW_JAR="testing/4_E2ETest/enterprise/spring-cloud-alibaba/agents/skywalking-agent/skywalking-agent.jar"
+    if [[ ! -f "$JACOCO_JAR" || ! -f "$SW_JAR" ]]; then
+        echo "  External agent JARs not found — skipping multi-agent tests."
+        echo "  Missing: $([[ ! -f "$JACOCO_JAR" ]] && echo 'jacoco-agent.jar') $([[ ! -f "$SW_JAR" ]] && echo 'skywalking-agent.jar')"
+        echo "  Run: testing/4_E2ETest/enterprise/spring-cloud-alibaba/agents/download-agents.sh"
+        test_skip "MULTI-001: Three-agent startup (agent JARs not downloaded)"
+        test_skip "MULTI-002: Baafoo mock with 3 agents (agent JARs not downloaded)"
+        test_skip "MULTI-003: SkyWalking trace (agent JARs not downloaded)"
+        test_skip "MULTI-004: JaCoCo coverage (agent JARs not downloaded)"
+        test_skip "MULTI-005: Feign trace (agent JARs not downloaded)"
+        test_skip "MULTI-006: Agent load order (agent JARs not downloaded)"
+        test_skip "MULTI-007: Performance impact (agent JARs not downloaded)"
+        test_skip "MULTI-008: Conflict detection (agent JARs not downloaded)"
     else
-        test_fail "MULTI-001: Three-agent startup (health=$multi_health)"
+    # MULTI-001: Three-agent startup health
+    # The health endpoint returns plain "OK" (not Spring Boot actuator JSON).
+    multi_health=$(curl -sf "$APP_A/api/stub-demo/health" 2>/dev/null || echo "")
+    if [[ -n "$multi_health" ]]; then
+        test_pass "MULTI-001: Three-agent startup healthy (health=$multi_health)"
+    else
+        test_fail "MULTI-001: Three-agent startup (health endpoint unreachable)"
     fi
 
     # MULTI-002: Baafoo mock interception with 3 agents
@@ -2504,7 +2523,7 @@ else
     fi
 
     # MULTI-006: Agent load order variant A
-    if [[ "$TEST_PASS_COUNT" -gt 0 ]]; then
+    if [[ "$PASS" -gt 0 ]]; then
         test_pass "MULTI-006: Agent load order variant A (startup succeeded)"
     else
         test_fail "MULTI-006: Agent load order variant A (startup failed)"
@@ -2540,6 +2559,7 @@ else
     else
         test_fail "MULTI-008: Class transformation conflicts detected"
     fi
+    fi  # end of agent JARs existence check
 fi
 
 # -----------------------------------------------------------------------------

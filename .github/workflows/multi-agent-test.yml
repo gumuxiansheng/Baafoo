@@ -46,6 +46,12 @@ jobs:
           fi
           jq --version
 
+      - name: Download external agent JARs
+        # SkyWalking + JaCoCo agent JARs are NOT committed to git (*.jar is
+        # gitignored). Download them before running multi-agent tests.
+        run: |
+          bash testing/4_E2ETest/enterprise/spring-cloud-alibaba/agents/download-agents.sh
+
       - name: Run multi-agent coexistence test
         # 启动三 Agent 叠加栈（JaCoCo + SkyWalking + Baafoo），
         # MULTI_AGENT_ENABLED=1 激活 MULTI-001~008 用例。
