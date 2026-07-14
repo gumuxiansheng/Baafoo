@@ -1,20 +1,20 @@
 # =============================================================================
-# Baafoo 企业级应用测试 - Spring Boot PetClinic
-# 验证 Agent 在经典 Spring Boot 企业应用中的兼容性
+# Baafoo 浼佷笟绾у簲鐢ㄦ祴璇?- Spring Boot PetClinic
+# 楠岃瘉 Agent 鍦ㄧ粡鍏?Spring Boot 浼佷笟搴旂敤涓殑鍏煎鎬?
 #
-# 用法:
+# 鐢ㄦ硶:
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml up --build
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -v
 # =============================================================================
 
 services:
   # =========================================================================
-  # PetClinic 应用（挂载 Baafoo Agent）
-  # 基础镜像使用 Java 17，应用端口 8080，应用路径 /api/vets 等
+  # PetClinic 搴旂敤锛堟寕杞?Baafoo Agent锛?
+  # 鍩虹闀滃儚浣跨敤 Java 17锛屽簲鐢ㄧ鍙?8080锛屽簲鐢ㄨ矾寰?/api/vets 绛?
   # =========================================================================
   petclinic:
     build:
-      context: ../../..
+      context: ../../../..
       dockerfile: testing/4_E2ETest/enterprise/petclinic/Dockerfile.petclinic
     container_name: baafoo-enterprise-petclinic
     networks:
@@ -39,7 +39,7 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # 测试初始化容器 - 创建测试环境和规则
+  # 娴嬭瘯鍒濆鍖栧鍣?- 鍒涘缓娴嬭瘯鐜鍜岃鍒?
   # =========================================================================
   petclinic-test-init:
     image: curlimages/curl:latest
@@ -54,46 +54,46 @@ services:
     entrypoint: >
       sh -c '
         echo "============================================"
-        echo "  PetClinic 企业级测试环境初始化"
+        echo "  PetClinic 浼佷笟绾ф祴璇曠幆澧冨垵濮嬪寲"
         echo "============================================"
         echo ""
 
-        echo "[1/4] 创建 enterprise-petclinic 环境..."
+        echo "[1/4] 鍒涘缓 enterprise-petclinic 鐜..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d "{\"name\":\"enterprise-petclinic\",\"mode\":\"stub\",\"description\":\"PetClinic企业级测试环境\"}" && echo "  OK" || echo "  已存在"
+          -d "{\"name\":\"enterprise-petclinic\",\"mode\":\"stub\",\"description\":\"PetClinic浼佷笟绾ф祴璇曠幆澧僜"}" && echo "  OK" || echo "  宸插瓨鍦?
         echo ""
 
-        echo "[2/4] 创建 Vet API Mock 规则..."
+        echo "[2/4] 鍒涘缓 Vet API Mock 瑙勫垯..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d "{\"id\":\"petclinic-vets-mock\",\"name\":\"PetClinic-Vet API Mock\",\"protocol\":\"http\",\"host\":\"petclinic\",\"port\":8080,\"conditions\":[{\"type\":\"path\",\"operator\":\"equals\",\"value\":\"/vets\"}],\"responses\":[{\"name\":\"Mock兽医列表\",\"statusCode\":200,\"body\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-petclinic\\\",\\\"vets\\\":[{\\\"id\\\":1,\\\"firstName\\\":\\\"Mock\\\",\\\"lastName\\\":\\\"Doctor\\\",\\\"specialties\\\":[{\\\"name\\\":\\\"Mock Surgery\\\"}]}]}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"petclinic\"],\"environments\":[\"enterprise-petclinic\"]}" && echo "  OK" || echo "  已存在"
+          -d "{\"id\":\"petclinic-vets-mock\",\"name\":\"PetClinic-Vet API Mock\",\"protocol\":\"http\",\"host\":\"petclinic\",\"port\":8080,\"conditions\":[{\"type\":\"path\",\"operator\":\"equals\",\"value\":\"/vets\"}],\"responses\":[{\"name\":\"Mock鍏藉尰鍒楄〃\",\"statusCode\":200,\"body\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-petclinic\\\",\\\"vets\\\":[{\\\"id\\\":1,\\\"firstName\\\":\\\"Mock\\\",\\\"lastName\\\":\\\"Doctor\\\",\\\"specialties\\\":[{\\\"name\\\":\\\"Mock Surgery\\\"}]}]}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"petclinic\"],\"environments\":[\"enterprise-petclinic\"]}" && echo "  OK" || echo "  宸插瓨鍦?
         echo ""
 
-        echo "[3/4] 创建 Owner API Mock 规则..."
+        echo "[3/4] 鍒涘缓 Owner API Mock 瑙勫垯..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d "{\"id\":\"petclinic-owners-mock\",\"name\":\"PetClinic-Owner API Mock\",\"protocol\":\"http\",\"host\":\"petclinic\",\"port\":8080,\"conditions\":[{\"type\":\"path\",\"operator\":\"startsWith\",\"value\":\"/owners\"}],\"responses\":[{\"name\":\"Mock业主列表\",\"statusCode\":200,\"body\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-petclinic\\\",\\\"content\\\":[{\\\"id\\\":1,\\\"firstName\\\":\\\"Mock\\\",\\\"lastName\\\":\\\"Owner\\\",\\\"city\\\":\\\"Mock City\\\",\\\"telephone\\\":\\\"1234567890\\\"}]}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"petclinic\"],\"environments\":[\"enterprise-petclinic\"]}" && echo "  OK" || echo "  已存在"
+          -d "{\"id\":\"petclinic-owners-mock\",\"name\":\"PetClinic-Owner API Mock\",\"protocol\":\"http\",\"host\":\"petclinic\",\"port\":8080,\"conditions\":[{\"type\":\"path\",\"operator\":\"startsWith\",\"value\":\"/owners\"}],\"responses\":[{\"name\":\"Mock涓氫富鍒楄〃\",\"statusCode\":200,\"body\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-petclinic\\\",\\\"content\\\":[{\\\"id\\\":1,\\\"firstName\\\":\\\"Mock\\\",\\\"lastName\\\":\\\"Owner\\\",\\\"city\\\":\\\"Mock City\\\",\\\"telephone\\\":\\\"1234567890\\\"}]}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"petclinic\"],\"environments\":[\"enterprise-petclinic\"]}" && echo "  OK" || echo "  宸插瓨鍦?
         echo ""
 
-        echo "[4/4] 验证 PetClinic 应用健康状态..."
-        curl -sf http://petclinic:8080/vets && echo "  OK" || echo "  不可达"
+        echo "[4/4] 楠岃瘉 PetClinic 搴旂敤鍋ュ悍鐘舵€?.."
+        curl -sf http://petclinic:8080/vets && echo "  OK" || echo "  涓嶅彲杈?
         echo ""
 
         echo "============================================"
-        echo "  PetClinic 企业级测试环境就绪"
+        echo "  PetClinic 浼佷笟绾ф祴璇曠幆澧冨氨缁?
         echo "============================================"
         echo ""
-        echo "  Baafoo控制台: http://localhost:18084"
+        echo "  Baafoo鎺у埗鍙? http://localhost:18084"
         echo "  PetClinic:    http://localhost:19966/vets"
         echo "  API Key:      enterprise-admin-key"
         echo ""
-        echo "  测试API:"
-        echo "    GET /vets - 兽医列表(JSON)"
-        echo "    GET /owners - 业主列表(HTML)"
-        echo "    GET /vets.html - 兽医HTML页面"
+        echo "  娴嬭瘯API:"
+        echo "    GET /vets - 鍏藉尰鍒楄〃(JSON)"
+        echo "    GET /owners - 涓氫富鍒楄〃(HTML)"
+        echo "    GET /vets.html - 鍏藉尰HTML椤甸潰"
         echo "============================================"
       '

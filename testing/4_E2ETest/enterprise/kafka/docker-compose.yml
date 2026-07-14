@@ -1,15 +1,15 @@
 # =============================================================================
-# Baafoo 企业级应用测试 - Apache Kafka
-# 验证 Agent 在真实 Kafka 环境下的拦截能力和兼容性
+# Baafoo 浼佷笟绾у簲鐢ㄦ祴璇?- Apache Kafka
+# 楠岃瘉 Agent 鍦ㄧ湡瀹?Kafka 鐜涓嬬殑鎷︽埅鑳藉姏鍜屽吋瀹规€?
 #
-# 用法:
+# 鐢ㄦ硶:
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml up --build
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -v
 # =============================================================================
 
 services:
   # =========================================================================
-  # Kafka Broker（真实 Kafka，用于 passthrough 模式对比测试）
+  # Kafka Broker锛堢湡瀹?Kafka锛岀敤浜?passthrough 妯″紡瀵规瘮娴嬭瘯锛?
   # =========================================================================
   kafka:
     # Apache official Kafka image (KRaft mode). Previously used soldevelo/kafka
@@ -37,10 +37,10 @@ services:
       - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
       - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
       - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
-      # Stable cluster ID — prevents random ID regeneration on restart
+      # Stable cluster ID 鈥?prevents random ID regeneration on restart
       - CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
     healthcheck:
-      # apache/kafka doesn't put kafka-topics.sh on PATH for CMD-SHELL — use absolute path
+      # apache/kafka doesn't put kafka-topics.sh on PATH for CMD-SHELL 鈥?use absolute path
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
       interval: 10s
       timeout: 5s
@@ -49,12 +49,12 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # Kafka 客户端测试应用（挂载 Baafoo Agent）
-  # 复用 baafoo-test-spring，包含 Kafka Producer/Consumer 测试接口
+  # Kafka 瀹㈡埛绔祴璇曞簲鐢紙鎸傝浇 Baafoo Agent锛?
+  # 澶嶇敤 baafoo-test-spring锛屽寘鍚?Kafka Producer/Consumer 娴嬭瘯鎺ュ彛
   # =========================================================================
   kafka-test-app:
     build:
-      context: ../../..
+      context: ../../../..
       dockerfile: testing/4_E2ETest/enterprise/kafka/Dockerfile.kafka-test-app
     container_name: baafoo-enterprise-kafka-test-app
     networks:
@@ -80,7 +80,7 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # 测试初始化容器 - 创建测试环境和规则
+  # 娴嬭瘯鍒濆鍖栧鍣?- 鍒涘缓娴嬭瘯鐜鍜岃鍒?
   # =========================================================================
   kafka-test-init:
     image: curlimages/curl:latest
@@ -95,51 +95,51 @@ services:
     entrypoint: >
       sh -c '
         echo "============================================"
-        echo "  Kafka 企业级测试环境初始化"
+        echo "  Kafka 浼佷笟绾ф祴璇曠幆澧冨垵濮嬪寲"
         echo "============================================"
         echo ""
 
-        echo "[1/5] 创建 enterprise-kafka 环境..."
+        echo "[1/5] 鍒涘缓 enterprise-kafka 鐜..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d "{\"name\":\"enterprise-kafka\",\"mode\":\"stub\",\"description\":\"Kafka企业级测试环境\"}" && echo "  OK" || echo "  已存在"
+          -d "{\"name\":\"enterprise-kafka\",\"mode\":\"stub\",\"description\":\"Kafka浼佷笟绾ф祴璇曠幆澧僜"}" && echo "  OK" || echo "  宸插瓨鍦?
         echo ""
 
-        echo "[2/5] 创建 Kafka Topic 精确匹配规则..."
+        echo "[2/5] 鍒涘缓 Kafka Topic 绮剧‘鍖归厤瑙勫垯..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d "{\"id\":\"kafka-enterprise-topic-exact\",\"name\":\"Kafka企业级-Topic精确匹配\",\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"equals\",\"value\":\"enterprise-test-topic\"}],\"responses\":[{\"name\":\"Mock响应\",\"body\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-enterprise-kafka\\\",\\\"timestamp\\\":\\\"{{now}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  已存在"
+          -d "{\"id\":\"kafka-enterprise-topic-exact\",\"name\":\"Kafka浼佷笟绾?Topic绮剧‘鍖归厤\",\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"equals\",\"value\":\"enterprise-test-topic\"}],\"responses\":[{\"name\":\"Mock鍝嶅簲\",\"body\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-enterprise-kafka\\\",\\\"timestamp\\\":\\\"{{now}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  宸插瓨鍦?
         echo ""
 
-        echo "[3/5] 创建 Kafka Topic 通配符匹配规则..."
+        echo "[3/5] 鍒涘缓 Kafka Topic 閫氶厤绗﹀尮閰嶈鍒?.."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d "{\"id\":\"kafka-enterprise-topic-wildcard\",\"name\":\"Kafka企业级-Topic通配符匹配\",\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"startsWith\",\"value\":\"enterprise-\"}],\"responses\":[{\"name\":\"Mock响应(通配符)\",\"body\":\"{\\\"mocked\\\":true,\\\"wildcard\\\":true,\\\"topic\\\":\\\"{{topic}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":50,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  已存在"
+          -d "{\"id\":\"kafka-enterprise-topic-wildcard\",\"name\":\"Kafka浼佷笟绾?Topic閫氶厤绗﹀尮閰峔",\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"startsWith\",\"value\":\"enterprise-\"}],\"responses\":[{\"name\":\"Mock鍝嶅簲(閫氶厤绗?\",\"body\":\"{\\\"mocked\\\":true,\\\"wildcard\\\":true,\\\"topic\\\":\\\"{{topic}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":50,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  宸插瓨鍦?
         echo ""
 
-        echo "[4/5] 验证测试应用健康状态..."
-        curl -sf http://kafka-test-app:9090/api/stub-demo/health && echo "  OK" || echo "  不可达"
+        echo "[4/5] 楠岃瘉娴嬭瘯搴旂敤鍋ュ悍鐘舵€?.."
+        curl -sf http://kafka-test-app:9090/api/stub-demo/health && echo "  OK" || echo "  涓嶅彲杈?
         echo ""
 
-        echo "[5/5] 在真实 Kafka 创建测试 Topic..."
-        echo "  等待 Kafka 自动创建 Topic..."
+        echo "[5/5] 鍦ㄧ湡瀹?Kafka 鍒涘缓娴嬭瘯 Topic..."
+        echo "  绛夊緟 Kafka 鑷姩鍒涘缓 Topic..."
         echo ""
 
         echo "============================================"
-        echo "  Kafka 企业级测试环境就绪"
+        echo "  Kafka 浼佷笟绾ф祴璇曠幆澧冨氨缁?
         echo "============================================"
         echo ""
-        echo "  Baafoo控制台: http://localhost:18084"
-        echo "  测试应用:      http://localhost:18090"
-        echo "  Kafka:         localhost:19092 (外部)"
-        echo "                 kafka:9092 (容器内)"
+        echo "  Baafoo鎺у埗鍙? http://localhost:18084"
+        echo "  娴嬭瘯搴旂敤:      http://localhost:18090"
+        echo "  Kafka:         localhost:19092 (澶栭儴)"
+        echo "                 kafka:9092 (瀹瑰櫒鍐?"
         echo "  API Key:       enterprise-admin-key"
         echo ""
-        echo "  测试接口:"
-        echo "    POST /api/stub-demo/kafka/send - 发送Kafka消息"
-        echo "    POST /api/stub-demo/kafka/consume - 消费Kafka消息"
+        echo "  娴嬭瘯鎺ュ彛:"
+        echo "    POST /api/stub-demo/kafka/send - 鍙戦€並afka娑堟伅"
+        echo "    POST /api/stub-demo/kafka/consume - 娑堣垂Kafka娑堟伅"
         echo "============================================"
       '

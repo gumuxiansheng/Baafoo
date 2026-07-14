@@ -1,16 +1,15 @@
 # =============================================================================
-# Baafoo 企业级应用测试 - Nacos 注册配置中心
-# 验证 Agent 在 Nacos 服务注册/发现/配置场景下的拦截能力
+# Baafoo 浼佷笟绾у簲鐢ㄦ祴璇?- Nacos 娉ㄥ唽閰嶇疆涓績
+# 楠岃瘉 Agent 鍦?Nacos 鏈嶅姟娉ㄥ唽/鍙戠幇/閰嶇疆鍦烘櫙涓嬬殑鎷︽埅鑳藉姏
 #
-# 用法:
+# 鐢ㄦ硶:
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml up --build
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -v
 # =============================================================================
 
 services:
   # =========================================================================
-  # Nacos Server（真实实例，用于 passthrough 模式对比测试）
-  # =========================================================================
+  # Nacos Server锛堢湡瀹炲疄渚嬶紝鐢ㄤ簬 passthrough 妯″紡瀵规瘮娴嬭瘯锛?  # =========================================================================
   nacos:
     image: nacos/nacos-server:v2.2.3
     container_name: baafoo-enterprise-nacos-app
@@ -38,12 +37,11 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # 测试应用（挂载 Baafoo Agent，向 Nacos 注册并调用 Nacos API）
-  # 复用 baafoo-test-spring，包含 HTTP 调用接口
+  # 娴嬭瘯搴旂敤锛堟寕杞?Baafoo Agent锛屽悜 Nacos 娉ㄥ唽骞惰皟鐢?Nacos API锛?  # 澶嶇敤 baafoo-test-spring锛屽寘鍚?HTTP 璋冪敤鎺ュ彛
   # =========================================================================
   nacos-test-app:
     build:
-      context: ../../..
+      context: ../../../..
       dockerfile: testing/4_E2ETest/enterprise/nacos/Dockerfile.nacos-test-app
     container_name: baafoo-enterprise-nacos-test-app
     networks:
@@ -70,8 +68,7 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # 测试初始化容器 - 创建测试环境和规则
-  # =========================================================================
+  # 娴嬭瘯鍒濆鍖栧鍣?- 鍒涘缓娴嬭瘯鐜鍜岃鍒?  # =========================================================================
   nacos-test-init:
     image: curlimages/curl:latest
     container_name: baafoo-enterprise-nacos-init
@@ -86,48 +83,48 @@ services:
     command:
       - |
         echo "============================================"
-        echo "  Nacos 企业级测试环境初始化"
+        echo "  Nacos 浼佷笟绾ф祴璇曠幆澧冨垵濮嬪寲"
         echo "============================================"
         echo ""
 
-        echo "[1/4] 创建 enterprise-nacos 环境..."
+        echo "[1/4] 鍒涘缓 enterprise-nacos 鐜..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"name":"enterprise-nacos","mode":"stub","description":"Nacos企业级测试环境"}' && echo "  OK" || echo "  已存在"
+          -d '{"name":"enterprise-nacos","mode":"stub","description":"Nacos浼佷笟绾ф祴璇曠幆澧?}' && echo "  OK" || echo "  宸插瓨鍦?
         echo ""
 
-        echo "[2/4] 创建 Nacos 注册 API Mock 规则..."
+        echo "[2/4] 鍒涘缓 Nacos 娉ㄥ唽 API Mock 瑙勫垯..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"nacos-register-mock","name":"Nacos注册API Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance"}],"responses":[{"name":"Mock注册响应","statusCode":200,"body":"{\"ok\":true,\"mocked\":true,\"source\":\"baafoo-nacos\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","register"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  已存在"
+          -d '{"id":"nacos-register-mock","name":"Nacos娉ㄥ唽API Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance"}],"responses":[{"name":"Mock娉ㄥ唽鍝嶅簲","statusCode":200,"body":"{\"ok\":true,\"mocked\":true,\"source\":\"baafoo-nacos\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","register"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  宸插瓨鍦?
         echo ""
 
-        echo "[3/4] 创建 Nacos 服务发现 API Mock 规则..."
+        echo "[3/4] 鍒涘缓 Nacos 鏈嶅姟鍙戠幇 API Mock 瑙勫垯..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"nacos-discovery-mock","name":"Nacos服务发现Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance/list"}],"responses":[{"name":"Mock服务列表","statusCode":200,"body":"{\"name\":\"mock-service\",\"hosts\":[{\"instanceId\":\"mock-1\",\"ip\":\"192.168.1.100\",\"port\":8080,\"healthy\":true,\"enabled\":true}],\"mocked\":true}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","discovery"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  已存在"
+          -d '{"id":"nacos-discovery-mock","name":"Nacos鏈嶅姟鍙戠幇Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance/list"}],"responses":[{"name":"Mock鏈嶅姟鍒楄〃","statusCode":200,"body":"{\"name\":\"mock-service\",\"hosts\":[{\"instanceId\":\"mock-1\",\"ip\":\"192.168.1.100\",\"port\":8080,\"healthy\":true,\"enabled\":true}],\"mocked\":true}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","discovery"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  宸插瓨鍦?
         echo ""
 
-        echo "[4/4] 创建 Nacos 配置拉取 API Mock 规则..."
+        echo "[4/4] 鍒涘缓 Nacos 閰嶇疆鎷夊彇 API Mock 瑙勫垯..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"nacos-config-mock","name":"Nacos配置拉取Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/cs/configs"}],"responses":[{"name":"Mock配置","statusCode":200,"body":"server.port=9999\nmock.config=true\nsource=baafoo-nacos","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","config"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  已存在"
+          -d '{"id":"nacos-config-mock","name":"Nacos閰嶇疆鎷夊彇Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/cs/configs"}],"responses":[{"name":"Mock閰嶇疆","statusCode":200,"body":"server.port=9999\nmock.config=true\nsource=baafoo-nacos","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","config"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  宸插瓨鍦?
         echo ""
 
         echo "============================================"
-        echo "  Nacos 企业级测试环境就绪"
+        echo "  Nacos 浼佷笟绾ф祴璇曠幆澧冨氨缁?
         echo "============================================"
         echo ""
-        echo "  Baafoo控制台: http://localhost:18084"
-        echo "  测试应用:     http://localhost:18091"
-        echo "  Nacos控制台:  http://localhost:18848/nacos"
+        echo "  Baafoo鎺у埗鍙? http://localhost:18084"
+        echo "  娴嬭瘯搴旂敤:     http://localhost:18091"
+        echo "  Nacos鎺у埗鍙?  http://localhost:18848/nacos"
         echo "  API Key:      enterprise-admin-key"
         echo ""
-        echo "  测试接口:"
+        echo "  娴嬭瘯鎺ュ彛:"
         echo "    GET  /api/http/get?url=http://nacos:8848/nacos/v1/ns/instance/list?serviceName=test"
         echo "    GET  /api/http/get?url=http://nacos:8848/nacos/v1/cs/configs?dataId=test&group=DEFAULT"
         echo "    POST /api/http/post?url=http://nacos:8848/nacos/v1/ns/instance?serviceName=test&ip=10.0.0.1&port=8080"

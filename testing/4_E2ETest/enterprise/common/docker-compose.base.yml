@@ -7,7 +7,7 @@ networks:
 services:
   baafoo-server:
     build:
-      context: ../../..
+      context: ../../../..
       dockerfile: Dockerfile
     container_name: baafoo-enterprise-server
     networks:

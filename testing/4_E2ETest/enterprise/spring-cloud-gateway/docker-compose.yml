@@ -1,19 +1,17 @@
 # =============================================================================
-# Baafoo 企业级应用测试 - Spring Cloud Gateway
-# 验证 Agent 在网关层拦截、过滤器链兼容、路由转发场景下的能力
-#
-# 用法:
+# Baafoo 浼佷笟绾у簲鐢ㄦ祴璇?- Spring Cloud Gateway
+# 楠岃瘉 Agent 鍦ㄧ綉鍏冲眰鎷︽埅銆佽繃婊ゅ櫒閾惧吋瀹广€佽矾鐢辫浆鍙戝満鏅笅鐨勮兘鍔?#
+# 鐢ㄦ硶:
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml up --build
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -v
 # =============================================================================
 
 services:
   # =========================================================================
-  # 后端服务（路由目标，复用 baafoo-test-spring）
-  # =========================================================================
+  # 鍚庣鏈嶅姟锛堣矾鐢辩洰鏍囷紝澶嶇敤 baafoo-test-spring锛?  # =========================================================================
   backend-service:
     build:
-      context: ../../..
+      context: ../../../..
       dockerfile: testing/4_E2ETest/enterprise/spring-cloud-gateway/Dockerfile.backend
     container_name: baafoo-enterprise-gateway-backend
     networks:
@@ -37,12 +35,11 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # Spring Cloud Gateway（挂载 Baafoo Agent）
-  # 使用官方 spring-cloud-gateway 镜像，通过环境变量配置路由
+  # Spring Cloud Gateway锛堟寕杞?Baafoo Agent锛?  # 浣跨敤瀹樻柟 spring-cloud-gateway 闀滃儚锛岄€氳繃鐜鍙橀噺閰嶇疆璺敱
   # =========================================================================
   gateway:
     build:
-      context: ../../..
+      context: ../../../..
       dockerfile: testing/4_E2ETest/enterprise/spring-cloud-gateway/Dockerfile.gateway
     container_name: baafoo-enterprise-gateway
     networks:
@@ -69,8 +66,7 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # 测试初始化容器 - 创建测试环境和规则
-  # =========================================================================
+  # 娴嬭瘯鍒濆鍖栧鍣?- 鍒涘缓娴嬭瘯鐜鍜岃鍒?  # =========================================================================
   gateway-test-init:
     image: curlimages/curl:latest
     container_name: baafoo-enterprise-gateway-init
@@ -85,54 +81,54 @@ services:
     command:
       - |
         echo "============================================"
-        echo "  Spring Cloud Gateway 企业级测试环境初始化"
+        echo "  Spring Cloud Gateway 浼佷笟绾ф祴璇曠幆澧冨垵濮嬪寲"
         echo "============================================"
         echo ""
 
-        echo "[1/5] 创建 enterprise-gateway 环境..."
+        echo "[1/5] 鍒涘缓 enterprise-gateway 鐜..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"name":"enterprise-gateway","mode":"stub","description":"Gateway企业级测试环境"}' && echo "  OK" || echo "  已存在"
+          -d '{"name":"enterprise-gateway","mode":"stub","description":"Gateway浼佷笟绾ф祴璇曠幆澧?}' && echo "  OK" || echo "  宸插瓨鍦?
         echo ""
 
-        echo "[2/5] 创建 enterprise-gateway-backend 环境..."
+        echo "[2/5] 鍒涘缓 enterprise-gateway-backend 鐜..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"name":"enterprise-gateway-backend","mode":"stub","description":"Gateway后端测试环境"}' && echo "  OK" || echo "  已存在"
+          -d '{"name":"enterprise-gateway-backend","mode":"stub","description":"Gateway鍚庣娴嬭瘯鐜"}' && echo "  OK" || echo "  宸插瓨鍦?
         echo ""
 
-        echo "[3/5] 创建 Gateway 路由 Mock 规则（拦截 /api/mock/** 路径）..."
+        echo "[3/5] 鍒涘缓 Gateway 璺敱 Mock 瑙勫垯锛堟嫤鎴?/api/mock/** 璺緞锛?.."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"gateway-route-mock","name":"Gateway路由Mock","protocol":"http","host":"gateway","port":8080,"conditions":[{"type":"path","operator":"startsWith","value":"/api/mock/"}],"responses":[{"name":"Mock网关响应","statusCode":200,"body":"{\"mocked\":true,\"source\":\"baafoo-gateway\",\"path\":\"{{path}}\",\"timestamp\":\"{{now}}\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","gateway","route"],"environments":["enterprise-gateway"]}' && echo "  OK" || echo "  已存在"
+          -d '{"id":"gateway-route-mock","name":"Gateway璺敱Mock","protocol":"http","host":"gateway","port":8080,"conditions":[{"type":"path","operator":"startsWith","value":"/api/mock/"}],"responses":[{"name":"Mock缃戝叧鍝嶅簲","statusCode":200,"body":"{\"mocked\":true,\"source\":\"baafoo-gateway\",\"path\":\"{{path}}\",\"timestamp\":\"{{now}}\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","gateway","route"],"environments":["enterprise-gateway"]}' && echo "  OK" || echo "  宸插瓨鍦?
         echo ""
 
-        echo "[4/5] 创建后端 API Mock 规则（拦截后端 /api/http/** 路径）..."
+        echo "[4/5] 鍒涘缓鍚庣 API Mock 瑙勫垯锛堟嫤鎴悗绔?/api/http/** 璺緞锛?.."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"backend-api-mock","name":"后端API Mock","protocol":"http","host":"backend-service","port":9090,"conditions":[{"type":"path","operator":"startsWith","value":"/api/http/"}],"responses":[{"name":"Mock后端响应","statusCode":200,"body":"{\"mocked\":true,\"source\":\"baafoo-backend\",\"method\":\"{{method}}\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","gateway","backend"],"environments":["enterprise-gateway-backend"]}' && echo "  OK" || echo "  已存在"
+          -d '{"id":"backend-api-mock","name":"鍚庣API Mock","protocol":"http","host":"backend-service","port":9090,"conditions":[{"type":"path","operator":"startsWith","value":"/api/http/"}],"responses":[{"name":"Mock鍚庣鍝嶅簲","statusCode":200,"body":"{\"mocked\":true,\"source\":\"baafoo-backend\",\"method\":\"{{method}}\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","gateway","backend"],"environments":["enterprise-gateway-backend"]}' && echo "  OK" || echo "  宸插瓨鍦?
         echo ""
 
-        echo "[5/5] 验证 Gateway 健康..."
-        curl -sf http://gateway:8080/actuator/health && echo "  OK" || echo "  不可达"
+        echo "[5/5] 楠岃瘉 Gateway 鍋ュ悍..."
+        curl -sf http://gateway:8080/actuator/health && echo "  OK" || echo "  涓嶅彲杈?
         echo ""
 
         echo "============================================"
-        echo "  Spring Cloud Gateway 企业级测试环境就绪"
+        echo "  Spring Cloud Gateway 浼佷笟绾ф祴璇曠幆澧冨氨缁?
         echo "============================================"
         echo ""
-        echo "  Baafoo控制台: http://localhost:18084"
+        echo "  Baafoo鎺у埗鍙? http://localhost:18084"
         echo "  Gateway:      http://localhost:18080"
-        echo "  后端服务:     http://localhost:18092"
+        echo "  鍚庣鏈嶅姟:     http://localhost:18092"
         echo "  API Key:      enterprise-admin-key"
         echo ""
-        echo "  测试路由:"
-        echo "    GET  /api/http/health          -> 透传到后端"
-        echo "    GET  /api/http/get?url=...     -> 透传到后端 HTTP 调用"
-        echo "    GET  /api/mock/test            -> 被 Gateway Agent Mock"
-        echo "    GET  /api/backend/test         -> 透传到后端后被 Mock"
+        echo "  娴嬭瘯璺敱:"
+        echo "    GET  /api/http/health          -> 閫忎紶鍒板悗绔?
+        echo "    GET  /api/http/get?url=...     -> 閫忎紶鍒板悗绔?HTTP 璋冪敤"
+        echo "    GET  /api/mock/test            -> 琚?Gateway Agent Mock"
+        echo "    GET  /api/backend/test         -> 閫忎紶鍒板悗绔悗琚?Mock"
         echo "============================================"
