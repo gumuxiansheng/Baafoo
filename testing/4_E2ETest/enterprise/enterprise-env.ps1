@@ -12,7 +12,7 @@ param(
     [ValidateSet("start", "stop", "restart", "status")]
     [string]$Action,
 
-    [string[]]$Apps = @("kafka", "petclinic"),
+    [string[]]$Apps = @("kafka", "petclinic", "spring-cloud-alibaba"),
 
     [switch]$NoBuild
 )
@@ -21,7 +21,7 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $baseComposeFile = Join-Path $scriptDir "common\docker-compose.base.yml"
 
-$allApps = @("kafka", "petclinic", "spring-cloud-alibaba")
+$allApps = @("kafka", "petclinic", "spring-cloud-alibaba", "nacos", "spring-cloud-gateway")
 
 if ($Apps -contains "all") {
     $Apps = $allApps

@@ -6,6 +6,7 @@
 
 **版本更新记录**：
 - v2.10 (2026-07-13): MULTI-002~008 多 Agent 共存测试——新增 docker-compose.multi-agent.yml 叠加文件（SkyWalking OAP 9.4.0 + agent JAR 挂载）、Dockerfile.multi-agent（三 Agent 启动：JaCoCo→SkyWalking→Baafoo）。test-fullchain.ps1/sh 新增 MULTI 段 8 个用例（MULTI-001~008），通过 MULTI_AGENT_ENABLED=1 环境变量启用。覆盖：三 Agent 启动健康检查、Baafoo Mock 拦截兼容性、SkyWalking OAP 服务注册、JaCoCo classdumps 生成、Feign trace 可见性、加载顺序变体 A、性能影响评估、字节码转换冲突检测。
+- v2.11 (2026-07-14): 企业级应用测试扩充——新增 Nacos（EG-NACOS-001~012，12 用例）和 Spring Cloud Gateway（EG-GW-001~012，12 用例）两个应用。Nacos 覆盖服务注册/发现/配置 API Mock、Passthrough 透传、Record 录制、模式热切换。Gateway 覆盖网关层 Mock、后端 Mock、全链路透传、过滤器链兼容、多 Agent 环境隔离。enterprise-env.ps1 和 run-all-smoke-tests.ps1 默认列表新增 nacos、spring-cloud-gateway。
 - v2.9 (2026-07-13): P0/P1 缺口补全——FLT-001/002 故障注入独立断言（延迟 >= 1800ms + statusCode=500）、IT-L2 协议集成补全（HTTP-010 Passthrough、TCP-004 Regex/005 多轮/006 长连接、KAFKA-004 通配符/005 Header/006-008 Metadata+Produce+Fetch、PULSAR-004 Topic/005 通配符、JMS-003/004 Topic 发布订阅、GRPC-005 Header/007 Status Code/008 错误码/009 延迟/010 帧格式、CONSUL-002 HTTP API）。新增 7 个规则文件：http-fault-delay/500、kafka-metadata、jms-topic-test、grpc-header-match/status-code/delay-1s。JmsCallerService/Controller 新增 Topic 发布订阅端点。
 - v2.8 (2026-07-12): §6.4.4 P2 缺口全部从 SKIP 改为真实断言——场景集 CRUD (SCN-001~004)、MCP JSON-RPC (MCP-001~003)、混沌 profile 状态 (FLT-003)、有状态 Mock 计数器 (FLT-004)、Consul DNS (CONS-001)、fail-open 透传 (FO-001)、继承环境 (INH-001)、规则分页 (PAG-001)、规则优先级 (PRIO-001)、多响应分支 (MULTI-001)、标签筛选 (TAG-001) 全部在 test-fullchain.ps1 中实现真实 API 调用与断言。新增 6 个规则文件：http-priority-high/low、http-multi-response、http-tagged-1/2、http-stateful。
 - v2.7 (2026-07-12): MX 矩阵 RECORD/RECORD_ALL/RECORD_AND_STUB 补缺——test-fullchain.ps1 中 MX-TCP/KAFKA/JMS/PULSAR 的 RECORD、RECORD_ALL、TCP RECORD_AND_STUB 从 SKIP 改为真实断言（含录制计数与协议匹配验证）。
@@ -1731,9 +1732,9 @@ testing/4_E2ETest/enterprise/
     └── nginx/                         # Nginx 反向代理
 ```
 
-**当前已实现**：kafka、petclinic（基础设施/基础应用）
+**当前已实现**：kafka、petclinic、spring-cloud-alibaba、nacos、spring-cloud-gateway（5 应用，共 60 用例）
 
-**计划实现（按优先级）**：nacos、spring-cloud-alibaba、dts-shop、keycloak、nexiot、minirobots 等
+**计划实现（按优先级）**：dts-shop、keycloak、nexiot、minirobots 等
 
 #### 8.8.2 前置条件
 

@@ -9,7 +9,7 @@
 param(
     [string]$ServerUrl = "http://localhost:18084",
     [string]$ApiKey = "enterprise-admin-key",
-    [string[]]$Apps = @("kafka", "petclinic", "spring-cloud-alibaba")
+    [string[]]$Apps = @("kafka", "petclinic", "spring-cloud-alibaba", "nacos", "spring-cloud-gateway")
 )
 
 $ErrorActionPreference = "Continue"

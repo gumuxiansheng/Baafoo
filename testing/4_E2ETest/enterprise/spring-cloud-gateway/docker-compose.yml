@@ -1,0 +1,138 @@
+# =============================================================================
+# Baafoo 企业级应用测试 - Spring Cloud Gateway
+# 验证 Agent 在网关层拦截、过滤器链兼容、路由转发场景下的能力
+#
+# 用法:
+#   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml up --build
+#   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -v
+# =============================================================================
+
+services:
+  # =========================================================================
+  # 后端服务（路由目标，复用 baafoo-test-spring）
+  # =========================================================================
+  backend-service:
+    build:
+      context: ../../..
+      dockerfile: testing/4_E2ETest/enterprise/spring-cloud-gateway/Dockerfile.backend
+    container_name: baafoo-enterprise-gateway-backend
+    networks:
+      - baafoo-enterprise-net
+    ports:
+      - "18092:9090"
+    environment:
+      - BAAFOO_SERVER_HOST=baafoo-server
+      - BAAFOO_ENV=enterprise-gateway-backend
+      - SERVER_PORT=9090
+      - JAVA_OPTS=-Xms128m -Xmx256m
+    depends_on:
+      baafoo-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9090/api/stub-demo/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # =========================================================================
+  # Spring Cloud Gateway（挂载 Baafoo Agent）
+  # 使用官方 spring-cloud-gateway 镜像，通过环境变量配置路由
+  # =========================================================================
+  gateway:
+    build:
+      context: ../../..
+      dockerfile: testing/4_E2ETest/enterprise/spring-cloud-gateway/Dockerfile.gateway
+    container_name: baafoo-enterprise-gateway
+    networks:
+      - baafoo-enterprise-net
+    ports:
+      - "18080:8080"
+    environment:
+      - BAAFOO_SERVER_HOST=baafoo-server
+      - BAAFOO_ENV=enterprise-gateway
+      - JAVA_OPTS=-XX:-UseContainerSupport -Xms128m -Xmx256m
+      - BACKEND_HOST=backend-service
+      - BACKEND_PORT=9090
+    depends_on:
+      baafoo-server:
+        condition: service_healthy
+      backend-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    restart: unless-stopped
+
+  # =========================================================================
+  # 测试初始化容器 - 创建测试环境和规则
+  # =========================================================================
+  gateway-test-init:
+    image: curlimages/curl:latest
+    container_name: baafoo-enterprise-gateway-init
+    networks:
+      - baafoo-enterprise-net
+    depends_on:
+      baafoo-server:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        echo "============================================"
+        echo "  Spring Cloud Gateway 企业级测试环境初始化"
+        echo "============================================"
+        echo ""
+
+        echo "[1/5] 创建 enterprise-gateway 环境..."
+        curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
+          -H "Content-Type: application/json" \
+          -H "X-Api-Key: enterprise-admin-key" \
+          -d '{"name":"enterprise-gateway","mode":"stub","description":"Gateway企业级测试环境"}' && echo "  OK" || echo "  已存在"
+        echo ""
+
+        echo "[2/5] 创建 enterprise-gateway-backend 环境..."
+        curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
+          -H "Content-Type: application/json" \
+          -H "X-Api-Key: enterprise-admin-key" \
+          -d '{"name":"enterprise-gateway-backend","mode":"stub","description":"Gateway后端测试环境"}' && echo "  OK" || echo "  已存在"
+        echo ""
+
+        echo "[3/5] 创建 Gateway 路由 Mock 规则（拦截 /api/mock/** 路径）..."
+        curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
+          -H "Content-Type: application/json" \
+          -H "X-Api-Key: enterprise-admin-key" \
+          -d '{"id":"gateway-route-mock","name":"Gateway路由Mock","protocol":"http","host":"gateway","port":8080,"conditions":[{"type":"path","operator":"startsWith","value":"/api/mock/"}],"responses":[{"name":"Mock网关响应","statusCode":200,"body":"{\"mocked\":true,\"source\":\"baafoo-gateway\",\"path\":\"{{path}}\",\"timestamp\":\"{{now}}\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","gateway","route"],"environments":["enterprise-gateway"]}' && echo "  OK" || echo "  已存在"
+        echo ""
+
+        echo "[4/5] 创建后端 API Mock 规则（拦截后端 /api/http/** 路径）..."
+        curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
+          -H "Content-Type: application/json" \
+          -H "X-Api-Key: enterprise-admin-key" \
+          -d '{"id":"backend-api-mock","name":"后端API Mock","protocol":"http","host":"backend-service","port":9090,"conditions":[{"type":"path","operator":"startsWith","value":"/api/http/"}],"responses":[{"name":"Mock后端响应","statusCode":200,"body":"{\"mocked\":true,\"source\":\"baafoo-backend\",\"method\":\"{{method}}\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","gateway","backend"],"environments":["enterprise-gateway-backend"]}' && echo "  OK" || echo "  已存在"
+        echo ""
+
+        echo "[5/5] 验证 Gateway 健康..."
+        curl -sf http://gateway:8080/actuator/health && echo "  OK" || echo "  不可达"
+        echo ""
+
+        echo "============================================"
+        echo "  Spring Cloud Gateway 企业级测试环境就绪"
+        echo "============================================"
+        echo ""
+        echo "  Baafoo控制台: http://localhost:18084"
+        echo "  Gateway:      http://localhost:18080"
+        echo "  后端服务:     http://localhost:18092"
+        echo "  API Key:      enterprise-admin-key"
+        echo ""
+        echo "  测试路由:"
+        echo "    GET  /api/http/health          -> 透传到后端"
+        echo "    GET  /api/http/get?url=...     -> 透传到后端 HTTP 调用"
+        echo "    GET  /api/mock/test            -> 被 Gateway Agent Mock"
+        echo "    GET  /api/backend/test         -> 透传到后端后被 Mock"
+        echo "============================================"

@@ -1,0 +1,39 @@
+# =============================================================================
+# Baafoo 企业级 Spring Cloud Gateway 测试 - 后端服务 Dockerfile
+# 复用 baafoo-test-spring 作为后端服务
+# =============================================================================
+
+FROM eclipse-temurin:8-jre-alpine
+
+LABEL maintainer="Baafoo Enterprise Gateway Backend"
+
+RUN apk add --no-cache tzdata && \
+    cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone && \
+    apk del tzdata
+
+RUN addgroup -S baafoo && adduser -S baafoo -G baafoo
+
+WORKDIR /app
+
+COPY baafoo-test-spring/target/baafoo-test-spring-*.jar ./baafoo-test-spring.jar
+COPY baafoo-agent/target/baafoo-agent-*.jar ./baafoo-agent.jar
+COPY testing/4_E2ETest/enterprise/spring-cloud-gateway/baafoo-agent-gateway.yml ./baafoo-agent.yml
+
+RUN mkdir -p /home/baafoo/.baafoo/data && \
+    chown -R baafoo:baafoo /app /home/baafoo/.baafoo
+
+USER baafoo
+
+EXPOSE 9090
+
+ENV JAVA_OPTS="" \
+    BAAFOO_SERVER_HOST="baafoo-server" \
+    BAAFOO_ENV="enterprise-gateway-backend" \
+    SERVER_PORT=9090
+
+ENTRYPOINT ["sh", "-c", \
+    "java ${JAVA_OPTS} \
+     -javaagent:/app/baafoo-agent.jar=config=/app/baafoo-agent.yml \
+     -jar /app/baafoo-test-spring.jar \
+     --server.port=${SERVER_PORT}"]

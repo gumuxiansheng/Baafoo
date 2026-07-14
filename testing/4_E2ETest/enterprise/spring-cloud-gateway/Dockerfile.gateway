@@ -1,0 +1,38 @@
+# =============================================================================
+# Baafoo 企业级 Spring Cloud Gateway 测试 - Gateway 应用 Dockerfile
+# 基于 Spring Cloud Gateway 官方镜像，注入 Baafoo Agent
+# =============================================================================
+
+FROM springcloud/spring-cloud-gateway:3.1.4
+
+LABEL maintainer="Baafoo Enterprise Gateway Test"
+
+USER root
+
+RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY baafoo-agent/target/baafoo-agent-*.jar /app/baafoo-agent.jar
+COPY testing/4_E2ETest/enterprise/spring-cloud-gateway/baafoo-agent-gateway.yml /app/baafoo-agent.yml
+
+RUN mkdir -p /root/.baafoo/data
+
+EXPOSE 8080
+
+ENV JAVA_OPTS="-XX:-UseContainerSupport -Xms128m -Xmx256m" \
+    BAAFOO_SERVER_HOST="baafoo-server" \
+    BAAFOO_ENV="enterprise-gateway"
+
+# Spring Cloud Gateway 路由配置通过环境变量注入
+# 路由: /api/** -> backend-service:9090
+ENTRYPOINT ["sh", "-c", \
+    "java ${JAVA_OPTS} \
+     -javaagent:/app/baafoo-agent.jar=config=/app/baafoo-agent.yml \
+     -jar /app/spring-cloud-gateway.jar \
+     --spring.cloud.gateway.routes[0].id=backend-route \
+     --spring.cloud.gateway.routes[0].uri=http://${BACKEND_HOST}:${BACKEND_PORT} \
+     --spring.cloud.gateway.routes[0].predicates[0]=Path=/api/** \
+     --spring.cloud.gateway.routes[0].filters[0]=StripPrefix=0 \
+     --server.port=8080 \
+     --management.endpoints.web.exposure.include=health,info,gateway"]
