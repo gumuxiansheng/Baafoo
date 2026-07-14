@@ -28,11 +28,11 @@ services:
       - ../common/baafoo-server-enterprise.yml:/app/baafoo-server.yml:ro
       - baafoo-enterprise-data:/home/baafoo/.baafoo
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:8084/__baafoo__/api/status || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8084/__baafoo__/api/status 2>/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 20
-      start_period: 30s
+      retries: 30
+      start_period: 60s
     restart: unless-stopped
 
 volumes:

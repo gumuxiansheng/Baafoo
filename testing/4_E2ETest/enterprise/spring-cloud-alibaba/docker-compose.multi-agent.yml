@@ -1,7 +1,7 @@
 # =============================================================================
-# Spring Cloud Alibaba 多 Agent 共存测试 - Docker Compose Override
-# 在原 docker-compose.yml 基础上追加 SkyWalking OAP + UI 服务
-# 使用方式:
+# Spring Cloud Alibaba 澶?Agent 鍏卞瓨娴嬭瘯 - Docker Compose Override
+# 鍦ㄥ師 docker-compose.yml 鍩虹涓婅拷鍔?SkyWalking OAP + UI 鏈嶅姟
+# 浣跨敤鏂瑰紡:
 #   docker compose -f ../common/docker-compose.base.yml \
 #                  -f docker-compose.yml \
 #                  -f docker-compose.multi-agent.yml up -d --build
@@ -9,9 +9,9 @@
 
 services:
   # ====================================================================
-  # SkyWalking OAP (Observability Analysis Platform) 后端
-  # 接收 Agent 上报的 trace/metric 数据
-  # 使用 H2 存储模式（默认），避免额外下载 Elasticsearch
+  # SkyWalking OAP (Observability Analysis Platform) 鍚庣
+  # 鎺ユ敹 Agent 涓婃姤鐨?trace/metric 鏁版嵁
+  # 浣跨敤 H2 瀛樺偍妯″紡锛堥粯璁わ級锛岄伩鍏嶉澶栦笅杞?Elasticsearch
   # ====================================================================
   baafoo-enterprise-oap:
     image: apache/skywalking-oap-server:9.4.0-java17
@@ -19,14 +19,14 @@ services:
     networks:
       - baafoo-enterprise-net
     ports:
-      - "11800:11800"   # gRPC port (agent → OAP)
-      - "12800:12800"   # HTTP port (UI → OAP)
+      - "11800:11800"   # gRPC port (agent 鈫?OAP)
+      - "12800:12800"   # HTTP port (UI 鈫?OAP)
     environment:
       - JAVA_OPTS=-Xms256m -Xmx512m -XX:MaxMetaspaceSize=256m
       - SW_STORAGE=h2
       - SW_HEALTH_CHECKER=default
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:12800/internal/l7check || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:12800/internal/l7check 2>/dev/null || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 30

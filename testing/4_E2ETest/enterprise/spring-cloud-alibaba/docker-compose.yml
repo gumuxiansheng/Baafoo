@@ -1,12 +1,12 @@
 # =============================================================================
-# Spring Cloud Alibaba 浼佷笟绾ф祴璇?- Docker Compose 缂栨帓
-# 鏋舵瀯: Nacos Server + service-provider + service-consumer + Baafoo Server
-# 娴嬭瘯鐢ㄤ緥: EG-INT-001/003/008
+# Spring Cloud Alibaba 娴间椒绗熺痪褎绁寸拠?- Docker Compose 缂傛牗甯?
+# 閺嬭埖鐎? Nacos Server + service-provider + service-consumer + Baafoo Server
+# 濞村鐦悽銊ょ伐: EG-INT-001/003/008
 # =============================================================================
 
 services:
   # ====================================================================
-  # Nacos Server (鏈嶅姟娉ㄥ唽涓績 + 閰嶇疆涓績)
+  # Nacos Server (閺堝秴濮熷▔銊ュ斀娑擃厼绺?+ 闁板秶鐤嗘稉顓炵妇)
   # ====================================================================
   nacos:
     image: nacos/nacos-server:v2.2.3
@@ -65,7 +65,7 @@ services:
       nacos:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:18081/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:18081/actuator/health 2>/dev/null || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 20
@@ -100,14 +100,14 @@ services:
       provider:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:18083/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:18083/actuator/health 2>/dev/null || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 20
       start_period: 90s
 
   # ====================================================================
-  # 鍒濆鍖栧鍣? 鍒涘缓 Baafoo Mock 瑙勫垯
+  # 閸掓繂顫愰崠鏍ь啇閸? 閸掓稑缂?Baafoo Mock 鐟欏嫬鍨?
   # ====================================================================
   sca-test-init:
     image: curlimages/curl:8.5.0
@@ -123,35 +123,35 @@ services:
     command:
       - |
         echo "=========================================="
-        echo " Spring Cloud Alibaba 娴嬭瘯鐜鍒濆鍖?
+        echo " Spring Cloud Alibaba 濞村鐦悳顖氼暔閸掓繂顫愰崠?
         echo "=========================================="
         echo ""
-        echo "[1/4] 鍒涘缓鐜: enterprise-sca-provider (STUB)"
+        echo "[1/4] 閸掓稑缂撻悳顖氼暔: enterprise-sca-provider (STUB)"
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"enterprise-sca-provider","name":"enterprise-sca-provider","mode":"STUB","description":"SCA Provider 鐜","tags":["enterprise","sca"]}' && echo "  OK" || echo "  宸插瓨鍦?
+          -d '{"id":"enterprise-sca-provider","name":"enterprise-sca-provider","mode":"STUB","description":"SCA Provider 閻滎垰顣?,"tags":["enterprise","sca"]}' && echo "  OK" || echo "  瀹告彃鐡ㄩ崷?
         echo ""
-        echo "[2/4] 鍒涘缓鐜: enterprise-sca-consumer (STUB)"
+        echo "[2/4] 閸掓稑缂撻悳顖氼暔: enterprise-sca-consumer (STUB)"
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"enterprise-sca-consumer","name":"enterprise-sca-consumer","mode":"STUB","description":"SCA Consumer 鐜","tags":["enterprise","sca"]}' && echo "  OK" || echo "  宸插瓨鍦?
+          -d '{"id":"enterprise-sca-consumer","name":"enterprise-sca-consumer","mode":"STUB","description":"SCA Consumer 閻滎垰顣?,"tags":["enterprise","sca"]}' && echo "  OK" || echo "  瀹告彃鐡ㄩ崷?
         echo ""
-        echo "[3/4] 鍒涘缓 Provider Echo API Mock 瑙勫垯 (Mock Feign 璋冪敤)"
+        echo "[3/4] 閸掓稑缂?Provider Echo API Mock 鐟欏嫬鍨?(Mock Feign 鐠嬪啰鏁?"
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"sca-provider-echo-mock","name":"Provider Echo API Mock","protocol":"http","host":"provider","port":18081,"conditions":[{"type":"path","operator":"startsWith","value":"/echo/"}],"responses":[{"name":"Mock Echo 鍝嶅簲","statusCode":200,"body":"hello Nacos Discovery mock","delayMs":0}],"enabled":true,"priority":50,"tags":["enterprise","sca","echo"],"environments":["enterprise-sca-consumer"]}' && echo "  OK" || echo "  宸插瓨鍦?
+          -d '{"id":"sca-provider-echo-mock","name":"Provider Echo API Mock","protocol":"http","host":"provider","port":18081,"conditions":[{"type":"path","operator":"startsWith","value":"/echo/"}],"responses":[{"name":"Mock Echo 閸濆秴绨?,"statusCode":200,"body":"hello Nacos Discovery mock","delayMs":0}],"enabled":true,"priority":50,"tags":["enterprise","sca","echo"],"environments":["enterprise-sca-consumer"]}' && echo "  OK" || echo "  瀹告彃鐡ㄩ崷?
         echo ""
-        echo "[4/4] 鍒涘缓 Nacos Server API Mock 瑙勫垯 (Mock 鏈嶅姟鍙戠幇鍝嶅簲)"
+        echo "[4/4] 閸掓稑缂?Nacos Server API Mock 鐟欏嫬鍨?(Mock 閺堝秴濮熼崣鎴犲箛閸濆秴绨?"
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"sca-nacos-discovery-mock","name":"Nacos Discovery Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance/list"}],"responses":[{"name":"Mock 鏈嶅姟鍙戠幇鍝嶅簲","statusCode":200,"body":"{\"name\":\"service-provider\",\"hosts\":[{\"instanceId\":\"mock-instance-1\",\"ip\":\"provider\",\"port\":18081,\"healthy\":true,\"enabled\":true}],\"mocked\":true}","delayMs":0}],"enabled":false,"priority":50,"tags":["enterprise","sca","nacos"],"environments":["enterprise-sca-consumer"]}' && echo "  OK (榛樿绂佺敤)" || echo "  宸插瓨鍦?
+          -d '{"id":"sca-nacos-discovery-mock","name":"Nacos Discovery Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance/list"}],"responses":[{"name":"Mock 閺堝秴濮熼崣鎴犲箛閸濆秴绨?,"statusCode":200,"body":"{\"name\":\"service-provider\",\"hosts\":[{\"instanceId\":\"mock-instance-1\",\"ip\":\"provider\",\"port\":18081,\"healthy\":true,\"enabled\":true}],\"mocked\":true}","delayMs":0}],"enabled":false,"priority":50,"tags":["enterprise","sca","nacos"],"environments":["enterprise-sca-consumer"]}' && echo "  OK (姒涙顓荤粋浣烘暏)" || echo "  瀹告彃鐡ㄩ崷?
         echo ""
         echo "=========================================="
-        echo " 鍒濆鍖栧畬鎴?
+        echo " 閸掓繂顫愰崠鏍х暚閹?
         echo "=========================================="
         echo ""
         echo "  Nacos:        http://localhost:18848/nacos"
@@ -160,7 +160,7 @@ services:
         echo "  Baafoo:       http://localhost:18084/__baafoo__/"
         echo "  API Key:      enterprise-admin-key"
         echo ""
-        echo "  娴嬭瘯API:"
-        echo "    GET /echo-feign/{str}  - Consumer Feign 璋冪敤 Provider"
-        echo "    GET /divide-feign?a=10&b=2 - Consumer Feign Divide 璋冪敤"
-        echo "    GET /services          - 鏌ヨ娉ㄥ唽鍒?Nacos 鐨勬湇鍔″垪琛?
+        echo "  濞村鐦疉PI:"
+        echo "    GET /echo-feign/{str}  - Consumer Feign 鐠嬪啰鏁?Provider"
+        echo "    GET /divide-feign?a=10&b=2 - Consumer Feign Divide 鐠嬪啰鏁?
+        echo "    GET /services          - 閺屻儴顕楀▔銊ュ斀閸?Nacos 閻ㄥ嫭婀囬崝鈥冲灙鐞?

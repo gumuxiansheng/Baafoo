@@ -1,15 +1,13 @@
 # =============================================================================
-# Baafoo 浼佷笟绾у簲鐢ㄦ祴璇?- Nacos 娉ㄥ唽閰嶇疆涓績
-# 楠岃瘉 Agent 鍦?Nacos 鏈嶅姟娉ㄥ唽/鍙戠幇/閰嶇疆鍦烘櫙涓嬬殑鎷︽埅鑳藉姏
-#
-# 鐢ㄦ硶:
+# Baafoo 娴间椒绗熺痪褍绨查悽銊︾ゴ鐠?- Nacos 濞夈劌鍞介柊宥囩枂娑擃厼绺?# 妤犲矁鐦?Agent 閸?Nacos 閺堝秴濮熷▔銊ュ斀/閸欐垹骞?闁板秶鐤嗛崷鐑樻珯娑撳娈戦幏锔藉焻閼宠棄濮?#
+# 閻劍纭?
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml up --build
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -v
 # =============================================================================
 
 services:
   # =========================================================================
-  # Nacos Server锛堢湡瀹炲疄渚嬶紝鐢ㄤ簬 passthrough 妯″紡瀵规瘮娴嬭瘯锛?  # =========================================================================
+  # Nacos Server閿涘牏婀＄€圭偛鐤勬笟瀣剁礉閻劋绨?passthrough 濡€崇础鐎佃鐦ù瀣槸閿?  # =========================================================================
   nacos:
     image: nacos/nacos-server:v2.2.3
     container_name: baafoo-enterprise-nacos-app
@@ -37,7 +35,7 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # 娴嬭瘯搴旂敤锛堟寕杞?Baafoo Agent锛屽悜 Nacos 娉ㄥ唽骞惰皟鐢?Nacos API锛?  # 澶嶇敤 baafoo-test-spring锛屽寘鍚?HTTP 璋冪敤鎺ュ彛
+  # 濞村鐦惔鏃傛暏閿涘牊瀵曟潪?Baafoo Agent閿涘苯鎮?Nacos 濞夈劌鍞介獮鎯扮殶閻?Nacos API閿?  # 婢跺秶鏁?baafoo-test-spring閿涘苯瀵橀崥?HTTP 鐠嬪啰鏁ら幒銉ュ經
   # =========================================================================
   nacos-test-app:
     build:
@@ -60,7 +58,7 @@ services:
       nacos:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:9090/api/stub-demo/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9090/api/stub-demo/health 2>/dev/null || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -68,7 +66,7 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # 娴嬭瘯鍒濆鍖栧鍣?- 鍒涘缓娴嬭瘯鐜鍜岃鍒?  # =========================================================================
+  # 濞村鐦崚婵嗩潗閸栨牕顔愰崳?- 閸掓稑缂撳ù瀣槸閻滎垰顣ㄩ崪宀冾潐閸?  # =========================================================================
   nacos-test-init:
     image: curlimages/curl:latest
     container_name: baafoo-enterprise-nacos-init
@@ -83,48 +81,48 @@ services:
     command:
       - |
         echo "============================================"
-        echo "  Nacos 浼佷笟绾ф祴璇曠幆澧冨垵濮嬪寲"
+        echo "  Nacos 娴间椒绗熺痪褎绁寸拠鏇犲箚婢у啫鍨垫慨瀣"
         echo "============================================"
         echo ""
 
-        echo "[1/4] 鍒涘缓 enterprise-nacos 鐜..."
+        echo "[1/4] 閸掓稑缂?enterprise-nacos 閻滎垰顣?.."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"name":"enterprise-nacos","mode":"stub","description":"Nacos浼佷笟绾ф祴璇曠幆澧?}' && echo "  OK" || echo "  宸插瓨鍦?
+          -d '{"name":"enterprise-nacos","mode":"stub","description":"Nacos娴间椒绗熺痪褎绁寸拠鏇犲箚婢?}' && echo "  OK" || echo "  瀹告彃鐡ㄩ崷?
         echo ""
 
-        echo "[2/4] 鍒涘缓 Nacos 娉ㄥ唽 API Mock 瑙勫垯..."
+        echo "[2/4] 閸掓稑缂?Nacos 濞夈劌鍞?API Mock 鐟欏嫬鍨?.."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"nacos-register-mock","name":"Nacos娉ㄥ唽API Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance"}],"responses":[{"name":"Mock娉ㄥ唽鍝嶅簲","statusCode":200,"body":"{\"ok\":true,\"mocked\":true,\"source\":\"baafoo-nacos\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","register"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  宸插瓨鍦?
+          -d '{"id":"nacos-register-mock","name":"Nacos濞夈劌鍞紸PI Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance"}],"responses":[{"name":"Mock濞夈劌鍞介崫宥呯安","statusCode":200,"body":"{\"ok\":true,\"mocked\":true,\"source\":\"baafoo-nacos\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","register"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  瀹告彃鐡ㄩ崷?
         echo ""
 
-        echo "[3/4] 鍒涘缓 Nacos 鏈嶅姟鍙戠幇 API Mock 瑙勫垯..."
+        echo "[3/4] 閸掓稑缂?Nacos 閺堝秴濮熼崣鎴犲箛 API Mock 鐟欏嫬鍨?.."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"nacos-discovery-mock","name":"Nacos鏈嶅姟鍙戠幇Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance/list"}],"responses":[{"name":"Mock鏈嶅姟鍒楄〃","statusCode":200,"body":"{\"name\":\"mock-service\",\"hosts\":[{\"instanceId\":\"mock-1\",\"ip\":\"192.168.1.100\",\"port\":8080,\"healthy\":true,\"enabled\":true}],\"mocked\":true}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","discovery"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  宸插瓨鍦?
+          -d '{"id":"nacos-discovery-mock","name":"Nacos閺堝秴濮熼崣鎴犲箛Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance/list"}],"responses":[{"name":"Mock閺堝秴濮熼崚妤勩€?,"statusCode":200,"body":"{\"name\":\"mock-service\",\"hosts\":[{\"instanceId\":\"mock-1\",\"ip\":\"192.168.1.100\",\"port\":8080,\"healthy\":true,\"enabled\":true}],\"mocked\":true}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","discovery"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  瀹告彃鐡ㄩ崷?
         echo ""
 
-        echo "[4/4] 鍒涘缓 Nacos 閰嶇疆鎷夊彇 API Mock 瑙勫垯..."
+        echo "[4/4] 閸掓稑缂?Nacos 闁板秶鐤嗛幏澶婂絿 API Mock 鐟欏嫬鍨?.."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"nacos-config-mock","name":"Nacos閰嶇疆鎷夊彇Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/cs/configs"}],"responses":[{"name":"Mock閰嶇疆","statusCode":200,"body":"server.port=9999\nmock.config=true\nsource=baafoo-nacos","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","config"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  宸插瓨鍦?
+          -d '{"id":"nacos-config-mock","name":"Nacos闁板秶鐤嗛幏澶婂絿Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/cs/configs"}],"responses":[{"name":"Mock闁板秶鐤?,"statusCode":200,"body":"server.port=9999\nmock.config=true\nsource=baafoo-nacos","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","config"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  瀹告彃鐡ㄩ崷?
         echo ""
 
         echo "============================================"
-        echo "  Nacos 浼佷笟绾ф祴璇曠幆澧冨氨缁?
+        echo "  Nacos 娴间椒绗熺痪褎绁寸拠鏇犲箚婢у啫姘ㄧ紒?
         echo "============================================"
         echo ""
-        echo "  Baafoo鎺у埗鍙? http://localhost:18084"
-        echo "  娴嬭瘯搴旂敤:     http://localhost:18091"
-        echo "  Nacos鎺у埗鍙?  http://localhost:18848/nacos"
+        echo "  Baafoo閹貉冨煑閸? http://localhost:18084"
+        echo "  濞村鐦惔鏃傛暏:     http://localhost:18091"
+        echo "  Nacos閹貉冨煑閸?  http://localhost:18848/nacos"
         echo "  API Key:      enterprise-admin-key"
         echo ""
-        echo "  娴嬭瘯鎺ュ彛:"
+        echo "  濞村鐦幒銉ュ經:"
         echo "    GET  /api/http/get?url=http://nacos:8848/nacos/v1/ns/instance/list?serviceName=test"
         echo "    GET  /api/http/get?url=http://nacos:8848/nacos/v1/cs/configs?dataId=test&group=DEFAULT"
         echo "    POST /api/http/post?url=http://nacos:8848/nacos/v1/ns/instance?serviceName=test&ip=10.0.0.1&port=8080"
