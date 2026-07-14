@@ -65,6 +65,12 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_ROOT" || { echo "Cannot cd to $PROJECT_ROOT"; exit 1; }
 
 COMPOSE_FILES="-f docker-compose.yml -f docker-compose.staging.yml"
+# When MULTI_AGENT_ENABLED=1, add the multi-agent overlay so app-env-a is
+# built with Dockerfile.multi-agent (JaCoCo + SkyWalking + Baafoo agents)
+# and the SkyWalking OAP container is started.
+if [[ "$MULTI_AGENT_ENABLED" == "1" ]]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.multi-agent.yml"
+fi
 SERVER="http://localhost:8084"
 APP_A="http://localhost:9090"
 APP_B="http://localhost:9091"
@@ -406,10 +412,19 @@ while [[ "$all_healthy" != "true" && $waited -lt $max_wait ]]; do
     app_a_health="$(docker inspect --format='{{.State.Health.Status}}' baafoo-app-env-a 2>/dev/null || true)"
     app_b_health="$(docker inspect --format='{{.State.Health.Status}}' baafoo-app-env-b 2>/dev/null || true)"
 
-    printf "\r  server=%s app-a=%s app-b=%s (%ss)" "$server_health" "$app_a_health" "$app_b_health" "$waited"
-
-    if [[ "$server_health" == "healthy" && "$app_a_health" == "healthy" && "$app_b_health" == "healthy" ]]; then
-        all_healthy=true
+    # In multi-agent mode, also wait for SkyWalking OAP (start_period=90s)
+    oap_health="-"
+    if [[ "$MULTI_AGENT_ENABLED" == "1" ]]; then
+        oap_health="$(docker inspect --format='{{.State.Health.Status}}' baafoo-staging-oap 2>/dev/null || echo "not_found")"
+        printf "\r  server=%s app-a=%s app-b=%s oap=%s (%ss)" "$server_health" "$app_a_health" "$app_b_health" "$oap_health" "$waited"
+        if [[ "$server_health" == "healthy" && "$app_a_health" == "healthy" && "$app_b_health" == "healthy" && "$oap_health" == "healthy" ]]; then
+            all_healthy=true
+        fi
+    else
+        printf "\r  server=%s app-a=%s app-b=%s (%ss)" "$server_health" "$app_a_health" "$app_b_health" "$waited"
+        if [[ "$server_health" == "healthy" && "$app_a_health" == "healthy" && "$app_b_health" == "healthy" ]]; then
+            all_healthy=true
+        fi
     fi
 done
 printf "\n"

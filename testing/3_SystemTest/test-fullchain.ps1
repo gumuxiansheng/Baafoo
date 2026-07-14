@@ -49,6 +49,12 @@ $PROJECT_ROOT = $PSScriptRoot | Split-Path -Parent | Split-Path -Parent
 Set-Location $PROJECT_ROOT
 
 $COMPOSE_FILES = @("-f", "docker-compose.yml", "-f", "docker-compose.staging.yml")
+# When MULTI_AGENT_ENABLED=1, add the multi-agent overlay so app-env-a is
+# built with Dockerfile.multi-agent (JaCoCo + SkyWalking + Baafoo agents)
+# and the SkyWalking OAP container is started.
+if ($env:MULTI_AGENT_ENABLED -eq "1") {
+    $COMPOSE_FILES += @("-f", "docker-compose.multi-agent.yml")
+}
 $SERVER = "http://localhost:8084"
 $APP_A  = "http://localhost:9090"
 $APP_B  = "http://localhost:9091"
@@ -276,11 +282,22 @@ while (-not $allHealthy -and $waited -lt $maxWait) {
     $appAHealth = & docker inspect --format='{{.State.Health.Status}}' baafoo-app-env-a 2>$null
     $appBHealth = & docker inspect --format='{{.State.Health.Status}}' baafoo-app-env-b 2>$null
 
-    $status = "server=$serverHealth app-a=$appAHealth app-b=$appBHealth (${waited}s)"
-    Write-Host "`r  $status                    " -NoNewline
-
-    if ($serverHealth -eq "healthy" -and $appAHealth -eq "healthy" -and $appBHealth -eq "healthy") {
-        $allHealthy = $true
+    # In multi-agent mode, also wait for SkyWalking OAP (start_period=90s)
+    $oapHealth = "-"
+    if ($env:MULTI_AGENT_ENABLED -eq "1") {
+        $oapHealth = & docker inspect --format='{{.State.Health.Status}}' baafoo-staging-oap 2>$null
+        if (-not $oapHealth) { $oapHealth = "not_found" }
+        $status = "server=$serverHealth app-a=$appAHealth app-b=$appBHealth oap=$oapHealth (${waited}s)"
+        Write-Host "`r  $status                    " -NoNewline
+        if ($serverHealth -eq "healthy" -and $appAHealth -eq "healthy" -and $appBHealth -eq "healthy" -and $oapHealth -eq "healthy") {
+            $allHealthy = $true
+        }
+    } else {
+        $status = "server=$serverHealth app-a=$appAHealth app-b=$appBHealth (${waited}s)"
+        Write-Host "`r  $status                    " -NoNewline
+        if ($serverHealth -eq "healthy" -and $appAHealth -eq "healthy" -and $appBHealth -eq "healthy") {
+            $allHealthy = $true
+        }
     }
 }
 Write-Host ""
