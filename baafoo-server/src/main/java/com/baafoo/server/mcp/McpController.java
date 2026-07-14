@@ -35,7 +35,7 @@ public class McpController extends SimpleChannelInboundHandler<FullHttpRequest> 
                          List<McpTool> tools) {
         this.storage = storage;
         this.authService = authService;
-        this.mapper = new ObjectMapper();
+        this.mapper = com.baafoo.core.util.JsonUtils.MAPPER;
         this.tools = tools;
         this.toolMap = new LinkedHashMap<>();
         for (McpTool tool : tools) {

@@ -56,7 +56,7 @@ public final class OpenApiImporter {
     private final ObjectMapper mapper;
 
     public OpenApiImporter() {
-        this.mapper = new ObjectMapper();
+        this.mapper = JsonUtils.MAPPER;
     }
 
     /**

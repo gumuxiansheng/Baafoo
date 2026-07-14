@@ -234,7 +234,7 @@ public class BaafooServer {
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     protected void initChannel(SocketChannel ch) {
-                        ch.pipeline().addLast(new GrpcUnifiedHandler(storage, config, eventBus));
+                        ch.pipeline().addLast(new GrpcUnifiedHandler(storage, config, eventBus, workerGroup));
                     }
                 });
 

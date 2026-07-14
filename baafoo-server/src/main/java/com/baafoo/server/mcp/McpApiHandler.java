@@ -23,7 +23,7 @@ public class McpApiHandler implements ResourceHandler {
     private static final Logger log = LoggerFactory.getLogger(McpApiHandler.class);
     private static final String MCP_PATH = "/__baafoo__/api/mcp";
 
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final ObjectMapper mapper = com.baafoo.core.util.JsonUtils.MAPPER;
     private final List<McpTool> tools;
     private final Map<String, McpTool> toolMap;
 

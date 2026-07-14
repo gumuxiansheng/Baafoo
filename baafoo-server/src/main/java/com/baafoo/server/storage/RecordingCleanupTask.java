@@ -80,6 +80,16 @@ public class RecordingCleanupTask {
      * Execute one cleanup cycle.
      */
     void cleanup() {
+        // Skip the cleanup cycle entirely when there are no recordings.
+        // This avoids unnecessary DB queries (deleteRecordingsOlderThan,
+        // getRecordingTotalSizeBytes, getRecordingCount) on an idle system.
+        // The count check is a single cheap query that short-circuits the rest.
+        long currentCount = storage.getRecordingCount();
+        if (currentCount == 0) {
+            log.debug("Recording cleanup skipped — no recordings in storage");
+            return;
+        }
+
         int retentionDays = config.getRecordingRetentionDays();
         int maxSizeMb = config.getRecordingMaxSizeMb();
 

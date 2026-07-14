@@ -88,7 +88,10 @@ public class FileStorage {
 
     public FileStorage(ServerConfig config) {
         this.config = config;
-        this.mapper = new ObjectMapper();
+        // FileStorage persists rules to disk as pretty-printed JSON for human
+        // readability. Copy the shared mapper and enable INDENT_OUTPUT rather
+        // than creating a new instance from scratch.
+        this.mapper = com.baafoo.core.util.JsonUtils.MAPPER.copy();
         this.mapper.enable(SerializationFeature.INDENT_OUTPUT);
     }
 

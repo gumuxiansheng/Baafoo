@@ -22,7 +22,7 @@ import java.sql.SQLException;
 public class JsonTypeHandler extends BaseTypeHandler<Object> {
 
     private static final Logger log = LoggerFactory.getLogger(JsonTypeHandler.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = com.baafoo.core.util.JsonUtils.MAPPER;
 
     private final Class<?> javaType;
     private final TypeReference<?> typeReference;

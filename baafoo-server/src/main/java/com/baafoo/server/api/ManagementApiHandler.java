@@ -73,7 +73,7 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
                                  java.util.function.Supplier<java.util.Map<String, String>> brokerStatusSupplier) {
         this.storage = storage;
         this.authService = authService;
-        this.mapper = new ObjectMapper();
+        this.mapper = com.baafoo.core.util.JsonUtils.MAPPER;
         this.chaosManager = chaosManager != null ? chaosManager : new ChaosManager();
         this.config = config;
         this.eventBus = eventBus;

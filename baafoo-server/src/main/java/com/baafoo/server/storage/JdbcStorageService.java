@@ -99,7 +99,7 @@ public class JdbcStorageService implements StorageService {
         // ObjectMapper is used only for deep-cloning Rule snapshots (serialize
         // → deserialize). INDENT_OUTPUT would waste CPU/bytes on formatting
         // that is immediately discarded (Low 42).
-        this.mapper = new ObjectMapper();
+        this.mapper = com.baafoo.core.util.JsonUtils.MAPPER;
         ServerConfig.DatabaseConfig dbConfig = config.getDatabase();
         this.dialect = DatabaseDialect.fromConfig(dbConfig != null ? dbConfig.getType() : null);
     }

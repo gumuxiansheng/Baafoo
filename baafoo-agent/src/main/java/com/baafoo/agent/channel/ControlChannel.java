@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -50,15 +51,20 @@ public class ControlChannel {
     private final AgentConfig config;
     private final ObjectMapper mapper;
     private final ScheduledExecutorService scheduler;
+    private final java.util.concurrent.ExecutorService ioWorker;
     private final AtomicBoolean running;
     private java.util.function.Consumer<String> agentIdCallback;
+
+    /** Circuit breaker for heartbeat/poll HTTP calls. */
+    private final CircuitBreaker circuitBreaker;
 
     private ScheduledFuture<?> heartbeatTask;
     private ScheduledFuture<?> pollTask;
 
     public ControlChannel(AgentConfig config) {
         this.config = config;
-        this.mapper = new ObjectMapper();
+        this.mapper = com.baafoo.core.util.JsonUtils.MAPPER;
+        // Scheduler: 2 threads, only dispatches tasks (no blocking I/O)
         this.scheduler = Executors.newScheduledThreadPool(2, new java.util.concurrent.ThreadFactory() {
             private int count = 0;
             public Thread newThread(Runnable r) {
@@ -67,6 +73,24 @@ public class ControlChannel {
                 return t;
             }
         });
+        // IO worker: bounded thread pool for blocking HTTP calls.
+        // Scheduler tasks submit I/O work here and return immediately, so
+        // the scheduler threads never block on network calls.
+        this.ioWorker = new ThreadPoolExecutor(
+                2, 2, 60L, TimeUnit.SECONDS,
+                new java.util.concurrent.LinkedBlockingQueue<Runnable>(32),
+                new java.util.concurrent.ThreadFactory() {
+                    private int count = 0;
+                    public Thread newThread(Runnable r) {
+                        Thread t = new Thread(r, "baafoo-io-" + (++count));
+                        t.setDaemon(true);
+                        return t;
+                    }
+                },
+                new ThreadPoolExecutor.DiscardOldestPolicy()
+        );
+        // Open after 5 consecutive failures, stay open for 30s before probing
+        this.circuitBreaker = new CircuitBreaker("control-channel", 5, 30_000L);
         this.running = new AtomicBoolean(false);
     }
 
@@ -140,6 +164,15 @@ public class ControlChannel {
         if (heartbeatTask != null) heartbeatTask.cancel(false);
         if (pollTask != null) pollTask.cancel(false);
         scheduler.shutdown();
+        ioWorker.shutdown();
+        try {
+            if (!ioWorker.awaitTermination(5, TimeUnit.SECONDS)) {
+                ioWorker.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            ioWorker.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     // --- Control API calls ---
@@ -158,6 +191,14 @@ public class ControlChannel {
             req.version = "1.0.0";
             req.protocols = config.getProtocols();
             req.agentIp = resolveLocalIp();
+
+            // Validate before sending — a malformed request would cause an
+            // opaque 400 or NPE on the server side.
+            String validationError = req.validate();
+            if (validationError != null) {
+                log.error("Registration request invalid: {}", validationError);
+                return false;
+            }
 
             String json = mapper.writeValueAsString(req);
             HttpURLConnection conn = post(API_BASE + "/agent/register", json);
@@ -202,6 +243,22 @@ public class ControlChannel {
     }
 
     private void heartbeat() {
+        // Submit I/O to the worker pool so the scheduler thread is never blocked.
+        // If the queue is full (server slow), the oldest pending heartbeat is
+        // discarded — heartbeats are idempotent so this is safe.
+        try {
+            ioWorker.submit(this::doHeartbeat);
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            log.debug("Heartbeat skipped — I/O queue full");
+        }
+    }
+
+    private void doHeartbeat() {
+        if (!circuitBreaker.allowRequest()) {
+            log.debug("Heartbeat skipped — circuit breaker OPEN (failures={})",
+                    circuitBreaker.getConsecutiveFailures());
+            return;
+        }
         try {
             HeartbeatRequest req = new HeartbeatRequest();
             req.agentId = config.getAgentId();
@@ -214,15 +271,32 @@ public class ControlChannel {
             String json = mapper.writeValueAsString(req);
             HttpURLConnection conn = post(API_BASE + "/agent/heartbeat", json);
 
-            if (conn.getResponseCode() != 200) {
+            if (conn.getResponseCode() == 200) {
+                circuitBreaker.recordSuccess();
+            } else {
                 log.warn("Heartbeat failed: HTTP {}", conn.getResponseCode());
+                circuitBreaker.recordFailure();
             }
         } catch (Exception e) {
             log.warn("Heartbeat error: {}", e.getMessage());
+            circuitBreaker.recordFailure();
         }
     }
 
     private void pollRules() {
+        try {
+            ioWorker.submit(this::doPollRules);
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            log.debug("Poll skipped — I/O queue full");
+        }
+    }
+
+    private void doPollRules() {
+        if (!circuitBreaker.allowRequest()) {
+            log.debug("Poll skipped — circuit breaker OPEN (failures={})",
+                    circuitBreaker.getConsecutiveFailures());
+            return;
+        }
         try {
             String agentId = config.getAgentId();
             String environment = config.getEnvironment();
@@ -244,6 +318,7 @@ public class ControlChannel {
 
             int code = conn.getResponseCode();
             if (code == 200) {
+                circuitBreaker.recordSuccess();
                 String body = readResponse(conn);
                 PollResponse res = unwrapApiResponse(body, PollResponse.class);
                 if (res != null) {
@@ -260,14 +335,18 @@ public class ControlChannel {
                     }
                 }
             } else if (code == 204) {
-                // No changes
+                // No changes — still a success from the breaker's perspective
+                circuitBreaker.recordSuccess();
             } else {
                 log.warn("Poll failed: HTTP {}", code);
+                circuitBreaker.recordFailure();
             }
         } catch (java.net.SocketTimeoutException e) {
-            // Long-poll timeout is expected, retry
+            // Long-poll timeout is expected, retry — not a failure
+            circuitBreaker.recordSuccess();
         } catch (Exception e) {
             log.warn("Poll error: {}", e.getMessage());
+            circuitBreaker.recordFailure();
         }
     }
 
@@ -378,6 +457,32 @@ public class ControlChannel {
         public String version;
         public List<String> protocols;
         public String agentIp;
+
+        /**
+         * Validate the request fields before sending to the server.
+         * @return null if valid, otherwise an error message describing the first problem.
+         */
+        public String validate() {
+            if (agentId == null || agentId.trim().isEmpty()) {
+                return "agentId must not be null or empty";
+            }
+            if (environment == null || environment.trim().isEmpty()) {
+                return "environment must not be null or empty";
+            }
+            if (hostname == null || hostname.trim().isEmpty()) {
+                return "hostname must not be null or empty";
+            }
+            // protocols may be null/empty for agents that don't intercept specific protocols,
+            // but if provided must not contain null entries
+            if (protocols != null) {
+                for (int i = 0; i < protocols.size(); i++) {
+                    if (protocols.get(i) == null) {
+                        return "protocols[" + i + "] must not be null";
+                    }
+                }
+            }
+            return null;
+        }
     }
 
     /**

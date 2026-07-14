@@ -27,6 +27,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelInitializer;
+import io.netty.channel.EventLoopGroup;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http2.DefaultHttp2DataFrame;
 import io.netty.handler.codec.http2.DefaultHttp2Headers;
@@ -80,18 +81,35 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
     private final MatchEngine matchEngine;
     /** P2: Event bus for firing plugin events (may be null) */
     private final com.baafoo.core.event.EventBus eventBus;
+    /** gRPC passthrough forwarder (null = passthrough not available) */
+    private final GrpcPassthroughForwarder forwarder;
 
     public GrpcUnifiedHandler(StorageService storage, ServerConfig config) {
-        this(storage, config, null);
+        this(storage, config, null, null);
     }
 
     public GrpcUnifiedHandler(StorageService storage, ServerConfig config,
                                com.baafoo.core.event.EventBus eventBus) {
+        this(storage, config, eventBus, null);
+    }
+
+    /**
+     * Full constructor with EventBus and worker EventLoopGroup for gRPC
+     * passthrough/record forwarding support.
+     *
+     * @param workerGroup the Netty worker group used for outbound HTTP/2
+     *                    connections to real gRPC backends; if null,
+     *                    passthrough/record modes return UNIMPLEMENTED
+     */
+    public GrpcUnifiedHandler(StorageService storage, ServerConfig config,
+                               com.baafoo.core.event.EventBus eventBus,
+                               EventLoopGroup workerGroup) {
         this.storage = storage;
         this.config = config;
         this.agentResolver = new AgentResolver(storage, config);
         this.matchEngine = new MatchEngine();
         this.eventBus = eventBus;
+        this.forwarder = workerGroup != null ? new GrpcPassthroughForwarder(workerGroup) : null;
     }
 
     /**
@@ -114,7 +132,7 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
 
         ch.pipeline().addLast(codec);
         ch.pipeline().addLast(new Http2MultiplexHandler(new GrpcStreamChildHandler(
-            storage, config, agentResolver, matchEngine, this.eventBus)));
+            storage, config, agentResolver, matchEngine, this.eventBus, this.forwarder)));
     }
 
     /**
@@ -129,6 +147,7 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
         private final AgentResolver agentResolver;
         private final MatchEngine matchEngine;
         private final com.baafoo.core.event.EventBus eventBus;
+        private final GrpcPassthroughForwarder forwarder;
 
         // Per-stream state
         private String path;
@@ -148,12 +167,14 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
 
         GrpcStreamChildHandler(StorageService storage, ServerConfig config,
                                AgentResolver agentResolver, MatchEngine matchEngine,
-                               com.baafoo.core.event.EventBus eventBus) {
+                               com.baafoo.core.event.EventBus eventBus,
+                               GrpcPassthroughForwarder forwarder) {
             this.storage = storage;
             this.config = config;
             this.agentResolver = agentResolver;
             this.matchEngine = matchEngine;
             this.eventBus = eventBus;
+            this.forwarder = forwarder;
         }
 
         /** P2: Fire a plugin event if event bus is available. */
@@ -273,9 +294,32 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
                     EnvironmentMode mode = agentResolver.resolveEnvironmentMode(agentEnv);
 
                     if (mode == EnvironmentMode.PASSTHROUGH || mode == EnvironmentMode.RECORD) {
-                        // D7 fix: use UNIMPLEMENTED(12) instead of UNAVAILABLE(14)
-                        log.info("Mode {} — gRPC passthrough for: {}", mode.getValue(), path);
-                        sendGrpcError(ctx, 12, "Passthrough not supported for gRPC stub");
+                        // Forward to real gRPC backend over HTTP/2.
+                        // Requires: (1) a forwarder (workerGroup was provided),
+                        //           (2) the matched rule has host + port configured.
+                        if (forwarder == null) {
+                            log.warn("gRPC passthrough not available (no EventLoopGroup) for: {}", path);
+                            sendGrpcError(ctx, 12, "Passthrough not available");
+                            return;
+                        }
+                        Rule matchedRule = result.getRule();
+                        String targetHost = matchedRule.getHost();
+                        Integer targetPort = matchedRule.getPort();
+                        if (targetHost == null || targetHost.isEmpty() || targetPort == null || targetPort <= 0) {
+                            log.warn("gRPC passthrough: rule '{}' has no host/port configured, cannot forward: {}",
+                                    matchedRule.getId(), path);
+                            sendGrpcError(ctx, 12, "No backend host/port configured for passthrough");
+                            return;
+                        }
+                        log.info("Mode {} — gRPC passthrough to {}:{} for: {}",
+                                mode.getValue(), targetHost, targetPort, path);
+                        boolean record = (mode == EnvironmentMode.RECORD);
+                        GrpcPassthroughForwarder.ForwardContext fwdCtx = new GrpcPassthroughForwarder.ForwardContext(
+                                ctx, frameStream, targetHost, targetPort, path,
+                                metadata, requestMessages, getAccumulatedHex(),
+                                record, matchedRule,
+                                agentInfo.agentId, agentInfo.agentIp, agentEnv, storage);
+                        forwarder.forward(fwdCtx);
                         return;
                     }
 

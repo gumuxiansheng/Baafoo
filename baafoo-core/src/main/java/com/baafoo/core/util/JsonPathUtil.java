@@ -30,7 +30,7 @@ public final class JsonPathUtil {
 
     private static final Logger log = LoggerFactory.getLogger(JsonPathUtil.class);
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = JsonUtils.MAPPER;
 
     private JsonPathUtil() {
     }

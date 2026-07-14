@@ -13,7 +13,7 @@ import java.util.*;
  */
 public class HarExporter {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = com.baafoo.core.util.JsonUtils.MAPPER.copy();
     static {
         MAPPER.enable(SerializationFeature.INDENT_OUTPUT);
     }

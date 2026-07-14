@@ -46,7 +46,7 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
      * instance is the recommended pattern — previously a new mapper was
      * created for every connection.
      */
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = com.baafoo.core.util.JsonUtils.MAPPER;
 
     public AuthFilter(AuthService authService, ServerConfig config) {
         this.authService = authService;
