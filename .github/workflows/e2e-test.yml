@@ -331,10 +331,11 @@ jobs:
           IFS=',' read -ra APP_ARRAY <<< "${{ steps.app-list.outputs.apps }}"
           for app in "${APP_ARRAY[@]}"; do
             app=$(echo "$app" | xargs)
-            if [ -f "$app/junit-report.xml" ]; then
-              tests=$(grep -o 'tests="[0-9]*"' "$app/junit-report.xml" | head -1 | grep -o '[0-9]*')
-              failures=$(grep -o 'failures="[0-9]*"' "$app/junit-report.xml" | head -1 | grep -o '[0-9]*')
-              skipped=$(grep -o 'skipped="[0-9]*"' "$app/junit-report.xml" | head -1 | grep -o '[0-9]*')
+            report="testing/4_E2ETest/enterprise/$app/junit-report.xml"
+            if [ -f "$report" ]; then
+              tests=$(grep -o 'tests="[0-9]*"' "$report" | head -1 | grep -o '[0-9]*')
+              failures=$(grep -o 'failures="[0-9]*"' "$report" | head -1 | grep -o '[0-9]*')
+              skipped=$(grep -o 'skipped="[0-9]*"' "$report" | head -1 | grep -o '[0-9]*')
               if [ "$failures" = "0" ]; then
                 echo "| $app | ✅ ${tests} tests, ${skipped} skipped |" >> "$GITHUB_STEP_SUMMARY"
               else
