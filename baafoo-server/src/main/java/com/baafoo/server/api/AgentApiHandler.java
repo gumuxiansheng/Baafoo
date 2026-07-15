@@ -51,9 +51,30 @@ class AgentApiHandler implements ResourceHandler {
         if (path.equals(API_PREFIX + "agent/heartbeat") && "POST".equals(method)) {
             Map<String, Object> reqBody = ctx.mapper.readValue(body, Map.class);
             String agentId = (String) reqBody.get("agentId");
+            String env = (String) reqBody.getOrDefault("environment", "default");
+            if (env == null) env = "default";
             // Use server-observed source IP for the same reason as registration
             String agentIp = ctx.remoteAddr;
-            ctx.storage.agentHeartbeat(agentId, agentIp);
+
+            // If the agent was never registered (e.g., initial registration failed
+            // due to a transient network issue or UnknownHostException on Alpine),
+            // register it now so it appears in the agent list. The heartbeat's
+            // UPDATE-only SQL would silently affect 0 rows for an unregistered agent.
+            boolean agentExists = false;
+            for (AgentRegistration reg : ctx.storage.listAgents()) {
+                if (agentId != null && agentId.equals(reg.getAgentId())) {
+                    agentExists = true;
+                    break;
+                }
+            }
+            if (!agentExists) {
+                @SuppressWarnings("unchecked")
+                List<String> protocols = (List<String>) reqBody.getOrDefault("protocols", new ArrayList<String>());
+                ctx.storage.registerAgent(agentId, env, "heartbeat-registered", "1.0.0", protocols, agentIp);
+            } else {
+                ctx.storage.agentHeartbeat(agentId, agentIp);
+            }
+
             // P3: Store plugin health statuses reported by agent
             @SuppressWarnings("unchecked")
             Map<String, Object> pluginStatuses = (Map<String, Object>) reqBody.get("pluginStatuses");

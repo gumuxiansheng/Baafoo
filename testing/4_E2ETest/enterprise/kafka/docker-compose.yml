@@ -1,15 +1,15 @@
 # =============================================================================
-# Baafoo 濞撮棿妞掔粭鐔虹棯瑜嶇花鏌ユ偨閵婏妇銈撮悹?- Apache Kafka
-# 濡ょ姴鐭侀惁?Agent 闁革负鍔庡﹢锛勨偓?Kafka 闁绘粠鍨伴。銊︾▔鐎ｎ剚鐣遍柟鍑ら檮閸╁懘鎳楅挊澶婎潝闁告粌鑻崥瀣偓纭咁潐閳?
+# Baafoo Enterprise Test - Apache Kafka
+# Verifies Agent intercepts Kafka Producer/Consumer traffic with Baafoo Server
 #
-# 闁活潿鍔嶇涵?
+# Usage:
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml up --build
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -v
 # =============================================================================
 
 services:
   # =========================================================================
-  # Kafka Broker闁挎稑鐗忓﹢锛勨偓?Kafka闁挎稑鐬奸弫銈嗙?passthrough 婵☆垪鈧磭纭€閻庝絻顫夐惁顔济圭€ｎ厾妲搁柨?
+  # Kafka Broker - real Kafka for passthrough/record mode tests
   # =========================================================================
   kafka:
     # Apache official Kafka image (KRaft mode). Previously used soldevelo/kafka
@@ -37,10 +37,10 @@ services:
       - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
       - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
       - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
-      # Stable cluster ID 闁?prevents random ID regeneration on restart
+      # Stable cluster ID - prevents random ID regeneration on restart
       - CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
     healthcheck:
-      # apache/kafka doesn't put kafka-topics.sh on PATH for CMD-SHELL 闁?use absolute path
+      # apache/kafka doesn't put kafka-topics.sh on PATH for CMD-SHELL - use absolute path
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
       interval: 10s
       timeout: 5s
@@ -49,8 +49,7 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # Kafka 閻庡箍鍨洪崺娑氱博椤栨稓銈撮悹鍥ㄦ礀缁ㄦ煡鎮介…鎺旂闁圭鍊藉ù?Baafoo Agent闁?
-  # 濠㈣泛绉堕弫?baafoo-test-spring闁挎稑鑻€垫﹢宕?Kafka Producer/Consumer 婵炴潙顑堥惁顖炲箳閵夈儱缍?
+  # Kafka Test App - baafoo-test-spring with Kafka Producer/Consumer endpoints
   # =========================================================================
   kafka-test-app:
     build:
@@ -80,7 +79,7 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # 婵炴潙顑堥惁顖炲礆濠靛棭娼楅柛鏍ㄧ墪椤旀劙宕?- 闁告帗绋戠紓鎾趁圭€ｎ厾妲搁柣婊庡灠椤ｃ劑宕畝鍐炬綈闁?
+  # Init container - create environment and register mock rules
   # =========================================================================
   kafka-test-init:
     image: curlimages/curl:latest
@@ -95,51 +94,50 @@ services:
     entrypoint: >
       sh -c '
         echo "============================================"
-        echo "  Kafka 濞撮棿妞掔粭鐔虹棯瑜庣粊瀵告嫚閺囩姴绠氬褍鍟崹鍨叏鐎ｎ亜顕?
+        echo "  Kafka enterprise test init"
         echo "============================================"
         echo ""
 
-        echo "[1/5] 闁告帗绋戠紓?enterprise-kafka 闁绘粠鍨伴。?.."
+        echo "[1/5] Create environment enterprise-kafka..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d "{\"name\":\"enterprise-kafka\",\"mode\":\"stub\",\"description\":\"Kafka濞撮棿妞掔粭鐔虹棯瑜庣粊瀵告嫚閺囩姴绠氬褍鍎?}" && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
+          -d "{\"name\":\"enterprise-kafka\",\"mode\":\"stub\",\"description\":\"Kafka enterprise test environment\"}" && echo "  OK" || echo "  FAILED"
         echo ""
 
-        echo "[2/5] 闁告帗绋戠紓?Kafka Topic 缂侇喖澧介垾姗€宕犺ぐ鎺戝赋閻熸瑥瀚崹?.."
+        echo "[2/5] Create Kafka Topic exact match rule..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d "{\"id\":\"kafka-enterprise-topic-exact\",\"name\":\"Kafka濞撮棿妞掔粭鐔虹棯?Topic缂侇喖澧介垾姗€宕犺ぐ鎺戝赋\",\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"equals\",\"value\":\"enterprise-test-topic\"}],\"responses\":[{\"name\":\"Mock闁告繂绉寸花鐬?,\"body\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-enterprise-kafka\\\",\\\"timestamp\\\":\\\"{{now}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
+          -d "{\"id\":\"kafka-enterprise-topic-exact\",\"name\":\"Kafka Topic Exact Match\",\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"equals\",\"value\":\"enterprise-test-topic\"}],\"responses\":[{\"name\":\"Mock Response\",\"body\":\"{\\\"mocked\\\":true,\\\"source\\\":\\\"baafoo-enterprise-kafka\\\",\\\"timestamp\\\":\\\"{{now}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":100,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  FAILED"
         echo ""
 
-        echo "[3/5] 闁告帗绋戠紓?Kafka Topic 闂侇偅宀搁崢銈囩箔閿曗偓鐏忣噣鏌婂鍫綈闁?.."
+        echo "[3/5] Create Kafka Topic wildcard match rule..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d "{\"id\":\"kafka-enterprise-topic-wildcard\",\"name\":\"Kafka濞撮棿妞掔粭鐔虹棯?Topic闂侇偅宀搁崢銈囩箔閿曗偓鐏忣噣鏌婂畡?,\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"startsWith\",\"value\":\"enterprise-\"}],\"responses\":[{\"name\":\"Mock闁告繂绉寸花?闂侇偅宀搁崢銈囩箔?\",\"body\":\"{\\\"mocked\\\":true,\\\"wildcard\\\":true,\\\"topic\\\":\\\"{{topic}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":50,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
+          -d "{\"id\":\"kafka-enterprise-topic-wildcard\",\"name\":\"Kafka Topic Wildcard Match\",\"protocol\":\"kafka\",\"host\":\"kafka\",\"port\":9092,\"conditions\":[{\"type\":\"topic\",\"operator\":\"startsWith\",\"value\":\"enterprise-\"}],\"responses\":[{\"name\":\"Mock Wildcard Response\",\"body\":\"{\\\"mocked\\\":true,\\\"wildcard\\\":true,\\\"topic\\\":\\\"{{topic}}\\\"}\",\"delayMs\":0}],\"enabled\":true,\"priority\":50,\"tags\":[\"enterprise\",\"kafka\"],\"environments\":[\"enterprise-kafka\"]}" && echo "  OK" || echo "  FAILED"
         echo ""
 
-        echo "[4/5] 濡ょ姴鐭侀惁澶娒圭€ｎ厾妲搁幖瀛樻⒒閺併倝宕戦妷銉﹀€ｉ柣妯垮煐閳?.."
-        curl -sf http://kafka-test-app:9090/api/stub-demo/health && echo "  OK" || echo "  濞戞挸绉磋ぐ鍙夋綇?
+        echo "[4/5] Verify Kafka test app health..."
+        curl -sf http://kafka-test-app:9090/api/stub-demo/health && echo "  OK" || echo "  FAILED"
         echo ""
 
-        echo "[5/5] 闁革负鍔庡﹢锛勨偓?Kafka 闁告帗绋戠紓鎾趁圭€ｎ厾妲?Topic..."
-        echo "  缂佹稑顦欢?Kafka 闁煎浜滄慨鈺呭礆濞戞绱?Topic..."
+        echo "[5/5] Done."
         echo ""
 
         echo "============================================"
-        echo "  Kafka 濞撮棿妞掔粭鐔虹棯瑜庣粊瀵告嫚閺囩姴绠氬褍鍟銊х磼?
+        echo "  Kafka enterprise test init complete"
         echo "============================================"
         echo ""
-        echo "  Baafoo闁硅矇鍐ㄧ厬闁? http://localhost:18084"
-        echo "  婵炴潙顑堥惁顖涙償閺冨倹鏆?      http://localhost:18090"
-        echo "  Kafka:         localhost:19092 (濠㈣埖鐗犻崕?"
-        echo "                 kafka:9092 (閻庡湱鎳撳▍鎺楀礃?"
-        echo "  API Key:       enterprise-admin-key"
+        echo "  Baafoo Server:  http://localhost:18084"
+        echo "  Test App:       http://localhost:18090"
+        echo "  Kafka:          localhost:19092 (host)"
+        echo "                  kafka:9092 (internal)"
+        echo "  API Key:        enterprise-admin-key"
         echo ""
-        echo "  婵炴潙顑堥惁顖炲箳閵夈儱缍?"
-        echo "    POST /api/stub-demo/kafka/send - 闁告瑦鍨块埀顑跨敨afka婵炴垵鐗婃导?
-        echo "    POST /api/stub-demo/kafka/consume - 婵炴垵鐗愰崹渚筧fka婵炴垵鐗婃导?
+        echo "  Test endpoints:"
+        echo "    POST /api/stub-demo/kafka/send - send Kafka message"
+        echo "    POST /api/stub-demo/kafka/consume - consume Kafka message"
         echo "============================================"
       '

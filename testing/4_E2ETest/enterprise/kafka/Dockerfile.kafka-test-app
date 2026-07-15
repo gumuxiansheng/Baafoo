@@ -1,7 +1,7 @@
 # =============================================================================
-# Baafo 浼佷笟绾?Kafka 娴嬭瘯搴旂敤 Dockerfile
-# 澶嶇敤 baafoo-test-spring 娴嬭瘯搴旂敤锛屼絾 COPY Kafka 涓撶敤 Agent 閰嶇疆
-# 鐩存帴宓屽叆闀滃儚浠ラ伩鍏?Windows Docker Desktop 鍗曟枃浠?volume 鎸傝浇闂
+# Baafoo Enterprise Kafka Test App Dockerfile
+# Reuses baafoo-test-spring test app, but COPYs Kafka-specific Agent config
+# directly into the image to avoid Windows Docker Desktop single-file volume issues
 # =============================================================================
 
 FROM eclipse-temurin:8-jre-alpine
@@ -17,11 +17,12 @@ RUN addgroup -S baafoo && adduser -S baafoo -G baafoo
 
 WORKDIR /app
 
-# 澶嶅埗鏈湴鏋勫缓濂界殑 JAR 鏂囦欢
+# Copy locally built JAR files
 COPY baafoo-test-spring/target/baafoo-test-spring-*.jar ./baafoo-test-spring.jar
 COPY baafoo-agent/target/baafoo-agent-*.jar ./baafoo-agent.jar
 
-# 澶嶅埗 Kafka 涓撶敤 Agent 閰嶇疆锛堜笉鍐嶉€氳繃 volume 鎸傝浇锛?COPY testing/4_E2ETest/enterprise/kafka/baafoo-agent-kafka.yml ./baafoo-agent.yml
+# Copy Kafka-specific Agent config (not volume-mounted)
+COPY testing/4_E2ETest/enterprise/kafka/baafoo-agent-kafka.yml ./baafoo-agent.yml
 
 RUN mkdir -p /home/baafoo/.baafoo/data && \
     chown -R baafoo:baafoo /app /home/baafoo/.baafoo
@@ -35,7 +36,7 @@ ENV JAVA_OPTS="" \
     BAAFOO_ENV="enterprise-kafka" \
     SERVER_PORT=9090
 
-# 浠?Agent 妯″紡鍚姩 Spring Boot 娴嬭瘯搴旂敤
+# Start Spring Boot test app with Agent
 ENTRYPOINT ["sh", "-c", \
     "java ${JAVA_OPTS} \
      -javaagent:/app/baafoo-agent.jar=config=/app/baafoo-agent.yml \

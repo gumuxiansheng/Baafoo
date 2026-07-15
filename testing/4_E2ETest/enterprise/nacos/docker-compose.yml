@@ -1,13 +1,16 @@
 # =============================================================================
-# Baafoo 濞撮棿妞掔粭鐔虹棯瑜嶇花鏌ユ偨閵婏妇銈撮悹?- Nacos 婵炲鍔岄崬浠嬫煀瀹ュ洨鏋傚☉鎿冨幖缁?# 濡ょ姴鐭侀惁?Agent 闁?Nacos 闁哄牆绉存慨鐔封枖閵娿儱鏂€/闁告瑦鍨归獮?闂佹澘绉堕悿鍡涘捶閻戞ɑ鐝☉鎾愁儑濞堟垿骞忛敂钘夌劵闁煎疇妫勬慨?#
-# 闁活潿鍔嶇涵?
+# Baafoo Enterprise Test - Nacos Discovery & Config
+# Verifies Agent intercepts Nacos service discovery and config API calls
+#
+# Usage:
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml up --build
 #   docker compose -f ../common/docker-compose.base.yml -f docker-compose.yml down -v
 # =============================================================================
 
 services:
   # =========================================================================
-  # Nacos Server闁挎稑鐗忓﹢锛勨偓鍦仜閻ゅ嫭绗熺€ｅ墎绀夐柣顫妺缁?passthrough 婵☆垪鈧磭纭€閻庝絻顫夐惁顔济圭€ｎ厾妲搁柨?  # =========================================================================
+  # Nacos Server - real Nacos for passthrough/record mode tests
+  # =========================================================================
   nacos:
     image: nacos/nacos-server:v2.2.3
     container_name: baafoo-enterprise-nacos-app
@@ -35,7 +38,8 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # 婵炴潙顑堥惁顖涙償閺冨倹鏆忛柨娑樼墛鐎垫洘娼?Baafoo Agent闁挎稑鑻幃?Nacos 婵炲鍔岄崬浠嬬嵁閹壆娈堕柣?Nacos API闁?  # 濠㈣泛绉堕弫?baafoo-test-spring闁挎稑鑻€垫﹢宕?HTTP 閻犲鍟伴弫銈夊箳閵夈儱缍?  # =========================================================================
+  # Nacos Test App - baafoo-test-spring with HTTP proxy endpoints
+  # =========================================================================
   nacos-test-app:
     build:
       context: ../../../..
@@ -65,7 +69,8 @@ services:
     restart: unless-stopped
 
   # =========================================================================
-  # 婵炴潙顑堥惁顖炲礆濠靛棭娼楅柛鏍ㄧ墪椤旀劙宕?- 闁告帗绋戠紓鎾趁圭€ｎ厾妲搁柣婊庡灠椤ｃ劑宕畝鍐炬綈闁?  # =========================================================================
+  # Init container - create environment and register mock rules
+  # =========================================================================
   nacos-test-init:
     image: curlimages/curl:latest
     container_name: baafoo-enterprise-nacos-init
@@ -80,48 +85,48 @@ services:
     command:
       - |
         echo "============================================"
-        echo "  Nacos 濞撮棿妞掔粭鐔虹棯瑜庣粊瀵告嫚閺囩姴绠氬褍鍟崹鍨叏鐎ｎ亜顕?
+        echo "  Nacos enterprise test init"
         echo "============================================"
         echo ""
 
-        echo "[1/4] 闁告帗绋戠紓?enterprise-nacos 闁绘粠鍨伴。?.."
+        echo "[1/4] Create environment enterprise-nacos..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"name":"enterprise-nacos","mode":"stub","description":"Nacos濞撮棿妞掔粭鐔虹棯瑜庣粊瀵告嫚閺囩姴绠氬?}' && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
+          -d '{"name":"enterprise-nacos","mode":"stub","description":"Nacos enterprise test environment"}' && echo "  OK" || echo "  FAILED"
         echo ""
 
-        echo "[2/4] 闁告帗绋戠紓?Nacos 婵炲鍔岄崬?API Mock 閻熸瑥瀚崹?.."
+        echo "[2/4] Create Nacos Instance API Mock rule..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"nacos-register-mock","name":"Nacos婵炲鍔岄崬绱窹I Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance"}],"responses":[{"name":"Mock婵炲鍔岄崬浠嬪传瀹ュ懐瀹?,"statusCode":200,"body":"{\"ok\":true,\"mocked\":true,\"source\":\"baafoo-nacos\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","register"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
+          -d '{"id":"nacos-register-mock","name":"Nacos Instance API Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance"}],"responses":[{"name":"Mock Instance Response","statusCode":200,"body":"{\"ok\":true,\"mocked\":true,\"source\":\"baafoo-nacos\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","register"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  FAILED"
         echo ""
 
-        echo "[3/4] 闁告帗绋戠紓?Nacos 闁哄牆绉存慨鐔煎矗閹寸姴绠?API Mock 閻熸瑥瀚崹?.."
+        echo "[3/4] Create Nacos Discovery API Mock rule..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"nacos-discovery-mock","name":"Nacos闁哄牆绉存慨鐔煎矗閹寸姴绠汳ock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance/list"}],"responses":[{"name":"Mock闁哄牆绉存慨鐔煎礆濡ゅ嫨鈧?,"statusCode":200,"body":"{\"name\":\"mock-service\",\"hosts\":[{\"instanceId\":\"mock-1\",\"ip\":\"192.168.1.100\",\"port\":8080,\"healthy\":true,\"enabled\":true}],\"mocked\":true}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","discovery"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
+          -d '{"id":"nacos-discovery-mock","name":"Nacos Discovery Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance/list"}],"responses":[{"name":"Mock Discovery Response","statusCode":200,"body":"{\"name\":\"mock-service\",\"hosts\":[{\"instanceId\":\"mock-1\",\"ip\":\"192.168.1.100\",\"port\":8080,\"healthy\":true,\"enabled\":true}],\"mocked\":true}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","discovery"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  FAILED"
         echo ""
 
-        echo "[4/4] 闁告帗绋戠紓?Nacos 闂佹澘绉堕悿鍡涘箯婢跺﹤绲?API Mock 閻熸瑥瀚崹?.."
+        echo "[4/4] Create Nacos Config API Mock rule..."
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"nacos-config-mock","name":"Nacos闂佹澘绉堕悿鍡涘箯婢跺﹤绲縈ock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/cs/configs"}],"responses":[{"name":"Mock闂佹澘绉堕悿?,"statusCode":200,"body":"server.port=9999\nmock.config=true\nsource=baafoo-nacos","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","config"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
+          -d '{"id":"nacos-config-mock","name":"Nacos Config Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/cs/configs"}],"responses":[{"name":"Mock Config Response","statusCode":200,"body":"server.port=9999\nmock.config=true\nsource=baafoo-nacos","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","config"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  FAILED"
         echo ""
 
         echo "============================================"
-        echo "  Nacos 濞撮棿妞掔粭鐔虹棯瑜庣粊瀵告嫚閺囩姴绠氬褍鍟銊х磼?
+        echo "  Nacos enterprise test init complete"
         echo "============================================"
         echo ""
-        echo "  Baafoo闁硅矇鍐ㄧ厬闁? http://localhost:18084"
-        echo "  婵炴潙顑堥惁顖涙償閺冨倹鏆?     http://localhost:18091"
-        echo "  Nacos闁硅矇鍐ㄧ厬闁?  http://localhost:18848/nacos"
-        echo "  API Key:      enterprise-admin-key"
+        echo "  Baafoo Server:  http://localhost:18084"
+        echo "  Test App:       http://localhost:18091"
+        echo "  Nacos Server:   http://localhost:18848/nacos"
+        echo "  API Key:        enterprise-admin-key"
         echo ""
-        echo "  婵炴潙顑堥惁顖炲箳閵夈儱缍?"
+        echo "  Test endpoints:"
         echo "    GET  /api/http/get?url=http://nacos:8848/nacos/v1/ns/instance/list?serviceName=test"
         echo "    GET  /api/http/get?url=http://nacos:8848/nacos/v1/cs/configs?dataId=test&group=DEFAULT"
         echo "    POST /api/http/post?url=http://nacos:8848/nacos/v1/ns/instance?serviceName=test&ip=10.0.0.1&port=8080"
