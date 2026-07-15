@@ -148,6 +148,41 @@ jobs:
             esac
           done
 
+      - name: Diagnose init containers and API state
+        # Show init container logs and verify environments/rules were created
+        run: |
+          echo "========== Server Logs (last 80 lines) =========="
+          docker logs --tail 80 baafoo-enterprise-server 2>&1 || echo "(server container not found)"
+          echo ""
+
+          echo "========== Init Container Logs =========="
+          for c in kafka petclinic sca nacos gateway; do
+            name="baafoo-enterprise-${c}-init"
+            echo "--- ${name} ---"
+            docker logs "${name}" 2>&1 || echo "(container not found)"
+            echo ""
+          done
+
+          echo "========== API State =========="
+          echo "--- Environments ---"
+          curl -sf -H "X-Api-Key: enterprise-admin-key" http://localhost:18084/__baafoo__/api/environments | jq . 2>/dev/null || echo "FAILED to list environments"
+          echo ""
+          echo "--- Rules ---"
+          curl -sf -H "X-Api-Key: enterprise-admin-key" http://localhost:18084/__baafoo__/api/rules | jq '.data | length' 2>/dev/null || echo "FAILED to list rules"
+          echo ""
+          echo "--- Agents ---"
+          curl -sf -H "X-Api-Key: enterprise-admin-key" http://localhost:18084/__baafoo__/api/agents | jq . 2>/dev/null || echo "FAILED to list agents"
+          echo ""
+
+          echo "========== Manual Environment Creation Test =========="
+          echo "Testing POST /environments with enterprise-diagnostic..."
+          resp=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST http://localhost:18084/__baafoo__/api/environments \
+            -H "Content-Type: application/json" \
+            -H "X-Api-Key: enterprise-admin-key" \
+            -d '{"name":"enterprise-diagnostic","mode":"stub","description":"diagnostic test"}')
+          echo "Response: $resp"
+          echo ""
+
       - name: Run smoke tests
         id: run-tests
         continue-on-error: true
