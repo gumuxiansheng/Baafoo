@@ -179,7 +179,16 @@ public class ControlChannel {
 
     private boolean register() {
         try {
-            String hostname = java.net.InetAddress.getLocalHost().getHostName();
+            String hostname;
+            try {
+                hostname = java.net.InetAddress.getLocalHost().getHostName();
+            } catch (java.net.UnknownHostException e) {
+                // Java 8 on Alpine (musl libc) can fail to resolve the container
+                // hostname. Use a fallback so registration doesn't permanently fail.
+                String pid = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
+                hostname = "baafoo-agent-" + pid.split("@")[0];
+                log.warn("Could not resolve local hostname, using fallback: {}", hostname);
+            }
             AgentRegisterRequest req = new AgentRegisterRequest();
             String agentId = config.getAgentId();
             if (agentId == null || agentId.trim().isEmpty()) {
