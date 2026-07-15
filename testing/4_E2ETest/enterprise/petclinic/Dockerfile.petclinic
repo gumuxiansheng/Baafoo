@@ -34,9 +34,12 @@ ENV JAVA_OPTS="-XX:-UseContainerSupport --add-opens java.base/java.net=ALL-UNNAM
     SERVER_PORT=8080
 
 # 以 Agent 模式启动 PetClinic
-# 注意: -XX:-UseContainerSupport 用于绕过 Java 17 在 Windows Docker 上的 cgroup 读取 bug
+# 镜像用 Jib 构建，没有 fat JAR，用 classpath 文件启动
+# --server.servlet.context-path=/ 覆盖默认的 /petclinic 前缀
 ENTRYPOINT ["sh", "-c", \
     "java ${JAVA_OPTS} \
      -javaagent:/app/baafoo-agent.jar=config=/app/baafoo-agent.yml \
-     -jar /app/app.jar \
-     --server.port=${SERVER_PORT}"]
+     -cp @/app/jib-classpath-file \
+     org.springframework.samples.petclinic.PetClinicApplication \
+     --server.port=${SERVER_PORT} \
+     --server.servlet.context-path=/"]

@@ -24,6 +24,7 @@ write_result() {
         FAIL) echo -e "${RED}[FAIL]${NC} $n"; [[ -n "$d" ]] && echo -e "       ${RED}$d${NC}"; ((FAILED++)) ;;
         SKIP) echo -e "${YELLOW}[SKIP]${NC} $n"; [[ -n "$d" ]] && echo -e "       ${YELLOW}$d${NC}"; ((SKIPPED++)) ;;
     esac
+    return 0
 }
 xml_escape() { local s="$1"; s="${s//&/&amp;}"; s="${s//</&lt;}"; s="${s//>/&gt;}"; s="${s//\"/&quot;}"; s="${s//\'/&apos;}"; echo -n "$s"; }
 

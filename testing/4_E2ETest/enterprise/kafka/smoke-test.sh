@@ -30,6 +30,7 @@ write_result() {
         FAIL) echo -e "${RED}[FAIL]${NC} $test_name"; [[ -n "$detail" ]] && echo -e "       ${RED}$detail${NC}"; ((FAILED++)) ;;
         SKIP) echo -e "${YELLOW}[SKIP]${NC} $test_name"; [[ -n "$detail" ]] && echo -e "       ${YELLOW}$detail${NC}"; ((SKIPPED++)) ;;
     esac
+    return 0
 }
 
 xml_escape() {
