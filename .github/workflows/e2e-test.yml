@@ -232,8 +232,11 @@ jobs:
           for app in "${APP_ARRAY[@]}"; do
             app=$(echo "$app" | xargs)
             if [ -f "$app/junit-report.xml" ]; then
-              # Extract testsuite elements and inject into aggregate
-              sed -n '/<testsuite/,/<\/testsuite>/p' "$app/junit-report.xml" >> "$AGG_FILE"
+              # Extract testsuite elements and inject into aggregate.
+              # Use '<testsuite ' (with trailing space) to avoid matching the
+              # outer '<testsuites' tag — '<testsuite' is a substring of
+              # '<testsuites', which would inject unclosed <testsuites> tags.
+              sed -n '/<testsuite /,/<\/testsuite>/p' "$app/junit-report.xml" >> "$AGG_FILE"
             fi
           done
 
