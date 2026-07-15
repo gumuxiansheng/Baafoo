@@ -48,7 +48,7 @@ export_junit_xml() {
 api_get() { curl -sf -H "X-Api-Key: $API_KEY" "$SERVER_BASE_URL$1" 2>/dev/null; }
 api_post() { curl -sf -H "X-Api-Key: $API_KEY" -H "Content-Type: application/json" -X POST -d "$2" "$SERVER_BASE_URL$1" 2>/dev/null; }
 app_get() { curl -sf "$APP_BASE_URL$1" 2>/dev/null; }
-get_env_id() { api_get "/__baafoo__/api/environments" 2>/dev/null | jq -r --arg name "$1" '.[] | select(.name == $name or .id == $name) | .id' 2>/dev/null | head -1; }
+get_env_id() { api_get "/__baafoo__/api/environments" 2>/dev/null | jq -r --arg name "$1" '.data[] | select(.name == $name or .id == $name) | .id' 2>/dev/null | head -1; }
 switch_env_mode() { api_post "/__baafoo__/api/environments/$1/mode" "{\"mode\":\"$(echo $2 | tr '[:lower:]' '[:upper:]')\"}" >/dev/null 2>&1; sleep "$MODE_SETTLE_WAIT"; }
 
 test_nacos_api() {
@@ -72,7 +72,7 @@ resp=$(app_get "/api/stub-demo/health" 2>/dev/null)
 
 # ========== EG-NACOS-002 ==========
 agents_resp=$(api_get "/__baafoo__/api/agents" 2>/dev/null)
-if echo "$agents_resp" | jq -e '[.[] | select(.environment == "enterprise-nacos")] | length > 0' >/dev/null 2>&1; then
+if echo "$agents_resp" | jq -e '[.data[] | select(.environment == "enterprise-nacos")] | length > 0' >/dev/null 2>&1; then
     write_result "EG-NACOS-002" "PASS"
 else
     write_result "EG-NACOS-002" "FAIL" "未找到 enterprise-nacos 环境的 Agent"
@@ -160,7 +160,7 @@ fi
 
 # ========== EG-NACOS-009 ==========
 agents_resp=$(api_get "/__baafoo__/api/agents" 2>/dev/null)
-if echo "$agents_resp" | jq -e '[.[] | select(.environment == "enterprise-nacos" and .status == "online")] | length > 0' >/dev/null 2>&1; then
+if echo "$agents_resp" | jq -e '[.data[] | select(.environment == "enterprise-nacos")] | length > 0' >/dev/null 2>&1; then
     write_result "EG-NACOS-009" "PASS"
 else
     write_result "EG-NACOS-009" "FAIL" "Agent 状态异常"

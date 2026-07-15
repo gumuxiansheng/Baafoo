@@ -27,7 +27,7 @@ USER baafoo
 
 EXPOSE 18083
 
-ENV JAVA_OPTS="-XX:-UseContainerSupport -Xms128m -Xmx256m -Dnetworkaddress.cache.ttl=5" \
+ENV JAVA_OPTS="-XX:-UseContainerSupport -Xms128m -Xmx256m -Dnetworkaddress.cache.ttl=5 --add-opens java.base/java.net=ALL-UNNAMED" \
     BAAFOO_SERVER_HOST="baafoo-server" \
     BAAFOO_ENV="enterprise-sca-consumer" \
     SERVER_PORT=18083 \

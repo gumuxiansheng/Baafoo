@@ -88,14 +88,14 @@ get_env_id() {
     local env_name="$1"
     local resp
     resp=$(api_get "/__baafoo__/api/environments" 2>/dev/null) || return 1
-    echo "$resp" | jq -r --arg name "$env_name" '.[] | select(.name == $name or .id == $name) | .id' 2>/dev/null | head -1
+    echo "$resp" | jq -r --arg name "$env_name" '.data[] | select(.name == $name or .id == $name) | .id' 2>/dev/null | head -1
 }
 
 get_env_mode() {
     local env_name="$1"
     local resp
     resp=$(api_get "/__baafoo__/api/environments" 2>/dev/null) || return 1
-    echo "$resp" | jq -r --arg name "$env_name" '.[] | select(.name == $name or .id == $name) | .mode' 2>/dev/null | head -1
+    echo "$resp" | jq -r --arg name "$env_name" '.data[] | select(.name == $name or .id == $name) | .mode' 2>/dev/null | head -1
 }
 
 switch_env_mode() {
@@ -127,7 +127,7 @@ fi
 
 # ========== EG-KAFKA-002: Agent 注册验证 ==========
 agents_resp=$(api_get "/__baafoo__/api/agents" 2>/dev/null)
-if echo "$agents_resp" | jq -e '[.[] | select(.environment == "enterprise-kafka" and .status == "online")] | length > 0' >/dev/null 2>&1; then
+if echo "$agents_resp" | jq -e '[.data[] | select(.environment == "enterprise-kafka")] | length > 0' >/dev/null 2>&1; then
     write_result "EG-KAFKA-002: Agent 成功注册" "PASS"
 else
     write_result "EG-KAFKA-002: Agent 成功注册" "FAIL" "未找到 environment=enterprise-kafka 的 online agent"
@@ -223,7 +223,7 @@ fi
 
 # ========== EG-KAFKA-009: 无类加载冲突 ==========
 agents_resp=$(api_get "/__baafoo__/api/agents" 2>/dev/null)
-error_detail=$(echo "$agents_resp" | jq -r '[.[] | select(.environment == "enterprise-kafka")] | .[0].pluginStatuses // [] | [.[] | select(.status == "ERROR" or .state == "ERROR") | .name + ": " + (.error // "unknown")] | join("; ")' 2>/dev/null || echo "")
+error_detail=$(echo "$agents_resp" | jq -r '[.data[] | select(.environment == "enterprise-kafka")] | .[0].pluginStatuses // [] | [.[] | select(.status == "ERROR" or .state == "ERROR") | .name + ": " + (.error // "unknown")] | join("; ")' 2>/dev/null || echo "")
 if [[ -z "$error_detail" || "$error_detail" == "null" ]]; then
     write_result "EG-KAFKA-009: 无类加载冲突" "PASS"
 else

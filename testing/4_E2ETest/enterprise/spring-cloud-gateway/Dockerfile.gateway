@@ -20,7 +20,7 @@ RUN mkdir -p /root/.baafoo/data
 
 EXPOSE 8080
 
-ENV JAVA_OPTS="-XX:-UseContainerSupport -Xms128m -Xmx256m" \
+ENV JAVA_OPTS="-XX:-UseContainerSupport -Xms128m -Xmx256m --add-opens java.base/java.net=ALL-UNNAMED" \
     BAAFOO_SERVER_HOST="baafoo-server" \
     BAAFOO_ENV="enterprise-gateway"
 

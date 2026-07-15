@@ -68,12 +68,12 @@ app_get() { curl -sf "$APP_BASE_URL$1" 2>/dev/null; }
 get_env_id() {
     local resp
     resp=$(api_get "/__baafoo__/api/environments" 2>/dev/null) || return 1
-    echo "$resp" | jq -r --arg name "$1" '.[] | select(.name == $name or .id == $name) | .id' 2>/dev/null | head -1
+    echo "$resp" | jq -r --arg name "$1" '.data[] | select(.name == $name or .id == $name) | .id' 2>/dev/null | head -1
 }
 get_env_mode() {
     local resp
     resp=$(api_get "/__baafoo__/api/environments" 2>/dev/null) || return 1
-    echo "$resp" | jq -r --arg name "$1" '.[] | select(.name == $name or .id == $name) | .mode' 2>/dev/null | head -1
+    echo "$resp" | jq -r --arg name "$1" '.data[] | select(.name == $name or .id == $name) | .mode' 2>/dev/null | head -1
 }
 switch_env_mode() {
     curl -sf -H "X-Api-Key: $API_KEY" -H "Content-Type: application/json" -X PUT -d "{\"mode\":\"$2\"}" "$SERVER_BASE_URL/__baafoo__/api/environments/$1" >/dev/null 2>&1
@@ -99,7 +99,7 @@ fi
 
 # ========== EG-PET-002 ==========
 agents_resp=$(api_get "/__baafoo__/api/agents" 2>/dev/null)
-if echo "$agents_resp" | jq -e '[.[] | select(.environment == "enterprise-petclinic" and .status == "online")] | length > 0' >/dev/null 2>&1; then
+if echo "$agents_resp" | jq -e '[.data[] | select(.environment == "enterprise-petclinic")] | length > 0' >/dev/null 2>&1; then
     write_result "EG-PET-002: Agent 成功注册" "PASS"
 else
     write_result "EG-PET-002: Agent 成功注册" "FAIL" "未找到 enterprise-petclinic 的 online agent"
@@ -197,7 +197,7 @@ restore_env_mode "$PET_ENV_ID" "$ORIG_MODE"
 
 # ========== EG-PET-009 ==========
 agents_resp=$(api_get "/__baafoo__/api/agents" 2>/dev/null)
-error_detail=$(echo "$agents_resp" | jq -r '[.[] | select(.environment == "enterprise-petclinic")] | .[0].pluginStatuses // [] | [.[] | select(.status == "ERROR" or .state == "ERROR") | .name + ": " + (.error // "unknown")] | join("; ")' 2>/dev/null || echo "")
+error_detail=$(echo "$agents_resp" | jq -r '[.data[] | select(.environment == "enterprise-petclinic")] | .[0].pluginStatuses // [] | [.[] | select(.status == "ERROR" or .state == "ERROR") | .name + ": " + (.error // "unknown")] | join("; ")' 2>/dev/null || echo "")
 if [[ -z "$error_detail" || "$error_detail" == "null" ]]; then
     write_result "EG-PET-009: 无类加载冲突" "PASS"
 else

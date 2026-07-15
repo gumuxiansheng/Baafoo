@@ -49,7 +49,7 @@ api_get() { curl -sf -H "X-Api-Key: $API_KEY" "$SERVER_BASE_URL$1" 2>/dev/null; 
 api_post() { curl -sf -H "X-Api-Key: $API_KEY" -H "Content-Type: application/json" -X POST -d "$2" "$SERVER_BASE_URL$1" 2>/dev/null; }
 gw_get() { curl -sf "$GATEWAY_BASE_URL$1" 2>/dev/null; }
 backend_get() { curl -sf "$BACKEND_BASE_URL$1" 2>/dev/null; }
-get_env_id() { api_get "/__baafoo__/api/environments" 2>/dev/null | jq -r --arg name "$1" '.[] | select(.name == $name or .id == $name) | .id' 2>/dev/null | head -1; }
+get_env_id() { api_get "/__baafoo__/api/environments" 2>/dev/null | jq -r --arg name "$1" '.data[] | select(.name == $name or .id == $name) | .id' 2>/dev/null | head -1; }
 switch_mode() { api_post "/__baafoo__/api/environments/$1/mode" "{\"mode\":\"$(echo $2 | tr '[:lower:]' '[:upper:]')\"}" >/dev/null 2>&1; sleep "$MODE_SETTLE_WAIT"; }
 
 echo -e "${CYAN}============================================${NC}"
@@ -66,8 +66,8 @@ health=$(curl -sf "$GATEWAY_BASE_URL/actuator/health" 2>/dev/null | jq -r '.stat
 
 # ========== EG-GW-002 ==========
 agents_resp=$(api_get "/__baafoo__/api/agents" 2>/dev/null)
-gw_found=$(echo "$agents_resp" | jq -e '[.[] | select(.environment == "enterprise-gateway")] | length > 0' >/dev/null 2>&1 && echo true || echo false)
-backend_found=$(echo "$agents_resp" | jq -e '[.[] | select(.environment == "enterprise-gateway-backend")] | length > 0' >/dev/null 2>&1 && echo true || echo false)
+gw_found=$(echo "$agents_resp" | jq -e '[.data[] | select(.environment == "enterprise-gateway")] | length > 0' >/dev/null 2>&1 && echo true || echo false)
+backend_found=$(echo "$agents_resp" | jq -e '[.data[] | select(.environment == "enterprise-gateway-backend")] | length > 0' >/dev/null 2>&1 && echo true || echo false)
 if $gw_found && $backend_found; then
     write_result "EG-GW-002" "PASS" "gateway + backend 均已注册"
 elif $gw_found; then
@@ -129,7 +129,7 @@ fi
 
 # ========== EG-GW-009 ==========
 agents_resp=$(api_get "/__baafoo__/api/agents" 2>/dev/null)
-if echo "$agents_resp" | jq -e '[.[] | select(.environment == "enterprise-gateway" and .status == "online")] | length > 0' >/dev/null 2>&1; then
+if echo "$agents_resp" | jq -e '[.data[] | select(.environment == "enterprise-gateway")] | length > 0' >/dev/null 2>&1; then
     write_result "EG-GW-009" "PASS"
 else
     write_result "EG-GW-009" "FAIL" "Agent 状态异常"

@@ -57,6 +57,18 @@ jobs:
         # 构建 baafoo-server、baafoo-agent、baafoo-test-spring 和企业级测试应用 JAR
         run: ./mvnw -B -q -DskipTests clean package
 
+      - name: Set up JDK 17 for SCA
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build SCA test apps
+        # SCA 是独立 Maven 项目（Java 17 + Spring Boot 3），不在主 reactor 中
+        run: |
+          cd testing/4_E2ETest/enterprise/spring-cloud-alibaba/baafoo-sca-test
+          mvn -B -q -DskipTests clean package
+
       - name: Determine app list
         id: app-list
         run: |

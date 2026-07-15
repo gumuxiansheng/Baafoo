@@ -28,7 +28,7 @@ RUN mkdir -p /root/.baafoo/data
 
 EXPOSE 8080
 
-ENV JAVA_OPTS="-XX:-UseContainerSupport" \
+ENV JAVA_OPTS="-XX:-UseContainerSupport --add-opens java.base/java.net=ALL-UNNAMED" \
     BAAFOO_SERVER_HOST="baafoo-server" \
     BAAFOO_ENV="enterprise-petclinic" \
     SERVER_PORT=8080
