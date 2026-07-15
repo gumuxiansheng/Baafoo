@@ -25,7 +25,7 @@ services:
       - BAAFOO_SERVER_HOST=baafoo-server
       - BAAFOO_ENV=enterprise-petclinic
       - SERVER_PORT=8080
-      - JAVA_OPTS=-XX:-UseContainerSupport -Xms256m -Xmx512m
+      - JAVA_OPTS=-XX:-UseContainerSupport -Xms256m -Xmx512m --add-opens java.base/java.net=ALL-UNNAMED
       - SPRING_PROFILES_ACTIVE=h2
     depends_on:
       baafoo-server:

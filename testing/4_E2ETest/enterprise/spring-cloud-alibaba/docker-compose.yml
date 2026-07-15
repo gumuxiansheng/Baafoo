@@ -142,7 +142,7 @@ services:
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"sca-provider-echo-mock","name":"Provider Echo API Mock","protocol":"http","host":"provider","port":18081,"conditions":[{"type":"path","operator":"startsWith","value":"/echo/"}],"responses":[{"name":"Mock Echo 闁告繂绉寸花?,"statusCode":200,"body":"hello Nacos Discovery mock","delayMs":0}],"enabled":true,"priority":50,"tags":["enterprise","sca","echo"],"environments":["enterprise-sca-consumer"]}' && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
+          -d '{"id":"sca-provider-echo-mock","name":"Provider Echo API Mock","protocol":"http","host":"service-provider","port":18081,"conditions":[{"type":"path","operator":"startsWith","value":"/echo/"}],"responses":[{"name":"Mock Echo 闁告繂绉寸花?,"statusCode":200,"body":"hello Nacos Discovery mock","delayMs":0}],"enabled":true,"priority":50,"tags":["enterprise","sca","echo"],"environments":["enterprise-sca-consumer"]}' && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?"
         echo ""
         echo "[4/4] 闁告帗绋戠紓?Nacos Server API Mock 閻熸瑥瀚崹?(Mock 闁哄牆绉存慨鐔煎矗閹寸姴绠涢柛婵嗙Т缁?"
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \

@@ -50,7 +50,7 @@ api_get() { curl -sf -H "X-Api-Key: $API_KEY" "$SERVER_BASE_URL$1" 2>/dev/null; 
 api_post() { curl -sf -H "X-Api-Key: $API_KEY" -H "Content-Type: application/json" -X POST -d "$2" "$SERVER_BASE_URL$1" 2>/dev/null; }
 app_get() { curl -sf "$APP_BASE_URL$1" 2>/dev/null; }
 get_env_id() { api_get "/__baafoo__/api/environments" 2>/dev/null | jq -r --arg name "$1" '.data[] | select(.name == $name or .id == $name) | .id' 2>/dev/null | head -1; }
-switch_env_mode() { api_post "/__baafoo__/api/environments/$1/mode" "{\"mode\":\"$(echo $2 | tr '[:lower:]' '[:upper:]')\"}" >/dev/null 2>&1; sleep "$MODE_SETTLE_WAIT"; }
+switch_env_mode() { curl -sf -H "X-Api-Key: $API_KEY" -H "Content-Type: application/json" -X PUT -d "{\"mode\":\"$2\"}" "$SERVER_BASE_URL/__baafoo__/api/environments/$1" >/dev/null 2>&1; sleep "$MODE_SETTLE_WAIT"; }
 
 test_nacos_api() {
     local nacos_path="$1" method="${2:-GET}"

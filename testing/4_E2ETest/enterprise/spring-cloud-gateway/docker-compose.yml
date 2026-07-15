@@ -102,7 +102,7 @@ services:
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"gateway-route-mock","name":"Gateway閻犱警鍨抽弫鐩ck","protocol":"http","host":"gateway","port":8080,"conditions":[{"type":"path","operator":"startsWith","value":"/api/mock/"}],"responses":[{"name":"Mock缂傚啯鍨甸崣褔宕鍛畨","statusCode":200,"body":"{\"mocked\":true,\"source\":\"baafoo-gateway\",\"path\":\"{{path}}\",\"timestamp\":\"{{now}}\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","gateway","route"],"environments":["enterprise-gateway"]}' && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
+          -d '{"id":"gateway-route-mock","name":"Gateway閻犱警鍨抽弫鐩ck","protocol":"http","host":"backend-service","port":9090,"conditions":[{"type":"path","operator":"startsWith","value":"/api/mock/"}],"responses":[{"name":"Mock缂傚啯鍨甸崣褔宕鍛畨","statusCode":200,"body":"{\"mocked\":true,\"source\":\"baafoo-gateway\",\"path\":\"{{path}}\",\"timestamp\":\"{{now}}\"}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","gateway","route"],"environments":["enterprise-gateway"]}' && echo "  OK" || echo "  鐎瑰憡褰冮悺銊╁捶?
         echo ""
 
         echo "[4/5] 闁告帗绋戠紓鎾诲触鎼达綆浼?API Mock 閻熸瑥瀚崹顖炴晬閸喎顏￠柟鎼簻閹绮?/api/http/** 閻犱警鍨扮欢鐐烘晬?.."

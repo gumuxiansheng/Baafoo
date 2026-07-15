@@ -51,7 +51,7 @@ api_post() { curl -sf -H "X-Api-Key: $API_KEY" -H "Content-Type: application/jso
 gw_get() { curl -sf "$GATEWAY_BASE_URL$1" 2>/dev/null; }
 backend_get() { curl -sf "$BACKEND_BASE_URL$1" 2>/dev/null; }
 get_env_id() { api_get "/__baafoo__/api/environments" 2>/dev/null | jq -r --arg name "$1" '.data[] | select(.name == $name or .id == $name) | .id' 2>/dev/null | head -1; }
-switch_mode() { api_post "/__baafoo__/api/environments/$1/mode" "{\"mode\":\"$(echo $2 | tr '[:lower:]' '[:upper:]')\"}" >/dev/null 2>&1; sleep "$MODE_SETTLE_WAIT"; }
+switch_mode() { curl -sf -H "X-Api-Key: $API_KEY" -H "Content-Type: application/json" -X PUT -d "{\"mode\":\"$2\"}" "$SERVER_BASE_URL/__baafoo__/api/environments/$1" >/dev/null 2>&1; sleep "$MODE_SETTLE_WAIT"; }
 
 echo -e "${CYAN}============================================${NC}"
 echo -e "${CYAN}  Spring Cloud Gateway 企业级测试 - 冒烟测试${NC}"
