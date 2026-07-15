@@ -23,9 +23,9 @@ import java.net.SocketAddress;
  * in the AppClassLoader. Any changes here MUST be mirrored there.</p>
  *
  * <p><b>Record mode</b>: When CURRENT_MODE is RECORD (2) or RECORD_AND_STUB (3),
- * the connection is allowed to proceed to the real target (no redirect).
- * The socket is registered in GlobalRouteState.RECORDING_SESSIONS so that
- * SocketGetStreamAdvice can wrap its streams with recording wrappers.</p>
+ * the connection is redirected to the stub server (same as STUB mode). The
+ * server-side handler forwards to the real backend and records the response.
+ * Stream-level recording is skipped for HTTP/MQ (server handles recording).</p>
  */
 public final class SocketConnectAdvice {
 
@@ -66,12 +66,12 @@ public final class SocketConnectAdvice {
                 return;
             }
 
-            // Record mode (2=RECORD, 3=RECORD_AND_STUB): only record connections
-            // that have a matching route. Skip Socket-level recording for HTTP
-            // rules (HTTP has its own protocol-level recorder in HttpURLConnectionAdvice).
-            // Kafka/Pulsar/JMS/TCP rely on Socket-level stream recording.
+            // Record mode (2=RECORD, 3=RECORD_AND_STUB): redirect matching connections
+            // to the stub server. The server-side handler forwards to the real backend
+            // and records the response. Skip Socket-level stream recording for HTTP/MQ
+            // (server handles recording at the application layer).
             if (GlobalRouteState.CURRENT_MODE == 2 || GlobalRouteState.CURRENT_MODE == 3) {
-                // Look up route first — only record if there's a matching rule
+                // Look up route first — only redirect if there's a matching rule
                 String[] routeValue = GlobalRouteState.lookup(host, port);
                 if (routeValue == null && !"127.0.0.1".equals(host) && !"localhost".equals(host)) {
                     String originalDomain = (String) GlobalRouteState.DNS_CACHE.get(host);
@@ -82,9 +82,8 @@ public final class SocketConnectAdvice {
 
                 if (routeValue != null) {
                     int targetPort = Integer.parseInt(routeValue[1]);
-                    // Skip Socket-level recording for HTTP and MQ — they have
-                    // their own protocol-level recorders (HTTP: HttpURLConnectionAdvice,
-                    // MQ: Server-side application-layer recording).
+                    // Skip Socket-level recording for HTTP and MQ — the server-side
+                    // handler records at the application layer (forward + record).
                     if (targetPort != GlobalRouteState.HTTP_PORT
                             && targetPort != GlobalRouteState.KAFKA_PORT
                             && targetPort != GlobalRouteState.PULSAR_PORT
@@ -94,13 +93,12 @@ public final class SocketConnectAdvice {
                         GlobalRouteState.logInfo("[Baafoo] Socket recording: " + host + ":" + port + " (sessionId=" + sessionId + ")");
                     }
 
-                    // In RECORD_AND_STUB mode, also redirect to stub
-                    if (GlobalRouteState.CURRENT_MODE == 3) {
-                        GlobalRouteState.logInfo("[Baafoo] Socket redirect (record-and-stub): " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
-                        endpoint = new InetSocketAddress(routeValue[0], targetPort);
-                    }
+                    // Redirect to stub server in both RECORD and RECORD_AND_STUB modes.
+                    // The server-side handler differentiates: RECORD forwards to real
+                    // backend + records; RECORD_AND_STUB returns stub + records.
+                    GlobalRouteState.logInfo("[Baafoo] Socket redirect (record): " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
+                    endpoint = new InetSocketAddress(routeValue[0], targetPort);
                 }
-                // In pure RECORD mode, don't redirect — connection goes to real target
                 return;
             }
 

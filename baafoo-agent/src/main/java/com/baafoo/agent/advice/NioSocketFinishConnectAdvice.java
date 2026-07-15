@@ -93,9 +93,8 @@ public final class NioSocketFinishConnectAdvice {
                     // the Server-side handler will handle recording.
                 } else if (routeValue != null) {
                     int targetPort = Integer.parseInt(routeValue[1]);
-                    // Skip Socket-level recording for HTTP and MQ — they have
-                    // their own protocol-level recorders (HTTP: HttpURLConnectionAdvice,
-                    // MQ: Server-side application-layer recording).
+                    // Skip Socket-level recording for HTTP and MQ — the server-side
+                    // handler records at the application layer (forward + record).
                     if (targetPort != GlobalRouteState.HTTP_PORT
                             && targetPort != GlobalRouteState.KAFKA_PORT
                             && targetPort != GlobalRouteState.PULSAR_PORT

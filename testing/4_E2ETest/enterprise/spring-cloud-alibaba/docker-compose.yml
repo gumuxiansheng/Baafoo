@@ -91,7 +91,7 @@ services:
       - NACOS_ADDR=nacos:8848
       - NACOS_USER=nacos
       - NACOS_PASS=nacos
-      - JAVA_OPTS=-XX:-UseContainerSupport -Xms128m -Xmx256m --add-opens java.base/java.net=ALL-UNNAMED
+      - JAVA_OPTS=-XX:-UseContainerSupport -Xms128m -Xmx256m --add-opens java.base/java.net=ALL-UNNAMED -Dhttp.keepAlive=false
     depends_on:
       baafoo-server:
         condition: service_healthy
