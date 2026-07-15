@@ -56,6 +56,9 @@ class RuleApiHandler implements ResourceHandler {
                     return ApiResponse.badRequest(validationError);
                 }
                 Rule created = ctx.storage.createRule(rule);
+                if (created == null) {
+                    return ApiResponse.internalError("Failed to create rule (database error - check server logs)");
+                }
                 fireRuleChanged(ctx, created.getId(), "created", null);
                 return ApiResponse.created(created);
             }

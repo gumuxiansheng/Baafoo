@@ -49,8 +49,12 @@ public class ManagementApiHandlerTest {
     }
 
     private JsonNode assertOkResponse(FullHttpResponse response) throws Exception {
+        return assertResponseStatus(response, 200);
+    }
+
+    private JsonNode assertResponseStatus(FullHttpResponse response, int expectedStatus) throws Exception {
         assertNotNull(response);
-        assertEquals(200, response.status().code());
+        assertEquals(expectedStatus, response.status().code());
         String respBody = response.content().toString(StandardCharsets.UTF_8);
         JsonNode json = mapper.readTree(respBody);
         assertTrue("Response should be successful", json.get("success").asBoolean());
@@ -97,7 +101,7 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("POST", "/__baafoo__/api/rules", body);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        JsonNode json = assertOkResponse(response);
+        JsonNode json = assertResponseStatus(response, 201);
         assertEquals("new-rule", json.get("data").get("name").asText());
     }
 
@@ -124,7 +128,7 @@ public class ManagementApiHandlerTest {
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
         assertNotNull(response);
-        assertEquals(200, response.status().code());
+        assertEquals(404, response.status().code());
         String respBody = response.content().toString(StandardCharsets.UTF_8);
         JsonNode json = mapper.readTree(respBody);
         assertFalse("Should indicate failure", json.get("success").asBoolean());
@@ -194,7 +198,7 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("POST", "/__baafoo__/api/environments", body);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        JsonNode json = assertOkResponse(response);
+        JsonNode json = assertResponseStatus(response, 201);
         assertEquals("test-env", json.get("data").get("name").asText());
     }
 
@@ -299,7 +303,7 @@ public class ManagementApiHandlerTest {
         FullHttpRequest request = createRequest("POST", "/__baafoo__/api/scenes", body);
         channel.writeInbound(request);
         FullHttpResponse response = channel.readOutbound();
-        JsonNode json = assertOkResponse(response);
+        JsonNode json = assertResponseStatus(response, 201);
         assertEquals("test-scene", json.get("data").get("name").asText());
     }
 

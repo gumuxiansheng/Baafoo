@@ -131,7 +131,7 @@ public class JdbcRuleService extends BaseJdbcService implements RuleService {
             invalidateRulesCache();
             return rule;
         } catch (Exception e) {
-            log.error("Failed to create rule: {}", e.getMessage());
+            log.error("Failed to create rule: {}", e.getMessage(), e);
             return null;
         }
     }

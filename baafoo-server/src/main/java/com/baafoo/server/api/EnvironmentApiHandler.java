@@ -17,7 +17,11 @@ class EnvironmentApiHandler implements ResourceHandler {
             if ("POST".equals(method)) {
                 ctx.requirePermission("environment", "create");
                 Environment env = ctx.mapper.readValue(body, Environment.class);
-                return ApiResponse.created(ctx.storage.createEnvironment(env));
+                Environment created = ctx.storage.createEnvironment(env);
+                if (created == null) {
+                    return ApiResponse.internalError("Failed to create environment (database error - check server logs)");
+                }
+                return ApiResponse.created(created);
             }
         }
 

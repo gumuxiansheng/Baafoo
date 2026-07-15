@@ -113,6 +113,13 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
                 Object result = handleApiRequest(path, method, request, ctx, uri);
                 if (result instanceof RawJsonResponse) {
                     sendRawJson(ctx, 200, (RawJsonResponse) result);
+                } else if (result instanceof ApiResponse) {
+                    // Use the ApiResponse's code as the actual HTTP status code.
+                    // Previously this was hardcoded to 200, which masked storage
+                    // failures (e.g. createEnvironment returning null → code=201
+                    // but HTTP 200) so curl -sf in init scripts couldn't detect them.
+                    int code = ((ApiResponse<?>) result).getCode();
+                    sendJson(ctx, code > 0 ? code : 200, result);
                 } else {
                     sendJson(ctx, 200, result);
                 }

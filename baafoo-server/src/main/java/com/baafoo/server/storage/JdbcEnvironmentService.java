@@ -141,7 +141,7 @@ public class JdbcEnvironmentService extends BaseJdbcService implements Environme
             invalidateEnvironmentsCache();
             return env;
         } catch (Exception e) {
-            log.error("Failed to create environment: {}", e.getMessage());
+            log.error("Failed to create environment: {}", e.getMessage(), e);
             return null;
         }
     }
