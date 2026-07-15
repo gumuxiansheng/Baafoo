@@ -1,20 +1,20 @@
 # =============================================================================
 # Baafoo 企业级 Spring Cloud Gateway 测试 - Gateway 应用 Dockerfile
-# 基于 Spring Cloud Gateway 官方镜像，注入 Baafoo Agent
+# 基于自构建的 Spring Cloud Gateway 应用 (替换不存在的官方镜像)，注入 Baafoo Agent
 # =============================================================================
 
-FROM springcloud/spring-cloud-gateway:3.1.4
+FROM eclipse-temurin:17-jre-alpine
 
 LABEL maintainer="Baafoo Enterprise Gateway Test"
 
-USER root
-
-RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
+# Alpine: 安装 wget 用于 healthcheck
+RUN apk add --no-cache wget
 
 WORKDIR /app
 
 COPY baafoo-agent/target/baafoo-agent-*.jar /app/baafoo-agent.jar
 COPY testing/4_E2ETest/enterprise/spring-cloud-gateway/baafoo-agent-gateway.yml /app/baafoo-agent.yml
+COPY testing/4_E2ETest/enterprise/spring-cloud-gateway/baafoo-gateway-test/target/baafoo-gateway-test.jar /app/baafoo-gateway-test.jar
 
 RUN mkdir -p /root/.baafoo/data
 
@@ -24,15 +24,9 @@ ENV JAVA_OPTS="-XX:-UseContainerSupport -Xms128m -Xmx256m --add-opens java.base/
     BAAFOO_SERVER_HOST="baafoo-server" \
     BAAFOO_ENV="enterprise-gateway"
 
-# Spring Cloud Gateway 路由配置通过环境变量注入
-# 路由: /api/** -> backend-service:9090
+# 路由配置已内置于 application.yml，BACKEND_HOST/BACKEND_PORT 通过环境变量覆盖
 ENTRYPOINT ["sh", "-c", \
     "java ${JAVA_OPTS} \
      -javaagent:/app/baafoo-agent.jar=config=/app/baafoo-agent.yml \
-     -jar /app/spring-cloud-gateway.jar \
-     --spring.cloud.gateway.routes[0].id=backend-route \
-     --spring.cloud.gateway.routes[0].uri=http://${BACKEND_HOST}:${BACKEND_PORT} \
-     --spring.cloud.gateway.routes[0].predicates[0]=Path=/api/** \
-     --spring.cloud.gateway.routes[0].filters[0]=StripPrefix=0 \
-     --server.port=8080 \
-     --management.endpoints.web.exposure.include=health,info,gateway"]
+     -jar /app/baafoo-gateway-test.jar \
+     --server.port=8080"]

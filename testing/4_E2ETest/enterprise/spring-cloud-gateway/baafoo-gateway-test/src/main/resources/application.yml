@@ -1,0 +1,19 @@
+server:
+  port: 8080
+
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: backend-route
+          uri: http://${BACKEND_HOST:localhost}:${BACKEND_PORT:9090}
+          predicates:
+            - Path=/api/**
+          filters:
+            - StripPrefix=0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway

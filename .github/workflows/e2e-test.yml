@@ -69,6 +69,12 @@ jobs:
           cd testing/4_E2ETest/enterprise/spring-cloud-alibaba/baafoo-sca-test
           mvn -B -q -DskipTests clean package
 
+      - name: Build Gateway test app
+        # Gateway 是独立 Maven 项目（Java 17 + Spring Cloud Gateway），不在主 reactor 中
+        run: |
+          cd testing/4_E2ETest/enterprise/spring-cloud-gateway/baafoo-gateway-test
+          mvn -B -q -DskipTests clean package
+
       - name: Determine app list
         id: app-list
         run: |
