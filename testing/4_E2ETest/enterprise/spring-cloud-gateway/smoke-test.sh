@@ -42,7 +42,8 @@ export_junit_xml() {
           [[ "$status" == "SKIP" ]] && echo "    <skipped message=\"$em\"/>"
           echo "  </testcase>"
       done
-      echo "</testsuite></testsuites>"; } > "$path"
+      echo "</testsuite>"
+      echo "</testsuites>"; } > "$path"
     echo -e "  ${CYAN}[OK]${NC} JUnit XML written: $path"
 }
 

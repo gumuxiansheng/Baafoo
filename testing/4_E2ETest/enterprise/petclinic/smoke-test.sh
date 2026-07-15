@@ -58,7 +58,8 @@ export_junit_xml() {
             fi
             echo "  </testcase>"
         done
-        echo "</testsuite></testsuites>"
+        echo "</testsuite>"
+        echo "</testsuites>"
     } > "$path"
     echo -e "  ${CYAN}[OK]${NC} JUnit XML written: $path"
 }
