@@ -64,7 +64,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:8084/__baafoo__/api/status || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8084/__baafoo__/api/status || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -130,7 +130,7 @@ services:
       server:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:9090/api/stub-demo/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9090/api/stub-demo/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -163,7 +163,7 @@ services:
       server:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:9091/api/stub-demo/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9091/api/stub-demo/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -232,7 +232,7 @@ services:
       - ARTEMIS_USER=baafoo
       - ARTEMIS_PASSWORD=baafoo
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:8161/ || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8161/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 15
@@ -301,7 +301,7 @@ services:
     ports:
       - "8500:8500"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:8500/v1/status/leader || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8500/v1/status/leader || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10

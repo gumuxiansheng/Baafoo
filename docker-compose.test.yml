@@ -19,7 +19,7 @@ services:
       - BAAFOO_DB_TYPE=h2
       - JAVA_OPTS=-Xms256m -Xmx512m
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:8084/__baafoo__/api/status || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8084/__baafoo__/api/status || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 20

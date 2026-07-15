@@ -137,9 +137,11 @@ public class DdlBuilder {
         // Generic: "already exists", "duplicate"
         return msg.contains("already exists")
                 || msg.contains("duplicate")
+                || msg.contains("unique index or primary key")  // H2 FT_CREATE_INDEX 重试
                 || "42701".equals(sqlState)    // duplicate_column
                 || "42P07".equals(sqlState)    // duplicate_table
                 || "42710".equals(sqlState)    // duplicate_object
-                || "42723".equals(sqlState);   // duplicate_function
+                || "42723".equals(sqlState)    // duplicate_function
+                || "23505".equals(sqlState);   // unique_violation (H2 full-text index 重试)
     }
 }

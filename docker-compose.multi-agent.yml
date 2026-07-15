@@ -31,7 +31,7 @@ services:
       - SW_STORAGE=h2
       - SW_HEALTH_CHECKER=default
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:12800/internal/l7check || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:12800/internal/l7check || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 30
@@ -69,7 +69,7 @@ services:
       skywalking-oap:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:9090/api/stub-demo/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9090/api/stub-demo/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
