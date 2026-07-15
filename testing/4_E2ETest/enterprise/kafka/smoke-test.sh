@@ -183,11 +183,11 @@ fi
 
 # ========== EG-KAFKA-007: Record 模式录制 ==========
 if [[ -n "$KAFKA_ENV_ID" ]]; then
-    rec_before=$(api_get "/__baafoo__/api/recordings?limit=50" 2>/dev/null | jq 'length' 2>/dev/null || echo 0)
+    rec_before=$(api_get "/__baafoo__/api/recordings?limit=50" 2>/dev/null | jq '.data | length' 2>/dev/null || echo 0)
     switch_env_mode "$KAFKA_ENV_ID" "record" 2>/dev/null || true
     app_get "/api/kafka/send?bootstrapServers=kafka:9092&topic=enterprise-record-test&message=record-test-msg" >/dev/null 2>&1
     sleep 2
-    rec_after=$(api_get "/__baafoo__/api/recordings?limit=50" 2>/dev/null | jq 'length' 2>/dev/null || echo 0)
+    rec_after=$(api_get "/__baafoo__/api/recordings?limit=50" 2>/dev/null | jq '.data | length' 2>/dev/null || echo 0)
     if [[ "$rec_after" -gt "$rec_before" ]]; then
         write_result "EG-KAFKA-007: Record 模式录制" "PASS" "recordings: $rec_before -> $rec_after"
     else

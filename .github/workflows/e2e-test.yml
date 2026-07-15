@@ -125,7 +125,7 @@ jobs:
                 ;;
               petclinic)
                 echo "Waiting for petclinic app..."
-                timeout 240 bash -c 'until curl -sf http://localhost:19966/vets >/dev/null 2>&1; do sleep 3; done' && echo "  [OK] petclinic app up" || echo "  [WARN] petclinic app not ready"
+                timeout 240 bash -c 'until curl -sf http://localhost:19966/actuator/health >/dev/null 2>&1; do sleep 3; done' && echo "  [OK] petclinic app up" || echo "  [WARN] petclinic app not ready"
                 ;;
               spring-cloud-alibaba)
                 echo "Waiting for SCA provider..."
@@ -160,6 +160,13 @@ jobs:
             name="baafoo-enterprise-${c}-init"
             echo "--- ${name} ---"
             docker logs "${name}" 2>&1 || echo "(container not found)"
+            echo ""
+          done
+
+          echo "========== App Container Logs (last 60 lines) =========="
+          for name in baafoo-enterprise-petclinic baafoo-enterprise-kafka-app baafoo-enterprise-sca-provider baafoo-enterprise-sca-consumer baafoo-enterprise-nacos-test-app baafoo-enterprise-gateway baafoo-enterprise-gateway-backend; do
+            echo "--- ${name} ---"
+            docker logs --tail 60 "${name}" 2>&1 || echo "(container not found)"
             echo ""
           done
 

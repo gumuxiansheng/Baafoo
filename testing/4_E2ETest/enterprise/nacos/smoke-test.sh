@@ -126,7 +126,7 @@ if [[ -n "$NACOS_ENV_ID" ]]; then
     test_nacos_api "/nacos/v1/ns/operator/metrics" >/dev/null 2>&1
     test_nacos_api "/nacos/v1/ns/instance/list?serviceName=default" >/dev/null 2>&1
     sleep 2
-    recordings=$(api_get "/__baafoo__/api/recordings?environment=enterprise-nacos" 2>/dev/null | jq 'length' 2>/dev/null || echo 0)
+    recordings=$(api_get "/__baafoo__/api/recordings?environment=enterprise-nacos" 2>/dev/null | jq '.data | length' 2>/dev/null || echo 0)
     if [[ "$recordings" -gt 0 ]]; then
         write_result "EG-NACOS-007" "PASS"
     else

@@ -10,7 +10,7 @@
 services:
   # =========================================================================
   # PetClinic application with Baafoo Agent
-  # Java 17 Spring Boot app, port 8080, health endpoint /vets
+  # Java 17 Spring Boot app, port 8080, health endpoint /actuator/health
   # =========================================================================
   petclinic:
     build:
@@ -25,13 +25,13 @@ services:
       - BAAFOO_SERVER_HOST=baafoo-server
       - BAAFOO_ENV=enterprise-petclinic
       - SERVER_PORT=8080
-      - JAVA_OPTS=-XX:-UseContainerSupport -Xms256m -Xmx512m --add-opens java.base/java.net=ALL-UNNAMED
+      - JAVA_OPTS=-XX:-UseContainerSupport -Xms256m -Xmx512m --add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED
       - SPRING_PROFILES_ACTIVE=h2,spring-data-jpa
     depends_on:
       baafoo-server:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/vets 2>/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/actuator/health 2>/dev/null || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 20
@@ -80,7 +80,7 @@ services:
         echo ""
 
         echo "[4/4] Verify PetClinic app health..."
-        curl -sf http://petclinic:8080/vets && echo "  OK" || echo "  FAILED"
+        curl -sf http://petclinic:8080/api/vets && echo "  OK" || echo "  FAILED"
         echo ""
 
         echo "============================================"
@@ -88,11 +88,11 @@ services:
         echo "============================================"
         echo ""
         echo "  Baafoo Server:  http://localhost:18084"
-        echo "  PetClinic:      http://localhost:19966/vets"
+        echo "  PetClinic:      http://localhost:19966/api/vets"
         echo "  API Key:        enterprise-admin-key"
         echo ""
         echo "  Test API:"
-        echo "    GET /vets - vet list (JSON)"
-        echo "    GET /owners - owner list (HTML)"
+        echo "    GET /api/vets - vet list (JSON)"
+        echo "    GET /api/owners - owner list (JSON)"
         echo "============================================"
       '

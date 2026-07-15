@@ -120,11 +120,11 @@ fi
 
 # ========== EG-SCA-008 ==========
 if [[ -n "$CONSUMER_ENV_ID" ]]; then
-    rec_before=$(api_get "/__baafoo__/api/recordings?limit=50" 2>/dev/null | jq 'length' 2>/dev/null || echo 0)
+    rec_before=$(api_get "/__baafoo__/api/recordings?limit=50" 2>/dev/null | jq '.data | length' 2>/dev/null || echo 0)
     switch_env_mode "$CONSUMER_ENV_ID" "record" 2>/dev/null || true
     consumer_get "/echo-feign/record-test" >/dev/null 2>&1; consumer_get "/echo-feign/record-test-2" >/dev/null 2>&1
     sleep 2
-    rec_after=$(api_get "/__baafoo__/api/recordings?limit=50" 2>/dev/null | jq 'length' 2>/dev/null || echo 0)
+    rec_after=$(api_get "/__baafoo__/api/recordings?limit=50" 2>/dev/null | jq '.data | length' 2>/dev/null || echo 0)
     [[ "$rec_after" -gt "$rec_before" ]] && write_result "EG-SCA-008: Record 模式录制" "PASS" "recordings: $rec_before -> $rec_after" || write_result "EG-SCA-008: Record 模式录制" "FAIL" "recordings: $rec_before -> $rec_after"
     restore_env_mode "$CONSUMER_ENV_ID" "$ORIG_MODE"
 else
