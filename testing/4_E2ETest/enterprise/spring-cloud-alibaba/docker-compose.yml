@@ -130,13 +130,13 @@ services:
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"enterprise-sca-provider","name":"enterprise-sca-provider","mode":"STUB","description":"SCA Provider environment","tags":["enterprise","sca"]}' && echo "  OK" || echo "  FAILED"
+          -d '{"id":"enterprise-sca-provider","name":"enterprise-sca-provider","mode":"STUB","description":"SCA Provider environment"}' && echo "  OK" || echo "  FAILED"
         echo ""
         echo "[2/4] Create environment enterprise-sca-consumer (STUB)"
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/environments \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"enterprise-sca-consumer","name":"enterprise-sca-consumer","mode":"STUB","description":"SCA Consumer environment","tags":["enterprise","sca"]}' && echo "  OK" || echo "  FAILED"
+          -d '{"id":"enterprise-sca-consumer","name":"enterprise-sca-consumer","mode":"STUB","description":"SCA Consumer environment"}' && echo "  OK" || echo "  FAILED"
         echo ""
         echo "[3/4] Create Provider Echo API Mock rule (Mock Feign response)"
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \

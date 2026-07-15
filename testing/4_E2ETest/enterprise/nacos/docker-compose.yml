@@ -54,7 +54,7 @@ services:
       - BAAFOO_ENV=enterprise-nacos
       - SERVER_PORT=9090
       - NACOS_ADDR=nacos:8848
-      - JAVA_OPTS=-Xms128m -Xmx256m
+      - JAVA_OPTS=-Xms128m -Xmx256m -Dhttp.keepAlive=false
     depends_on:
       baafoo-server:
         condition: service_healthy
@@ -107,7 +107,7 @@ services:
         curl -sf -X POST http://baafoo-server:8084/__baafoo__/api/rules \
           -H "Content-Type: application/json" \
           -H "X-Api-Key: enterprise-admin-key" \
-          -d '{"id":"nacos-discovery-mock","name":"Nacos Discovery Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance/list"}],"responses":[{"name":"Mock Discovery Response","statusCode":200,"body":"{\"name\":\"mock-service\",\"hosts\":[{\"instanceId\":\"mock-1\",\"ip\":\"192.168.1.100\",\"port\":8080,\"healthy\":true,\"enabled\":true}],\"mocked\":true}","delayMs":0}],"enabled":true,"priority":100,"tags":["enterprise","nacos","discovery"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  FAILED"
+          -d '{"id":"nacos-discovery-mock","name":"Nacos Discovery Mock","protocol":"http","host":"nacos","port":8848,"conditions":[{"type":"path","operator":"startsWith","value":"/nacos/v1/ns/instance/list"}],"responses":[{"name":"Mock Discovery Response","statusCode":200,"body":"{\"name\":\"mock-service\",\"hosts\":[{\"instanceId\":\"mock-1\",\"ip\":\"192.168.1.100\",\"port\":8080,\"healthy\":true,\"enabled\":true}],\"mocked\":true}","delayMs":0}],"enabled":true,"priority":50,"tags":["enterprise","nacos","discovery"],"environments":["enterprise-nacos"]}' && echo "  OK" || echo "  FAILED"
         echo ""
 
         echo "[4/4] Create Nacos Config API Mock rule..."
