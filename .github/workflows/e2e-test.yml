@@ -223,12 +223,17 @@ jobs:
             fi
           done
 
-          # Aggregate JUnit XML from all apps
+          # Aggregate JUnit XML from all apps.
+          # Disable set -e for this section so a single app's missing/malformed
+          # report never aborts the aggregation loop — we want all available
+          # reports in the aggregate file.
+          set +e
           echo "Aggregating JUnit XML reports..."
           AGG_FILE="junit-report.xml"
           echo '<?xml version="1.0" encoding="UTF-8"?>' > "$AGG_FILE"
           echo '<testsuites name="baafoo-enterprise-e2e">' >> "$AGG_FILE"
 
+          AGG_COUNT=0
           for app in "${APP_ARRAY[@]}"; do
             app=$(echo "$app" | xargs)
             if [ -f "$app/junit-report.xml" ]; then
@@ -237,11 +242,20 @@ jobs:
               # outer '<testsuites' tag — '<testsuite' is a substring of
               # '<testsuites', which would inject unclosed <testsuites> tags.
               sed -n '/<testsuite /,/<\/testsuite>/p' "$app/junit-report.xml" >> "$AGG_FILE"
+              if [ $? -eq 0 ]; then
+                AGG_COUNT=$((AGG_COUNT + 1))
+                echo "  [OK] Aggregated: $app"
+              else
+                echo "  [WARN] sed failed for $app"
+              fi
+            else
+              echo "  [WARN] No junit-report.xml found for: $app"
             fi
           done
 
           echo '</testsuites>' >> "$AGG_FILE"
-          echo "  [OK] Aggregate report: $AGG_FILE"
+          echo "  [OK] Aggregate report: $AGG_FILE ($AGG_COUNT suites)"
+          set -e
 
           if [ "$ANY_FAILURE" = "1" ]; then
             exit 1
@@ -252,11 +266,15 @@ jobs:
         if: steps.run-tests.outcome == 'failure'
         run: |
           echo "Step outcome: ${{ steps.run-tests.outcome }}"
-          # Check aggregate JUnit XML for actual failures
+          # Check aggregate JUnit XML for actual failures.
+          # Sum failures across ALL testsuite elements (not just the first).
           if [ -f testing/4_E2ETest/enterprise/junit-report.xml ]; then
-            FAILURES=$(grep -o 'failures="[0-9]*"' testing/4_E2ETest/enterprise/junit-report.xml | head -1 | grep -o '[0-9]*')
-            echo "JUnit failures count: $FAILURES"
-            if [ "$FAILURES" = "0" ]; then
+            TOTAL_FAILURES=0
+            for f in $(grep -o 'failures="[0-9]*"' testing/4_E2ETest/enterprise/junit-report.xml | grep -o '[0-9]*'); do
+              TOTAL_FAILURES=$((TOTAL_FAILURES + f))
+            done
+            echo "JUnit total failures count: $TOTAL_FAILURES"
+            if [ "$TOTAL_FAILURES" = "0" ]; then
               echo "No failures in JUnit XML — passing."
               exit 0
             fi
