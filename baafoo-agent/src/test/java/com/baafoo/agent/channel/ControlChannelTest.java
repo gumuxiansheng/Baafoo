@@ -88,4 +88,105 @@ public class ControlChannelTest {
         assertEquals("passthrough", res.mode);
         assertEquals(42L, res.version);
     }
+
+    // --- AgentRegisterRequest.validate() (P2-3) ---
+
+    @Test
+    public void validateReturnsNullWhenAllRequiredFieldsPresent() {
+        ControlChannel.AgentRegisterRequest req = new ControlChannel.AgentRegisterRequest();
+        req.agentId = "agent-1";
+        req.environment = "prod";
+        req.hostname = "host-1";
+        req.version = "1.0.0";
+        req.protocols = Collections.singletonList("http");
+        assertNull("Valid request should return null", req.validate());
+    }
+
+    @Test
+    public void validateRejectsNullAgentId() {
+        ControlChannel.AgentRegisterRequest req = new ControlChannel.AgentRegisterRequest();
+        req.environment = "prod";
+        req.hostname = "host-1";
+        String err = req.validate();
+        assertNotNull(err);
+        assertTrue(err.contains("agentId"));
+    }
+
+    @Test
+    public void validateRejectsEmptyAgentId() {
+        ControlChannel.AgentRegisterRequest req = new ControlChannel.AgentRegisterRequest();
+        req.agentId = "   ";
+        req.environment = "prod";
+        req.hostname = "host-1";
+        String err = req.validate();
+        assertNotNull(err);
+        assertTrue(err.contains("agentId"));
+    }
+
+    @Test
+    public void validateRejectsNullEnvironment() {
+        ControlChannel.AgentRegisterRequest req = new ControlChannel.AgentRegisterRequest();
+        req.agentId = "agent-1";
+        req.hostname = "host-1";
+        String err = req.validate();
+        assertNotNull(err);
+        assertTrue(err.contains("environment"));
+    }
+
+    @Test
+    public void validateRejectsEmptyEnvironment() {
+        ControlChannel.AgentRegisterRequest req = new ControlChannel.AgentRegisterRequest();
+        req.agentId = "agent-1";
+        req.environment = "";
+        req.hostname = "host-1";
+        String err = req.validate();
+        assertNotNull(err);
+        assertTrue(err.contains("environment"));
+    }
+
+    @Test
+    public void validateRejectsNullHostname() {
+        ControlChannel.AgentRegisterRequest req = new ControlChannel.AgentRegisterRequest();
+        req.agentId = "agent-1";
+        req.environment = "prod";
+        String err = req.validate();
+        assertNotNull(err);
+        assertTrue(err.contains("hostname"));
+    }
+
+    @Test
+    public void validateAllowsNullProtocols() {
+        ControlChannel.AgentRegisterRequest req = new ControlChannel.AgentRegisterRequest();
+        req.agentId = "agent-1";
+        req.environment = "prod";
+        req.hostname = "host-1";
+        req.protocols = null;
+        assertNull("Null protocols should be allowed", req.validate());
+    }
+
+    @Test
+    public void validateAllowsEmptyProtocolsList() {
+        ControlChannel.AgentRegisterRequest req = new ControlChannel.AgentRegisterRequest();
+        req.agentId = "agent-1";
+        req.environment = "prod";
+        req.hostname = "host-1";
+        req.protocols = Collections.emptyList();
+        assertNull("Empty protocols list should be allowed", req.validate());
+    }
+
+    @Test
+    public void validateRejectsNullEntryInProtocols() {
+        ControlChannel.AgentRegisterRequest req = new ControlChannel.AgentRegisterRequest();
+        req.agentId = "agent-1";
+        req.environment = "prod";
+        req.hostname = "host-1";
+        java.util.List<String> protocols = new java.util.ArrayList<>();
+        protocols.add("http");
+        protocols.add(null);
+        protocols.add("tcp");
+        req.protocols = protocols;
+        String err = req.validate();
+        assertNotNull(err);
+        assertTrue("Error should mention protocols[1]", err.contains("protocols[1]"));
+    }
 }
