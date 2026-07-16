@@ -2,7 +2,7 @@
 
 - **状态**: Accepted
 - **日期**: 2026-06-24
-- **关联**: `GrpcChannelAdvice.java`、`GrpcStubHandler.java`、`6_design/grpc_fix_design_20260624.md`
+- **关联**: `GrpcChannelAdvice.java`、`GrpcStubHandler.java`、`decisions/grpc-fix-design-20260624.md`
 
 ## 背景
 
@@ -32,4 +32,4 @@ PRD v2.4 非目标 N3 明确排除 gRPC，理由是"HTTP/2 多路复用字节码
 
 - gRPC 拦截依赖 `ManagedChannelBuilder` 的 ByteBuddy 增强，需确保类可见性
 - Server 端需监听独立 gRPC 端口（默认 9005）
-- 详见 `6_design/grpc_fix_design_20260624.md`（31KB 完整设计文档）
+- 详见 `decisions/grpc-fix-design-20260624.md`（31KB 完整设计文档）

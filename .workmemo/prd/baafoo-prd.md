@@ -45,7 +45,7 @@
 |---|---|---|
 | N1 | ~~不覆盖非 JVM 语言~~ **[v2.5 已超越]** | 原 JavaAgent 限制已通过 Thin SDK 绕过:Go/Python/Node.js SDK 已发布(见 `sdks/`);Sidecar Proxy(Go)已实现(见 `proxy/`) |
 | N2 | **不覆盖 UDP 协议** | Agent 拦截点在 TCP Socket 层面,UDP 走 `DatagramSocket`,需完全不同的拦截策略,v1 不做 |
-| N3 | ~~不覆盖 gRPC~~ **[v2.5 已超越]** | gRPC 已完整实现:`GrpcChannelAdvice`(字节码拦截)+`GrpcStubHandler`(Server端Mock)+`GrpcUnifiedHandler`(流式支持);详见 `6_design/grpc_fix_design_20260624.md` |
+| N3 | ~~不覆盖 gRPC~~ **[v2.5 已超越]** | gRPC 已完整实现:`GrpcChannelAdvice`(字节码拦截)+`GrpcStubHandler`(Server端Mock)+`GrpcUnifiedHandler`(流式支持);详见 `decisions/grpc-fix-design-20260624.md` |
 | N4 | **不替代生产环境流量录制** | Baafoo 定位是**开发阶段**挡板工具,不承担生产流量镜像、压力测试等职责 |
 | N5 | **不修改 Consul 注册中心的数据** | Agent 只读 Consul 查询结果,不向 Consul 写入或修改任何注册信息 |
 
@@ -65,7 +65,7 @@
 | **优先级** | P0 |
 | **实现日期** | 2026-06-24 |
 | **关键文件** | `GrpcChannelAdvice.java`、`GrpcStubHandler.java`、`GrpcUnifiedHandler.java` |
-| **设计文档** | `6_design/grpc_fix_design_20260624.md` |
+| **设计文档** | `decisions/grpc-fix-design-20260624.md` |
 
 ### R-S12: 多语言 Thin SDK — ✅ 已实现
 
@@ -75,7 +75,7 @@
 | **优先级** | P1 |
 | **实现日期** | 2026-07-04 |
 | **关键路径** | `sdks/go/`、`sdks/python/`、`sdks/nodejs/` |
-| **设计文档** | `5_review/analysis-multilang-sdk-feasibility-20260620.md` |
+| **设计文档** | `reviews/feasibility/multilang-sdk-20260620.md` |
 
 ### R-W8: 国际化（i18n）支持 — ✅ 已实现
 
@@ -93,7 +93,7 @@
 | **描述** | 修复 MCP 硬编码 admin 权限(C1)、匿名用户可读全部 API(H6)、规则级 requestCount 条件错误(H1)、前端 saveRule 不检查结果(H10)等 1 Critical + 11 High + 10 Medium |
 | **优先级** | P0 |
 | **实现日期** | 2026-07-10 |
-| **详细报告** | `5_review/CODE-REVIEW-REPORT.md`、`5_review/security-fixes_2026-07-10.md` |
+| **详细报告** | `5_review/CODE-REVIEW-REPORT.md`、`reviews/security/security-fixes-20260710.md` |
 
 ## 4. 用户故事
 

@@ -60,7 +60,7 @@
 
 `baafoo_architecture_improvement_todo.md` 在活跃文档表中出现 **6 次**（按 Markdown 表格行计），这不是"强调"，是复制粘贴错误。一个项目的核心索引文件出现这种低级错误，直接损害文档体系的可信度。
 
-#### `5_review/index.md` 遗漏 4 个关键文档
+#### `reviews/index.md` 遗漏 4 个关键文档
 
 | 遗漏文档 | 日期 | 重要性 |
 |----------|------|--------|
@@ -69,7 +69,7 @@
 | `competitive-analysis-comprehensive-20260716.md` | 2026-07-16 | 🟠 High — 竞品分析 |
 | `testcontainers-feasibility-analysis-20260624.md` | 2026-07-08 | 🟡 Medium — 可行性分析 |
 
-审查索引 (`5_review/index.md`) 最后更新于 2026-06-22，之后产出了 4 份重要文档全部未录入。索引失效等于没有索引。
+审查索引 (`reviews/index.md`) 最后更新于 2026-06-22，之后产出了 4 份重要文档全部未录入。索引失效等于没有索引。
 
 ### 2.2 PRD 与代码现实脱节
 
@@ -80,7 +80,7 @@ PRD v2.4（2026-06-15）非目标章节明确声明：
 | N1: 不覆盖非 JVM 语言 | "JavaAgent 技术天然限制" | `sdks/go/`、`sdks/python/`、`sdks/nodejs/` 三套 SDK 已存在 | 🔴 直接矛盾 |
 | N3: 不覆盖 gRPC | "字节码拦截复杂度显著高于 HTTP/1.1" | gRPC 已完整实现（GrpcStubHandler、GrpcChannelAdvice） | 🔴 直接矛盾 |
 
-PRD 是 2026-06-15 的文档，gRPC 在 2026-06-24 实现并在 `6_design/grpc_fix_design_20260624.md` 有完整设计记录，但 **PRD 从未更新非目标章节**。
+PRD 是 2026-06-15 的文档，gRPC 在 2026-06-24 实现并在 `decisions/grpc-fix-design-20260624.md` 有完整设计记录，但 **PRD 从未更新非目标章节**。
 
 功能扩展 PRD v1.1 同样未提及 gRPC、多语言 SDK、i18n 国际化——这三个都是已经落地的重大功能。
 
@@ -119,7 +119,7 @@ PRD v2.4 最后更新 2026-06-15。此后发生的重大变更：
 
 **PRD 是产品需求的基线，基线滞后 31 天且 6 项重大变更未反映，这不是"待更新"，是失控。**
 
-### 3.2 `5_review/index.md` 过期 24 天
+### 3.2 `reviews/index.md` 过期 24 天
 
 审查索引最后更新 2026-06-22，但 `5_review/` 目录下此后新增 4 份文档（2 份 Critical 级别）。索引文件不随文档产出同步更新，等于主动制造信息断层。
 
@@ -183,7 +183,7 @@ PRD v2.4 最后更新 2026-06-15。此后发生的重大变更：
 |--------|------|------|
 | **P0** | PRD 非目标 N1/N3 与代码矛盾 | 更新 PRD v2.5：将 N1/N3 标记为"已超越"，补充 gRPC/SDK/i18n 需求章节 |
 | **P0** | `index.md` 重复 6 条 + 遗漏 4 文档 | 去重 + 补录 4 份遗漏文档 + 同步更新日期 |
-| **P0** | `5_review/index.md` 遗漏 4 份关键文档 | 补录 CODE-REVIEW-REPORT、security-fixes、competitive-analysis、testcontainers |
+| **P0** | `reviews/index.md` 遗漏 4 份关键文档 | 补录 CODE-REVIEW-REPORT、security-fixes、competitive-analysis、testcontainers |
 | **P1** | 安全审查闭环缺失 | 建立问题追踪表：CODE-REVIEW-REPORT 问题 → security-fixes 修复状态 → 遗留项清单 |
 | **P1** | 空目录 `1_concepts/`、`3_design/`、`4_deliverables/software-company/` | 删除空目录或合并 `3_design` → `6_design` |
 | **P1** | 12 个 `tmp-*.json` 临时文件 | 清理 `.test/tmp-*` |
@@ -206,7 +206,7 @@ PRD v2.4 最后更新 2026-06-15。此后发生的重大变更：
 |---|--------|------|----------|------|
 | 1 | P0 | PRD 非目标 N1/N3 与代码矛盾 | PRD v2.4 → v2.5：N1/N3 标记"已超越"，新增 R-S11(gRPC)/R-S12(SDK)/R-W8(i18n)/R-W9(安全) | ✅ |
 | 2 | P0 | index.md 重复 6 条 + 遗漏文档 | 重建活跃文档表，去重 + 补录 6 份文档 | ✅ |
-| 3 | P0 | 5_review/index.md 遗漏 4 份文档 | 新增"后续审查文档"章节，补录 6 份 | ✅ |
+| 3 | P0 | reviews/index.md 遗漏 4 份文档 | 新增"后续审查文档"章节，补录 6 份 | ✅ |
 | 4 | P1 | 安全审查闭环缺失 | 创建 `security-issue-tracker.md`，串联审查→修复→架构改进三者 | ✅ |
 | 5 | P1 | 3 个空目录 | 删除 `1_concepts/`、`3_design/`、`4_deliverables/`（含空子目录） | ✅ |
 | 6 | P1 | 12 个 tmp-* 临时文件 | 全部删除 | ✅ |
@@ -220,16 +220,16 @@ PRD v2.4 最后更新 2026-06-15。此后发生的重大变更：
 ### 整改产出文件清单
 
 **新建:**
-- `5_review/security-issue-tracker.md` — 安全审查问题闭环追踪表
+- `reviews/security/issue-tracker.md` — 安全审查问题闭环追踪表
 - `naming-convention.md` — 文档命名规范
-- `adr/README.md` + `adr-001~004` — 4 份架构决策记录
+- `decisions/README.md` + `adr-001~004` — 4 份架构决策记录
 - `.test/README.md` — .test 目录定位说明
 
 **修改:**
-- `2_prd/baafoo-prd.md` — v2.4 → v2.5
+- `prd/baafoo-prd.md` — v2.4 → v2.5
 - `index.md` — 去重 + 补录 + 目录结构更新 + 生命周期管理
-- `5_review/index.md` — 补录 6 份文档
-- `5_review/workmemo_audit_20260716.md` — 追加整改结果
+- `reviews/index.md` — 补录 6 份文档
+- `reviews/workmemo-audit-20260716.md` — 追加整改结果
 
 **重命名:**
 - `CODE-REVIEW-REPORT.md` → `code-review-report-20260710.md`

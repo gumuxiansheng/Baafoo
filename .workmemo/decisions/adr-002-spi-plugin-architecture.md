@@ -2,7 +2,7 @@
 
 - **状态**: Accepted
 - **日期**: 2026-06-20
-- **关联**: `baafoo-plugin-api/`、`PluginManager.java`、`10_deliverables/plugin_architecture_enhancement_phase1-3_design.md`
+- **关联**: `baafoo-plugin-api/`、`PluginManager.java`、`decisions/plugin-architecture-enhancement-phase1-3-design.md`
 
 ## 背景
 

@@ -1,7 +1,7 @@
 # Faker 增量补充 (R-S2 AC-11 increment) — Dev Notes
 
 > 创建时间: 2026-06-18
-> 关联 PRD: `.workmemo/2_prd/baafoo-feature-extension-prd.md` §2
+> 关联 PRD: `.workmemo/prd/baafoo-feature-extension-prd.md` §2
 
 ## Summary
 

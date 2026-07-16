@@ -309,7 +309,7 @@
 
 #### P4-4 更新 plugin-arch-advice.md
 
-- **文件**: `.workmemo/5_review/plugin-arch-advice.md`
+- **文件**: `.workmemo/reviews/plugin-arch-advice.md`
 - **操作**: 更新文档反映 P0 完成后的实际状态（所有 Advice 已接入 SPI），移除"未来方向"中已完成的项目，添加新的演进方向（热加载、远程注册中心等）
 
 #### P4-5 在 README 中添加插件系统章节

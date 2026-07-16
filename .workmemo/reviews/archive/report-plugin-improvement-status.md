@@ -84,7 +84,7 @@ P0 全部完成，P1-P4 基本未动。
 | P4-1 开发者指南 | **未开始** | 无 `docs/plugin-developer-guide.md` |
 | P4-2 示例插件 | **未开始** | 无 `baafoo-example-plugins/` 目录（现有的 `baafoo-test-plugin/feign/` 是 SPI 演示，不是面向开发者的示例） |
 | P4-3 Maven archetype | **未开始** | 无 `baafoo-plugin-archetype/` 模块 |
-| P4-4 plugin-arch-advice.md 更新 | **未开始** | `.workmemo/5_review/plugin-arch-advice.md`（382 行）仍为原始设计提案，SPI 接口定义为 `com.baafoo.spi` 包（实际为 `com.baafoo.plugin`）、PluginContext 定义为 interface（实际为 POJO）、InterceptTarget 定义为 record（实际为 enum）、InterceptResult 定义为 sealed interface（实际为具体类），且无 `redirect` 结果类型的描述 |
+| P4-4 plugin-arch-advice.md 更新 | **未开始** | `.workmemo/reviews/plugin-arch-advice.md`（382 行）仍为原始设计提案，SPI 接口定义为 `com.baafoo.spi` 包（实际为 `com.baafoo.plugin`）、PluginContext 定义为 interface（实际为 POJO）、InterceptTarget 定义为 record（实际为 enum）、InterceptResult 定义为 sealed interface（实际为具体类），且无 `redirect` 结果类型的描述 |
 | P4-5 README 插件章节 | **部分完成** | `README.md` 第 446-475 行有约 30 行的 "Plugin Development" 章节，展示了基本的 AgentPlugin 实现示例和 META-INF/services 注册，但缺少配置文档、协议字段说明、最佳实践和示例链接 |
 
 ---
