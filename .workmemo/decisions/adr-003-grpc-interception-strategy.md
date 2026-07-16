@@ -2,7 +2,7 @@
 
 - **状态**: Accepted
 - **日期**: 2026-06-24
-- **关联**: `GrpcChannelAdvice.java`、`GrpcStubHandler.java`、`decisions/grpc-fix-design-20260624.md`
+- **关联**: `GrpcChannelAdvice.java`、`GrpcUnifiedHandler.java`、`decisions/grpc-fix-design-20260624.md`
 
 ## 背景
 
@@ -19,7 +19,7 @@ PRD v2.4 非目标 N3 明确排除 gRPC，理由是"HTTP/2 多路复用字节码
 
 ## 决策
 
-选择 **方案 A + 增强**：拦截 `ManagedChannelBuilder.build()`，在构建时将 Channel 的 target 重定向到 Baafoo Server 的 gRPC 端口。同时通过 `GrpcUnifiedHandler` 在 Server 端处理 Unary/Server Streaming/Client Streaming/Bidi Streaming。
+选择 **方案 A + 增强**：拦截 `ManagedChannelBuilder.build()`，在构建时将 Channel 的 target 重定向到 Baafoo Server 的 gRPC 端口。同时通过 `GrpcUnifiedHandler` 在 Server 端处理 Unary/Server Streaming/Client Streaming/Bidi Streaming（辅助类：`GrpcPassthroughForwarder`、`GrpcResponseBuilder`）。
 
 ## 理由
 

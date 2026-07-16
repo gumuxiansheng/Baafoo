@@ -6,6 +6,8 @@
 
 Baafoo 的插件系统在架构设计层面是**合理且有前瞻性的**——微内核 + SPI 策略模式、ClassLoader 隔离、四种工作模式的统一抽象都属于优秀的工程决策。但在**实现完整性**层面存在明显差距：插件 SPI 委托路径仅在 Pulsar 协议上真正激活，其余协议（Socket/NIO/Kafka/JMS）仍走 Core 内置的硬编码路由逻辑，`PluginManager` 本身甚至被标注为 `@Deprecated`。相比之下，MockForge 在插件类型丰富度、安全沙箱、协议抽象层、开发者工具链等方面都达到了生产级成熟度。
 
+> ⚠ **更新说明 (2026-07-17)**: 本报告编写时 PluginManager 确实标注为 @Deprecated，SPI 仅有 Pulsar 接入。当前状态已变化：(1) @Deprecated 已在 ADR-002 中移除；(2) Socket/NIO 通过 `PLUGIN_CONSULT_FN_EXT` 桥接函数接入 SPI；(3) Kafka/JMS/Pulsar/gRPC 均引用 PluginManager。详见 `plugin-arch-advice.md` 和 ADR-002。
+
 ---
 
 ### 二、Baafoo 插件系统完整性诊断

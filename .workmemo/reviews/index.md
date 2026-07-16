@@ -43,6 +43,7 @@
 | [product-advice.md](./product-advice.md) | 产品方向建议 | 2026-05-31 |
 | [review-feature-extension-prd.md](./review-feature-extension-prd.md) | 扩展 PRD 审查意见 | 2026-06-14 |
 | [workmemo-audit-20260716.md](./workmemo-audit-20260716.md) | .workmemo 审查报告 | 2026-07-16 |
+| [workmemo-doc-audit-20260717.md](./workmemo-doc-audit-20260717.md) | .workmemo 文档过时审查（P0-P3 共 15 项） | 2026-07-17 |
 
 ---
 

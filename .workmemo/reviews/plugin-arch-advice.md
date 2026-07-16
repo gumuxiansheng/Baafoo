@@ -5,7 +5,7 @@
 > 结论: ✅ 可行，推荐"Advice 内联留 Core + 逻辑委托 Plugin"分层架构
 
 **实施状态 (2026-06-21)**：
-- ✅ P0：所有 Advice 已接入 SPI 委托路径（Socket/NIO 通过桥接函数）
+- ✅ P0：核心路由 Advice（Socket/NIO/Kafka/JMS/Pulsar/gRPC）已接入 SPI 委托路径（Socket/NIO 通过 `PLUGIN_CONSULT_FN_EXT` 桥接函数）
 - ✅ P1：插件级配置系统已实现（PluginsConfig + pluginConfig 注入）
 - ✅ P2：PluginContext 协议特有字段已添加（tenant/namespace/destination 等）
 - ✅ P3：健康监控 + 启用/禁用 + 心跳上报 + REST API（GET /api/plugins）

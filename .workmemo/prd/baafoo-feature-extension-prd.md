@@ -3,7 +3,7 @@
 > **文档版本**: v1.1
 > **创建日期**: 2026-06-13 | **修订日期**: 2026-06-13
 > **覆盖功能**: OpenAPI 导入、Faker 动态数据、有状态 Mock、故障注入、GraphQL 支持、Chaos 工程
-> **关联文档**: [Baafoo PRD v2.3](./baafoo-prd.md)、[竞品分析报告 v2.0](./competitive-analysis.md)、[功能扩展 Review](./../../../5_review/baafoo-prd-review-20260613.md)
+> **关联文档**: [Baafoo PRD v2.5](./baafoo-prd.md)、[竞品分析报告 v2.0](../reviews/competitive/competitive-analysis.md)、[功能扩展 Review](../archive/reviews/baafoo-prd-review-20260613.md)
 > **版本说明**: v1.1 根据开发同学代可行的 Review 修订，核心变更：(1) Faker 改为增量补充标注已实现；(2) 有状态 Mock 改为轻量方案；(3) GraphQL 改为 MatchCondition 扩展；(4) 多个过度设计项降级或砍掉
 
 ---

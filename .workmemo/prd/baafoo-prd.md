@@ -3,9 +3,9 @@
 > **文档状态**:PRD v2.5
 > **对齐状态**:✅ 最新
 > **目标读者**:产品团队、工程团队、QA 团队
-> **关联文档**:[概念设计说明书 v0.8](../1_concepts/baafoo-concept-design.md)
+> **关联文档**:[ADR 决策记录](../decisions/README.md)、[架构改进 TODO](../reviews/architecture-improvement-todo.md)
 > **最后更新**:2026-07-16
-> **变更摘要**:v2.4 - **实现状态更新**:Kafka/Pulsar/JMS Mock Broker 从 Beta 升级为正式支持，已验证 topic 条件匹配、消息录制功能；新增 Docker Compose 多环境部署方案（staging 环境）；TCP Socket 支持 BIO/NIO 双模式拦截；录制功能已在 HTTP/Kafka/Pulsar/JMS 协议验证通过；v2.3 - **新增需求**:R-S2 AC-11 Faker 动态数据函数(`{{faker.phone}}`/`{{faker.email}}`/`{{faker.name}}`等);R-S2 AC-12 响应多编码格式支持(GBK/GB2312/Big5等),每个响应分支可独立设置 charset,Passthrough 录制自动解析下游编码;v2.2 - **新增需求**:用户角色权限控制(RBAC),定义管理员/开发/测试/游客四类角色,按角色控制规则/场景/环境的增删改查权限,新增 R-S7.7(权限控制 API)、R-W7(用户管理界面)、权限配置项及风险项;v2.1 - **需求变更**:1) 场景集关联环境时,其包含的规则自动继承环境关联且不可删除;2) 新增 `GET /api/rules/{id}/inherited-environments` API 查询规则继承的场景集环境;v2.5 - **非目标修订与新增需求**:N1(非JVM)和N3(gRPC)非目标已超越——多语言Thin SDK(Go/Python/Node.js)已发布,gRPC已完整实现(GrpcStubHandler+GrpcChannelAdvice);新增R-S11(gRPC协议支持)、R-S12(多语言SDK)、R-W8(国际化i18n);v2.0 - 1) 未匹配规则的请求默认改为**透传**(原 404),`baafoo.stub.unmatched-default` 默认值改为 `passthrough`;2) 规则及场景集新增 `environments` 细粒度控制,可配置在哪些环境生效(新规则默认不生效、新环境默认旧规则不生效);Q8 决议更新为规则与环境双向绑定;N6 非目标删除
+> **变更摘要**:v2.4 - **实现状态更新**:Kafka/Pulsar/JMS Mock Broker 从 Beta 升级为正式支持，已验证 topic 条件匹配、消息录制功能；新增 Docker Compose 多环境部署方案（staging 环境）；TCP Socket 支持 BIO/NIO 双模式拦截；录制功能已在 HTTP/Kafka/Pulsar/JMS 协议验证通过；v2.3 - **新增需求**:R-S2 AC-11 Faker 动态数据函数(`{{faker.phone}}`/`{{faker.email}}`/`{{faker.name}}`等);R-S2 AC-12 响应多编码格式支持(GBK/GB2312/Big5等),每个响应分支可独立设置 charset,Passthrough 录制自动解析下游编码;v2.2 - **新增需求**:用户角色权限控制(RBAC),定义管理员/开发/测试/游客四类角色,按角色控制规则/场景/环境的增删改查权限,新增 R-S7.7(权限控制 API)、R-W7(用户管理界面)、权限配置项及风险项;v2.1 - **需求变更**:1) 场景集关联环境时,其包含的规则自动继承环境关联且不可删除;2) 新增 `GET /api/rules/{id}/inherited-environments` API 查询规则继承的场景集环境;v2.5 - **非目标修订与新增需求**:N1(非JVM)和N3(gRPC)非目标已超越——多语言Thin SDK(Go/Python/Node.js)已发布,gRPC已完整实现(GrpcUnifiedHandler+GrpcChannelAdvice);新增R-S11(gRPC协议支持)、R-S12(多语言SDK)、R-W8(国际化i18n);v2.0 - 1) 未匹配规则的请求默认改为**透传**(原 404),`baafoo.stub.unmatched-default` 默认值改为 `passthrough`;2) 规则及场景集新增 `environments` 细粒度控制,可配置在哪些环境生效(新规则默认不生效、新环境默认旧规则不生效);Q8 决议更新为规则与环境双向绑定;N6 非目标删除
 ---
 
 ## 1. 问题陈述
@@ -64,7 +64,7 @@
 | **描述** | 支持 gRPC (HTTP/2) 协议的拦截、Mock 和录制，包括 Unary、Server Streaming、Client Streaming 和 Bidi Streaming |
 | **优先级** | P0 |
 | **实现日期** | 2026-06-24 |
-| **关键文件** | `GrpcChannelAdvice.java`、`GrpcStubHandler.java`、`GrpcUnifiedHandler.java` |
+| **关键文件** | `GrpcChannelAdvice.java`、`GrpcUnifiedHandler.java`、`GrpcPassthroughForwarder.java`、`GrpcResponseBuilder.java` |
 | **设计文档** | `decisions/grpc-fix-design-20260624.md` |
 
 ### R-S12: 多语言 Thin SDK — ✅ 已实现
@@ -93,7 +93,7 @@
 | **描述** | 修复 MCP 硬编码 admin 权限(C1)、匿名用户可读全部 API(H6)、规则级 requestCount 条件错误(H1)、前端 saveRule 不检查结果(H10)等 1 Critical + 11 High + 10 Medium |
 | **优先级** | P0 |
 | **实现日期** | 2026-07-10 |
-| **详细报告** | `5_review/CODE-REVIEW-REPORT.md`、`reviews/security/security-fixes-20260710.md` |
+| **详细报告** | `reviews/security/code-review-report-20260710.md`、`reviews/security/security-fixes-20260710.md` |
 
 ## 4. 用户故事
 
@@ -750,7 +750,7 @@
 
 ## 7. 开放问题决议
 
-> 以下为 v1.1 中基于团队讨论确定的问题决议,原开放问题已关闭。
+> 以下为 v1.1-v2.0 中基于团队讨论确定的问题决议,原开放问题已关闭。
 
 | # | 原问题 | 决议 | 影响的需求 |
 |---|---|---|---|
@@ -790,8 +790,8 @@
 
 **Phase 1(v1.0 MVP)**:Agent 基础拦截(Socket + NIO + Consul)+ Server 多协议端口 + HTTP Handler(含参数化规则)+ TCP Handler + **环境管理 API** + 规则管理 API(含导入导出)+ 配置热加载 + `baafoo init` 快速起步工具
 **Phase 2(v1.0 完整版)**:Kafka Mock Broker(Metadata/Produce/Fetch)+ Pulsar Mock Broker(含 Lookup)+ JMS Mock Broker + 录制回放(HTTP 层)+ **Web 控制台(含环境管理页面)** + 规则版本管理与 Undo
-**Phase 3(v1.5)**:Docker 镜像 + 场景集管理(简化版)+ 请求日志 Dashboard 增强 + Maven 插件 + Consul HTTP API 完善(Spring Cloud Consul WebClient)+ Kafka Beta 正式版 + Pulsar 范围扩展 + 插件外置 jar 化
-**Phase 4(v2.0)**:gRPC/WebSocket + 录制回放增强 + Eureka/Nacos 注册中心 + 规则 Git 版本管理
+**Phase 3(v1.5)**:~~Docker 镜像~~ ✅已实现 + 场景集管理(简化版)+ 请求日志 Dashboard 增强 + Maven 插件 + Consul HTTP API 完善(Spring Cloud Consul WebClient)+ ~~Kafka Beta 正式版~~ ✅已正式支持 + ~~Pulsar 范围扩展~~ ✅已正式支持 + 插件外置 jar 化
+**Phase 4(v2.0)**:WebSocket + 录制回放增强 + Eureka/Nacos 注册中心 + 规则 Git 版本管理
 
 ---
 

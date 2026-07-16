@@ -36,6 +36,7 @@
 | 日期 | 审查人 | 审查结果 |
 |------|--------|----------|
 | 2026-07-16 | Alex (PM) | 首次全量审查，产出 `reviews/workmemo-audit-20260716.md` |
+| 2026-07-17 | Alex (PM) | 文档过时审查，产出 `reviews/workmemo-doc-audit-20260717.md`（P0-P3 共 15 项，已修复 P0+P1） |
 
 ---
 
@@ -71,6 +72,7 @@
 | [reviews/product-advice.md](reviews/product-advice.md) | 产品方向建议 | 2026-05-31 |
 | [reviews/review-feature-extension-prd.md](reviews/review-feature-extension-prd.md) | 扩展 PRD 审查意见 | 2026-06-14 |
 | [reviews/workmemo-audit-20260716.md](reviews/workmemo-audit-20260716.md) | .workmemo 工程文档审查报告 | 2026-07-16 |
+| [reviews/workmemo-doc-audit-20260717.md](reviews/workmemo-doc-audit-20260717.md) | .workmemo 文档过时审查 | 2026-07-17 |
 
 #### 安全审查
 
@@ -140,6 +142,7 @@
 │   ├── product-advice.md                 ← 产品方向建议
 │   ├── review-feature-extension-prd.md   ← 扩展 PRD 审查
 │   ├── workmemo-audit-20260716.md        ← 文档审查报告
+│   ├── workmemo-doc-audit-20260717.md    ← 文档过时审查
 │   ├── security/                         ← 安全审查
 │   │   ├── code-review-report-20260710.md
 │   │   ├── security-fixes-20260710.md

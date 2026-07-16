@@ -63,7 +63,7 @@
 | M1 | ReDoS 缓解失效 | ⏳ 待修复 | Java 8 Matcher 不响应中断，需限制输入长度 |
 | M14 | DefaultModeStrategy 是死代码 | ⏳ 待修复 | 需统一模式分派（见架构改进 P1-1） |
 | M20 | 连接状态恒为"已连接" | ❌ 不修复 | 经审查 isOnline 基于 lastHeartbeat 60s 阈值，逻辑正确 |
-| M22-low | 输入未 trim | ❌ 不修复 | 数据质量问题，非安全风险 |
+| M22-low → M26 | 输入未 trim | ❌ 不修复 | 数据质量问题，非安全风险 |
 
 ---
 
