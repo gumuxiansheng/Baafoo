@@ -127,10 +127,10 @@ class Client:
 
     def _match_rule(self, rule: Rule, method: str, path: str) -> bool:
         for cond in rule.conditions:
-            if cond.field == "method":
+            if cond.type == "method":
                 if not self._match_operator(cond.operator, method, cond.value):
                     return False
-            elif cond.field == "path":
+            elif cond.type == "path":
                 if not self._match_operator(cond.operator, path, cond.value):
                     return False
         return True

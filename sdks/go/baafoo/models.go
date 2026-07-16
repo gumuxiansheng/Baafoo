@@ -2,7 +2,7 @@ package baafoo
 
 // MatchCondition 规则匹配条件
 type MatchCondition struct {
-	Field    string `json:"field"`
+	Type    string `json:"type"`
 	Operator string `json:"operator"`
 	Value    string `json:"value"`
 }

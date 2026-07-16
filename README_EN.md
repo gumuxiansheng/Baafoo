@@ -253,7 +253,7 @@ baafoo/
 │       ├── api/           # Axios API wrapper
 │       ├── router/        # Vue Router configuration
 │       ├── store/         # Pinia state management
-│       └── views/         # 7 page components
+│       └── views/         # 11 view components
 │
 ├── agent-skill/           # AI Agent Skill package (MCP integration)
 ├── sdks/                  # Multi-language Thin SDKs
@@ -374,7 +374,7 @@ Test assets located in `testing/` directory:
 
 | Directory/File | Description |
 |:----------|:-----|
-| `testing/2_IntegrationTest/rules/` | 34 JSON rule files covering all protocols and condition types |
+| `testing/2_IntegrationTest/rules/` | 60+ JSON rule files covering all protocols and condition types |
 | `testing/deploy/staging/` | Staging environment Agent & Server configuration |
 | `testing/3_SystemTest/TEST-MANUAL.md` | Complete test manual |
 | `testing/3_SystemTest/TEST-REPORT.md` | Latest test report |
@@ -514,7 +514,6 @@ heartbeatIntervalSec: 30             # Heartbeat interval (seconds)
 pollIntervalSec: 10                  # Rule polling interval (seconds)
 protocols: []                        # Protocols to intercept (empty = all)
 maxRecordingSize: 10485760           # Maximum recording size (bytes)
-hotReload: true                      # Enable rule file hot reload
 connectionRetries: 3                 # Server connection retry count
 retryBackoffMs: 1000                 # Retry backoff base (milliseconds)
 ```
@@ -541,8 +540,6 @@ heartbeatIntervalSec: 30
 pollIntervalSec: 10
 protocols: []
 maxRecordingSize: 10485760
-rulesFilePath: ""                    # Rule file path (WatchService hot reload)
-hotReload: true
 failOpen: false                      # true: silently pass through on Agent init failure (no error)
 connectionRetries: 3
 retryBackoffMs: 1000
@@ -557,7 +554,6 @@ plugins:                             # Plugin system configuration
 | Option | Default | Description |
 |:-------|:-------|:-----|
 | `failOpen` | `false` | Behavior on Agent initialization failure: `true` silently pass through, `false` log ERROR but still pass through |
-| `rulesFilePath` | — | Rule file path, used with `hotReload` for WatchService file monitoring |
 | `server` | — | Server connection object (host + protocol ports + useSsl + apiKey), higher priority than `serverUrl` |
 | `server.apiKey` | — | Server authentication API Key (required when Server auth is enabled) |
 | `server.useSsl` | `false` | Whether to use HTTPS for the control channel |
@@ -814,7 +810,7 @@ Rules can configure a `faultInjection` field to implement probabilistic fault in
   "host": "order-service",
   "port": 8080,
   "conditions": [
-    {"field": "path", "operator": "startsWith", "value": "/api/orders"}
+    {"type": "path", "operator": "startsWith", "value": "/api/orders"}
   ],
   "responses": [
     {"statusCode": 200, "body": "{\"status\":\"ok\"}"}
@@ -945,7 +941,7 @@ Baafoo provides Thin SDKs in Go, Python, and Node.js for Mock interception in no
 ```python
 from baafoo import BaafooClient
 
-client = BaafooClient(
+client = Client(
     server_url="http://localhost:8084",
     environment="default",
     api_key="dev-key-001"
@@ -953,22 +949,22 @@ client = BaafooClient(
 client.start()  # Register + heartbeat + polling
 
 # HTTP interception (auto redirects to Baafoo Server)
-from baafoo import intercept_http
-intercept_http(client)
+from baafoo import patch
+patch(client)
 ```
 
 #### Quick Start (Node.js Example)
 
 ```javascript
-const { BaafooClient, interceptHttp } = require('@baafoo/sdk');
+const { BaafooClient, patch } = require('@baafoo/sdk');
 
-const client = new BaafooClient({
+const client = new Client({
     serverUrl: 'http://localhost:8084',
     environment: 'default',
     apiKey: 'dev-key-001'
 });
 await client.start();
-interceptHttp(client);
+patch(client);
 ```
 
 #### Quick Start (Go Example)
@@ -976,9 +972,9 @@ interceptHttp(client);
 ```go
 import "github.com/baafoo/sdk-go/baafoo"
 
-client := baafoo.NewClient("http://localhost:8084", "default", baafoo.WithAPIKey("dev-key-001"))
+client := baafoo.New("http://localhost:8084", "default", baafoo.WithAPIKey("dev-key-001"))
 client.Start()
-baafoo.InterceptHTTP(client)
+client.InterceptHTTP()
 ```
 
 ### Sidecar Proxy
@@ -1235,13 +1231,13 @@ Example plugins: [feign](baafoo-example-plugins/feign/), [kafka-redirect](baafoo
 | Bytecode Instrumentation | Byte Buddy | 1.14.14 |
 | Network Layer | Netty | 4.1.100 |
 | JSON | Jackson | 2.15.3 |
-| YAML | SnakeYAML | 1.33 |
+| YAML | SnakeYAML | 2.2 |
 | Logging | SLF4J + Logback | 1.7.36 / 1.2.13 |
 | Frontend Framework | Vue 3 | 3.4 |
 | UI Library | Element Plus | 2.5 |
 | State Management | Pinia | 2.1 |
 | Charts | ECharts | 5.5 |
-| Build Tools | Maven / Vite | 3.6+ / 5.1 |
+| Build Tools | Maven / Vite | 3.6+ / 7.3 |
 | Java | JDK 8+ | 1.8 |
 
 ---

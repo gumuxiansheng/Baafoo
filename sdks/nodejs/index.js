@@ -103,9 +103,9 @@ class Client {
 
   _matchRule(rule, method, reqPath) {
     for (const cond of (rule.conditions || [])) {
-      if (cond.field === 'method') {
+      if (cond.type === 'method') {
         if (!this._matchOperator(cond.operator, method, cond.value)) return false;
-      } else if (cond.field === 'path') {
+      } else if (cond.type === 'path') {
         if (!this._matchOperator(cond.operator, reqPath, cond.value)) return false;
       }
     }

@@ -237,7 +237,7 @@ func (c *Client) MatchRequest(method, path string) *Rule {
 // matchRule 简单规则匹配
 func matchRule(rule Rule, method, path string) bool {
 	for _, cond := range rule.Conditions {
-		switch cond.Field {
+		switch cond.Type {
 		case "method":
 			if !matchOperator(cond.Operator, method, cond.Value) {
 				return false

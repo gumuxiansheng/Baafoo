@@ -7,7 +7,7 @@ from typing import List, Dict, Optional
 @dataclass
 class MatchCondition:
     """规则匹配条件"""
-    field: str = ""
+    type: str = ""
     operator: str = ""
     value: str = ""
 
