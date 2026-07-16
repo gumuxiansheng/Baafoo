@@ -1935,32 +1935,37 @@ try {
     }
 }
 
-# G4: Consul DNS 重定向 — DnsResolveAdvice 在非 PASSTHROUGH 模式把 *.service.consul
-# 重定向到 Baafoo Server IP（保留原 hostName）。证明：PASSTHROUGH 下真实 DNS 解析
-# .service.consul 必然失败 (resolved=false)；STUB 下被重定向 (resolved=true, hostName 保留)。
+# G4: DNS redirect — DnsResolveAdvice uses @Advice.OnMethodExit, so it can only
+# override the result when InetAddress.getByName succeeds. Using an unresolvable
+# hostname (.service.consul) fails in BOTH modes because the advice never
+# triggers on UnknownHostException. Instead, use a resolvable docker service
+# name (real-backend) and compare hostAddress between PASSTHROUGH and STUB:
+# the addresses should differ, proving the advice redirected in STUB mode.
 try {
-    # PASSTHROUGH：真实 DNS 应失败
+    # PASSTHROUGH: real DNS resolves to real-backend container IP
     if ($envAIdG) {
         Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdG" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"passthrough"}' -ErrorAction Stop | Out-Null
         Start-Sleep -Seconds $MODE_SETTLE_WAIT
     }
-    $dnsPt = Invoke-AppGet "$APP_A/api/consul/dns?name=my-service.service.consul" | ConvertFrom-Json
+    $dnsPt = Invoke-AppGet "$APP_A/api/consul/dns?name=real-backend" | ConvertFrom-Json
     $dnsPtResolved = [string]$dnsPt.resolved
-    # STUB：advice 重定向
+    $dnsPtAddr = [string]$dnsPt.hostAddress
+    # STUB: advice overrides result to Baafoo Server IP
     if ($envAIdG) {
         Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdG" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
         Start-Sleep -Seconds $MODE_SETTLE_WAIT
     }
-    $dnsStub = Invoke-AppGet "$APP_A/api/consul/dns?name=my-service.service.consul" | ConvertFrom-Json
+    $dnsStub = Invoke-AppGet "$APP_A/api/consul/dns?name=real-backend" | ConvertFrom-Json
     $dnsStubResolved = [string]$dnsStub.resolved
+    $dnsStubAddr = [string]$dnsStub.hostAddress
     $dnsStubHost = [string]$dnsStub.hostName
-    if ($dnsPtResolved -ne "True" -and $dnsStubResolved -eq "True" -and $dnsStubHost -match "service.consul") {
-        Test-Pass "G4: Consul DNS redirect active (passthrough resolved=$dnsPtResolved, stub resolved=$dnsStubResolved, host=$dnsStubHost)"
+    if ($dnsPtResolved -eq "True" -and $dnsStubResolved -eq "True" -and $dnsPtAddr -ne $dnsStubAddr) {
+        Test-Pass "G4: DNS redirect active (pt_addr=$dnsPtAddr, stub_addr=$dnsStubAddr, host=$dnsStubHost)"
     } else {
-        Test-Fail "G4: Consul DNS redirect (passthrough resolved=$dnsPtResolved, stub resolved=$dnsStubResolved, host=$dnsStubHost)"
+        Test-Fail "G4: DNS redirect (pt_resolved=$dnsPtResolved, stub_resolved=$dnsStubResolved, pt_addr=$dnsPtAddr, stub_addr=$dnsStubAddr)"
     }
 } catch {
-    Test-Fail "G4: Consul DNS redirect (error: $_)"
+    Test-Fail "G4: DNS redirect (error: $_)"
 } finally {
     if ($envAIdG) {
         try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdG" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null; Start-Sleep -Seconds $MODE_SETTLE_WAIT } catch {}

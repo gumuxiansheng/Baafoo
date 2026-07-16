@@ -19,7 +19,7 @@
       "type": "bodyJsonPath",
       "operator": "equals",
       "key": "$.data.orders[0].items[2].sku",
-      "value": "SKU-BLUE-789"
+      "value": "SKU-GREEN-003"
     }
   ],
   "responses": [

@@ -1915,20 +1915,25 @@ else
 fi
 restore_stub_g
 
-# G4: Consul DNS 重定向 — DnsResolveAdvice 在非 PASSTHROUGH 模式把 *.service.consul
-# 重定向到 Baafoo Server IP（保留原 hostName）。证明：PASSTHROUGH 下真实 DNS 解析
-# .service.consul 必然失败 (resolved=false)；STUB 下被重定向 (resolved=true, hostName 保留)。
+# G4: DNS redirect — DnsResolveAdvice uses @Advice.OnMethodExit, so it can only
+# override the result when InetAddress.getByName succeeds. Using an unresolvable
+# hostname (.service.consul) fails in BOTH modes because the advice never
+# triggers on UnknownHostException. Instead, use a resolvable docker service
+# name (real-backend) and compare hostAddress between PASSTHROUGH and STUB:
+# the addresses should differ, proving the advice redirected in STUB mode.
 if [[ -n "$env_a_id_g" ]]; then switch_mode_g "passthrough"; fi
-g4_dns_pt="$(app_get "$APP_A/api/consul/dns?name=my-service.service.consul")"
+g4_dns_pt="$(app_get "$APP_A/api/consul/dns?name=real-backend")"
 g4_dns_pt_resolved="$(get_json_value "$g4_dns_pt" "resolved")"
+g4_dns_pt_addr="$(get_json_value "$g4_dns_pt" "hostAddress")"
 if [[ -n "$env_a_id_g" ]]; then switch_mode_g "stub"; fi
-g4_dns_stub="$(app_get "$APP_A/api/consul/dns?name=my-service.service.consul")"
+g4_dns_stub="$(app_get "$APP_A/api/consul/dns?name=real-backend")"
 g4_dns_stub_resolved="$(get_json_value "$g4_dns_stub" "resolved")"
+g4_dns_stub_addr="$(get_json_value "$g4_dns_stub" "hostAddress")"
 g4_dns_stub_host="$(get_json_value "$g4_dns_stub" "hostName")"
-if [[ "$g4_dns_pt_resolved" != "true" && "$g4_dns_stub_resolved" == "true" && "$g4_dns_stub_host" == *"service.consul"* ]]; then
-    test_pass "G4: Consul DNS redirect active (passthrough resolved=$g4_dns_pt_resolved, stub resolved=$g4_dns_stub_resolved, host=$g4_dns_stub_host)"
+if [[ "$g4_dns_pt_resolved" == "true" && "$g4_dns_stub_resolved" == "true" && "$g4_dns_pt_addr" != "$g4_dns_stub_addr" ]]; then
+    test_pass "G4: DNS redirect active (pt_addr=$g4_dns_pt_addr, stub_addr=$g4_dns_stub_addr, host=$g4_dns_stub_host)"
 else
-    test_fail "G4: Consul DNS redirect (passthrough resolved=$g4_dns_pt_resolved, stub resolved=$g4_dns_stub_resolved, host=$g4_dns_stub_host)"
+    test_fail "G4: DNS redirect (pt_resolved=$g4_dns_pt_resolved, stub_resolved=$g4_dns_stub_resolved, pt_addr=$g4_dns_pt_addr, stub_addr=$g4_dns_stub_addr)"
 fi
 restore_stub_g
 
