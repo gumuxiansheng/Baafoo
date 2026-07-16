@@ -1,11 +1,11 @@
 # Baafoo 挡板系统 - 产品需求文档(PRD)
 
-> **文档状态**:PRD v2.4
+> **文档状态**:PRD v2.5
 > **对齐状态**:✅ 最新
 > **目标读者**:产品团队、工程团队、QA 团队
 > **关联文档**:[概念设计说明书 v0.8](../1_concepts/baafoo-concept-design.md)
-> **最后更新**:2026-06-15
-> **变更摘要**:v2.4 - **实现状态更新**:Kafka/Pulsar/JMS Mock Broker 从 Beta 升级为正式支持，已验证 topic 条件匹配、消息录制功能；新增 Docker Compose 多环境部署方案（staging 环境）；TCP Socket 支持 BIO/NIO 双模式拦截；录制功能已在 HTTP/Kafka/Pulsar/JMS 协议验证通过；v2.3 - **新增需求**:R-S2 AC-11 Faker 动态数据函数(`{{faker.phone}}`/`{{faker.email}}`/`{{faker.name}}`等);R-S2 AC-12 响应多编码格式支持(GBK/GB2312/Big5等),每个响应分支可独立设置 charset,Passthrough 录制自动解析下游编码;v2.2 - **新增需求**:用户角色权限控制(RBAC),定义管理员/开发/测试/游客四类角色,按角色控制规则/场景/环境的增删改查权限,新增 R-S7.7(权限控制 API)、R-W7(用户管理界面)、权限配置项及风险项;v2.1 - **需求变更**:1) 场景集关联环境时,其包含的规则自动继承环境关联且不可删除;2) 新增 `GET /api/rules/{id}/inherited-environments` API 查询规则继承的场景集环境;v2.0 - 1) 未匹配规则的请求默认改为**透传**(原 404),`baafoo.stub.unmatched-default` 默认值改为 `passthrough`;2) 规则及场景集新增 `environments` 细粒度控制,可配置在哪些环境生效(新规则默认不生效、新环境默认旧规则不生效);Q8 决议更新为规则与环境双向绑定;N6 非目标删除
+> **最后更新**:2026-07-16
+> **变更摘要**:v2.4 - **实现状态更新**:Kafka/Pulsar/JMS Mock Broker 从 Beta 升级为正式支持，已验证 topic 条件匹配、消息录制功能；新增 Docker Compose 多环境部署方案（staging 环境）；TCP Socket 支持 BIO/NIO 双模式拦截；录制功能已在 HTTP/Kafka/Pulsar/JMS 协议验证通过；v2.3 - **新增需求**:R-S2 AC-11 Faker 动态数据函数(`{{faker.phone}}`/`{{faker.email}}`/`{{faker.name}}`等);R-S2 AC-12 响应多编码格式支持(GBK/GB2312/Big5等),每个响应分支可独立设置 charset,Passthrough 录制自动解析下游编码;v2.2 - **新增需求**:用户角色权限控制(RBAC),定义管理员/开发/测试/游客四类角色,按角色控制规则/场景/环境的增删改查权限,新增 R-S7.7(权限控制 API)、R-W7(用户管理界面)、权限配置项及风险项;v2.1 - **需求变更**:1) 场景集关联环境时,其包含的规则自动继承环境关联且不可删除;2) 新增 `GET /api/rules/{id}/inherited-environments` API 查询规则继承的场景集环境;v2.5 - **非目标修订与新增需求**:N1(非JVM)和N3(gRPC)非目标已超越——多语言Thin SDK(Go/Python/Node.js)已发布,gRPC已完整实现(GrpcStubHandler+GrpcChannelAdvice);新增R-S11(gRPC协议支持)、R-S12(多语言SDK)、R-W8(国际化i18n);v2.0 - 1) 未匹配规则的请求默认改为**透传**(原 404),`baafoo.stub.unmatched-default` 默认值改为 `passthrough`;2) 规则及场景集新增 `environments` 细粒度控制,可配置在哪些环境生效(新规则默认不生效、新环境默认旧规则不生效);Q8 决议更新为规则与环境双向绑定;N6 非目标删除
 ---
 
 ## 1. 问题陈述
@@ -43,14 +43,57 @@
 
 | # | 非目标 | 原因 |
 |---|---|---|
-| N1 | **不覆盖非 JVM 语言**(Go/Python/Node.js 应用) | JavaAgent 技术天然限制;非 JVM 场景建议使用 Sidecar Proxy 或 iptables 方案 |
+| N1 | ~~不覆盖非 JVM 语言~~ **[v2.5 已超越]** | 原 JavaAgent 限制已通过 Thin SDK 绕过:Go/Python/Node.js SDK 已发布(见 `sdks/`);Sidecar Proxy(Go)已实现(见 `proxy/`) |
 | N2 | **不覆盖 UDP 协议** | Agent 拦截点在 TCP Socket 层面,UDP 走 `DatagramSocket`,需完全不同的拦截策略,v1 不做 |
-| N3 | **不覆盖 gRPC/HTTP2 流式 RPC** | gRPC 基于 HTTP/2 多路复用,字节码拦截复杂度显著高于 HTTP/1.1;v1 聚焦 Unary 调用 + 基础协议 |
+| N3 | ~~不覆盖 gRPC~~ **[v2.5 已超越]** | gRPC 已完整实现:`GrpcChannelAdvice`(字节码拦截)+`GrpcStubHandler`(Server端Mock)+`GrpcUnifiedHandler`(流式支持);详见 `6_design/grpc_fix_design_20260624.md` |
 | N4 | **不替代生产环境流量录制** | Baafoo 定位是**开发阶段**挡板工具,不承担生产流量镜像、压力测试等职责 |
 | N5 | **不修改 Consul 注册中心的数据** | Agent 只读 Consul 查询结果,不向 Consul 写入或修改任何注册信息 |
 
 
 ---
+
+
+## 3A. 新增需求（v2.5 补充）
+
+> 以下需求在 v2.4 之后产生，已全部实现。
+
+### R-S11: gRPC 协议支持 — ✅ 已实现
+
+| 属性 | 内容 |
+|---|---|
+| **描述** | 支持 gRPC (HTTP/2) 协议的拦截、Mock 和录制，包括 Unary、Server Streaming、Client Streaming 和 Bidi Streaming |
+| **优先级** | P0 |
+| **实现日期** | 2026-06-24 |
+| **关键文件** | `GrpcChannelAdvice.java`、`GrpcStubHandler.java`、`GrpcUnifiedHandler.java` |
+| **设计文档** | `6_design/grpc_fix_design_20260624.md` |
+
+### R-S12: 多语言 Thin SDK — ✅ 已实现
+
+| 属性 | 内容 |
+|---|---|
+| **描述** | 为非 JVM 语言提供轻量 SDK（Go/Python/Node.js），通过 HTTP 与 Baafoo Server 通信，实现注册、心跳、规则轮询和 HTTP 拦截 |
+| **优先级** | P1 |
+| **实现日期** | 2026-07-04 |
+| **关键路径** | `sdks/go/`、`sdks/python/`、`sdks/nodejs/` |
+| **设计文档** | `5_review/analysis-multilang-sdk-feasibility-20260620.md` |
+
+### R-W8: 国际化（i18n）支持 — ✅ 已实现
+
+| 属性 | 内容 |
+|---|---|
+| **描述** | 前端全面国际化（中文/英文），后端 API 错误消息通过 `Accept-Language` 头切换语言 |
+| **优先级** | P2 |
+| **实现日期** | 2026-07-05 |
+| **关键文件** | `web/src/locales/zh-CN.json`、`web/src/locales/en.json`、`web/src/components/LocaleSwitcher.vue`、`baafoo-core/src/main/resources/i18n/messages*.properties` |
+
+### R-W9: 安全加固 — ✅ 已实现
+
+| 属性 | 内容 |
+|---|---|
+| **描述** | 修复 MCP 硬编码 admin 权限(C1)、匿名用户可读全部 API(H6)、规则级 requestCount 条件错误(H1)、前端 saveRule 不检查结果(H10)等 1 Critical + 11 High + 10 Medium |
+| **优先级** | P0 |
+| **实现日期** | 2026-07-10 |
+| **详细报告** | `5_review/CODE-REVIEW-REPORT.md`、`5_review/security-fixes_2026-07-10.md` |
 
 ## 4. 用户故事
 

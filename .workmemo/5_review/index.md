@@ -1,6 +1,6 @@
 # Baafoo 全量代码审查报告
 
-> **审查日期**: 2026-06-14
+> **审查日期**: 2026-06-14（全量）+ 2026-07-10（第二轮）+ 2026-07-16（工程文档审查）
 > **审查范围**: 全量源码 — baafoo-core, baafoo-server, baafoo-agent, baafoo-plugin-api, baafoo-cli, baafoo-test-app, baafoo-test-spring, baafoo-example-plugins, web/ 前端, 构建配置
 > **总源文件数**: ~180 个 Java 文件 + ~20 个前端源文件 + 构建配置
 > **新发现总问题数**: **174 个** (Critical: 17, High: 32, Medium: 57, Low: 53)
@@ -29,6 +29,21 @@
 | [08-mapper-review.md](./archive/08-mapper-review.md) | MyBatis Mapper XML 详细发现 |
 | [09-test-review.md](./archive/09-test-review.md) | 测试代码详细发现 |
 | [10-cicd-review.md](./archive/10-cicd-review.md) | CI/CD 与构建脚本详细发现 |
+
+---
+
+## 后续审查文档（2026-07-10 ~）
+
+以下文档在 2026-06-22 全量审查后产出，作为上述报告的补充和后续。
+
+| 文件 | 内容 | 日期 |
+|------|------|------|
+| [code-review-report-20260710.md](./code-review-report-20260710.md) | 第二轮代码审查：1 Critical + 11 High + 14 Medium + 20 Low，含跨模块架构建议 | 2026-07-10 |
+| [security-fixes_2026-07-10.md](./security-fixes_2026-07-10.md) | 上述审查的修复记录：1C + 7H + 10M 已修复，4 项经分析不修复 | 2026-07-11 |
+| [security-issue-tracker.md](./security-issue-tracker.md) | 安全审查问题闭环追踪表（问题→修复→状态） | 2026-07-16 |
+| [competitive-analysis-comprehensive-20260716.md](./competitive-analysis-comprehensive-20260716.md) | 全面竞品分析（含 mockforge 深度对比 + 全市场） | 2026-07-16 |
+| [testcontainers-feasibility-analysis-20260624.md](./testcontainers-feasibility-analysis-20260624.md) | Testcontainers 集成可行性分析 | 2026-07-08 |
+| [workmemo_audit_20260716.md](./workmemo_audit_20260716.md) | .workmemo 工程文档批判性审查报告 | 2026-07-16 |
 
 ---
 
