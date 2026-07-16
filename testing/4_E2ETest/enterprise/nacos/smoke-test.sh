@@ -187,7 +187,10 @@ else
 fi
 
 # ========== EG-NACOS-012 ==========
-write_result "EG-NACOS-012" "SKIP" "gRPC 长连接拦截需要 gRPC 协议支持，当前 Agent 仅配置 HTTP"
+# Nacos 2.x 客户端使用 gRPC 长连接（端口 9848）进行服务发现和配置推送，
+# 但本测试应用通过 HTTP 代理访问 Nacos HTTP API（端口 8848），不使用 gRPC 长连接，
+# 因此无 gRPC 流量可拦截。gRPC 拦截验证见 G01-G06（grpc-* 测试套件）。
+write_result "EG-NACOS-012" "SKIP" "测试应用通过 HTTP 代理访问 Nacos API，无 gRPC 长连接流量（gRPC 拦截验证见 G01-G06）"
 
 # 恢复 stub
 switch_env_mode "$NACOS_ENV_ID" "stub" 2>/dev/null || true
