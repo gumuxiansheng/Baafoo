@@ -528,6 +528,9 @@ rule_files=(
     "kafka-metadata.json"
     "jms-topic-test.json"
     "grpc-header-match.json" "grpc-status-code.json" "grpc-delay-1s.json"
+    # CX: Complex production-like cases (large payload / XML / multi-condition / nested JsonPath / regex / CJK)
+    "http-cx-large-body.json" "http-cx-soap.json" "http-cx-multi-condition.json"
+    "http-cx-nested-jsonpath.json" "http-cx-regex-path.json" "http-cx-cjk-body.json"
 )
 
 registered=0
@@ -1326,6 +1329,127 @@ resp="$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/global-endpoin
 c11_body="$(get_json_body "$resp")"
 if [[ -n "$c11_body" && "$c11_body" =~ \"rule\"[[:space:]]*:[[:space:]]*\"global\" ]]; then test_pass "C11: Global rule (no env) matched"
 else test_skip "C11: Global rule (response: $resp)"; fi
+
+# -------------------- CX: Complex production-like cases --------------------
+# CX cases verify agent behavior with realistic, non-trivial payloads:
+#   large bodies (~50KB), SOAP/XML, multi-condition AND, deep nested
+#   JsonPath, complex regex, and CJK (Chinese) content. These exercise
+#   edge cases that the simple C01-C11 conditions do not cover.
+echo ""
+echo "--- CX: Complex Cases ---"
+
+cx_fixtures_dir="testing/3_SystemTest/fixtures"
+cx_tmp_dir="testing/7_Others/tmp"
+mkdir -p "$cx_tmp_dir"
+
+# CX01: Large JSON payload (~50KB)
+# Generates a ~50KB JSON body with 400 items, each containing the marker.
+# Verifies the agent can match body-contains on a non-trivial payload size.
+cx_large_marker="CX_LARGE_PAYLOAD_MARKER_8F3A2B"
+cx_large_tmp="$cx_tmp_dir/cx-large-payload.json"
+{
+  echo -n '{"batch":['
+  for cx_i in $(seq 1 400); do
+    echo -n "{\"id\":$cx_i,\"marker\":\"$cx_large_marker\",\"padding\":\"$(printf 'P%.0s' $(seq 1 80))\"}"
+    [[ $cx_i -lt 400 ]] && echo -n ','
+  done
+  echo -n '],"marker":"'"$cx_large_marker"'"}'
+} > "$cx_large_tmp"
+cx_large_size=$(wc -c < "$cx_large_tmp" | tr -d ' ')
+cx_resp=$(curl -sf -X POST "$APP_A/api/http/post?url=http://real-backend:9090/cx/large" \
+    --data-urlencode "body@$cx_large_tmp" 2>/dev/null || echo "{}")
+cx_mb="$(get_matched_by "$cx_resp")"
+if [[ "$cx_mb" == "cx-large-body" ]]; then
+    test_pass "CX01: Large JSON body matched (size=${cx_large_size}B, matchedBy=$cx_mb)"
+else
+    test_fail "CX01: Large JSON body (size=${cx_large_size}B, matchedBy=$cx_mb, resp=${cx_resp:0:200})"
+fi
+
+# CX02: SOAP/XML body match
+# Sends a SOAP envelope and verifies body-contains matching on XML tags.
+cx_soap_fixture="$cx_fixtures_dir/soap-request.xml"
+if [[ -f "$cx_soap_fixture" ]]; then
+    cx_resp=$(curl -sf -X POST "$APP_A/api/http/post?url=http://real-backend:9090/cx/soap" \
+        --data-urlencode "body@$cx_soap_fixture" 2>/dev/null || echo "{}")
+    cx_body="$(get_json_body "$cx_resp")"
+    if [[ "$cx_body" =~ GetUserQuoteResponse ]]; then
+        test_pass "CX02: SOAP XML body matched (response contains GetUserQuoteResponse)"
+    else
+        test_fail "CX02: SOAP XML body (body=${cx_body:0:200}, resp=${cx_resp:0:200})"
+    fi
+else
+    test_skip "CX02: SOAP XML body (fixture missing: $cx_soap_fixture)"
+fi
+
+# CX03: Multi-condition (5 AND) match
+# All 5 conditions must match: method=POST + path=/cx/orders + body contains
+# PRIORITY_HIGH + bodyJsonPath $.action=submit + bodyJsonPath $.order.customer.tier=gold.
+cx_order_fixture="$cx_fixtures_dir/complex-order.json"
+if [[ -f "$cx_order_fixture" ]]; then
+    cx_resp=$(curl -sf -X POST "$APP_A/api/http/post?url=http://real-backend:9090/cx/orders" \
+        --data-urlencode "body@$cx_order_fixture" 2>/dev/null || echo "{}")
+    cx_mb="$(get_matched_by "$cx_resp")"
+    if [[ "$cx_mb" == "cx-multi-condition" ]]; then
+        test_pass "CX03: Multi-condition (5 AND) matched (matchedBy=$cx_mb)"
+    else
+        test_fail "CX03: Multi-condition (5 AND) (matchedBy=$cx_mb, resp=${cx_resp:0:200})"
+    fi
+else
+    test_skip "CX03: Multi-condition (fixture missing: $cx_order_fixture)"
+fi
+
+# CX04: Deep nested JsonPath (array index)
+# Verifies bodyJsonPath $.data.orders[0].items[2].sku equals "SKU-BLUE-789".
+cx_nested_fixture="$cx_fixtures_dir/nested-json.json"
+if [[ -f "$cx_nested_fixture" ]]; then
+    cx_resp=$(curl -sf -X POST "$APP_A/api/http/post?url=http://real-backend:9090/cx/nested" \
+        --data-urlencode "body@$cx_nested_fixture" 2>/dev/null || echo "{}")
+    cx_mb="$(get_matched_by "$cx_resp")"
+    if [[ "$cx_mb" == "cx-nested-jsonpath" ]]; then
+        test_pass "CX04: Deep nested JsonPath matched (path=\$.data.orders[0].items[2].sku)"
+    else
+        test_fail "CX04: Deep nested JsonPath (matchedBy=$cx_mb, resp=${cx_resp:0:200})"
+    fi
+else
+    test_skip "CX04: Deep nested JsonPath (fixture missing: $cx_nested_fixture)"
+fi
+
+# CX05: Complex regex path match
+# Regex: /cx/v[0-9]+/(users|orders)/[A-Z]{2}[0-9]{6,10}
+# Tests positive and negative cases.
+cx_regex_resp=$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/cx/v2/users/AB123456/detail")
+cx_regex_mb="$(get_matched_by "$cx_regex_resp")"
+if [[ "$cx_regex_mb" == "cx-regex-path" ]]; then
+    # Negative case: lowercase ID should NOT match
+    cx_neg_resp=$(app_get "$APP_A/api/http/get?url=http://real-backend:9090/cx/v2/users/ab123456/detail")
+    cx_neg_mb="$(get_matched_by "$cx_neg_resp")"
+    if [[ "$cx_neg_mb" != "cx-regex-path" ]]; then
+        test_pass "CX05: Complex regex path (positive match + negative reject, matchedBy=$cx_regex_mb)"
+    else
+        test_fail "CX05: Complex regex path (negative case should NOT match, matchedBy=$cx_neg_mb)"
+    fi
+else
+    test_fail "CX05: Complex regex path (positive case not matched, matchedBy=$cx_regex_mb, resp=${cx_regex_resp:0:200})"
+fi
+
+# CX06: CJK Chinese body match
+# Verifies body-contains on Chinese characters (UTF-8 multi-byte).
+cx_cjk_fixture="$cx_fixtures_dir/cjk-payload.json"
+if [[ -f "$cx_cjk_fixture" ]]; then
+    cx_resp=$(curl -sf -X POST "$APP_A/api/http/post?url=http://real-backend:9090/cx/cjk" \
+        --data-urlencode "body@$cx_cjk_fixture" 2>/dev/null || echo "{}")
+    cx_mb="$(get_matched_by "$cx_resp")"
+    if [[ "$cx_mb" == "cx-cjk-body" ]]; then
+        test_pass "CX06: CJK Chinese body matched (matchedBy=$cx_mb)"
+    else
+        test_fail "CX06: CJK Chinese body (matchedBy=$cx_mb, resp=${cx_resp:0:200})"
+    fi
+else
+    test_skip "CX06: CJK Chinese body (fixture missing: $cx_cjk_fixture)"
+fi
+
+# Clean up CX temp files
+rm -f "$cx_large_tmp" 2>/dev/null || true
 
 # -------------------- M: Environment Mode --------------------
 echo ""

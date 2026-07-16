@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Header>
+    <Credentials>
+      <ApiKey>BAAFOO-SOAP-TEST-KEY</ApiKey>
+    </Credentials>
+  </soap:Header>
+  <soap:Body>
+    <GetUserQuote>
+      <userId>U12345</userId>
+      <productCode>PREMIUM</productCode>
+      <quantity>10</quantity>
+    </GetUserQuote>
+  </soap:Body>
+</soap:Envelope>

@@ -1,0 +1,48 @@
+{
+  "id": "staging-a-cx-multi-condition",
+  "name": "CX Multi-Condition (5 AND)",
+  "protocol": "http",
+  "host": "real-backend",
+  "port": 9090,
+  "conditions": [
+    {
+      "type": "method",
+      "operator": "equals",
+      "value": "POST"
+    },
+    {
+      "type": "path",
+      "operator": "equals",
+      "value": "/cx/orders"
+    },
+    {
+      "type": "body",
+      "operator": "contains",
+      "value": "PRIORITY_HIGH"
+    },
+    {
+      "type": "bodyJsonPath",
+      "operator": "equals",
+      "key": "$.action",
+      "value": "submit"
+    },
+    {
+      "type": "bodyJsonPath",
+      "operator": "equals",
+      "key": "$.order.customer.tier",
+      "value": "gold"
+    }
+  ],
+  "responses": [
+    {
+      "name": "Multi-Condition Matched",
+      "statusCode": 200,
+      "body": "{\"mocked\":true,\"matchedBy\":\"cx-multi-condition\",\"conditions\":5}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 5,
+  "tags": ["http", "cx", "multi-condition", "staging-a"],
+  "environments": ["staging-a"]
+}

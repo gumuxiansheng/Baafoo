@@ -1,0 +1,26 @@
+{
+  "id": "staging-a-cx-regex-path",
+  "name": "CX Complex Regex Path",
+  "protocol": "http",
+  "host": "real-backend",
+  "port": 9090,
+  "conditions": [
+    {
+      "type": "path",
+      "operator": "regex",
+      "value": "/cx/v[0-9]+/(users|orders)/[A-Z]{2}[0-9]{6,10}"
+    }
+  ],
+  "responses": [
+    {
+      "name": "Regex Path Matched",
+      "statusCode": 200,
+      "body": "{\"mocked\":true,\"matchedBy\":\"cx-regex-path\"}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 5,
+  "tags": ["http", "cx", "regex", "staging-a"],
+  "environments": ["staging-a"]
+}

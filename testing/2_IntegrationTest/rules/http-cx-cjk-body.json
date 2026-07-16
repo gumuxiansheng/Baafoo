@@ -1,0 +1,36 @@
+{
+  "id": "staging-a-cx-cjk-body",
+  "name": "CX CJK Chinese Body Match",
+  "protocol": "http",
+  "host": "real-backend",
+  "port": 9090,
+  "conditions": [
+    {
+      "type": "method",
+      "operator": "equals",
+      "value": "POST"
+    },
+    {
+      "type": "path",
+      "operator": "equals",
+      "value": "/cx/cjk"
+    },
+    {
+      "type": "body",
+      "operator": "contains",
+      "value": "产品订单编号"
+    }
+  ],
+  "responses": [
+    {
+      "name": "CJK Body Matched",
+      "statusCode": 200,
+      "body": "{\"mocked\":true,\"matchedBy\":\"cx-cjk-body\",\"message\":\"中文匹配成功\"}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 5,
+  "tags": ["http", "cx", "cjk", "chinese", "staging-a"],
+  "environments": ["staging-a"]
+}

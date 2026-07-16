@@ -1,0 +1,29 @@
+{
+  "requestId": "REQ-NESTED-001",
+  "data": {
+    "orders": [
+      {
+        "id": "ORD-001",
+        "customer": {
+          "id": "CUST-A100",
+          "tier": "gold"
+        },
+        "items": [
+          {"sku": "SKU-RED-001", "qty": 2, "price": 19.90},
+          {"sku": "SKU-BLUE-789", "qty": 1, "price": 99.99},
+          {"sku": "SKU-GREEN-003", "qty": 5, "price": 4.50}
+        ],
+        "shipping": {
+          "address": {
+            "city": "Shanghai",
+            "zip": "200000"
+          }
+        }
+      }
+    ]
+  },
+  "metadata": {
+    "source": "mobile-app",
+    "version": "2.1.0"
+  }
+}

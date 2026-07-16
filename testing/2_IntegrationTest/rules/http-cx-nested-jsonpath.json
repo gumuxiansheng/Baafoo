@@ -1,0 +1,37 @@
+{
+  "id": "staging-a-cx-nested-jsonpath",
+  "name": "CX Deep Nested JsonPath",
+  "protocol": "http",
+  "host": "real-backend",
+  "port": 9090,
+  "conditions": [
+    {
+      "type": "method",
+      "operator": "equals",
+      "value": "POST"
+    },
+    {
+      "type": "path",
+      "operator": "equals",
+      "value": "/cx/nested"
+    },
+    {
+      "type": "bodyJsonPath",
+      "operator": "equals",
+      "key": "$.data.orders[0].items[2].sku",
+      "value": "SKU-BLUE-789"
+    }
+  ],
+  "responses": [
+    {
+      "name": "Nested JsonPath Matched",
+      "statusCode": 200,
+      "body": "{\"mocked\":true,\"matchedBy\":\"cx-nested-jsonpath\",\"path\":\"$.data.orders[0].items[2].sku\"}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 5,
+  "tags": ["http", "cx", "jsonpath", "nested", "staging-a"],
+  "environments": ["staging-a"]
+}

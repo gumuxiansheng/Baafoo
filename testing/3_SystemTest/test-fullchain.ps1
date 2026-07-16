@@ -383,7 +383,10 @@ $ruleFiles = @(
     "http-fault-delay.json", "http-fault-500.json",
     "kafka-metadata.json",
     "jms-topic-test.json",
-    "grpc-header-match.json", "grpc-status-code.json", "grpc-delay-1s.json"
+    "grpc-header-match.json", "grpc-status-code.json", "grpc-delay-1s.json",
+    # CX: Complex production-like cases (large payload / XML / multi-condition / nested JsonPath / regex / CJK)
+    "http-cx-large-body.json", "http-cx-soap.json", "http-cx-multi-condition.json",
+    "http-cx-nested-jsonpath.json", "http-cx-regex-path.json", "http-cx-cjk-body.json"
 )
 
 $registered = 0
@@ -1354,6 +1357,130 @@ if ($_c11RuleId -eq "staging-http-global") {
 } else {
     Test-Fail "C11: Global rule NOT matched (ruleId=$_c11RuleId, stubbed=$_c11Stubbed, resp=$(Format-RespShort $resp))"
 }
+
+# -------------------- CX: Complex production-like cases --------------------
+# CX cases verify agent behavior with realistic, non-trivial payloads:
+#   large bodies (~50KB), SOAP/XML, multi-condition AND, deep nested
+#   JsonPath, complex regex, and CJK (Chinese) content. These exercise
+#   edge cases that the simple C01-C11 conditions do not cover.
+Write-Host ""
+Write-Host "--- CX: Complex Cases ---" -ForegroundColor White
+
+$cxFixturesDir = "testing/3_SystemTest/fixtures"
+$cxTmpDir = "testing/7_Others/tmp"
+if (-not (Test-Path $cxTmpDir)) { New-Item -ItemType Directory -Path $cxTmpDir -Force | Out-Null }
+
+# CX01: Large JSON payload (~50KB)
+# Generates a ~50KB JSON body with 400 items, each containing the marker.
+# Verifies the agent can match body-contains on a non-trivial payload size.
+$cxLargeMarker = "CX_LARGE_PAYLOAD_MARKER_8F3A2B"
+$cxLargeTmp = Join-Path $cxTmpDir "cx-large-payload.json"
+$cxItems = @()
+for ($cxI = 1; $cxI -le 400; $cxI++) {
+    $cxItems += [PSCustomObject]@{
+        id = $cxI
+        marker = $cxLargeMarker
+        padding = ("P" * 80)
+    }
+}
+$cxLargeObj = @{ batch = $cxItems; marker = $cxLargeMarker }
+($cxLargeObj | ConvertTo-Json -Compress -Depth 5) | Out-File -FilePath $cxLargeTmp -Encoding UTF8
+$cxLargeSize = (Get-Item $cxLargeTmp).Length
+$cxResp = & curl.exe -sf -X POST "$APP_A/api/http/post?url=http://real-backend:9090/cx/large" --data-urlencode "body@$cxLargeTmp" 2>$null
+if (-not $cxResp) { $cxResp = "{}" }
+$cxMb = Get-MatchedBy $cxResp
+if ($cxMb -eq "cx-large-body") {
+    Test-Pass "CX01: Large JSON body matched (size=$($cxLargeSize)B, matchedBy=$cxMb)"
+} else {
+    Test-Fail "CX01: Large JSON body (size=$($cxLargeSize)B, matchedBy=$cxMb, resp=$($cxResp.Substring(0, [Math]::Min(200, $cxResp.Length))))"
+}
+
+# CX02: SOAP/XML body match
+# Sends a SOAP envelope and verifies body-contains matching on XML tags.
+$cxSoapFixture = Join-Path $cxFixturesDir "soap-request.xml"
+if (Test-Path $cxSoapFixture) {
+    $cxResp = & curl.exe -sf -X POST "$APP_A/api/http/post?url=http://real-backend:9090/cx/soap" --data-urlencode "body@$cxSoapFixture" 2>$null
+    if (-not $cxResp) { $cxResp = "{}" }
+    $cxBody = Get-JsonBody $cxResp
+    if ($cxBody -match "GetUserQuoteResponse") {
+        Test-Pass "CX02: SOAP XML body matched (response contains GetUserQuoteResponse)"
+    } else {
+        $short = if ($cxBody) { $cxBody.Substring(0, [Math]::Min(200, $cxBody.Length)) } else { "" }
+        Test-Fail "CX02: SOAP XML body (body=$short)"
+    }
+} else {
+    Test-Skip "CX02: SOAP XML body (fixture missing: $cxSoapFixture)"
+}
+
+# CX03: Multi-condition (5 AND) match
+# All 5 conditions must match: method=POST + path=/cx/orders + body contains
+# PRIORITY_HIGH + bodyJsonPath $.action=submit + bodyJsonPath $.order.customer.tier=gold.
+$cxOrderFixture = Join-Path $cxFixturesDir "complex-order.json"
+if (Test-Path $cxOrderFixture) {
+    $cxResp = & curl.exe -sf -X POST "$APP_A/api/http/post?url=http://real-backend:9090/cx/orders" --data-urlencode "body@$cxOrderFixture" 2>$null
+    if (-not $cxResp) { $cxResp = "{}" }
+    $cxMb = Get-MatchedBy $cxResp
+    if ($cxMb -eq "cx-multi-condition") {
+        Test-Pass "CX03: Multi-condition (5 AND) matched (matchedBy=$cxMb)"
+    } else {
+        Test-Fail "CX03: Multi-condition (5 AND) (matchedBy=$cxMb, resp=$($cxResp.Substring(0, [Math]::Min(200, $cxResp.Length))))"
+    }
+} else {
+    Test-Skip "CX03: Multi-condition (fixture missing: $cxOrderFixture)"
+}
+
+# CX04: Deep nested JsonPath (array index)
+# Verifies bodyJsonPath $.data.orders[0].items[2].sku equals "SKU-BLUE-789".
+$cxNestedFixture = Join-Path $cxFixturesDir "nested-json.json"
+if (Test-Path $cxNestedFixture) {
+    $cxResp = & curl.exe -sf -X POST "$APP_A/api/http/post?url=http://real-backend:9090/cx/nested" --data-urlencode "body@$cxNestedFixture" 2>$null
+    if (-not $cxResp) { $cxResp = "{}" }
+    $cxMb = Get-MatchedBy $cxResp
+    if ($cxMb -eq "cx-nested-jsonpath") {
+        Test-Pass "CX04: Deep nested JsonPath matched (path=`$.data.orders[0].items[2].sku)"
+    } else {
+        Test-Fail "CX04: Deep nested JsonPath (matchedBy=$cxMb, resp=$($cxResp.Substring(0, [Math]::Min(200, $cxResp.Length))))"
+    }
+} else {
+    Test-Skip "CX04: Deep nested JsonPath (fixture missing: $cxNestedFixture)"
+}
+
+# CX05: Complex regex path match
+# Regex: /cx/v[0-9]+/(users|orders)/[A-Z]{2}[0-9]{6,10}
+# Tests positive and negative cases.
+$cxRegexResp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/cx/v2/users/AB123456/detail"
+$cxRegexMb = Get-MatchedBy $cxRegexResp
+if ($cxRegexMb -eq "cx-regex-path") {
+    # Negative case: lowercase ID should NOT match
+    $cxNegResp = Invoke-AppGet "$APP_A/api/http/get?url=http://real-backend:9090/cx/v2/users/ab123456/detail"
+    $cxNegMb = Get-MatchedBy $cxNegResp
+    if ($cxNegMb -ne "cx-regex-path") {
+        Test-Pass "CX05: Complex regex path (positive match + negative reject, matchedBy=$cxRegexMb)"
+    } else {
+        Test-Fail "CX05: Complex regex path (negative case should NOT match, matchedBy=$cxNegMb)"
+    }
+} else {
+    Test-Fail "CX05: Complex regex path (positive case not matched, matchedBy=$cxRegexMb)"
+}
+
+# CX06: CJK Chinese body match
+# Verifies body-contains on Chinese characters (UTF-8 multi-byte).
+$cxCjkFixture = Join-Path $cxFixturesDir "cjk-payload.json"
+if (Test-Path $cxCjkFixture) {
+    $cxResp = & curl.exe -sf -X POST "$APP_A/api/http/post?url=http://real-backend:9090/cx/cjk" --data-urlencode "body@$cxCjkFixture" 2>$null
+    if (-not $cxResp) { $cxResp = "{}" }
+    $cxMb = Get-MatchedBy $cxResp
+    if ($cxMb -eq "cx-cjk-body") {
+        Test-Pass "CX06: CJK Chinese body matched (matchedBy=$cxMb)"
+    } else {
+        Test-Fail "CX06: CJK Chinese body (matchedBy=$cxMb, resp=$($cxResp.Substring(0, [Math]::Min(200, $cxResp.Length))))"
+    }
+} else {
+    Test-Skip "CX06: CJK Chinese body (fixture missing: $cxCjkFixture)"
+}
+
+# Clean up CX temp files
+Remove-Item $cxLargeTmp -Force -ErrorAction SilentlyContinue
 
 # -------------------- M: Environment Mode --------------------
 Write-Host ""

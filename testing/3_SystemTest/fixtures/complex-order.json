@@ -1,0 +1,26 @@
+{
+  "action": "submit",
+  "order": {
+    "id": "ORD-2026-001",
+    "priority": "PRIORITY_HIGH",
+    "customer": {
+      "id": "CUST-001",
+      "tier": "gold",
+      "name": "Acme Corp"
+    },
+    "items": [
+      {"sku": "WIDGET-A", "qty": 100, "price": 9.99},
+      {"sku": "WIDGET-B", "qty": 50, "price": 19.99}
+    ],
+    "shippingAddress": {
+      "line1": "123 Main St",
+      "city": "Beijing",
+      "country": "CN",
+      "zip": "100000"
+    }
+  },
+  "metadata": {
+    "source": "api-v2",
+    "traceId": "trace-cx03-001"
+  }
+}

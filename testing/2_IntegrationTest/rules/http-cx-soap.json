@@ -1,0 +1,44 @@
+{
+  "id": "staging-a-cx-soap",
+  "name": "CX SOAP XML Match",
+  "protocol": "http",
+  "host": "real-backend",
+  "port": 9090,
+  "conditions": [
+    {
+      "type": "method",
+      "operator": "equals",
+      "value": "POST"
+    },
+    {
+      "type": "path",
+      "operator": "equals",
+      "value": "/cx/soap"
+    },
+    {
+      "type": "body",
+      "operator": "contains",
+      "value": "<GetUserQuote>"
+    },
+    {
+      "type": "body",
+      "operator": "contains",
+      "value": "soap:Envelope"
+    }
+  ],
+  "responses": [
+    {
+      "name": "SOAP Matched",
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": "text/xml; charset=utf-8"
+      },
+      "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><GetUserQuoteResponse><quote>1234.56</quote><currency>CNY</currency></GetUserQuoteResponse></soap:Body></soap:Envelope>",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 5,
+  "tags": ["http", "cx", "soap", "xml", "staging-a"],
+  "environments": ["staging-a"]
+}

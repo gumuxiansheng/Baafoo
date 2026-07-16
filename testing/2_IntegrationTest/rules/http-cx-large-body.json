@@ -1,0 +1,36 @@
+{
+  "id": "staging-a-cx-large-body",
+  "name": "CX Large Body Match (~50KB)",
+  "protocol": "http",
+  "host": "real-backend",
+  "port": 9090,
+  "conditions": [
+    {
+      "type": "method",
+      "operator": "equals",
+      "value": "POST"
+    },
+    {
+      "type": "path",
+      "operator": "equals",
+      "value": "/cx/large"
+    },
+    {
+      "type": "body",
+      "operator": "contains",
+      "value": "CX_LARGE_PAYLOAD_MARKER_8F3A2B"
+    }
+  ],
+  "responses": [
+    {
+      "name": "Large Body Matched",
+      "statusCode": 200,
+      "body": "{\"mocked\":true,\"matchedBy\":\"cx-large-body\",\"note\":\"large payload accepted\"}",
+      "delayMs": 0
+    }
+  ],
+  "enabled": true,
+  "priority": 5,
+  "tags": ["http", "cx", "large-body", "staging-a"],
+  "environments": ["staging-a"]
+}
