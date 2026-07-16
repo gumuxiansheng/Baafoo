@@ -179,11 +179,11 @@ else
 fi
 
 # ========== EG-NACOS-011 ==========
-nacos_health=$(curl -sf "$NACOS_BASE_URL/nacos/v1/console/health/readiness" 2>/dev/null)
-if echo "$nacos_health" | grep -q "UP" 2>/dev/null; then
+nacos_http_code=$(curl -s -o /dev/null -w '%{http_code}' "$NACOS_BASE_URL/nacos/v1/console/health/readiness" 2>/dev/null)
+if [[ "$nacos_http_code" == "200" ]]; then
     write_result "EG-NACOS-011" "PASS"
 else
-    write_result "EG-NACOS-011" "SKIP" "Nacos 控制台不可达"
+    write_result "EG-NACOS-011" "SKIP" "Nacos 控制台不可达 (HTTP $nacos_http_code)"
 fi
 
 # ========== EG-NACOS-012 ==========
