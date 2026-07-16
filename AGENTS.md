@@ -182,6 +182,25 @@ Documentation lives in `.workmemo/`. Follow these rules when writing or updating
 - **Auto-generatable → automate**: If content can be derived from git log, code types, or test output, set up a script rather than writing manually. See `gen-changelog.ps1` for reference.
 - **Stale docs**: If a doc would become seriously misleading after 6 months without updates, either make it auto-validatable or don't write it. Archive superseded docs to `archive/` under the relevant directory.
 
+## Git Commit Template
+
+Use the repository-level commit template at `.ai-commit-template` for all commit messages. The template is intended to keep commits concise, structured, and easy to review.
+
+Recommended format:
+
+```text
+<type>(<scope>): <简短描述>
+
+<详细描述：为什么做这个变更？解决了什么问题？有何影响？可以多行。>
+
+AI-Intent: <一句话描述变更意图>
+AI-Impact: <影响的功能模块、组件或文件>
+AI-Tests: <测试变更说明，如：新增单元测试/更新集成测试/无测试变更>
+Refs: #<关联Issue/需求编号>
+```
+
+When writing a commit message, prefer Chinese descriptions, keep the subject line short, and fill in the AI-specific fields so the change intent is explicit.
+
 ## Known Issues
 
 See `.review/deep-code-review-report.md` for 20+ verified findings. The following P0 items have been resolved by the architecture improvement work (`.workmemo/5_review/baafoo_architecture_improvement_todo.md`):
