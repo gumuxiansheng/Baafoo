@@ -153,13 +153,13 @@ services:
       dockerfile: baafoo-test-spring/Dockerfile
     container_name: baafoo-app-env-b
     networks:
-      - baafoo-staging-net:
-          # gRPC 真实后端别名（G1: gRPC 非 STUB 模式覆盖），与 app-env-a 一致
-          aliases:
-            - greeter.example.com
-            - stream.example.com
-            - metrics.example.com
-            - chat.example.com
+      baafoo-staging-net:
+        # gRPC 真实后端别名（G1: gRPC 非 STUB 模式覆盖），与 app-env-a 一致
+        aliases:
+          - greeter.example.com
+          - stream.example.com
+          - metrics.example.com
+          - chat.example.com
     ports:
       - "9091:9091"
     environment:
