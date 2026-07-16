@@ -1707,6 +1707,228 @@ try {
     Test-Fail "G06: gRPC bidi-streaming (error: $_)"
 }
 
+# -------------------- G (cont.): gRPC 非 STUB 模式 + Consul DNS / HTTP 模式覆盖 --------------------
+Write-Host ""
+Write-Host "--- G: gRPC non-STUB modes + Consul coverage ---" -ForegroundColor White
+# G01–G06 已覆盖 gRPC 的 STUB 模式（agent 重定向到 9005 挡板服务）。
+# 以下补全 gRPC 在 PASSTHROUGH / RECORD / RECORD_AND_STUB / RECORD_ALL 模式下的覆盖，
+# 以及一个真实 gRPC 后端 (GrpcEchoServer, 部署在 app-env-a/b 上，通过 docker 网络别名
+# greeter.example.com 解析)。RECORD 系用例用 recordings 中是否出现 protocol:"grpc" 判定。
+
+# 解析 staging-a 环境 id（供本段所有模式切换复用）
+$envAIdG = Get-EnvironmentId (Invoke-ApiGet "environments") "staging-a"
+
+# G07: gRPC PASSTHROUGH — agent 不拦截，通道直连真实 GrpcEchoServer，
+# 响应应携带 REAL-GRPC-BACKEND 标记。
+try {
+    if ($envAIdG) {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdG" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"passthrough"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+    }
+    $j = Invoke-AppGet "$APP_A/api/grpc/greeter" | ConvertFrom-Json
+    if ($j.completed -and $j.messages.Count -ge 1 -and $j.messages[0] -match "REAL-GRPC-BACKEND") {
+        Test-Pass "G07: gRPC PASSTHROUGH to real backend (marker present, grpc-status=$($j.grpcStatus))"
+    } else {
+        Test-Fail "G07: gRPC PASSTHROUGH (resp=$j)"
+    }
+} catch {
+    Test-Fail "G07: gRPC PASSTHROUGH (error: $_)"
+} finally {
+    if ($envAIdG) {
+        try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdG" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null; Start-Sleep -Seconds $MODE_SETTLE_WAIT } catch {}
+    }
+}
+
+# G08: gRPC RECORD — agent 重定向到 9005，server 转发真实后端并落 recording (protocol:"grpc")。
+try {
+    if ($envAIdG) {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdG" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"record"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+    }
+    $j = Invoke-AppGet "$APP_A/api/grpc/greeter" | ConvertFrom-Json
+    Start-Sleep -Seconds 3
+    $recG08 = Invoke-ApiGet "recordings?limit=200"
+    $grpcRecG08 = $recG08 -match '"protocol":"grpc"'
+    if ($grpcRecG08) {
+        Test-Pass "G08: gRPC RECORD created grpc recording (completed=$($j.completed))"
+    } else {
+        Test-Fail "G08: gRPC RECORD no grpc recording (completed=$($j.completed), resp=$j)"
+    }
+} catch {
+    Test-Fail "G08: gRPC RECORD (error: $_)"
+} finally {
+    if ($envAIdG) {
+        try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdG" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null; Start-Sleep -Seconds $MODE_SETTLE_WAIT } catch {}
+    }
+}
+
+# G09: gRPC RECORD_AND_STUB — 返回挡板响应 (Baafoo gRPC) 且落 recording (protocol:"grpc")。
+try {
+    if ($envAIdG) {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdG" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"record-and-stub"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+    }
+    $j = Invoke-AppGet "$APP_A/api/grpc/greeter" | ConvertFrom-Json
+    Start-Sleep -Seconds 3
+    $recG09 = Invoke-ApiGet "recordings?limit=200"
+    $grpcRecG09 = $recG09 -match '"protocol":"grpc"'
+    if ($j.completed -and $j.messages.Count -ge 1 -and $j.messages[0] -match "Baafoo gRPC" -and $grpcRecG09) {
+        Test-Pass "G09: gRPC RECORD_AND_STUB stub returned + grpc recording created"
+    } else {
+        Test-Fail "G09: gRPC RECORD_AND_STUB (completed=$($j.completed), grpcRec=$grpcRecG09, resp=$j)"
+    }
+} catch {
+    Test-Fail "G09: gRPC RECORD_AND_STUB (error: $_)"
+} finally {
+    if ($envAIdG) {
+        try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdG" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null; Start-Sleep -Seconds $MODE_SETTLE_WAIT } catch {}
+    }
+}
+
+# G10: gRPC RECORD_ALL — 返回挡板响应且记录全部流量 (protocol:"grpc")。
+try {
+    if ($envAIdG) {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdG" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"record-all"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+    }
+    $j = Invoke-AppGet "$APP_A/api/grpc/greeter" | ConvertFrom-Json
+    Start-Sleep -Seconds 3
+    $recG10 = Invoke-ApiGet "recordings?limit=200"
+    $grpcRecG10 = $recG10 -match '"protocol":"grpc"'
+    if ($j.completed -and $j.messages.Count -ge 1 -and $j.messages[0] -match "Baafoo gRPC" -and $grpcRecG10) {
+        Test-Pass "G10: gRPC RECORD_ALL stub returned + grpc recording created"
+    } else {
+        Test-Fail "G10: gRPC RECORD_ALL (completed=$($j.completed), grpcRec=$grpcRecG10, resp=$j)"
+    }
+} catch {
+    Test-Fail "G10: gRPC RECORD_ALL (error: $_)"
+} finally {
+    if ($envAIdG) {
+        try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdG" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null; Start-Sleep -Seconds $MODE_SETTLE_WAIT } catch {}
+    }
+}
+
+# G4: Consul DNS 重定向 — DnsResolveAdvice 在非 PASSTHROUGH 模式把 *.service.consul
+# 重定向到 Baafoo Server IP（保留原 hostName）。证明：PASSTHROUGH 下真实 DNS 解析
+# .service.consul 必然失败 (resolved=false)；STUB 下被重定向 (resolved=true, hostName 保留)。
+try {
+    # PASSTHROUGH：真实 DNS 应失败
+    if ($envAIdG) {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdG" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"passthrough"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+    }
+    $dnsPt = Invoke-AppGet "$APP_A/api/consul/dns?name=my-service.service.consul" | ConvertFrom-Json
+    $dnsPtResolved = [string]$dnsPt.resolved
+    # STUB：advice 重定向
+    if ($envAIdG) {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdG" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+    }
+    $dnsStub = Invoke-AppGet "$APP_A/api/consul/dns?name=my-service.service.consul" | ConvertFrom-Json
+    $dnsStubResolved = [string]$dnsStub.resolved
+    $dnsStubHost = [string]$dnsStub.hostName
+    if ($dnsPtResolved -ne "True" -and $dnsStubResolved -eq "True" -and $dnsStubHost -match "service.consul") {
+        Test-Pass "G4: Consul DNS redirect active (passthrough resolved=$dnsPtResolved, stub resolved=$dnsStubResolved, host=$dnsStubHost)"
+    } else {
+        Test-Fail "G4: Consul DNS redirect (passthrough resolved=$dnsPtResolved, stub resolved=$dnsStubResolved, host=$dnsStubHost)"
+    }
+} catch {
+    Test-Fail "G4: Consul DNS redirect (error: $_)"
+} finally {
+    if ($envAIdG) {
+        try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdG" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null; Start-Sleep -Seconds $MODE_SETTLE_WAIT } catch {}
+    }
+}
+
+# G2: Consul HTTP 非 STUB 模式覆盖（走 http-consul 规则，命中 ConsulHttpAdvice）。
+# PASSTHROUGH: 直连真实 consul (stubbed != true)
+# RECORD: 转发真实 consul + 落 recording (protocol:"http")
+# RECORD_AND_STUB / RECORD_ALL: 返回挡板 (stubbed=true) + 落 recording
+function Switch-ModeG2($m) {
+    if ($envAIdG) {
+        Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdG" -Method Put -ContentType "application/json" -Headers $headers -Body "{`"mode`":`"$m`"}" -ErrorAction Stop | Out-Null
+        Start-Sleep -Seconds $MODE_SETTLE_WAIT
+    }
+}
+function Restore-StubG2 {
+    if ($envAIdG) {
+        try { Invoke-RestMethod -Uri "$SERVER/__baafoo__/api/environments/$envAIdG" -Method Put -ContentType "application/json" -Headers $headers -Body '{"mode":"stub"}' -ErrorAction Stop | Out-Null; Start-Sleep -Seconds $MODE_SETTLE_WAIT } catch {}
+    }
+}
+
+# G2-PT: Consul HTTP PASSTHROUGH
+try {
+    Switch-ModeG2 "passthrough"
+    $c = Invoke-AppGet "$APP_A/api/consul/http?path=/v1/agent/services" | ConvertFrom-Json
+    $cStubbed = [string]$c.stubbed
+    if ($cStubbed -ne "True") {
+        Test-Pass "G2-PT: Consul HTTP PASSTHROUGH forwarded to real consul (stubbed=$cStubbed)"
+    } else {
+        Test-Fail "G2-PT: Consul HTTP PASSTHROUGH still stubbed (stubbed=$cStubbed, resp=$(Format-RespShort $c))"
+    }
+} catch {
+    Test-Fail "G2-PT: Consul HTTP PASSTHROUGH (error: $_)"
+} finally {
+    Restore-StubG2
+}
+
+# G2-REC: Consul HTTP RECORD (forward + record)
+try {
+    $beforeRec = ([regex]::Matches((Invoke-ApiGet "recordings?limit=200"), '"protocol":"http"')).Count
+    Switch-ModeG2 "record"
+    $c = Invoke-AppGet "$APP_A/api/consul/http?path=/v1/agent/services" | ConvertFrom-Json
+    Start-Sleep -Seconds 3
+    $afterRec = ([regex]::Matches((Invoke-ApiGet "recordings?limit=200"), '"protocol":"http"')).Count
+    $cStubbed = [string]$c.stubbed
+    if ($cStubbed -ne "True" -and $afterRec -gt $beforeRec) {
+        Test-Pass "G2-REC: Consul HTTP RECORD forwarded + http recording (before=$beforeRec, after=$afterRec)"
+    } else {
+        Test-Fail "G2-REC: Consul HTTP RECORD (stubbed=$cStubbed, before=$beforeRec, after=$afterRec, resp=$(Format-RespShort $c))"
+    }
+} catch {
+    Test-Fail "G2-REC: Consul HTTP RECORD (error: $_)"
+} finally {
+    Restore-StubG2
+}
+
+# G2-RAS: Consul HTTP RECORD_AND_STUB (stub + record)
+try {
+    $beforeRec = ([regex]::Matches((Invoke-ApiGet "recordings?limit=200"), '"protocol":"http"')).Count
+    Switch-ModeG2 "record-and-stub"
+    $c = Invoke-AppGet "$APP_A/api/consul/http?path=/v1/agent/services" | ConvertFrom-Json
+    Start-Sleep -Seconds 3
+    $afterRec = ([regex]::Matches((Invoke-ApiGet "recordings?limit=200"), '"protocol":"http"')).Count
+    $cStubbed = [string]$c.stubbed
+    if ($cStubbed -eq "True" -and $afterRec -gt $beforeRec) {
+        Test-Pass "G2-RAS: Consul HTTP RECORD_AND_STUB stub + http recording (before=$beforeRec, after=$afterRec)"
+    } else {
+        Test-Fail "G2-RAS: Consul HTTP RECORD_AND_STUB (stubbed=$cStubbed, before=$beforeRec, after=$afterRec, resp=$(Format-RespShort $c))"
+    }
+} catch {
+    Test-Fail "G2-RAS: Consul HTTP RECORD_AND_STUB (error: $_)"
+} finally {
+    Restore-StubG2
+}
+
+# G2-RALL: Consul HTTP RECORD_ALL (stub + record all)
+try {
+    $beforeRec = ([regex]::Matches((Invoke-ApiGet "recordings?limit=200"), '"protocol":"http"')).Count
+    Switch-ModeG2 "record-all"
+    $c = Invoke-AppGet "$APP_A/api/consul/http?path=/v1/agent/services" | ConvertFrom-Json
+    Start-Sleep -Seconds 3
+    $afterRec = ([regex]::Matches((Invoke-ApiGet "recordings?limit=200"), '"protocol":"http"')).Count
+    $cStubbed = [string]$c.stubbed
+    if ($cStubbed -eq "True" -and $afterRec -gt $beforeRec) {
+        Test-Pass "G2-RALL: Consul HTTP RECORD_ALL stub + http recording (before=$beforeRec, after=$afterRec)"
+    } else {
+        Test-Fail "G2-RALL: Consul HTTP RECORD_ALL (stubbed=$cStubbed, before=$beforeRec, after=$afterRec, resp=$(Format-RespShort $c))"
+    }
+} catch {
+    Test-Fail "G2-RALL: Consul HTTP RECORD_ALL (error: $_)"
+} finally {
+    Restore-StubG2
+}
+
 # -------------------- P2: Scene / MCP / Fault / Consul / FailOpen / Inherit / Page / Priority / Multi / Tag --------------------
 Write-Host ""
 # Wait for agent to poll newly registered P2 rules
@@ -2487,6 +2709,26 @@ if ($tcpEchoReady) {
     Test-Skip "MX-TCP-PT: TCP PASSTHROUGH (tcp-echo container not healthy)"
 }
 
+# MX-TCP-PT-NIO: TCP NIO PASSTHROUGH variant (parallel coverage to BIO above).
+# The NIO caller returns { connected, intercepted } (no "stubbed" field); in
+# PASSTHROUGH the agent must not redirect, so intercepted should be false.
+if ($tcpEchoReady) {
+    try {
+        $nioResp = Invoke-AppGet "$APP_A/api/socket/nio?host=tcp-echo-server&port=9999"
+        $nioConnected = Get-JsonValue $nioResp "connected"
+        $nioIntercepted = Get-JsonValue $nioResp "intercepted"
+        if ($nioConnected -eq "true" -and $nioIntercepted -ne "true") {
+            Test-Pass "MX-TCP-PT-NIO: TCP NIO PASSTHROUGH to real echo server (connected=true, not intercepted)"
+        } else {
+            Test-Fail "MX-TCP-PT-NIO: TCP NIO PASSTHROUGH (connected=$nioConnected, intercepted=$nioIntercepted, resp=$(Format-RespShort $nioResp))"
+        }
+    } catch {
+        Test-Fail "MX-TCP-PT-NIO: TCP NIO PASSTHROUGH (error: $_)"
+    }
+} else {
+    Test-Skip "MX-TCP-PT-NIO: TCP NIO PASSTHROUGH (tcp-echo container not healthy)"
+}
+
 # MX-KAFKA-PT: Kafka PASSTHROUGH — agent should let Kafka connection through to real kafka-broker:9092
 if ($kafkaReady) {
     try {
@@ -2603,6 +2845,8 @@ if ($envAIdMx) {
         # Kafka/JMS/Pulsar: agent intercepts at API level, redirects to MockBroker,
         #   which records in RECORD mode.
         $null = Invoke-AppGet "$APP_A/api/socket/bio?host=$TCP_HOST&port=$TCP_PORT"
+        # Also exercise the NIO socket path through the agent (stub/record)
+        if ($tcpEchoReady) { $null = Invoke-AppGet "$APP_A/api/socket/nio?host=$TCP_HOST&port=$TCP_PORT" }
         if ($kafkaReady)   { $null = Invoke-AppGet "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=mx-record-test&message=mx-kafka-rec" }
         if ($jmsReady)     { $null = Invoke-AppGet "$APP_A/api/jms/send?brokerUrl=tcp://jms-broker:61616&queueName=MX.RECORD.TEST&message=mx-jms-rec" }
         if ($pulsarReady)  { $null = Invoke-AppGet "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/mx-record-test&message=mx-pulsar-rec" }
@@ -2660,6 +2904,7 @@ if ($envAIdMx) {
 
         # Send MQ traffic — agent intercepts, MockBroker stubs + records all
         $null = Invoke-AppGet "$APP_A/api/socket/bio?host=$TCP_HOST&port=$TCP_PORT"
+        if ($tcpEchoReady) { $null = Invoke-AppGet "$APP_A/api/socket/nio?host=$TCP_HOST&port=$TCP_PORT" }
         $null = Invoke-AppGet "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=baafoo-test-topic&message=mx-rall-kafka"
         $null = Invoke-AppGet "$APP_A/api/jms/send?brokerUrl=tcp://jms-broker:61616&queueName=BAAFOO.TEST.QUEUE&message=mx-rall-jms"
         $null = Invoke-AppGet "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-test-topic&message=mx-rall-pulsar"
@@ -2716,6 +2961,7 @@ if ($envAIdMx) {
 
         # Send TCP traffic to MockBroker (server:9001)
         $rasResp = Invoke-AppGet "$APP_A/api/socket/bio?host=$TCP_HOST&port=$TCP_PORT"
+        if ($tcpEchoReady) { $null = Invoke-AppGet "$APP_A/api/socket/nio?host=$TCP_HOST&port=$TCP_PORT" }
 
         Start-Sleep -Seconds 3
         $recAfterRasJson = Invoke-ApiGet "recordings?limit=200"

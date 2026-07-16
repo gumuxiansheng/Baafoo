@@ -41,9 +41,10 @@ import java.util.List;
  *   <li>HTTP Management API + Web Console (port from config, default 8084)</li>
  *   <li>HTTP Stub (port 9000)</li>
  *   <li>TCP Stub (port 9001)</li>
- *   <li>Kafka Stub (port 9002) — Beta</li>
- *   <li>Pulsar Stub (port 9003) — Beta</li>
- *   <li>JMS Stub (port 9004) — Beta</li>
+ *   <li>gRPC Stub (port 9005, HTTP/2 unified)</li>
+ *   <li>Kafka Stub (port 9002)</li>
+ *   <li>Pulsar Stub (port 9003)</li>
+ *   <li>JMS Stub (port 9004)</li>
  * </ul></p>
  */
 public class BaafooServer {
@@ -144,7 +145,7 @@ public class BaafooServer {
         Integer pulsarPort = config.getPortForProtocol("pulsar");
         Integer jmsPort = config.getPortForProtocol("jms");
 
-        // Protocol-specific stub servers (Kafka, Pulsar, JMS — Beta)
+        // Message brokers (Kafka, Pulsar, JMS) — each starts a dedicated in-process mock broker
         startProtocolServers();
 
         log.info("=== Baafoo Server started ===");
@@ -250,15 +251,16 @@ public class BaafooServer {
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     protected void initChannel(SocketChannel ch) {
-                        // Beta: Kafka/Pulsar/JMS currently share TcpStubHandler for basic connectivity.
-                        // Protocol-specific handlers (e.g., KafkaStubHandler) will be needed for
-                        // proper application-layer protocol frame parsing in a future release.
+                        // Raw-socket fallback stub: binds a plain TcpStubHandler for the named protocol
+                        // without application-layer frame parsing. The production message brokers
+                        // (KafkaMockBroker / PulsarMockBroker / JmsMockBroker) are started by
+                        // startProtocolServers() instead and are the ones actually used at runtime.
                         ch.pipeline().addLast(new TcpStubHandler(storage, config, eventBus));
                     }
                 });
         Channel ch = b.bind(port).sync().channel();
         channels.add(ch);
-        log.info("{} stub (Beta) on port {}", protocol, port);
+        log.info("{} stub on port {}", protocol, port);
     }
 
     private void startProtocolServers() throws Exception {

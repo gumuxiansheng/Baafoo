@@ -107,6 +107,13 @@ services:
       baafoo-staging-net:
         aliases:
           - real-backend
+          # gRPC 真实后端别名（G1: gRPC 非 STUB 模式覆盖）。
+          # GrpcCallerController 连 greeter.example.com:50051 等目标，
+          # PASSTHROUGH 模式下 agent 不拦截，DNS 解析到本容器即命中 GrpcEchoServer。
+          - greeter.example.com
+          - stream.example.com
+          - metrics.example.com
+          - chat.example.com
     ports:
       - "9090:9090"
     environment:
@@ -146,7 +153,13 @@ services:
       dockerfile: baafoo-test-spring/Dockerfile
     container_name: baafoo-app-env-b
     networks:
-      - baafoo-staging-net
+      - baafoo-staging-net:
+          # gRPC 真实后端别名（G1: gRPC 非 STUB 模式覆盖），与 app-env-a 一致
+          aliases:
+            - greeter.example.com
+            - stream.example.com
+            - metrics.example.com
+            - chat.example.com
     ports:
       - "9091:9091"
     environment:

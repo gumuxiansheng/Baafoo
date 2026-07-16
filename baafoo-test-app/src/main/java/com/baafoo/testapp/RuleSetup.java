@@ -37,6 +37,7 @@ public class RuleSetup {
         results.add(createConsulHttpRule());
         results.add(createOkHttpRule());
         results.add(createFeignRule());
+        results.add(createGrpcRule());
 
         return results;
     }
@@ -217,6 +218,41 @@ public class RuleSetup {
         rule.put("tags", Arrays.asList("test-app"));
         rule.put("environments", Arrays.asList("test-env"));
         return rule;
+    }
+
+    private String createGrpcRule() {
+        try {
+            List<Map<String, Object>> conditions = new ArrayList<Map<String, Object>>();
+            conditions.add(grpcServiceCondition("helloworld.Greeter"));
+            conditions.add(grpcMethodCondition("SayHello"));
+            Map<String, Object> rule = buildRule(
+                    "test-grpc-rule", "gRPC挡板规则", "grpc",
+                    "greeter.example.com", 50051, null,
+                    conditions,
+                    Collections.singletonList(responseEntry("gRPC挡板响应", 200,
+                            "{\"message\":\"Hello Baafoo gRPC (test-app)\"}"))
+            );
+            String resp = doPost("/__baafoo__/api/rules", rule);
+            return "gRPC 规则 → " + (resp != null ? "OK" : "FAIL");
+        } catch (Exception e) {
+            return "gRPC 规则 → 跳过 (" + e.getMessage() + ")";
+        }
+    }
+
+    private Map<String, Object> grpcServiceCondition(String value) {
+        Map<String, Object> cond = new LinkedHashMap<String, Object>();
+        cond.put("type", "grpcService");
+        cond.put("operator", "equals");
+        cond.put("value", value);
+        return cond;
+    }
+
+    private Map<String, Object> grpcMethodCondition(String value) {
+        Map<String, Object> cond = new LinkedHashMap<String, Object>();
+        cond.put("type", "grpcMethod");
+        cond.put("operator", "equals");
+        cond.put("value", value);
+        return cond;
     }
 
     private Map<String, Object> pathCondition(String operator, String value) {

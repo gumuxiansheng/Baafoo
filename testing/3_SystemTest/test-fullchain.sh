@@ -1685,6 +1685,187 @@ else
     fi
 fi
 
+# -------------------- G (cont.): gRPC 非 STUB 模式 + Consul DNS / HTTP 模式覆盖 --------------------
+echo ""
+echo "--- G: gRPC non-STUB modes + Consul coverage ---"
+# G01–G06 已覆盖 gRPC 的 STUB 模式（agent 重定向到 9005 挡板服务）。
+# 以下补全 gRPC 在 PASSTHROUGH / RECORD / RECORD_AND_STUB / RECORD_ALL 模式下的覆盖，
+# 以及一个真实 gRPC 后端 (GrpcEchoServer, 部署在 app-env-a/b 上，通过 docker 网络别名
+# greeter.example.com 解析)。RECORD 系用例用 recordings 中是否出现 protocol:"grpc" 判定。
+
+env_a_id_g="$(get_environment_id "$(api_get "environments")" "staging-a")"
+
+switch_mode_g() {
+    local mode="$1"
+    if [[ -n "$env_a_id_g" ]]; then
+        api_put "environments/$env_a_id_g" "{\"mode\":\"$mode\"}" >/dev/null 2>&1
+        sleep "$MODE_SETTLE_WAIT"
+    fi
+}
+restore_stub_g() {
+    if [[ -n "$env_a_id_g" ]]; then
+        api_put "environments/$env_a_id_g" '{"mode":"stub"}' >/dev/null 2>&1
+        sleep "$MODE_SETTLE_WAIT"
+    fi
+}
+
+# G07: gRPC PASSTHROUGH — agent 不拦截，通道直连真实 GrpcEchoServer，响应应携带 REAL-GRPC-BACKEND 标记。
+if [[ -n "$env_a_id_g" ]]; then switch_mode_g "passthrough"; fi
+g07_resp="$(app_get "$APP_A/api/grpc/greeter")"
+if [[ "$HAVE_JQ" == "true" ]]; then
+    g07_j="$(echo "$g07_resp" | jq -r '.' 2>/dev/null)"
+    g07_completed="$(echo "$g07_j" | jq -r '.completed // empty')"
+    g07_msg0="$(echo "$g07_j" | jq -r '.messages[0] // empty')"
+    if [[ "$g07_completed" == "true" && "$g07_msg0" == *"REAL-GRPC-BACKEND"* ]]; then
+        test_pass "G07: gRPC PASSTHROUGH to real backend (marker present)"
+    else
+        test_fail "G07: gRPC PASSTHROUGH (resp=$g07_resp)"
+    fi
+else
+    if [[ "$g07_resp" =~ \"completed\":[[:space:]]*true && "$g07_resp" == *"REAL-GRPC-BACKEND"* ]]; then
+        test_pass "G07: gRPC PASSTHROUGH to real backend (marker present)"
+    else
+        test_fail "G07: gRPC PASSTHROUGH (resp=$g07_resp)"
+    fi
+fi
+restore_stub_g
+
+# G08: gRPC RECORD — agent 重定向到 9005，server 转发真实后端并落 recording (protocol:"grpc")。
+if [[ -n "$env_a_id_g" ]]; then switch_mode_g "record"; fi
+g08_resp="$(app_get "$APP_A/api/grpc/greeter")"
+sleep 3
+g08_rec="$(api_get "recordings?limit=200")"
+g08_grpc_rec_count="$(echo "$g08_rec" | grep -o '"protocol":"grpc"' | wc -l)"
+if [[ "$g08_grpc_rec_count" -ge 1 ]]; then
+    test_pass "G08: gRPC RECORD created grpc recording (grpcRec=$g08_grpc_rec_count)"
+else
+    test_fail "G08: gRPC RECORD no grpc recording (resp=$g08_resp)"
+fi
+restore_stub_g
+
+# G09: gRPC RECORD_AND_STUB — 返回挡板响应 (Baafoo gRPC) 且落 recording (protocol:"grpc")。
+if [[ -n "$env_a_id_g" ]]; then switch_mode_g "record-and-stub"; fi
+g09_resp="$(app_get "$APP_A/api/grpc/greeter")"
+sleep 3
+g09_rec="$(api_get "recordings?limit=200")"
+g09_grpc_rec_count="$(echo "$g09_rec" | grep -o '"protocol":"grpc"' | wc -l)"
+if [[ "$HAVE_JQ" == "true" ]]; then
+    g09_j="$(echo "$g09_resp" | jq -r '.' 2>/dev/null)"
+    g09_completed="$(echo "$g09_j" | jq -r '.completed // empty')"
+    g09_msg0="$(echo "$g09_j" | jq -r '.messages[0] // empty')"
+    if [[ "$g09_completed" == "true" && "$g09_msg0" == *"Baafoo gRPC"* && "$g09_grpc_rec_count" -ge 1 ]]; then
+        test_pass "G09: gRPC RECORD_AND_STUB stub returned + grpc recording created"
+    else
+        test_fail "G09: gRPC RECORD_AND_STUB (completed=$g09_completed, grpcRec=$g09_grpc_rec_count, resp=$g09_resp)"
+    fi
+else
+    if [[ "$g09_resp" =~ \"completed\":[[:space:]]*true && "$g09_resp" == *"Baafoo gRPC"* && "$g09_grpc_rec_count" -ge 1 ]]; then
+        test_pass "G09: gRPC RECORD_AND_STUB stub returned + grpc recording created"
+    else
+        test_fail "G09: gRPC RECORD_AND_STUB (grpcRec=$g09_grpc_rec_count, resp=$g09_resp)"
+    fi
+fi
+restore_stub_g
+
+# G10: gRPC RECORD_ALL — 返回挡板响应且记录全部流量 (protocol:"grpc")。
+if [[ -n "$env_a_id_g" ]]; then switch_mode_g "record-all"; fi
+g10_resp="$(app_get "$APP_A/api/grpc/greeter")"
+sleep 3
+g10_rec="$(api_get "recordings?limit=200")"
+g10_grpc_rec_count="$(echo "$g10_rec" | grep -o '"protocol":"grpc"' | wc -l)"
+if [[ "$HAVE_JQ" == "true" ]]; then
+    g10_j="$(echo "$g10_resp" | jq -r '.' 2>/dev/null)"
+    g10_completed="$(echo "$g10_j" | jq -r '.completed // empty')"
+    g10_msg0="$(echo "$g10_j" | jq -r '.messages[0] // empty')"
+    if [[ "$g10_completed" == "true" && "$g10_msg0" == *"Baafoo gRPC"* && "$g10_grpc_rec_count" -ge 1 ]]; then
+        test_pass "G10: gRPC RECORD_ALL stub returned + grpc recording created"
+    else
+        test_fail "G10: gRPC RECORD_ALL (completed=$g10_completed, grpcRec=$g10_grpc_rec_count, resp=$g10_resp)"
+    fi
+else
+    if [[ "$g10_resp" =~ \"completed\":[[:space:]]*true && "$g10_resp" == *"Baafoo gRPC"* && "$g10_grpc_rec_count" -ge 1 ]]; then
+        test_pass "G10: gRPC RECORD_ALL stub returned + grpc recording created"
+    else
+        test_fail "G10: gRPC RECORD_ALL (grpcRec=$g10_grpc_rec_count, resp=$g10_resp)"
+    fi
+fi
+restore_stub_g
+
+# G4: Consul DNS 重定向 — DnsResolveAdvice 在非 PASSTHROUGH 模式把 *.service.consul
+# 重定向到 Baafoo Server IP（保留原 hostName）。证明：PASSTHROUGH 下真实 DNS 解析
+# .service.consul 必然失败 (resolved=false)；STUB 下被重定向 (resolved=true, hostName 保留)。
+if [[ -n "$env_a_id_g" ]]; then switch_mode_g "passthrough"; fi
+g4_dns_pt="$(app_get "$APP_A/api/consul/dns?name=my-service.service.consul")"
+g4_dns_pt_resolved="$(get_json_value "$g4_dns_pt" "resolved")"
+if [[ -n "$env_a_id_g" ]]; then switch_mode_g "stub"; fi
+g4_dns_stub="$(app_get "$APP_A/api/consul/dns?name=my-service.service.consul")"
+g4_dns_stub_resolved="$(get_json_value "$g4_dns_stub" "resolved")"
+g4_dns_stub_host="$(get_json_value "$g4_dns_stub" "hostName")"
+if [[ "$g4_dns_pt_resolved" != "true" && "$g4_dns_stub_resolved" == "true" && "$g4_dns_stub_host" == *"service.consul"* ]]; then
+    test_pass "G4: Consul DNS redirect active (passthrough resolved=$g4_dns_pt_resolved, stub resolved=$g4_dns_stub_resolved, host=$g4_dns_stub_host)"
+else
+    test_fail "G4: Consul DNS redirect (passthrough resolved=$g4_dns_pt_resolved, stub resolved=$g4_dns_stub_resolved, host=$g4_dns_stub_host)"
+fi
+restore_stub_g
+
+# G2: Consul HTTP 非 STUB 模式覆盖（走 http-consul 规则，命中 ConsulHttpAdvice）。
+# PASSTHROUGH: 直连真实 consul (stubbed != true)
+# RECORD: 转发真实 consul + 落 recording (protocol:"http")
+# RECORD_AND_STUB / RECORD_ALL: 返回挡板 (stubbed=true) + 落 recording
+
+# G2-PT: Consul HTTP PASSTHROUGH
+switch_mode_g "passthrough"
+g2_pt="$(app_get "$APP_A/api/consul/http?path=/v1/agent/services")"
+g2_pt_stubbed="$(get_json_value "$g2_pt" "stubbed")"
+if [[ "$g2_pt_stubbed" != "true" ]]; then
+    test_pass "G2-PT: Consul HTTP PASSTHROUGH forwarded to real consul (stubbed=$g2_pt_stubbed)"
+else
+    test_fail "G2-PT: Consul HTTP PASSTHROUGH still stubbed (stubbed=$g2_pt_stubbed, resp=$(echo "$g2_pt" | head -c 240))"
+fi
+restore_stub_g
+
+# G2-REC: Consul HTTP RECORD (forward + record)
+g2_rec_before="$(echo "$(api_get "recordings?limit=200")" | grep -o '"protocol":"http"' | wc -l)"
+switch_mode_g "record"
+g2_rec="$(app_get "$APP_A/api/consul/http?path=/v1/agent/services")"
+sleep 3
+g2_rec_after="$(echo "$(api_get "recordings?limit=200")" | grep -o '"protocol":"http"' | wc -l)"
+g2_rec_stubbed="$(get_json_value "$g2_rec" "stubbed")"
+if [[ "$g2_rec_stubbed" != "true" && "$g2_rec_after" -gt "$g2_rec_before" ]]; then
+    test_pass "G2-REC: Consul HTTP RECORD forwarded + http recording (before=$g2_rec_before, after=$g2_rec_after)"
+else
+    test_fail "G2-REC: Consul HTTP RECORD (stubbed=$g2_rec_stubbed, before=$g2_rec_before, after=$g2_rec_after, resp=$(echo "$g2_rec" | head -c 240))"
+fi
+restore_stub_g
+
+# G2-RAS: Consul HTTP RECORD_AND_STUB (stub + record)
+g2_ras_before="$(echo "$(api_get "recordings?limit=200")" | grep -o '"protocol":"http"' | wc -l)"
+switch_mode_g "record-and-stub"
+g2_ras="$(app_get "$APP_A/api/consul/http?path=/v1/agent/services")"
+sleep 3
+g2_ras_after="$(echo "$(api_get "recordings?limit=200")" | grep -o '"protocol":"http"' | wc -l)"
+g2_ras_stubbed="$(get_json_value "$g2_ras" "stubbed")"
+if [[ "$g2_ras_stubbed" == "true" && "$g2_ras_after" -gt "$g2_ras_before" ]]; then
+    test_pass "G2-RAS: Consul HTTP RECORD_AND_STUB stub + http recording (before=$g2_ras_before, after=$g2_ras_after)"
+else
+    test_fail "G2-RAS: Consul HTTP RECORD_AND_STUB (stubbed=$g2_ras_stubbed, before=$g2_ras_before, after=$g2_ras_after, resp=$(echo "$g2_ras" | head -c 240))"
+fi
+restore_stub_g
+
+# G2-RALL: Consul HTTP RECORD_ALL (stub + record all)
+g2_rall_before="$(echo "$(api_get "recordings?limit=200")" | grep -o '"protocol":"http"' | wc -l)"
+switch_mode_g "record-all"
+g2_rall="$(app_get "$APP_A/api/consul/http?path=/v1/agent/services")"
+sleep 3
+g2_rall_after="$(echo "$(api_get "recordings?limit=200")" | grep -o '"protocol":"http"' | wc -l)"
+g2_rall_stubbed="$(get_json_value "$g2_rall" "stubbed")"
+if [[ "$g2_rall_stubbed" == "true" && "$g2_rall_after" -gt "$g2_rall_before" ]]; then
+    test_pass "G2-RALL: Consul HTTP RECORD_ALL stub + http recording (before=$g2_rall_before, after=$g2_rall_after)"
+else
+    test_fail "G2-RALL: Consul HTTP RECORD_ALL (stubbed=$g2_rall_stubbed, before=$g2_rall_before, after=$g2_rall_after, resp=$(echo "$g2_rall" | head -c 240))"
+fi
+restore_stub_g
+
 # -------------------- P2: Scene / MCP / Fault / Consul / FailOpen / Inherit / Page / Priority / Multi / Tag --------------------
 echo ""
 # Wait for agent to poll newly registered P2 rules
@@ -2186,6 +2367,22 @@ if [[ "$mx_env_switched" -eq 1 ]]; then
         test_skip "MX-TCP-PT: TCP PASSTHROUGH (tcp-echo container not healthy)"
     fi
 
+    # MX-TCP-PT-NIO: TCP NIO PASSTHROUGH variant (parallel coverage to BIO above).
+    # The NIO caller returns { connected, intercepted } (no "stubbed" field); in
+    # PASSTHROUGH the agent must not redirect, so intercepted should be false.
+    if [[ "$tcp_echo_ready" -eq 1 ]]; then
+        nio_resp="$(app_get "$APP_A/api/socket/nio?host=tcp-echo-server&port=9999")"
+        nio_connected="$(get_json_value "$nio_resp" "connected")"
+        nio_intercepted="$(get_json_value "$nio_resp" "intercepted")"
+        if [[ "$nio_connected" == "true" && "$nio_intercepted" != "true" ]]; then
+            test_pass "MX-TCP-PT-NIO: TCP NIO PASSTHROUGH to real echo server (connected=true, not intercepted)"
+        else
+            test_fail "MX-TCP-PT-NIO: TCP NIO PASSTHROUGH (connected=$nio_connected, intercepted=$nio_intercepted, resp=$(echo "$nio_resp" | head -c 240))"
+        fi
+    else
+        test_skip "MX-TCP-PT-NIO: TCP NIO PASSTHROUGH (tcp-echo container not healthy)"
+    fi
+
     # MX-KAFKA-PT: Kafka PASSTHROUGH to real kafka-broker:9092
     if [[ "$kafka_ready" -eq 1 ]]; then
         resp="$(app_get "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=mx-test-topic&message=mx-kafka-passthrough")"
@@ -2280,6 +2477,7 @@ if [[ -n "$env_a_id_mx" ]]; then
         # Kafka/JMS/Pulsar: agent intercepts at API level, redirects to MockBroker,
         #   which records in RECORD mode.
         app_get "$APP_A/api/socket/bio?host=$TCP_HOST&port=$TCP_PORT" >/dev/null 2>&1
+        if [[ "$tcp_echo_ready" -eq 1 ]]; then app_get "$APP_A/api/socket/nio?host=$TCP_HOST&port=$TCP_PORT" >/dev/null 2>&1; fi
         if [[ "$kafka_ready" -eq 1 ]];   then app_get "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=mx-record-test&message=mx-kafka-rec" >/dev/null 2>&1; fi
         if [[ "$jms_ready" -eq 1 ]];     then app_get "$APP_A/api/jms/send?brokerUrl=tcp://jms-broker:61616&queueName=MX.RECORD.TEST&message=mx-jms-rec" >/dev/null 2>&1; fi
         if [[ "$pulsar_ready" -eq 1 ]];  then app_get "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/mx-record-test&message=mx-pulsar-rec" >/dev/null 2>&1; fi
@@ -2356,6 +2554,7 @@ if [[ -n "$env_a_id_mx" ]]; then
 
         # Send MQ traffic — agent intercepts, MockBroker stubs + records all
         app_get "$APP_A/api/socket/bio?host=$TCP_HOST&port=$TCP_PORT" >/dev/null 2>&1
+        if [[ "$tcp_echo_ready" -eq 1 ]]; then app_get "$APP_A/api/socket/nio?host=$TCP_HOST&port=$TCP_PORT" >/dev/null 2>&1; fi
         app_get "$APP_A/api/kafka/send?bootstrapServers=kafka-broker:9092&topic=baafoo-test-topic&message=mx-rall-kafka" >/dev/null 2>&1
         app_get "$APP_A/api/jms/send?brokerUrl=tcp://jms-broker:61616&queueName=BAAFOO.TEST.QUEUE&message=mx-rall-jms" >/dev/null 2>&1
         app_get "$APP_A/api/pulsar/send?serviceUrl=pulsar://pulsar-broker:6650&topic=persistent://public/default/baafoo-test-topic&message=mx-rall-pulsar" >/dev/null 2>&1
@@ -2426,6 +2625,7 @@ if [[ -n "$env_a_id_mx" ]]; then
 
         # Send TCP traffic to MockBroker (server:9001)
         ras_resp="$(app_get "$APP_A/api/socket/bio?host=$TCP_HOST&port=$TCP_PORT")"
+        if [[ "$tcp_echo_ready" -eq 1 ]]; then app_get "$APP_A/api/socket/nio?host=$TCP_HOST&port=$TCP_PORT" >/dev/null 2>&1; fi
 
         sleep 3
         rec_after_ras_json="$(api_get "recordings?limit=200")"

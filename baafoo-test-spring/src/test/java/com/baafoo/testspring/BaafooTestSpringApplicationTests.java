@@ -1,12 +1,19 @@
 package com.baafoo.testspring;
 
+import com.baafoo.testspring.controller.BackendEchoController;
 import com.baafoo.testspring.controller.FeignCallerController;
+import com.baafoo.testspring.controller.GrpcCallerController;
 import com.baafoo.testspring.controller.HttpCallerController;
+import com.baafoo.testspring.controller.JmsCallerController;
 import com.baafoo.testspring.controller.KafkaCallerController;
 import com.baafoo.testspring.controller.PulsarCallerController;
 import com.baafoo.testspring.controller.SocketCallerController;
+import com.baafoo.testspring.controller.StubDemoController;
+import com.baafoo.testspring.service.ExternalApiClient;
 import com.baafoo.testspring.service.FeignCallerService;
+import com.baafoo.testspring.service.GrpcCallerService;
 import com.baafoo.testspring.service.HttpCallerService;
+import com.baafoo.testspring.service.JmsCallerService;
 import com.baafoo.testspring.service.PulsarCallerService;
 import org.apache.pulsar.client.api.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,6 +24,8 @@ import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -24,7 +33,9 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
@@ -63,6 +74,18 @@ class BaafooTestSpringApplicationTests {
     @Autowired
     private PulsarCallerController pulsarCallerController;
 
+    @Autowired
+    private JmsCallerController jmsCallerController;
+
+    @Autowired
+    private GrpcCallerController grpcCallerController;
+
+    @Autowired
+    private BackendEchoController backendEchoController;
+
+    @Autowired
+    private StubDemoController stubDemoController;
+
     @SpyBean
     private PulsarCallerService pulsarCallerService;
 
@@ -71,6 +94,15 @@ class BaafooTestSpringApplicationTests {
 
     @SpyBean
     private HttpCallerService httpCallerService;
+
+    @SpyBean
+    private JmsCallerService jmsCallerService;
+
+    @SpyBean
+    private GrpcCallerService grpcCallerService;
+
+    @SpyBean
+    private ExternalApiClient externalApiClient;
 
     @BeforeEach
     void stubPulsarClient() throws Exception {
@@ -148,6 +180,87 @@ class BaafooTestSpringApplicationTests {
         doReturn(httpDeleteResult).when(httpCallerService).doDelete(anyString());
     }
 
+    /**
+     * Mock the JMS caller, gRPC caller and external API client so the
+     * additional controller scenarios can run hermetically in CICD without a
+     * real ActiveMQ / gRPC server / backend host. Mirrors the
+     * {@code stubPulsarClient()} seam above.
+     */
+    @BeforeEach
+    void stubJmsGrpcAndExternal() throws Exception {
+        // ---- JMS: avoid a real ActiveMQ broker connection ----
+        Map<String, Object> jmsSend = new LinkedHashMap<String, Object>();
+        jmsSend.put("success", true);
+        jmsSend.put("brokerUrl", "tcp://jms-broker:61616");
+        jmsSend.put("queueName", "BAAFOO.TEST.QUEUE");
+        jmsSend.put("jmsMessageId", "ID:mock");
+        jmsSend.put("intercepted", false);
+        doReturn(jmsSend).when(jmsCallerService)
+                .sendMessage(anyString(), anyString(), anyString(), anyString(), anyString());
+
+        Map<String, Object> jmsReceive = new LinkedHashMap<String, Object>();
+        jmsReceive.put("success", true);
+        jmsReceive.put("count", 0);
+        jmsReceive.put("messages", Collections.emptyList());
+        doReturn(jmsReceive).when(jmsCallerService)
+                .receiveMessage(anyString(), anyString(), anyString(), anyString());
+
+        Map<String, Object> jmsSendTopic = new LinkedHashMap<String, Object>();
+        jmsSendTopic.put("success", true);
+        jmsSendTopic.put("destinationType", "topic");
+        jmsSendTopic.put("jmsMessageId", "ID:mock-topic");
+        doReturn(jmsSendTopic).when(jmsCallerService)
+                .sendTopicMessage(anyString(), anyString(), anyString(), anyString(), anyString());
+
+        Map<String, Object> jmsReceiveTopic = new LinkedHashMap<String, Object>();
+        jmsReceiveTopic.put("success", true);
+        jmsReceiveTopic.put("destinationType", "topic");
+        jmsReceiveTopic.put("count", 0);
+        jmsReceiveTopic.put("messages", Collections.emptyList());
+        doReturn(jmsReceiveTopic).when(jmsCallerService)
+                .receiveTopicMessage(anyString(), anyString(), anyString(), anyString());
+
+        // ---- gRPC: avoid a real gRPC server (greeter/stream example.com:50051) ----
+        Map<String, Object> grpcOk = new LinkedHashMap<String, Object>();
+        grpcOk.put("completed", true);
+        grpcOk.put("grpcStatus", "0");
+        grpcOk.put("grpcMessage", null);
+        grpcOk.put("error", null);
+        grpcOk.put("messages", Arrays.asList("hello mocked"));
+        grpcOk.put("latencyMs", 1);
+        // Generic unary stub covers greeter / slow / status-test / delay-test.
+        doReturn(grpcOk).when(grpcCallerService)
+                .callUnary(anyString(), anyString(), anyString(), anyInt(), anyString());
+
+        // Specific unary stub for the /error endpoint (grpc-error rule -> status 5).
+        Map<String, Object> grpcErr = new LinkedHashMap<String, Object>();
+        grpcErr.put("completed", true);
+        grpcErr.put("grpcStatus", "5");
+        grpcErr.put("grpcMessage", "NOT_FOUND");
+        grpcErr.put("error", null);
+        grpcErr.put("messages", Collections.emptyList());
+        grpcErr.put("latencyMs", 1);
+        doReturn(grpcErr).when(grpcCallerService)
+                .callUnary(eq("helloworld.Greeter"), eq("GetUser"), anyString(), anyInt(), anyString());
+
+        Map<String, Object> grpcStream = new LinkedHashMap<String, Object>();
+        grpcStream.put("completed", true);
+        grpcStream.put("grpcStatus", "0");
+        grpcStream.put("grpcMessage", null);
+        grpcStream.put("error", null);
+        grpcStream.put("messages", Arrays.asList("e1", "e2"));
+        grpcStream.put("latencyMs", 1);
+        doReturn(grpcStream).when(grpcCallerService)
+                .callServerStreaming(anyString(), anyString(), anyString(), anyInt(), anyString());
+        doReturn(grpcStream).when(grpcCallerService)
+                .callClientStreaming(anyString(), anyString(), anyString(), anyInt(), anyList());
+        doReturn(grpcStream).when(grpcCallerService)
+                .callBidi(anyString(), anyString(), anyString(), anyInt(), anyList());
+
+        // ---- ExternalApiClient (StubDemo): avoid real httpbin/real-backend ----
+        doReturn("{\"mocked\":true}").when(externalApiClient).fetchData();
+    }
+
     @Test
     void contextLoads() {
         assertThat(httpCallerController).isNotNull();
@@ -155,6 +268,10 @@ class BaafooTestSpringApplicationTests {
         assertThat(feignCallerController).isNotNull();
         assertThat(kafkaCallerController).isNotNull();
         assertThat(pulsarCallerController).isNotNull();
+        assertThat(jmsCallerController).isNotNull();
+        assertThat(grpcCallerController).isNotNull();
+        assertThat(backendEchoController).isNotNull();
+        assertThat(stubDemoController).isNotNull();
     }
 
     @Test
@@ -302,5 +419,131 @@ class BaafooTestSpringApplicationTests {
         assertThat(result.containsKey("tdmqInfo")).isTrue();
         Map<String, Object> pulsarResult = (Map<String, Object>) result.get("pulsar");
         assertThat(pulsarResult.containsKey("serviceUrl")).isTrue();
+    }
+
+    // ==================== JMS (previously untested controller) ====================
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void jmsSendEndpointReturnsResult() {
+        Map<String, Object> result = restTemplate.getForObject(
+                "http://localhost:" + port + "/api/jms/send", Map.class);
+        assertThat(result).isNotNull();
+        assertThat(result.containsKey("success")).isTrue();
+        assertThat(result.containsKey("brokerUrl")).isTrue();
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void jmsReceiveEndpointReturnsResult() {
+        Map<String, Object> result = restTemplate.getForObject(
+                "http://localhost:" + port + "/api/jms/receive", Map.class);
+        assertThat(result).isNotNull();
+        assertThat(result.containsKey("count")).isTrue();
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void jmsTopicEndpointsReturnResult() {
+        Map<String, Object> send = restTemplate.getForObject(
+                "http://localhost:" + port + "/api/jms/send-topic", Map.class);
+        assertThat(send).isNotNull();
+        assertThat(send.get("destinationType")).isEqualTo("topic");
+
+        Map<String, Object> receive = restTemplate.getForObject(
+                "http://localhost:" + port + "/api/jms/receive-topic", Map.class);
+        assertThat(receive).isNotNull();
+        assertThat(receive.get("destinationType")).isEqualTo("topic");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void jmsAllEndpointReturnsBoth() {
+        Map<String, Object> result = restTemplate.getForObject(
+                "http://localhost:" + port + "/api/jms/all", Map.class);
+        assertThat(result).isNotNull();
+        assertThat(result.containsKey("simple")).isTrue();
+        assertThat(result.containsKey("receive")).isTrue();
+    }
+
+    // ==================== gRPC (previously untested controller) ====================
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void grpcGreeterEndpointReturnsResult() {
+        Map<String, Object> result = restTemplate.getForObject(
+                "http://localhost:" + port + "/api/grpc/greeter", Map.class);
+        assertThat(result).isNotNull();
+        assertThat(result.containsKey("completed")).isTrue();
+        assertThat(result.containsKey("grpcStatus")).isTrue();
+        assertThat(result.get("grpcStatus")).isEqualTo("0");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void grpcErrorEndpointReturnsErrorStatus() {
+        Map<String, Object> result = restTemplate.getForObject(
+                "http://localhost:" + port + "/api/grpc/error", Map.class);
+        assertThat(result).isNotNull();
+        assertThat(result.get("grpcStatus")).isEqualTo("5");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void grpcStreamingEndpointsReturnResults() {
+        Map<String, Object> server = restTemplate.getForObject(
+                "http://localhost:" + port + "/api/grpc/server-stream", Map.class);
+        assertThat(server).isNotNull();
+        assertThat(server.containsKey("messages")).isTrue();
+
+        Map<String, Object> client = restTemplate.getForObject(
+                "http://localhost:" + port + "/api/grpc/client-stream", Map.class);
+        assertThat(client).isNotNull();
+        assertThat(client.containsKey("messages")).isTrue();
+
+        Map<String, Object> bidi = restTemplate.getForObject(
+                "http://localhost:" + port + "/api/grpc/bidi", Map.class);
+        assertThat(bidi).isNotNull();
+        assertThat(bidi.containsKey("messages")).isTrue();
+    }
+
+    // ==================== BackendEcho (previously untested controller) ====================
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void backendEchoReturnsRealBackendMarker() {
+        Map<String, Object> result = restTemplate.getForObject(
+                "http://localhost:" + port + "/backend-echo-probe", Map.class);
+        assertThat(result).isNotNull();
+        assertThat(result.get("realBackend")).isEqualTo(true);
+        assertThat(result.get("method")).isEqualTo("GET");
+        assertThat(result.get("path")).isEqualTo("/backend-echo-probe");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void backendEchoPostReturnsBody() {
+        Map<String, Object> result = restTemplate.postForObject(
+                "http://localhost:" + port + "/backend-echo-post", "hello-body", Map.class);
+        assertThat(result).isNotNull();
+        assertThat(result.get("realBackend")).isEqualTo(true);
+        assertThat(result.get("body")).isEqualTo("hello-body");
+    }
+
+    // ==================== StubDemo (previously untested controller) ====================
+
+    @Test
+    void stubDemoHealthReturnsOk() {
+        String response = restTemplate.getForObject(
+                "http://localhost:" + port + "/api/stub-demo/health", String.class);
+        assertThat(response).isEqualTo("OK");
+    }
+
+    @Test
+    void stubDemoExternalReturnsFetchedData() {
+        String response = restTemplate.getForObject(
+                "http://localhost:" + port + "/api/stub-demo/external", String.class);
+        assertThat(response).isNotNull();
+        assertThat(response).contains("mocked");
     }
 }

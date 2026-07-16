@@ -143,6 +143,22 @@ class BaafooTestPulsarApplicationTests {
         assertThat(result.containsKey("serviceUrl")).isTrue();
     }
 
+    /**
+     * The consume path returns {@code count=0} when the (mocked) broker has no
+     * message. This exercises the "no message" branch that the real-broker run
+     * would only hit intermittently.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void consumeEndpointReturnsEmptyWhenNoMessage() {
+        Map<String, Object> result = restTemplate.getForObject(
+                "http://localhost:" + port
+                        + "/api/pulsar274/consume?serviceUrl=slow://localhost:0000&topic=t",
+                Map.class);
+        assertThat(result).isNotNull();
+        assertThat(result.get("count")).isEqualTo(0);
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void jsonEndpointReturnsResultMap() {

@@ -23,6 +23,8 @@
         <jms-api.version>2.0.1</jms-api.version>
         <okhttp.version>3.14.9</okhttp.version>
         <feign.version>11.10</feign.version>
+        <!-- gRPC: 1.59.x 严格兼容 Java 8；grpc-netty-shaded 隔离 Netty -->
+        <grpc.version>1.59.1</grpc.version>
     </properties>
 
     <dependencies>
@@ -86,6 +88,34 @@
             <groupId>io.github.openfeign</groupId>
             <artifactId>feign-okhttp</artifactId>
             <version>${feign.version}</version>
+        </dependency>
+
+        <!-- gRPC client (dynamic, no .proto codegen).
+             grpc-netty-shaded 隔离 Netty，避免与 shade 后的依赖冲突。 -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-netty-shaded</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-core</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-api</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-stub</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-context</artifactId>
+            <version>${grpc.version}</version>
         </dependency>
 
         <!-- Logging -->

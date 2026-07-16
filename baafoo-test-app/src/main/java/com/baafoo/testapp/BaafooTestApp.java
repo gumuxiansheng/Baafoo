@@ -31,6 +31,7 @@ public class BaafooTestApp {
         callers.put("8", new ConsulHttpCaller());
         callers.put("9", new OkHttpCaller());
         callers.put("10", new FeignCaller());
+        callers.put("11", new GrpcCaller());
 
         System.out.println(SEPARATOR);
         System.out.println("  Baafoo 挡板测试应用 — 多协议外调测试");
@@ -53,7 +54,8 @@ public class BaafooTestApp {
             System.out.println("│  8  — Consul HTTP API 外调测试                    │");
             System.out.println("│  9  — OkHttp 外调测试                             │");
             System.out.println("│  10 — Feign+OkHttp 外调测试                       │");
-            System.out.println("│  A  — 全部运行 (Run All)                          │");
+            System.out.println("│  11 — gRPC 外调测试                                │");
+        System.out.println("│  A  — 全部运行 (Run All)                          │");
             System.out.println("│  Q  — 退出                                        │");
             System.out.println("└─────────────────────────────────────────────────┘");
             System.out.print("请输入选项: ");

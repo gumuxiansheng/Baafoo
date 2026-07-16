@@ -74,6 +74,52 @@ public class BaafooServerContainerTest {
     }
 
     @Test
+    public void testGetRuleById() {
+        Rule rule = new Rule();
+        rule.setName("test-rule-get");
+        rule.setProtocol("http");
+        rule.setHost("get-test.com");
+        rule.setPort(80);
+        rule.setConditions(Collections.singletonList(
+                MatchCondition.path("equals", "/get")));
+        ResponseEntry response = new ResponseEntry();
+        response.setBody("get");
+        response.setStatusCode(200);
+        rule.setResponses(Collections.singletonList(response));
+
+        Rule created = container.getClient().createRule(rule);
+        assertNotNull("Created rule should have an id", created.getId());
+
+        Rule fetched = container.getClient().getRule(created.getId());
+        assertNotNull("Fetched rule should not be null", fetched);
+        assertEquals("Fetched rule name should match", "test-rule-get", fetched.getName());
+    }
+
+    @Test
+    public void testDeleteRuleRoundTrip() {
+        Rule rule = new Rule();
+        rule.setName("test-rule-delete");
+        rule.setProtocol("http");
+        rule.setHost("delete-test.com");
+        rule.setPort(80);
+        rule.setConditions(Collections.singletonList(
+                MatchCondition.path("equals", "/delete")));
+        ResponseEntry response = new ResponseEntry();
+        response.setBody("delete");
+        response.setStatusCode(200);
+        rule.setResponses(Collections.singletonList(response));
+
+        Rule created = container.getClient().createRule(rule);
+        assertNotNull("Created rule should have an id", created.getId());
+
+        container.getClient().deleteRule(created.getId());
+
+        boolean stillPresent = container.getClient().listRules().stream()
+                .anyMatch(r -> created.getId().equals(r.getId()));
+        assertFalse("Rule should no longer be present after delete", stillPresent);
+    }
+
+    @Test
     public void testCreateAndListEnvironments() {
         container.getClient().createEnvironment("test-env", "stub");
 
