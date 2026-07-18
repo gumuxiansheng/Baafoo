@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # Baafoo Full-Chain Integration Test - PowerShell Orchestrator
 #
 # Features:
@@ -3196,7 +3196,11 @@ if (-not $multiAgentEnabled) {
         Start-Sleep -Seconds 15
         $endTime = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HHmm")
         $startTime = (Get-Date).AddMinutes(-30).ToUniversalTime().ToString("yyyy-MM-dd HHmm")
-        $gqlQuery = "query{getAllServices(duration:{start:`"$startTime`",end:`"$endTime`",step:MINUTE}){id name group}}"
+        # Build GraphQL query using here-string to avoid backtick-escaped quote
+        # parsing issues in double-quoted strings.
+        $gqlQuery = @"
+query{getAllServices(duration:{start:"$startTime",end:"$endTime",step:MINUTE}){id name group}}
+"@
         $gqlBody = @{ query = $gqlQuery } | ConvertTo-Json -Compress
         try {
             $oapResp = Invoke-RestMethod -Uri $oapUrl -Method Post -ContentType "application/json" -Body $gqlBody -TimeoutSec 15 -ErrorAction Stop
@@ -3206,7 +3210,7 @@ if (-not $multiAgentEnabled) {
             $oapRespRaw = "error: $_"
         }
         if ($svcCount -ge 1) { break }
-        Write-Host "  [RETRY] MULTI-003 attempt $attempt: services=$svcCount, retrying..." -ForegroundColor Yellow
+        Write-Host "  [RETRY] MULTI-003 attempt ${attempt}: services=$svcCount, retrying..." -ForegroundColor Yellow
     }
     if ($svcCount -ge 1) {
         Test-Pass "MULTI-003: SkyWalking OAP service registration ($svcCount services)"
@@ -3249,7 +3253,9 @@ if (-not $multiAgentEnabled) {
         # Query OAP for endpoint inventory using getAllServices with dynamic Duration
         $endTime5 = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HHmm")
         $startTime5 = (Get-Date).AddMinutes(-30).ToUniversalTime().ToString("yyyy-MM-dd HHmm")
-        $gqlQuery5 = "query{getAllServices(duration:{start:`"$startTime5`",end:`"$endTime5`",step:MINUTE}){id name}}"
+        $gqlQuery5 = @"
+query{getAllServices(duration:{start:"$startTime5",end:"$endTime5",step:MINUTE}){id name}}
+"@
         $gqlBody5 = @{ query = $gqlQuery5 } | ConvertTo-Json -Compress
         $oapEpResp = Invoke-RestMethod -Uri "http://localhost:12800/graphql" -Method Post -ContentType "application/json" -Body $gqlBody5 -TimeoutSec 15 -ErrorAction Stop
         $epSvcCount = 0
