@@ -1,9 +1,9 @@
 package com.baafoo.cli;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import java.io.*;
 import java.nio.file.Files;
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class BaafooCliTest {
 

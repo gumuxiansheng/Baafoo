@@ -3,12 +3,18 @@ package com.baafoo.plugin.feign;
 import feign.Request;
 import feign.Response;
 import net.bytebuddy.asm.Advice;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public class FeignClientAdvice {
+
+    // L-1: Use SLF4J instead of System.out — the host app's logging config will then
+    // govern the verbosity and destination of these trace messages.
+    private static final Logger log = LoggerFactory.getLogger(FeignClientAdvice.class);
 
     @Advice.OnMethodEnter
     public static void onExecute(
@@ -23,11 +29,8 @@ public class FeignClientAdvice {
             URI uri = new URI(url);
             String path = uri.getPath();
 
-            System.out.println("[FeignClientAdvice] Intercepted feign.Client.execute()");
-            System.out.println("[FeignClientAdvice]   Method: " + method);
-            System.out.println("[FeignClientAdvice]   URL:   " + url);
-            System.out.println("[FeignClientAdvice]   Host:  " + uri.getHost());
-            System.out.println("[FeignClientAdvice]   Port:  " + uri.getPort());
+            log.debug("[FeignClientAdvice] Intercepted feign.Client.execute() method={} url={} host={} port={}",
+                    method, url, uri.getHost(), uri.getPort());
 
             Map<String, Collection<String>> headers = new LinkedHashMap<String, Collection<String>>(request.headers());
             headers.put("X-Feign-Method", Collections.<String>singletonList(method));
@@ -43,7 +46,7 @@ public class FeignClientAdvice {
             );
 
         } catch (Throwable t) {
-            System.out.println("[FeignClientAdvice] Error: " + t.getMessage());
+            log.warn("[FeignClientAdvice] Error: {}", t.getMessage());
         }
     }
 
@@ -57,11 +60,10 @@ public class FeignClientAdvice {
 
             Collection<String> intercepted = response.headers().get("X-Feign-Intercepted");
             if (intercepted != null && !intercepted.isEmpty()) {
-                System.out.println("[FeignClientAdvice] Response status: " + response.status());
-                System.out.println("[FeignClientAdvice] Response intercepted flag present");
+                log.debug("[FeignClientAdvice] Response status={} intercepted flag present", response.status());
             }
         } catch (Throwable t) {
-            System.out.println("[FeignClientAdvice] Exit error: " + t.getMessage());
+            log.warn("[FeignClientAdvice] Exit error: {}", t.getMessage());
         }
     }
 }

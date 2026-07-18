@@ -372,7 +372,11 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
                              | ((payload[idx + 2] & 0xFF) << 8)
                              | (payload[idx + 3] & 0xFF);
                 idx += 4;
-                if (metaSize < 0 || idx + metaSize > payload.length) return null;
+                // C-4: cap metaSize before allocating. Pulsar MessageMetadata
+                // is normally a few hundred bytes; anything above 64KB is
+                // either corruption or an attacker trying to force a large
+                // allocation on the EventLoop.
+                if (metaSize < 0 || metaSize > MAX_METADATA_SIZE || idx + metaSize > payload.length) return null;
                 log.debug("parseMessageMetadata (0x0E01): payloadLen={}, metaSize={}, bodyStart={}",
                         payload.length, metaSize, idx + metaSize);
                 byte[] prefix = new byte[idx + metaSize];
@@ -387,6 +391,8 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
                 int idx = 1;
                 int metaSize = readVarint(payload, idx);
                 if (metaSize < 0) return null;
+                // C-4: cap metaSize before allocating (see 0x0E01 branch).
+                if (metaSize > MAX_METADATA_SIZE) return null;
                 int varintBytes = varintSize(metaSize);
                 idx += varintBytes;
                 if (idx + metaSize > payload.length) return null;
@@ -402,6 +408,8 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
                 // No magic byte — try to parse as raw [varint metadataSize][metadata][body]
                 int metaSize = readVarint(payload, 0);
                 if (metaSize <= 0) return null;
+                // C-4: cap metaSize before allocating (see 0x0E01 branch).
+                if (metaSize > MAX_METADATA_SIZE) return null;
                 int varintBytes = varintSize(metaSize);
                 if (varintBytes + metaSize >= payload.length) return null;
                 log.debug("parseMessageMetadata (no magic): payloadLen={}, metaSize={}, bodyStart={}",
@@ -600,6 +608,14 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
 
     /** Read a varint at the current position, updating pos[0]. */
     private static int readVarintAt(byte[] data, int[] pos) {
+        // C-4: bounds-check before delegating to VarintCodec so a truncated
+        // metadata buffer cannot drive an IndexOutOfBounds (or a runaway loop
+        // in the caller) when the parsed metaSize pointed past the end of the
+        // payload. Varint needs at most 10 bytes (7 bits per byte for 64-bit).
+        if (pos[0] < 0 || pos[0] + 10 > data.length) {
+            pos[0] = data.length;
+            return -1;
+        }
         return com.baafoo.core.util.VarintCodec.readVarint(data, pos);
     }
 
@@ -632,6 +648,11 @@ class PulsarMockBrokerHandler extends SimpleChannelInboundHandler<PulsarFrame> {
     }
 
     private static final byte PULSAR_MAGIC = (byte) 0x0E;
+
+    // C-4: upper bound for parsed Pulsar MessageMetadata size. Real Pulsar
+    // metadata is a few hundred bytes; anything above 64KB is corruption or
+    // an attacker trying to force a large EventLoop allocation.
+    private static final int MAX_METADATA_SIZE = 64 * 1024;
 
     /** CRC32C lookup table (Castagnoli polynomial 0x1EDC6F41) */
     private static final int[] CRC32C_TABLE = new int[256];

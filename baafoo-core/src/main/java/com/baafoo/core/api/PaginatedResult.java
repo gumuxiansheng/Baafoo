@@ -41,7 +41,18 @@ public class PaginatedResult<T> {
     public void setPage(int page) { this.page = page; }
 
     public int getSize() { return size; }
-    public void setSize(int size) { this.size = size; }
+    public void setSize(int size) {
+        this.size = size;
+        // M12: recompute totalPages to keep the invariant
+        // totalPages = ceil(total / size) consistent when size is mutated
+        // after construction (e.g. Jackson deserialization populates fields
+        // via setters in arbitrary order — setTotal already does this, but
+        // setSize was previously a plain assignment, leaving totalPages stale
+        // if size changed after total was set).
+        if (size > 0 && this.total > 0) {
+            this.totalPages = (int) Math.ceil((double) this.total / size);
+        }
+    }
 
     public long getTotal() { return total; }
     public void setTotal(long total) {

@@ -12,6 +12,7 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Properties;
@@ -65,10 +66,13 @@ public class KafkaCaller implements BaafooTestApp.Caller {
         System.out.println("  [发送消息] topic=" + TOPIC);
         KafkaProducer<String, String> producer = null;
         try {
-            producer = new KafkaProducer<String, String>(createProducerConfig());
+            // M-17: Build the config once and reuse it — calling createProducerConfig() twice previously
+            // produced two independent Properties instances (and would have masked any future side effects).
+            Properties producerConfig = createProducerConfig();
+            producer = new KafkaProducer<String, String>(producerConfig);
             System.out.println("    Producer 创建成功");
 
-            String bootstrapServers = (String) createProducerConfig().get(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG);
+            String bootstrapServers = (String) producerConfig.get(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG);
             System.out.println("    bootstrap.servers: " + bootstrapServers);
 
             boolean redirected = bootstrapServers.contains("9002") || bootstrapServers.contains("127.0.0.1");
@@ -118,8 +122,10 @@ public class KafkaCaller implements BaafooTestApp.Caller {
 
             ProducerRecord<String, String> record = new ProducerRecord<String, String>(
                     TOPIC, "test-key-2", "hello-baafoo-kafka-with-headers");
-            record.headers().add("X-Baafoo-Test", "true".getBytes("UTF-8"));
-            record.headers().add("X-Source", "baafoo-test-app".getBytes("UTF-8"));
+            // L-18: Use StandardCharsets.UTF_8 instead of the stringly-typed getBytes("UTF-8")
+            // — the latter throws UnsupportedEncodingException and is slightly slower.
+            record.headers().add("X-Baafoo-Test", "true".getBytes(StandardCharsets.UTF_8));
+            record.headers().add("X-Source", "baafoo-test-app".getBytes(StandardCharsets.UTF_8));
             Future<RecordMetadata> future = producer.send(record);
             RecordMetadata metadata = future.get(5, TimeUnit.SECONDS);
             System.out.println("    发送成功: partition=" + metadata.partition()
@@ -137,10 +143,13 @@ public class KafkaCaller implements BaafooTestApp.Caller {
         System.out.println("  [消费消息] topic=" + TOPIC);
         KafkaConsumer<String, String> consumer = null;
         try {
-            consumer = new KafkaConsumer<String, String>(createConsumerConfig());
+            // M-17: Build the config once and reuse it — calling createConsumerConfig() twice previously
+            // produced two independent Properties instances.
+            Properties consumerConfig = createConsumerConfig();
+            consumer = new KafkaConsumer<String, String>(consumerConfig);
             System.out.println("    Consumer 创建成功");
 
-            String bootstrapServers = (String) createConsumerConfig().get(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG);
+            String bootstrapServers = (String) consumerConfig.get(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG);
             System.out.println("    bootstrap.servers: " + bootstrapServers);
 
             boolean redirected = bootstrapServers.contains("9002") || bootstrapServers.contains("127.0.0.1");

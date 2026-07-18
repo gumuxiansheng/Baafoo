@@ -32,6 +32,12 @@ public final class VarintCodec {
             b = data[pos[0]++] & 0xFF;
             value |= (b & 0x7F) << shift;
             shift += 7;
+            // M1 fix: a 32-bit varint is at most 5 bytes (5 * 7 = 35 bits,
+            // but only the low 4 bits of the 5th byte are meaningful). If
+            // shift reaches 32 the input is malformed (more than 5
+            // continuation bytes) — bail out instead of shifting by ≥32,
+            // which in Java is undefined behavior for int.
+            if (shift >= 32) return -1;
         } while ((b & 0x80) != 0);
         return value;
     }
@@ -52,6 +58,8 @@ public final class VarintCodec {
             b = data[idx++] & 0xFF;
             value |= (b & 0x7F) << shift;
             shift += 7;
+            // M1 fix: cap shift to prevent undefined shift-by-≥32 on malformed input.
+            if (shift >= 32) return -1;
         } while ((b & 0x80) != 0);
         return value;
     }
@@ -65,10 +73,15 @@ public final class VarintCodec {
         int shift = 0;
         int b;
         do {
-            if (pos[0] >= data.length) return 0;
+            // L13 fix: return -1 on EOF (consistent with the 32-bit readVarint
+            // overloads) instead of 0, which is ambiguous with a legitimately
+            // decoded zero value.
+            if (pos[0] >= data.length) return -1L;
             b = data[pos[0]++] & 0xFF;
             value |= ((long) (b & 0x7F)) << shift;
             shift += 7;
+            // Guard against malformed 64-bit varints (max 10 bytes).
+            if (shift >= 64) return -1L;
         } while ((b & 0x80) != 0);
         return value;
     }

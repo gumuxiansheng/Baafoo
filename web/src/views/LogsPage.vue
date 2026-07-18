@@ -60,6 +60,8 @@ export default {
 
     async function loadLogs() {
       loading.value = true
+      // L-9: First arg is the empty ruleId filter — LogsPage intentionally shows recordings
+      // across all rules (and unmatched), so no rule filter is applied.
       const res = await api.getRecordingsPaged('', currentPage.value, pageSize.value)
       if (res.success && res.data) {
         logs.value = res.data.items || []

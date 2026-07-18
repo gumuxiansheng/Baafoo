@@ -93,6 +93,12 @@ public class BaafooServer {
         }
         String envApiKey = System.getenv("BAAFOO_API_KEY");
         if (envApiKey != null && !envApiKey.isEmpty()) {
+            // M-6: warn when an admin API key is injected via env var, because
+            // this grants full admin privileges without any audit trail in the
+            // config file. Common in CI/Testcontainers — should NOT be used in
+            // production. Avoid logging the key value itself (secret hygiene).
+            log.warn("BAAFOO_API_KEY env var is set — granting admin role via env-injected key. "
+                    + "This is intended for CI/Testcontainers; do NOT use in production.");
             apiKeyRoleMap.put(envApiKey, "admin");
         }
         return new AuthService(

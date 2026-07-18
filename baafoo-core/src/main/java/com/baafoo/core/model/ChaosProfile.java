@@ -40,6 +40,16 @@ public class ChaosProfile {
     /** Fault injection rules to apply when this profile is activated */
     private List<ChaosRule> rules;
 
+    /**
+     * Priority for generated rules (H6 fix).
+     *
+     * <p>Lower number = higher priority. Default is 50, which is higher than
+     * the standard rule default (100), so chaos rules take precedence over
+     * normal stub rules. Configurable per-profile to allow fine-tuning when
+     * multiple chaos profiles or rule sets coexist.</p>
+     */
+    private int priority = 50;
+
     /** Optional cron expression for scheduled activation (Phase 3) */
     private String schedule;
 
@@ -61,6 +71,10 @@ public class ChaosProfile {
 
     public List<ChaosRule> getRules() { return rules; }
     public void setRules(List<ChaosRule> rules) { this.rules = rules; }
+
+    /** H6: priority for generated rules (default 50, lower = higher priority). */
+    public int getPriority() { return priority; }
+    public void setPriority(int priority) { this.priority = priority; }
 
     public String getSchedule() { return schedule; }
     public void setSchedule(String schedule) { this.schedule = schedule; }

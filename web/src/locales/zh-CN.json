@@ -267,8 +267,9 @@
     "editVariables": "编辑环境变量",
     "edit": "编辑",
     "save": "保存",
-    "varSaveSuccess": "环境变量保存成功",
+    "varSaveSuccess": "环境变量已保存",
     "varSaveFailed": "保存失败",
+    "modeSwitchFailed": "模式切换失败",
     "back": "返回",
     "loading": "加载中...",
     "associateRules": "关联规则",
@@ -436,6 +437,9 @@
     "deleteConfirm": "确认删除用户 \"{0}\"? 此操作不可恢复。",
     "deleteTitle": "删除用户",
     "deleteSuccess": "用户已删除",
+    "deleteFailed": "删除失败",
+    "roleChangeFailed": "角色修改失败",
+    "revokeKeyFailed": "吊销 API Key 失败",
     "copied": "已复制到剪贴板",
     "copyFailed": "复制失败，请手动复制",
     "importSuccess": "导入完成: 成功{0}条, 跳过{1}条, 失败{2}条",
@@ -521,7 +525,8 @@
     "parseSuccess": "解析成功：生成 {0} 条规则，跳过 {1} 条",
     "envPlaceholder": "选择或输入环境名（可不选）",
     "prefixHint": "自动生成规则 ID 的前缀",
-    "importFailed": "导入失败"
+    "importFailed": "导入失败",
+    "envLoadFailed": "加载环境列表失败"
   },
   "nav": {
     "users": "用户管理",

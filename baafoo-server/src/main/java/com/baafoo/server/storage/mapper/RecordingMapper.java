@@ -36,11 +36,25 @@ public interface RecordingMapper {
 
     int deleteRecording(@Param("id") String id);
 
+    /**
+     * L-2: bulk-delete the {@code limit} oldest recordings in a single SQL
+     * statement. Replaces the previous N+1 pattern in
+     * {@link com.baafoo.server.storage.RecordingCleanupTask#deleteOldestRecordings}
+     * (list N rows, then loop deleteRecording per id). Returns the number of
+     * rows deleted.
+     */
+    int deleteOldestN(@Param("limit") int limit);
+
     int deleteRecordingsOlderThan(@Param("cutoffTime") long cutoffTime);
 
     long countAllRecordings();
 
-    /** Sum of LENGTH(response_body) + LENGTH(request_body) across all recordings. */
+    /**
+     * Sum of OCTET_LENGTH(response_body) + OCTET_LENGTH(request_body) across
+     * all recordings. L-3: switched from LENGTH (character count) to
+     * OCTET_LENGTH (byte count) so multi-byte content (GBK/CJK) is accounted
+     * correctly when comparing against recordingMaxSizeMb.
+     */
     long sumAllRecordingBodyBytes();
 
     List<RecordingEntry> listOldestRecordings(@Param("limit") int limit);

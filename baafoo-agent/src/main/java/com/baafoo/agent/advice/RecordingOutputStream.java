@@ -1,6 +1,9 @@
 package com.baafoo.agent.advice;
 
+import com.baafoo.agent.GlobalRouteState;
 import com.baafoo.core.model.RecordingEntry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.FilterOutputStream;
 import java.io.IOException;
@@ -18,6 +21,8 @@ import java.io.OutputStream;
  * to avoid double-recording through {@code write(int)}.</p>
  */
 public class RecordingOutputStream extends FilterOutputStream {
+
+    private static final Logger log = LoggerFactory.getLogger(RecordingOutputStream.class);
 
     private final String sessionId;
     private final String host;
@@ -55,23 +60,24 @@ public class RecordingOutputStream extends FilterOutputStream {
     }
 
     private void recordBytes(byte[] data, int offset, int length) {
-        RecordingEntry entry = new RecordingEntry();
-        entry.setSessionId(sessionId);
-        entry.setProtocol(com.baafoo.agent.GlobalRouteState.inferProtocol(host, port));
-        entry.setDirection("request");
-        entry.setHost(host);
-        entry.setPort(port);
-        entry.setDataHex(bytesToHex(data, offset, length));
-        entry.setRecordedAt(System.currentTimeMillis());
-        recordingBuffer.add(entry);
-    }
-
-    private static String bytesToHex(byte[] bytes, int offset, int length) {
-        StringBuilder sb = new StringBuilder(length * 2);
-        int end = offset + length;
-        for (int i = offset; i < end; i++) {
-            sb.append(String.format("%02x", bytes[i] & 0xff));
+        // H5: recording must never propagate exceptions to the application's
+        // write() call — a failure inside the recording pipeline (e.g. OOM,
+        // NPE in inferProtocol, RecordingBuffer rejection) would otherwise
+        // break the application's IO. Swallow everything and log at debug.
+        try {
+            RecordingEntry entry = new RecordingEntry();
+            entry.setSessionId(sessionId);
+            entry.setProtocol(GlobalRouteState.inferProtocol(host, port));
+            entry.setDirection("request");
+            entry.setHost(host);
+            entry.setPort(port);
+            entry.setDataHex(GlobalRouteState.bytesToHex(data, offset, length));
+            entry.setRecordedAt(System.currentTimeMillis());
+            recordingBuffer.add(entry);
+        } catch (Throwable t) {
+            if (log.isDebugEnabled()) {
+                log.debug("RecordingOutputStream recording failed, swallowed", t);
+            }
         }
-        return sb.toString();
     }
 }

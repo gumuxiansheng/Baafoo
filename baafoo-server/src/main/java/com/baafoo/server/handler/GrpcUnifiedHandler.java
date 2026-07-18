@@ -75,6 +75,23 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
     private static final String GRPC_STATUS = "grpc-status";
     private static final String GRPC_MESSAGE = "grpc-message";
 
+    /**
+     * L-9: multiply {@code delayMs} by the 1-based message index without
+     * risking long overflow. If the product would overflow, cap at
+     * {@link Long#MAX_VALUE} / 2 so Netty's {@code schedule()} still sees a
+     * positive delay (a negative delay is treated as "fire immediately",
+     * which would silently defeat the configured delay).
+     */
+    private static long safeMultiplyDelay(long delayMs, int i) {
+        // i is always > 0 at the call site (see streaming branch in sendStubResponse).
+        long product = delayMs * (long) i;
+        if (delayMs > 0 && product <= 0) {
+            // Overflow — cap at a large positive value (~146 years in ms).
+            return Long.MAX_VALUE / 2;
+        }
+        return product;
+    }
+
     private final StorageService storage;
     private final ServerConfig config;
     private final AgentResolver agentResolver;
@@ -413,12 +430,18 @@ public class GrpcUnifiedHandler extends ChannelInitializer<Channel> {
                         sendGrpcTrailers(finalCtx, finalGrpcStatus, finalGrpcMessage);
                     }, delayMs, TimeUnit.MILLISECONDS);
                 } else if (delayMs > 0 && i > 0) {
-                    // Delay between streaming messages
+                    // Delay between streaming messages. L-9: guard against
+                    // long overflow in delayMs * i — a rule with a very large
+                    // delayMs combined with a high message index could wrap to
+                    // a negative long, which Netty's schedule() treats as
+                    // "fire immediately" (defeating the delay) or throws.
+                    // Cap at Long.MAX_VALUE / 2 so the schedule stays positive.
                     final ChannelHandlerContext finalCtx = ctx;
+                    long perMessageDelay = safeMultiplyDelay(delayMs, i);
                     ctx.executor().schedule(() -> {
                         sendGrpcMessage(finalCtx, msgBytes);
                         if (isLast) sendGrpcTrailers(finalCtx, grpcStatus, grpcMessage);
-                    }, delayMs * i, TimeUnit.MILLISECONDS);
+                    }, perMessageDelay, TimeUnit.MILLISECONDS);
                 } else {
                     sendGrpcMessage(ctx, msgBytes);
                     if (isLast) sendGrpcTrailers(ctx, grpcStatus, grpcMessage);

@@ -37,11 +37,12 @@ public class PulsarCallerService {
         result.put("topic", topic);
 
         PulsarClient client = null;
+        Producer<String> producer = null;
         try {
             client = createPulsarClient(serviceUrl);
             result.put("clientCreated", true);
 
-            Producer<String> producer = client.newProducer(Schema.STRING)
+            producer = client.newProducer(Schema.STRING)
                     .topic(topic)
                     .create();
 
@@ -49,13 +50,13 @@ public class PulsarCallerService {
             result.put("success", true);
             result.put("messageId", msgId.toString());
             log.info("Pulsar message sent: topic={}, messageId={}", topic, msgId);
-
-            producer.close();
         } catch (Exception e) {
             result.put("success", false);
             result.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
             log.warn("Pulsar send failed: {}", e.getMessage());
         } finally {
+            // M-10: Close producer in finally so a producer.send() failure can't leak it
+            if (producer != null) try { producer.close(); } catch (Exception ignored) {}
             if (client != null) try { client.close(); } catch (Exception ignored) {}
         }
         return result;
@@ -67,10 +68,11 @@ public class PulsarCallerService {
         result.put("topic", topic);
 
         PulsarClient client = null;
+        Consumer<String> consumer = null;
         try {
             client = createPulsarClient(serviceUrl);
 
-            Consumer<String> consumer = client.newConsumer(Schema.STRING)
+            consumer = client.newConsumer(Schema.STRING)
                     .topic(topic)
                     .subscriptionName("baafoo-test-subscription")
                     .subscribe();
@@ -90,13 +92,14 @@ public class PulsarCallerService {
                 result.put("count", 1);
                 result.put("messages", java.util.Collections.singletonList(msgMap));
             }
-            consumer.close();
             log.info("Pulsar consumed: topic={}", topic);
         } catch (Exception e) {
             result.put("success", false);
             result.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
             log.warn("Pulsar consume failed: {}", e.getMessage());
         } finally {
+            // M-10: Close consumer in finally so a receive failure can't leak it
+            if (consumer != null) try { consumer.close(); } catch (Exception ignored) {}
             if (client != null) try { client.close(); } catch (Exception ignored) {}
         }
         return result;

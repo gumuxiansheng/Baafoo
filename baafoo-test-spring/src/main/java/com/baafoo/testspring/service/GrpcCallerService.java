@@ -10,6 +10,8 @@ import io.grpc.StatusRuntimeException;
 import io.grpc.stub.ClientCalls;
 import io.grpc.stub.StreamObserver;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
@@ -44,8 +46,13 @@ import java.util.concurrent.atomic.AtomicReference;
 @Service
 public class GrpcCallerService {
 
-    /** String <-> InputStream marshaller (UTF-8). No protobuf involved. */
-    private static final MethodDescriptor.Marshaller<String> STRING_MARSHALLER =
+    private static final Logger log = LoggerFactory.getLogger(GrpcCallerService.class);
+
+    /**
+     * String <-> InputStream marshaller (UTF-8). No protobuf involved.
+     * L-6: Public so {@code GrpcEchoServer} can reuse the same instance instead of duplicating the impl.
+     */
+    public static final MethodDescriptor.Marshaller<String> STRING_MARSHALLER =
             new MethodDescriptor.Marshaller<String>() {
                 @Override
                 public InputStream stream(String value) {
@@ -83,6 +90,23 @@ public class GrpcCallerService {
         return builder.usePlaintext().build();
     }
 
+    /**
+     * M-11: Shutdown the channel and wait briefly for termination. Without awaiting
+     * termination, in-flight calls and the channel's internal executor can be
+     * left running, which leaks threads under repeated test invocations.
+     */
+    private void shutdownAndAwait(ManagedChannel ch) {
+        if (ch == null) return;
+        try {
+            ch.shutdownNow();
+            if (!ch.awaitTermination(2, TimeUnit.SECONDS)) {
+                log.warn("[Baafoo] gRPC channel did not terminate within 2s");
+            }
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     // ==================== Result builders ====================
 
     private Map<String, Object> result(boolean completed, String grpcStatus, String grpcMessage, String error) {
@@ -114,7 +138,7 @@ public class GrpcCallerService {
         } catch (Exception e) {
             return result(false, null, null, e.getClass().getSimpleName() + ": " + e.getMessage());
         } finally {
-            ch.shutdownNow();
+            shutdownAndAwait(ch);
         }
     }
 
@@ -137,7 +161,7 @@ public class GrpcCallerService {
         } catch (Exception e) {
             return result(false, null, null, e.getClass().getSimpleName() + ": " + e.getMessage());
         } finally {
-            ch.shutdownNow();
+            shutdownAndAwait(ch);
         }
     }
 
@@ -176,14 +200,18 @@ public class GrpcCallerService {
             }
             requestObserver.onCompleted();
 
-            latch.await(15, TimeUnit.SECONDS);
+            // M-12: Log when the latch times out so silent hangs in client-streaming tests are diagnosable
+            boolean completed = latch.await(15, TimeUnit.SECONDS);
+            if (!completed) {
+                log.warn("[Baafoo] gRPC client-streaming latch timed out after 15s (service={}, method={})", service, methodName);
+            }
             Map<String, Object> r = result(true, statusRef.get(), msgRef.get(), null);
             r.put("messages", responses);
             return r;
         } catch (Exception e) {
             return result(false, null, null, e.getClass().getSimpleName() + ": " + e.getMessage());
         } finally {
-            ch.shutdownNow();
+            shutdownAndAwait(ch);
         }
     }
 
@@ -222,14 +250,18 @@ public class GrpcCallerService {
             }
             requestObserver.onCompleted();
 
-            latch.await(15, TimeUnit.SECONDS);
+            // M-12: Log when the latch times out so silent hangs in bidi-streaming tests are diagnosable
+            boolean completed = latch.await(15, TimeUnit.SECONDS);
+            if (!completed) {
+                log.warn("[Baafoo] gRPC bidi-streaming latch timed out after 15s (service={}, method={})", service, methodName);
+            }
             Map<String, Object> r = result(true, statusRef.get(), msgRef.get(), null);
             r.put("messages", responses);
             return r;
         } catch (Exception e) {
             return result(false, null, null, e.getClass().getSimpleName() + ": " + e.getMessage());
         } finally {
-            ch.shutdownNow();
+            shutdownAndAwait(ch);
         }
     }
 

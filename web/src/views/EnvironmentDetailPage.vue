@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="env-detail-page">
     <div class="page-header">
       <el-button text @click="$router.back()"><el-icon><ArrowLeft /></el-icon> {{ $t('environments.back') }}</el-button>
@@ -136,8 +136,17 @@ export default {
     })
 
     async function switchMode(mode) {
-      await api.updateEnvironment(route.params.id, { mode })
-      env.value.mode = mode
+      // H-2: 乐观更新 + 失败回滚，避免 UI 显示与服务端不一致
+      const prevMode = env.value ? env.value.mode : null
+      if (env.value) env.value.mode = mode
+      try {
+        await api.updateEnvironment(route.params.id, { mode })
+      } catch (e) {
+        // 回滚到切换前的模式
+        if (env.value) env.value.mode = prevMode
+        selectedMode.value = prevMode
+        ElMessage.error(t('environments.modeSwitchFailed') + ': ' + (e?.message || t('common.unknownError')))
+      }
     }
 
     function modeTagType(mode) {

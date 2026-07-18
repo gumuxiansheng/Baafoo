@@ -2,6 +2,7 @@ package com.baafoo.testapp.caller;
 
 import com.baafoo.testapp.BaafooTestApp;
 
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
@@ -59,10 +60,20 @@ public class TcpCaller implements BaafooTestApp.Caller {
             System.out.println("    发送: " + request.trim());
 
             InputStream is = socket.getInputStream();
+            // H-8: 循环读取直到 EOF 或超时，避免响应被分片时漏读
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
             byte[] buf = new byte[4096];
-            int len = is.read(buf);
-            if (len > 0) {
-                String response = new String(buf, 0, len, StandardCharsets.UTF_8);
+            try {
+                int len;
+                while ((len = is.read(buf)) != -1) {
+                    baos.write(buf, 0, len);
+                }
+            } catch (java.net.SocketTimeoutException e) {
+                // 读取超时，认为响应已读完
+            }
+            byte[] data = baos.toByteArray();
+            if (data.length > 0) {
+                String response = new String(data, StandardCharsets.UTF_8);
                 System.out.println("    接收: " + response.trim());
                 System.out.println("    挡板拦截: ✓ 是 (收到挡板响应)");
             } else {

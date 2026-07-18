@@ -13,7 +13,14 @@ import java.net.InetAddress;
  * making it impossible for GlobalRouteState.lookup(ip, port) to match
  * domain-based routes. This advice records the DNS resolution so that
  * SocketConnectAdvice/NioSocketConnectAdvice can look up routes by the original domain.</p>
+ *
+ * @deprecated Functionality merged into {@link DnsResolveAdvice} and
+ * {@link DnsResolveAllAdvice}, which both record DNS resolutions AND apply
+ * service-name/host redirection in a single advice. This class is NOT
+ * registered in {@code TransformInstaller} — it is dead code retained for
+ * reference. Will be removed in a future version.
  */
+@Deprecated
 public final class DnsResolutionAdvice {
 
     private DnsResolutionAdvice() {}

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="users-page">
     <div class="page-header">
       <h2>{{ $t('users.title') }}</h2>
@@ -329,7 +329,9 @@ export default {
           ElMessage.error(res.message || t('common.unknownError'))
         }
       } catch (e) {
-        // cancelled
+        // H-1: 区分 ElMessageBox 取消与真实错误
+        if (e === 'cancel' || e === 'close' || (e?.toString?.().includes('cancel'))) return
+        ElMessage.error(t('users.roleChangeFailed') + ': ' + (e?.message || e))
       }
     }
 
@@ -359,7 +361,9 @@ export default {
           await fetchUsers()
         }
       } catch (e) {
-        // cancelled
+        // H-1: 区分 ElMessageBox 取消与真实错误
+        if (e === 'cancel' || e === 'close' || (e?.toString?.().includes('cancel'))) return
+        ElMessage.error(t('users.revokeKeyFailed') + ': ' + (e?.message || e))
       }
     }
 
@@ -378,7 +382,9 @@ export default {
           ElMessage.error(res.message || t('common.unknownError'))
         }
       } catch (e) {
-        // cancelled
+        // H-1: 区分 ElMessageBox 取消与真实错误
+        if (e === 'cancel' || e === 'close' || (e?.toString?.().includes('cancel'))) return
+        ElMessage.error(t('users.deleteFailed') + ': ' + (e?.message || e))
       }
     }
 

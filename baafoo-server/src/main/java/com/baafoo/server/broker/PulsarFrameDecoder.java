@@ -23,17 +23,23 @@ class PulsarFrameDecoder extends ByteToMessageDecoder {
 
     private static final Logger log = LoggerFactory.getLogger(PulsarFrameDecoder.class);
 
-    /** Maximum frame size: 16 MB (same as Pulsar default maxMessageSize) */
-    private static final int MAX_FRAME_SIZE = 16 * 1024 * 1024;
+    /**
+     * Maximum frame size: 10 MB.
+     * H-5: aligned with KafkaMockBroker / BaafooServer HttpObjectAggregator so
+     * a single client cannot OOM the broker EventLoop. Real Pulsar frames are
+     * well below this limit (Pulsar's default maxMessageSize is 1MB; even
+     * batched payloads rarely exceed a few MB).
+     */
+    private static final int MAX_FRAME_SIZE = 10 * 1024 * 1024;
 
     @Override
     public void handlerAdded(ChannelHandlerContext ctx) {
-        log.info("PulsarFrameDecoder added to pipeline: {}", ctx.channel());
+        log.debug("PulsarFrameDecoder added to pipeline: {}", ctx.channel());
     }
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
-        log.info("PulsarFrameDecoder channelActive: {}", ctx.channel().remoteAddress());
+        log.debug("PulsarFrameDecoder channelActive: {}", ctx.channel().remoteAddress());
         ctx.fireChannelActive();
     }
 
@@ -50,7 +56,12 @@ class PulsarFrameDecoder extends ByteToMessageDecoder {
         int totalSize = in.readInt();
         int commandSize = in.readInt();
 
-        log.info("Pulsar frame: totalSize={}, commandSize={}, readableBytes={}", totalSize, commandSize, in.readableBytes());
+        // M-8: per-frame decode path — debug, not info. Logging every frame
+        // at INFO would flood the broker log under load (Pulsar clients ping
+        // frequently and producers SEND on every message).
+        if (log.isDebugEnabled()) {
+            log.debug("Pulsar frame: totalSize={}, commandSize={}, readableBytes={}", totalSize, commandSize, in.readableBytes());
+        }
 
         // Validate frame sizes
         if (totalSize < 4 || commandSize < 0 || commandSize > totalSize - 4) {
@@ -86,13 +97,20 @@ class PulsarFrameDecoder extends ByteToMessageDecoder {
         // Parse the command
         PulsarCommand cmd = PulsarProtobufCodec.decodeCommand(commandBytes);
 
-        // Debug: hex dump of command bytes for first few frames
-        StringBuilder hexDump = new StringBuilder();
-        for (int i = 0; i < Math.min(commandBytes.length, 64); i++) {
-            hexDump.append(String.format("%02x ", commandBytes[i] & 0xFF));
+        // M-8: hex dump for protocol troubleshooting. Guarded by isDebugEnabled()
+        // so the String.format loop is skipped entirely when debug logging is
+        // disabled (avoiding per-frame allocation on the EventLoop). Capped at
+        // 256 bytes (was 64) so streaming/batched commands are fully visible
+        // when troubleshooting without unbounded log line length.
+        if (log.isDebugEnabled()) {
+            int dumpLen = Math.min(commandBytes.length, 256);
+            StringBuilder hexDump = new StringBuilder(dumpLen * 3);
+            for (int i = 0; i < dumpLen; i++) {
+                hexDump.append(String.format("%02x ", commandBytes[i] & 0xFF));
+            }
+            log.debug("Pulsar command bytes (first {}): type={}, hex={}",
+                    dumpLen, cmd.type, hexDump);
         }
-        log.info("Pulsar command bytes (first {}): type={}, hex={}",
-                Math.min(commandBytes.length, 64), cmd.type, hexDump);
 
         PulsarFrame frame = new PulsarFrame();
         frame.command = cmd;

@@ -66,7 +66,10 @@ public class StaticFileHandler extends SimpleChannelInboundHandler<FullHttpReque
             this.filesystemMode = false;
             log.info("Web console: classpath mode (embedded in JAR)");
         } else {
-            // Last resort: try ./web directory
+            // Last resort: try ./web directory.
+            // H-6: fallback for dev mode only, should not be used in production.
+            // Production deployments should rely on either an explicit
+            // webConsolePath or the embedded classpath resources.
             File fallback = new File("./web");
             this.webRoot = "./web";
             this.filesystemMode = fallback.isDirectory();
@@ -132,14 +135,33 @@ public class StaticFileHandler extends SimpleChannelInboundHandler<FullHttpReque
     }
 
     private boolean serveStaticFile(ChannelHandlerContext ctx, String path) {
-        // Normalize and secure path — prevent path traversal
-        String normalizedPath = path.replace("..", "").replace("//", "/");
+        // H-6: normalize via java.net.URI instead of the previous naive string
+        // replace (which only collapsed literal ".." and "//" sequences and
+        // could be bypassed with encoded variants). URI.normalize() applies
+        // RFC 2396 path normalization, so ".." segments are resolved
+        // lexically before the remaining defense-in-depth check runs.
+        String normalizedPath;
+        try {
+            java.net.URI normalized = new java.net.URI(path).normalize();
+            normalizedPath = normalized.getPath();
+        } catch (java.net.URISyntaxException e) {
+            log.warn("Path traversal attempt blocked (bad URI syntax): {}", path);
+            ctx.close();
+            return false;
+        }
+        if (normalizedPath == null) {
+            log.warn("Path traversal attempt blocked (non-hierarchical URI): {}", path);
+            ctx.close();
+            return false;
+        }
+        normalizedPath = normalizedPath.replace("\\", "/");
         if (normalizedPath.startsWith("/")) {
             normalizedPath = normalizedPath.substring(1);
         }
 
-        // Defense-in-depth: reject any path that still contains traversal sequences
-        // after normalization (e.g., encoded variants like ..%2F)
+        // Defense-in-depth: reject any path that still contains traversal
+        // sequences after normalization (e.g. over-long UTF-8 variants that
+        // survived URI normalization).
         if (normalizedPath.contains("..")) {
             log.warn("Path traversal attempt blocked: {}", path);
             return false;
@@ -181,6 +203,7 @@ public class StaticFileHandler extends SimpleChannelInboundHandler<FullHttpReque
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, contentType);
             response.headers().set(HttpHeaderNames.CONTENT_LENGTH, fileLength);
             response.headers().set(HttpHeaderNames.CACHE_CONTROL, "public, max-age=3600");
+            // TODO: align with StubResponseRenderer's configurable CORS; tracked in M-2.
             response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
 
             ctx.write(response);
@@ -223,6 +246,7 @@ public class StaticFileHandler extends SimpleChannelInboundHandler<FullHttpReque
                 response.headers().set(HttpHeaderNames.CONTENT_TYPE, contentType);
                 response.headers().set(HttpHeaderNames.CONTENT_LENGTH, bytes.length);
                 response.headers().set(HttpHeaderNames.CACHE_CONTROL, "public, max-age=3600");
+                // TODO: align with StubResponseRenderer's configurable CORS; tracked in M-2.
                 response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
 
                 ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);

@@ -18,7 +18,14 @@ import java.util.*;
  *
  * Authentication: uses the existing AuthFilter (JWT or X-Api-Key).
  * The authenticated role is passed to each tool via McpToolContext.
+ *
+ * @deprecated Not registered in the production Netty pipeline; production
+ * uses {@link McpApiHandler} (registered as a {@code ResourceHandler} in
+ * {@code ManagementApiHandler}). Kept for reference and for tests that
+ * construct it directly. Do not wire this into the pipeline without also
+ * routing through {@code AuthFilter}.
  */
+@Deprecated
 public class McpController extends SimpleChannelInboundHandler<FullHttpRequest> {
 
     private static final Logger log = LoggerFactory.getLogger(McpController.class);
@@ -65,13 +72,17 @@ public class McpController extends SimpleChannelInboundHandler<FullHttpRequest> 
             return;
         }
 
+        // H-2: declare id outside the try block so the catch handlers can
+        // echo it back. Previously the catch handlers hardcoded null, losing
+        // the correlation id and breaking JSON-RPC clients that dispatch by id.
+        Object id = null;
         try {
             String body = request.content().toString(StandardCharsets.UTF_8);
             @SuppressWarnings("unchecked")
             Map<String, Object> jsonRpc = mapper.readValue(body, Map.class);
 
             String method = (String) jsonRpc.get("method");
-            Object id = jsonRpc.get("id");
+            id = jsonRpc.get("id");
             @SuppressWarnings("unchecked")
             Map<String, Object> params = (Map<String, Object>) jsonRpc.getOrDefault("params", new HashMap<>());
 
@@ -97,19 +108,17 @@ public class McpController extends SimpleChannelInboundHandler<FullHttpRequest> 
             sendJson(ctx, 200, successResponse(id, result));
         } catch (McpException e) {
             log.warn("MCP error: {}", e.getMessage());
-            sendJson(ctx, 200, errorResponse(null, -32000, e.getMessage()));
+            sendJson(ctx, 200, errorResponse(id, -32000, e.getMessage()));
         } catch (Exception e) {
             log.error("MCP internal error: {}", e.getMessage(), e);
-            sendJson(ctx, 500, errorResponse(null, -32603, "Internal error: " + e.getMessage()));
+            sendJson(ctx, 500, errorResponse(id, -32603, "Internal error: " + e.getMessage()));
         }
     }
 
     private Object handleInitialize() {
+        // L-7: removed dead local `protocolVersion` map that duplicated the
+        // fields already placed into `result` below.
         Map<String, Object> result = new LinkedHashMap<>();
-        Map<String, Object> protocolVersion = new LinkedHashMap<>();
-        protocolVersion.put("protocolVersion", "2024-11-05");
-        protocolVersion.put("capabilities", Collections.singletonMap("tools", Collections.emptyMap()));
-        protocolVersion.put("serverInfo", Collections.singletonMap("name", "baafoo-mcp-server"));
         result.put("protocolVersion", "2024-11-05");
         result.put("capabilities", Collections.singletonMap("tools", Collections.emptyMap()));
         result.put("serverInfo", Collections.singletonMap("name", "baafoo-mcp-server"));
@@ -211,6 +220,7 @@ public class McpController extends SimpleChannelInboundHandler<FullHttpRequest> 
                 Unpooled.copiedBuffer(json, StandardCharsets.UTF_8));
         response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json; charset=UTF-8");
         response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
+        // TODO: align with StubResponseRenderer's configurable CORS; tracked in M-2.
         response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
         response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, OPTIONS");
         response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "Content-Type, Authorization, X-Api-Key");

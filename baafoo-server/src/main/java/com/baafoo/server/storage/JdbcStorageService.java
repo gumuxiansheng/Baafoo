@@ -423,6 +423,12 @@ public class JdbcStorageService implements StorageService {
         return recordingService.deleteRecording(id);
     }
 
+    /** L-2: bulk-delete oldest N recordings (delegated to JdbcRecordingService). */
+    @Override
+    public int deleteOldestN(int limit) {
+        return recordingService.deleteOldestN(limit);
+    }
+
     @Override
     public int deleteRecordingsOlderThan(int retentionDays) {
         return recordingService.deleteRecordingsOlderThan(retentionDays);
@@ -522,6 +528,12 @@ public class JdbcStorageService implements StorageService {
      * Resolve system property placeholders in a path string.
      * E.g., "${user.home}/.baafoo" → "C:/Users/john/.baafoo"
      * Also handles "~/" as user home shorthand.
+     *
+     * <p>System property is read once at startup (called only from the
+     * constructor during {@code dataDir} resolution, see M-3). Subsequent
+     * runtime changes to {@code -Duser.home} or other system properties
+     * will NOT be picked up — this is intentional, as the JDBC URL is
+     * built once and HikariCP holds the connection pool for the JVM life.</p>
      */
     private static String resolvePath(String path) {
         if (path == null) return path;

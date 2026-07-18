@@ -213,12 +213,17 @@ public class RecordingEntry {
 
     @Override
     public String toString() {
+        // L10: include request/response body LENGTHS (not the bodies
+        // themselves) so the toString is useful for diagnosing recording
+        // capture without dumping potentially-large payloads into log lines.
         return "RecordingEntry{" +
                 "id='" + id + '\'' +
                 ", protocol='" + protocol + '\'' +
                 ", method='" + method + '\'' +
                 ", path='" + path + '\'' +
                 ", responseStatusCode=" + responseStatusCode +
+                ", requestBodyLength=" + (requestBody != null ? requestBody.length() : 0) +
+                ", responseBodyLength=" + (responseBody != null ? responseBody.length() : 0) +
                 ", grpcService='" + grpcService + '\'' +
                 ", grpcMethod='" + grpcMethod + '\'' +
                 ", grpcStatus=" + grpcStatus +

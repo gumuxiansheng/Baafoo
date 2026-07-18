@@ -114,7 +114,8 @@ export default {
     }
 
     onMounted(async () => {
-      const [statusRes, rulesRes, recordingsRes, scenesRes, envsRes] = await Promise.all([
+      // H-4: 使用 Promise.allSettled 替代 Promise.all，单个接口失败时仍能渲染其他数据
+      const [statusRes, rulesRes, recordingsRes, scenesRes, envsRes] = await Promise.allSettled([
         api.getStatus(),
         api.getRules(),
         api.getRecordings('', 10),
@@ -122,19 +123,25 @@ export default {
         api.getEnvironments()
       ])
 
-      if (statusRes.success) {
-        Object.assign(stats, statusRes.data)
-        stats.agents = statusRes.data.onlineAgents ?? statusRes.data.agents ?? 0
-        stats.scenes = scenesRes.success ? scenesRes.data.length : 0
+      const status = statusRes.status === 'fulfilled' ? statusRes.value : null
+      const rules = rulesRes.status === 'fulfilled' ? rulesRes.value : null
+      const recordings = recordingsRes.status === 'fulfilled' ? recordingsRes.value : null
+      const scenes = scenesRes.status === 'fulfilled' ? scenesRes.value : null
+      // envsRes 当前未在渲染中使用，仅查询以预热缓存；allSettled 保证其失败不影响其他数据
+
+      if (status && status.success) {
+        Object.assign(stats, status.data)
+        stats.agents = status.data.onlineAgents ?? status.data.agents ?? 0
+        stats.scenes = (scenes && scenes.success) ? scenes.data.length : 0
       }
 
-      if (recordingsRes.success) {
-        recentRecordings.value = recordingsRes.data
+      if (recordings && recordings.success) {
+        recentRecordings.value = recordings.data
       }
 
       nextTick(() => {
-        renderRulesChart(rulesRes.success ? rulesRes.data : [])
-        renderTrendChart(statusRes.success && statusRes.data.requestTrend ? statusRes.data.requestTrend : [])
+        renderRulesChart(rules && rules.success ? rules.data : [])
+        renderTrendChart(status && status.success && status.data.requestTrend ? status.data.requestTrend : [])
       })
     })
 

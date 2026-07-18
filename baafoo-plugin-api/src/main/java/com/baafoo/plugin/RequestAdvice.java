@@ -46,7 +46,11 @@ public class RequestAdvice {
     }
 
     public static RequestAdvice shortCircuit(byte[] body, int statusCode, Map<String, String> headers) {
-        return new RequestAdvice(Action.SHORTCIRCUIT, body, statusCode, headers, null, null);
+        // L-13: Defensive copy of the body so a later mutation by the caller doesn't change the
+        // advice's payload after the factory returns. Headers are intentionally not copied here —
+        // they're treated as transferred ownership and wrapped unmodifiable by the consumer.
+        byte[] bodyCopy = body != null ? body.clone() : null;
+        return new RequestAdvice(Action.SHORTCIRCUIT, bodyCopy, statusCode, headers, null, null);
     }
 
     public static RequestAdvice modify(Map<String, String> newHeaders, byte[] newBody) {

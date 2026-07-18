@@ -47,6 +47,18 @@ import java.util.regex.PatternSyntaxException;
  * <p>Seed support: when a rule has {@code fakerSeed} set, all faker functions for that
  * rule use a deterministic {@link Random} seeded with that value, so the same seed
  * produces the same sequence of values. Without a seed, a {@link SecureRandom} is used.</p>
+ *
+ * <p><b>Thread-local seed lifecycle (H3):</b> The seed is stored in a
+ * {@link ThreadLocal} so that deterministic generation is confined to the
+ * rendering thread. Callers that set a seed via {@link #setSeed(Long)} MUST
+ * clear it in a {@code finally} block (e.g. via {@link #clearSeed()}) to
+ * prevent stale seeds leaking across rules when the thread is reused.
+ * {@link TemplateEngine#render} already does this.</p>
+ *
+ * <p>TODO: This class has grown into a "god class" with many unrelated faker
+ * functions (code-smell #3). A future refactor should split it into focused
+ * providers (e.g. PersonFaker, AddressFaker, NetworkFaker) loaded via a
+ * registry. Left as-is in this pass to avoid a large, risky refactor.</p>
  */
 public class FakerProvider {
 
@@ -219,6 +231,19 @@ public class FakerProvider {
         } else {
             SEEDED_RND.set(new Random(seed));
         }
+    }
+
+    /**
+     * Clear any seed set on the current thread (H3 fix).
+     *
+     * <p>This is equivalent to {@code setSeed(null)} but is more explicit
+     * about its intent and is the recommended cleanup method to call in
+     * a {@code finally} block after rendering a rule with a seed. Failing
+     * to clear the seed risks cross-rule contamination when the thread is
+     * reused by another rule that does not set a seed.</p>
+     */
+    public static void clearSeed() {
+        SEEDED_RND.remove();
     }
 
     /**
@@ -818,9 +843,17 @@ public class FakerProvider {
                 if (max < min) {
                     max = min;
                 }
-                // Cap to avoid runaway generation.
+                // H2 fix: cap BOTH min and max to avoid runaway generation.
+                // Previously only max was capped, so a pattern like {100,200}
+                // would loop min=100 times even though max was capped to 32.
+                if (min > 32) {
+                    min = 32;
+                }
                 if (max > 32) {
                     max = 32;
+                }
+                if (max < min) {
+                    max = min;
                 }
                 int count = min + (max > min ? random.nextInt(max - min + 1) : 0);
                 StringBuilder sb = new StringBuilder();

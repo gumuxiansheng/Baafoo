@@ -348,6 +348,11 @@ export default {
 
     async function deleteItem(id) {
       await api.deleteRecording(id)
+      // M-8: If we deleted the last row on the current page (and we're not on page 1),
+      // step back one page so the user doesn't see an empty table with no pagination cue.
+      if (recordings.value.length === 1 && currentPage.value > 1) {
+        currentPage.value -= 1
+      }
       await loadRecordings()
     }
 

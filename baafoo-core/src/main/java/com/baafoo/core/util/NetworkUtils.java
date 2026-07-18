@@ -1,5 +1,8 @@
 package com.baafoo.core.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.net.InetSocketAddress;
 
 /**
@@ -23,6 +26,16 @@ import java.net.InetSocketAddress;
  * in the server config to explicitly specify the advertised host.</p>
  */
 public final class NetworkUtils {
+
+    private static final Logger log = LoggerFactory.getLogger(NetworkUtils.class);
+
+    /**
+     * Smell #9: the last-octet value conventionally used by Docker / common
+     * home routers for the subnet gateway (e.g. 172.17.0.1, 192.168.1.1).
+     * Extracted from the previous inline magic literal {@code == 1} so the
+     * heuristic is greppable and documented in one place.
+     */
+    private static final int GATEWAY_LAST_OCTET = 1;
 
     private NetworkUtils() {}
 
@@ -119,7 +132,11 @@ public final class NetworkUtils {
             // use the advertised host (or defaultHost as a last resort).
             return fallbackHost(advertisedHost, defaultHost, localAddress);
         } catch (Exception e) {
-            // Fall through
+            // M10: log the exception at debug level so malformed/unexpected
+            // socket addresses (e.g. unresolved InetSocketAddress, IPv6 edge
+            // cases) are diagnosable without spamming logs — this is a
+            // fallback path that's expected for some inputs.
+            log.debug("resolveClientReachableHost fell back to default host", e);
         }
         return fallbackHost(advertisedHost, defaultHost, localAddress);
     }
@@ -149,7 +166,7 @@ public final class NetworkUtils {
      * Docker typically assigns x.x.x.1 as the gateway address.
      */
     public static boolean isLikelyGateway(byte[] addr) {
-        return addr.length == 4 && (addr[3] & 0xFF) == 1;
+        return addr.length == 4 && (addr[3] & 0xFF) == GATEWAY_LAST_OCTET;
     }
 
     private static String fallbackHost(String advertisedHost, String defaultHost, InetSocketAddress localAddress) {

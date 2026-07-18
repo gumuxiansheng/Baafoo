@@ -269,6 +269,7 @@
     "save": "Save",
     "varSaveSuccess": "Environment variables saved",
     "varSaveFailed": "Save failed",
+    "modeSwitchFailed": "Mode switch failed",
     "back": "Back",
     "loading": "Loading...",
     "associateRules": "Associated Rules",
@@ -436,6 +437,9 @@
     "deleteConfirm": "Delete user \"{0}\"? This action is irreversible.",
     "deleteTitle": "Delete User",
     "deleteSuccess": "User deleted",
+    "deleteFailed": "Delete failed",
+    "roleChangeFailed": "Role change failed",
+    "revokeKeyFailed": "Revoke API key failed",
     "copied": "Copied to clipboard",
     "copyFailed": "Copy failed, please copy manually",
     "importSuccess": "Import complete: {0} created, {1} skipped, {2} failed",
@@ -521,7 +525,8 @@
     "parseSuccess": "Parsed successfully: generated {0} rules, skipped {1}",
     "envPlaceholder": "Select or type environment name (optional)",
     "prefixHint": "Auto-generated rule ID prefix",
-    "importFailed": "Import failed"
+    "importFailed": "Import failed",
+    "envLoadFailed": "Failed to load environments"
   },
   "nav": {
     "users": "Users",

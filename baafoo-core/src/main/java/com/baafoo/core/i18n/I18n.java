@@ -33,6 +33,27 @@ public final class I18n {
     private final Properties props;
     private final I18n fallback;
 
+    /**
+     * L5: I18n instance cache keyed by Locale.
+     *
+     * <p>A plain {@link ConcurrentHashMap} (strong keys) is intentionally used
+     * here instead of a {@link java.util.WeakHashMap} wrapped in
+     * {@link java.util.Collections#synchronizedMap}. Rationale:
+     * <ul>
+     *   <li>The set of Locales used by Baafoo is small and bounded (zh-CN
+     *       default + a handful of operator-selected UI locales), so the
+     *       memory retained by strong keys is negligible.</li>
+     *   <li>Common Locale instances ({@link Locale#SIMPLIFIED_CHINESE},
+     *       {@link Locale#ENGLISH}, etc.) are JVM-interned and never GC'd
+     *       anyway, so weak keys would provide no benefit for them.</li>
+     *   <li>ConcurrentHashMap gives lock-free reads for the hot
+     *       {@link #of(Locale)} path; a synchronized WeakHashMap would
+     *       contend on every lookup.</li>
+     * </ul>
+     * If the cache ever needs to absorb unbounded ad-hoc Locales (e.g. from
+     * user input), switch to a bounded LRU or {@code Caffeine} cache instead
+     * of a WeakHashMap.</p>
+     */
     private static final Map<Locale, I18n> CACHE = new ConcurrentHashMap<>();
 
     private I18n(Locale locale) {

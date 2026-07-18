@@ -26,47 +26,67 @@ public class HttpCallerService {
 
     public Map<String, Object> doGet(String targetUrl, String headerName, String headerValue) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(targetUrl).openConnection();
-        conn.setRequestMethod("GET");
-        if (headerName != null && !headerName.isEmpty()) {
-            conn.setRequestProperty(headerName, headerValue != null ? headerValue : "");
+        try {
+            conn.setRequestMethod("GET");
+            if (headerName != null && !headerName.isEmpty()) {
+                conn.setRequestProperty(headerName, headerValue != null ? headerValue : "");
+            }
+            conn.setConnectTimeout(TIMEOUT);
+            conn.setReadTimeout(TIMEOUT);
+            return parseResponse(conn);
+        } finally {
+            // M-13: Always disconnect so the underlying socket can be reused/closed by the HTTP keep-alive pool
+            conn.disconnect();
         }
-        conn.setConnectTimeout(TIMEOUT);
-        conn.setReadTimeout(TIMEOUT);
-        return parseResponse(conn);
     }
 
     public Map<String, Object> doPost(String targetUrl, String body) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(targetUrl).openConnection();
-        conn.setRequestMethod("POST");
-        conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-        conn.setDoOutput(true);
-        conn.setConnectTimeout(TIMEOUT);
-        conn.setReadTimeout(TIMEOUT);
-        try (OutputStream os = conn.getOutputStream()) {
-            os.write(body.getBytes(StandardCharsets.UTF_8));
+        try {
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(TIMEOUT);
+            conn.setReadTimeout(TIMEOUT);
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body.getBytes(StandardCharsets.UTF_8));
+            }
+            return parseResponse(conn);
+        } finally {
+            // M-13: Always disconnect so the underlying socket can be reused/closed by the HTTP keep-alive pool
+            conn.disconnect();
         }
-        return parseResponse(conn);
     }
 
     public Map<String, Object> doPut(String targetUrl, String body) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(targetUrl).openConnection();
-        conn.setRequestMethod("PUT");
-        conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-        conn.setDoOutput(true);
-        conn.setConnectTimeout(TIMEOUT);
-        conn.setReadTimeout(TIMEOUT);
-        try (OutputStream os = conn.getOutputStream()) {
-            os.write(body.getBytes(StandardCharsets.UTF_8));
+        try {
+            conn.setRequestMethod("PUT");
+            conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(TIMEOUT);
+            conn.setReadTimeout(TIMEOUT);
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(body.getBytes(StandardCharsets.UTF_8));
+            }
+            return parseResponse(conn);
+        } finally {
+            // M-13: Always disconnect so the underlying socket can be reused/closed by the HTTP keep-alive pool
+            conn.disconnect();
         }
-        return parseResponse(conn);
     }
 
     public Map<String, Object> doDelete(String targetUrl) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(targetUrl).openConnection();
-        conn.setRequestMethod("DELETE");
-        conn.setConnectTimeout(TIMEOUT);
-        conn.setReadTimeout(TIMEOUT);
-        return parseResponse(conn);
+        try {
+            conn.setRequestMethod("DELETE");
+            conn.setConnectTimeout(TIMEOUT);
+            conn.setReadTimeout(TIMEOUT);
+            return parseResponse(conn);
+        } finally {
+            // M-13: Always disconnect so the underlying socket can be reused/closed by the HTTP keep-alive pool
+            conn.disconnect();
+        }
     }
 
     private Map<String, Object> parseResponse(HttpURLConnection conn) throws Exception {
@@ -85,6 +105,7 @@ public class HttpCallerService {
             }
         }
         String body = bodyBuilder.toString();
+        // M-14: Truncate large bodies so test report stays readable; this caller only needs enough to verify stubbing
         if (body.length() > 500) {
             body = body.substring(0, 500) + "... (truncated)";
         }

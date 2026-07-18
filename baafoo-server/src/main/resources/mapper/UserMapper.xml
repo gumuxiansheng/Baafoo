@@ -52,6 +52,15 @@
         WHERE ua.api_key = #{apiKey}
     </select>
 
+    <!--
+        M-9: resolve sys_role.id by code. Returns NULL when the code does not
+        exist; JdbcUserService.createUser checks the result before INSERT so a
+        bad role code fails fast instead of leaving role_id NULL.
+    -->
+    <select id="findRoleIdByCode" resultType="java.lang.Long">
+        SELECT id FROM sys_role WHERE code = #{code}
+    </select>
+
     <insert id="createUser" parameterType="com.baafoo.core.model.User" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO user_account (username, password, display_name, email, phone, avatar,
             role_id, api_key, must_change_password, status)

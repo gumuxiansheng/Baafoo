@@ -96,7 +96,10 @@ public class TemplateEngine {
             return sb.toString();
         } finally {
             if (fakerSeed != null) {
-                FakerProvider.setSeed(null);
+                // H3: use clearSeed() for explicit ThreadLocal cleanup so
+                // the seed does not leak to subsequent render calls on the
+                // same (reused) thread.
+                FakerProvider.clearSeed();
             }
         }
     }

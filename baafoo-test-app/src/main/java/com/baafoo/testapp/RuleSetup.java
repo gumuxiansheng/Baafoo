@@ -275,21 +275,26 @@ public class RuleSetup {
     private String doPost(String path, Map<String, Object> body) throws Exception {
         URL url = new URL(serverUrl + path);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestMethod("POST");
-        conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-        conn.setDoOutput(true);
-        conn.setConnectTimeout(3000);
-        conn.setReadTimeout(5000);
+        try {
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(3000);
+            conn.setReadTimeout(5000);
 
-        byte[] data = MAPPER.writeValueAsBytes(body);
-        OutputStream os = conn.getOutputStream();
-        os.write(data);
-        os.close();
+            byte[] data = MAPPER.writeValueAsBytes(body);
+            OutputStream os = conn.getOutputStream();
+            os.write(data);
+            os.close();
 
-        int code = conn.getResponseCode();
-        if (code >= 200 && code < 300) {
-            return "OK";
+            int code = conn.getResponseCode();
+            if (code >= 200 && code < 300) {
+                return "OK";
+            }
+            return null;
+        } finally {
+            // H-7: 释放底层 socket，避免连接泄漏
+            conn.disconnect();
         }
-        return null;
     }
 }

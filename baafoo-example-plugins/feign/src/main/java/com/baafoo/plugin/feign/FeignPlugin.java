@@ -85,9 +85,12 @@ public class FeignPlugin implements AgentPlugin {
      * matching and return the stub response directly. Otherwise returns
      * {@link RequestAdvice#proceed()} to continue to normal agent rule matching.</p>
      *
-     * <p>Note: rule-store consultation is only available in the deprecated
-     * {@link #intercept(PluginContext)} method, since {@link RequestContext}
-     * does not carry {@link PluginServices}.</p>
+     * <p>TODO(M-16): rule-store consultation is currently only available in the
+     * deprecated {@code intercept(PluginContext)} method, because the new
+     * {@link RequestContext} does not carry a {@code PluginServices} reference.
+     * When PluginServices is added to RequestContext (planned API extension),
+     * this method should consult the server-side rule store as a fallback
+     * before returning {@link RequestAdvice#proceed()}.</p>
      */
     @Override
     public RequestAdvice onRequest(RequestContext ctx) {

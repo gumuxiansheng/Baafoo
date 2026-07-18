@@ -113,13 +113,27 @@
             #{direction}, #{sessionId}, #{dataHex}, #{durationMs}, #{responseSource})
     </insert>
 
-    <!-- Trim recordings - H2 dialect -->
+    <!--
+        Trim recordings - H2 dialect.
+        L-10: this NOT IN (subquery) pattern relies on idx_recordings_recorded_at
+        (created in schema-h2.sql) for the ORDER BY recorded_at DESC subquery
+        to avoid a full table sort. The outer NOT IN is then a hash semi-join
+        against the small keep-set (keepCount, default 1000). For tables well
+        beyond keepCount this is O(n) on the outer scan — acceptable for the
+        periodic trim cadence (every 50 inserts, debounced). If recordings
+        grow past ~100k rows, consider rewriting as a DELETE ... USING
+        (PostgreSQL) or a NOT EXISTS correlated subquery to avoid
+        materialising the full NOT IN list.
+    -->
     <delete id="trimRecordings" databaseId="h2">
         DELETE FROM recordings WHERE id NOT IN
             (SELECT id FROM recordings ORDER BY recorded_at DESC LIMIT #{keepCount})
     </delete>
 
-    <!-- Trim recordings - PostgreSQL dialect -->
+    <!--
+        Trim recordings - PostgreSQL dialect. See H2 variant above for the
+        L-10 index dependency (idx_recordings_recorded_at) and tuning notes.
+    -->
     <delete id="trimRecordings" databaseId="postgresql">
         DELETE FROM recordings WHERE id NOT IN
             (SELECT id FROM recordings ORDER BY recorded_at DESC LIMIT #{keepCount})
@@ -127,6 +141,18 @@
 
     <delete id="deleteRecording">
         DELETE FROM recordings WHERE id = #{id}
+    </delete>
+
+    <!--
+        L-2: bulk-delete the N oldest recordings in one statement. Both H2 and
+        PostgreSQL support the LIMIT clause inside a subquery, so a single
+        databaseId-keyed statement is sufficient. Replaces the previous
+        list-then-loop-deleteRecording pattern in RecordingCleanupTask.
+    -->
+    <delete id="deleteOldestN">
+        DELETE FROM recordings WHERE id IN (
+            SELECT id FROM recordings ORDER BY recorded_at ASC LIMIT #{limit}
+        )
     </delete>
 
     <delete id="deleteRecordingsOlderThan">
@@ -139,7 +165,7 @@
 
     <select id="sumAllRecordingBodyBytes" resultType="long">
         SELECT COALESCE(SUM(
-            COALESCE(LENGTH(response_body), 0) + COALESCE(LENGTH(request_body), 0)
+            COALESCE(OCTET_LENGTH(response_body), 0) + COALESCE(OCTET_LENGTH(request_body), 0)
         ), 0) FROM recordings
     </select>
 

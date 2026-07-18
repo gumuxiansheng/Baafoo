@@ -166,7 +166,10 @@ public class HttpStubHandlerTest {
         String body = response.content().toString(StandardCharsets.UTF_8);
         assertEquals("{\"ok\":true}", body);
 
-        verify(storage).addRecording(any(RecordingEntry.class));
+        // H-4: addRecording runs on HttpStubHandler.recordingExecutor (async).
+        // Use timeout() to wait for the async persist instead of asserting
+        // synchronously, which would race the executor thread.
+        verify(storage, timeout(2000)).addRecording(any(RecordingEntry.class));
     }
 
     @Test
@@ -215,7 +218,10 @@ public class HttpStubHandlerTest {
         String body = response.content().toString(StandardCharsets.UTF_8);
         assertEquals("{\"ok\":true}", body);
 
-        verify(storage).addRecording(any(RecordingEntry.class));
+        // H-4: addRecording runs on HttpStubHandler.recordingExecutor (async).
+        // Use timeout() to wait for the async persist instead of asserting
+        // synchronously, which would race the executor thread.
+        verify(storage, timeout(2000)).addRecording(any(RecordingEntry.class));
     }
 
     @Test

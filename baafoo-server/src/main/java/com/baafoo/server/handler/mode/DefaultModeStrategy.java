@@ -20,7 +20,14 @@ import com.baafoo.core.model.EnvironmentMode;
  * <p>Handlers that cannot perform downstream forwarding (gRPC, TCP) should
  * detect {@code outcome.forwardToDownstream()} and substitute their own
  * fallback behavior (e.g., gRPC returns UNIMPLEMENTED).</p>
+ *
+ * @deprecated Not used in production; {@code HttpStubHandler},
+ * {@code TcpStubHandler} and {@code GrpcUnifiedHandler} use inline mode
+ * dispatch (see {@link com.baafoo.core.model.EnvironmentMode}). Kept for
+ * future ModeStrategy migration. Do not remove without checking the test
+ * suite — some tests may instantiate this directly.
  */
+@Deprecated
 public class DefaultModeStrategy implements ModeStrategy {
 
     public static final DefaultModeStrategy INSTANCE = new DefaultModeStrategy();

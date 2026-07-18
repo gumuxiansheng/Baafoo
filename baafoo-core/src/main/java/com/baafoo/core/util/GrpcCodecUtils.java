@@ -20,6 +20,14 @@ import java.util.List;
  */
 public final class GrpcCodecUtils {
 
+    /**
+     * Maximum allowed gRPC frame size (16 MB). Frames claiming a larger
+     * length are rejected to prevent integer-overflow-based OOM attacks
+     * (C3 fix). 16 MB is well above the typical gRPC message size while
+     * keeping allocation bounded.
+     */
+    public static final int MAX_GRPC_FRAME_SIZE = 16 * 1024 * 1024;
+
     private GrpcCodecUtils() {}
 
     // ==================== Frame Building / Parsing ====================
@@ -53,7 +61,11 @@ public final class GrpcCodecUtils {
                 | ((frame[2] & 0xFF) << 16)
                 | ((frame[3] & 0xFF) << 8)
                 | (frame[4] & 0xFF);
-        if (length < 0 || frame.length < 5 + length) return null;
+        // C3 fix: reject negative or oversized lengths before the bounds
+        // check to prevent integer-overflow OOM. Then use long arithmetic
+        // for the bounds check so that 5 + length cannot wrap negative.
+        if (length < 0 || length > MAX_GRPC_FRAME_SIZE) return null;
+        if (((long) frame.length) < 5L + ((long) length)) return null;
         byte[] message = new byte[length];
         System.arraycopy(frame, 5, message, 0, length);
         return message;
@@ -75,7 +87,11 @@ public final class GrpcCodecUtils {
                     | ((data[offset + 2] & 0xFF) << 16)
                     | ((data[offset + 3] & 0xFF) << 8)
                     | (data[offset + 4] & 0xFF);
-            if (length < 0 || offset + 5 + length > data.length) break;
+            // C3 fix: reject negative or oversized lengths, and use long
+            // arithmetic for the bounds check to prevent integer overflow
+            // when length is near Integer.MAX_VALUE.
+            if (length < 0 || length > MAX_GRPC_FRAME_SIZE) break;
+            if (((long) offset) + 5L + ((long) length) > ((long) data.length)) break;
             byte[] message = new byte[length];
             System.arraycopy(data, offset + 5, message, 0, length);
             messages.add(message);
@@ -103,6 +119,11 @@ public final class GrpcCodecUtils {
         for (int i = 0; i < result.length; i++) {
             int high = Character.digit(clean.charAt(i * 2), 16);
             int low = Character.digit(clean.charAt(i * 2 + 1), 16);
+            // M2 fix: reject invalid hex characters instead of silently
+            // producing 0x00 bytes (Character.digit returns -1 for non-hex).
+            if (high < 0 || low < 0) {
+                throw new IllegalArgumentException("Invalid hex character in: " + hex);
+            }
             result[i] = (byte) ((high << 4) | low);
         }
         return result;
@@ -110,7 +131,10 @@ public final class GrpcCodecUtils {
 
     public static boolean isHexString(String s) {
         if (s == null || s.isEmpty()) return false;
-        if (s.length() % 2 != 0) return false;
+        // M3 fix: allow odd length (consistent with hexToBytes, which
+        // left-pads with '0'). Previously isHexString rejected odd lengths
+        // while hexToBytes accepted them, causing inconsistent behavior
+        // in responseBodyToBytes for odd-length hex-like strings.
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
             if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {

@@ -211,11 +211,19 @@ public class Rule {
 
     @Override
     public String toString() {
+        // L9: include priority, environment count, and condition count so the
+        // toString is useful for diagnosing rule-sort / env-association issues
+        // in logs. The conditions / responses / tags lists themselves are NOT
+        // expanded to avoid dumping large collections into log lines.
         return "Rule{" +
                 "id='" + id + '\'' +
                 ", name='" + name + '\'' +
                 ", protocol='" + protocol + '\'' +
                 ", enabled=" + enabled +
+                ", priority=" + priority +
+                ", conditions=" + (conditions != null ? conditions.size() : 0) +
+                ", responses=" + (responses != null ? responses.size() : 0) +
+                ", environments=" + environments +
                 '}';
     }
 }

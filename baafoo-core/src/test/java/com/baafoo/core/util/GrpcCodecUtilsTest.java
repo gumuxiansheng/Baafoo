@@ -220,7 +220,9 @@ public class GrpcCodecUtilsTest {
 
     @Test
     public void testIsHexStringOddLength() {
-        assertFalse(GrpcCodecUtils.isHexString("abc"));
+        // M3 fix: isHexString now accepts odd lengths (consistent with hexToBytes
+        // which left-pads with '0'). "abc" is valid hex → 0x0A 0xBC.
+        assertTrue(GrpcCodecUtils.isHexString("abc"));
     }
 
     @Test

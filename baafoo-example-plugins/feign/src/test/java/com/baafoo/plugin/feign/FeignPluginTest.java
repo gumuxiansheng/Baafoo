@@ -8,21 +8,21 @@ import com.baafoo.plugin.RequestAdvice;
 import com.baafoo.plugin.RequestContext;
 import com.baafoo.plugin.ResponseAdvice;
 import com.baafoo.plugin.ResponseContext;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class FeignPluginTest {
 
     private FeignPlugin plugin;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         plugin = new FeignPlugin();
         plugin.init();

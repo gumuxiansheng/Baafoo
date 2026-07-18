@@ -413,19 +413,46 @@ public class PluginManager {
         // Use ServiceLoader to discover AgentPlugin implementations
         ServiceLoader<AgentPlugin> loader = ServiceLoader.load(AgentPlugin.class, classLoader);
         for (AgentPlugin plugin : loader) {
-            // Inject per-plugin config before init (P1: plugin-level configuration)
-            Map<String, Object> config = getPluginConfig(plugin.getName());
-            plugin.configure(config);
-            plugin.init();
-            plugins.put(plugin.getTarget(), plugin);
-            // P3: Initialize health status
-            healthStatuses.put(plugin.getTarget(), new PluginHealthStatus(plugin.getName()));
-            // P2: Auto-register plugin as event listener
-            eventBus.addListener(plugin::onEvent);
-            // P2: Fire PLUGIN_LOADED event
-            eventBus.fire(PluginEvent.pluginLoaded(plugin.getName(), plugin.getTarget().name()));
-            log.info("Plugin loaded: {} (target={}, config={})", plugin.getName(), plugin.getTarget(),
-                    config.isEmpty() ? "none" : config.keySet());
+            // L4: Transactional load — perform all setup (configure, init, health
+            // status, event listener) BEFORE publishing the plugin in the plugins
+            // map. If any setup step throws, roll back the partial state so the
+            // plugin is not half-registered (visible via getPlugin but missing
+            // health status / event listener). plugins.put is the "publish" step
+            // and goes last; once it succeeds the plugin is fully wired.
+            PluginHealthStatus status = new PluginHealthStatus(plugin.getName());
+            // Capture the method reference in a local so the SAME instance can be
+            // passed to removeListener on rollback — a fresh `plugin::onEvent`
+            // expression would create a new object that equals() wouldn't match.
+            EventBus.EventListener listener = plugin::onEvent;
+            boolean listenerAdded = false;
+            try {
+                // Inject per-plugin config before init (P1: plugin-level configuration)
+                Map<String, Object> config = getPluginConfig(plugin.getName());
+                plugin.configure(config);
+                plugin.init();
+                // P3: Initialize health status before publish so getHealthStatus
+                // is consistent with getPlugin once the plugin becomes visible.
+                healthStatuses.put(plugin.getTarget(), status);
+                // P2: Auto-register plugin as event listener
+                eventBus.addListener(listener);
+                listenerAdded = true;
+                // Publish LAST — once the plugin is in the map, getPlugin() will
+                // return it, so all supporting state must already be in place.
+                plugins.put(plugin.getTarget(), plugin);
+                // P2: Fire PLUGIN_LOADED event
+                eventBus.fire(PluginEvent.pluginLoaded(plugin.getName(), plugin.getTarget().name()));
+                log.info("Plugin loaded: {} (target={}, config={})", plugin.getName(), plugin.getTarget(),
+                        config.isEmpty() ? "none" : config.keySet());
+            } catch (Throwable t) {
+                // Rollback partial state. plugins.put was not reached, so
+                // getPlugin() will not see this plugin. Remove the tentatively
+                // added health status and event listener to avoid leaks.
+                if (listenerAdded) {
+                    eventBus.removeListener(listener);
+                }
+                healthStatuses.remove(plugin.getTarget());
+                throw t;
+            }
         }
     }
 

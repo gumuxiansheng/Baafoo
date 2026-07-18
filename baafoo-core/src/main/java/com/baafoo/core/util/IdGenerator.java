@@ -21,9 +21,16 @@ public final class IdGenerator {
 
     /**
      * Generate a short sequential ID.
+     *
+     * @param prefix the prefix to prepend (e.g. "rule"); {@code null} is
+     *              treated as the empty string to avoid NPE in concatenation
+     * @return a string of the form {@code "<prefix>-<seq>"}
      */
     public static String seq(String prefix) {
-        return prefix + "-" + SEQ.incrementAndGet();
+        // M9: guard against null prefix so callers passing null (e.g. from
+        // unmarshalled JSON with a missing field) don't trigger an NPE inside
+        // the implicit StringBuilder.append(String) used for "+".
+        return (prefix != null ? prefix : "") + "-" + SEQ.incrementAndGet();
     }
 
     /**

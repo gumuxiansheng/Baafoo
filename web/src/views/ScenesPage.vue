@@ -134,6 +134,9 @@ export default {
     async function createScene() {
       if (!form.name) return
       saving.value = true
+      // M-9: New scenes default to inactive (active:false) so they don't take effect until the user
+      // explicitly toggles them on from the list view. This prevents an in-progress scene from
+      // shadowing live rules before its rule associations are finalized.
       const res = await api.createScene({ name: form.name, description: form.description, active: false, itemIds: form.itemIds || [], environments: form.environments || [] })
       saving.value = false
       if (res.success) {

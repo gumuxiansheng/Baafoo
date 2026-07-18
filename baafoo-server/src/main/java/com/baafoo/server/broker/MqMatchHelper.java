@@ -55,6 +55,13 @@ class MqMatchHelper {
      * direct-to-broker connections without a registered agent, or in unit
      * tests), fall back to the single configured environment if there is
      * exactly one. This lets MQ rules match even without agent registration.</p>
+     *
+     * <p><b>M-5 note:</b> the single-environment fallback is intentionally
+     * non-deterministic in multi-environment setups — when more than one
+     * environment exists and no agent matched, the request is treated as
+     * "no environment" and only global rules will match. This is preferred
+     * over guessing, because picking the wrong environment could route
+     * stub traffic to the wrong tenant.</p>
      */
     AgentResolver.AgentInfo resolveAgent(ChannelHandlerContext ctx) {
         AgentResolver.AgentInfo info = agentResolver.resolveAll(ctx);

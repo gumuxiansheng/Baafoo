@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -36,11 +37,21 @@ public class SocketCallerService {
             os.write(request.getBytes(StandardCharsets.UTF_8));
             os.flush();
             result.put("sent", request.trim());
+            // H-8: 循环读取直到 EOF 或超时，避免响应被分片时漏读
             InputStream is = socket.getInputStream();
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
             byte[] buf = new byte[4096];
-            int len = is.read(buf);
-            if (len > 0) {
-                result.put("received", new String(buf, 0, len, StandardCharsets.UTF_8).trim());
+            try {
+                int len;
+                while ((len = is.read(buf)) != -1) {
+                    baos.write(buf, 0, len);
+                }
+            } catch (java.net.SocketTimeoutException e) {
+                // 读取超时，认为响应已读完
+            }
+            byte[] data = baos.toByteArray();
+            if (data.length > 0) {
+                result.put("received", new String(data, StandardCharsets.UTF_8).trim());
             }
             log.info("BIO Socket call complete: intercepted={}", redirected);
         } catch (Exception e) {
@@ -72,6 +83,10 @@ public class SocketCallerService {
             ByteBuffer readBuf = ByteBuffer.allocate(4096);
             int len = channel.read(readBuf);
             if (len > 0) {
+                // L-7: Cast to java.nio.Buffer is intentional — ByteBuffer.flip() was inherited
+                // from Buffer in Java 8, but Java 9+ made flip() final on ByteBuffer and only
+                // Buffer.flip() remains overridable. The cast forces the call to use Buffer.flip()
+                // so the code compiles cleanly on both Java 8 and 9+.
                 ((java.nio.Buffer) readBuf).flip();
                 byte[] data = new byte[readBuf.remaining()];
                 readBuf.get(data);
@@ -167,14 +182,24 @@ public class SocketCallerService {
             os.write(request.getBytes(cs));
             os.flush();
             result.put("sent", message);
+            // H-8: 循环读取直到 EOF 或超时，避免响应被分片时漏读
             InputStream is = socket.getInputStream();
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
             byte[] buf = new byte[4096];
-            int len = is.read(buf);
-            if (len > 0) {
+            try {
+                int len;
+                while ((len = is.read(buf)) != -1) {
+                    baos.write(buf, 0, len);
+                }
+            } catch (java.net.SocketTimeoutException e) {
+                // 读取超时，认为响应已读完
+            }
+            byte[] data = baos.toByteArray();
+            if (data.length > 0) {
                 // Decode the response bytes using the same charset the rule's
                 // ResponseEntry.charset was set to, so the test can compare
                 // the rendered string directly.
-                result.put("received", new String(buf, 0, len, cs).trim());
+                result.put("received", new String(data, cs).trim());
             }
             log.info("BIO Socket charset={} call complete: intercepted={}", charset, redirected);
         } catch (Exception e) {

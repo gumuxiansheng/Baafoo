@@ -226,8 +226,17 @@ public class BaafooAgent {
                 log.warn("Baafoo Agent initialization failed (fail-open mode). " +
                         "All requests will pass through silently. Error: {}", e.getMessage());
             } else {
-                log.error("FAILED to start Baafoo Agent (fail-closed). " +
-                        "All requests will pass through to real downstreams. Error: {}", e.getMessage(), e);
+                // L7: The agent is a bytecode-instrumenting sidecar, not a
+                // firewall — there is no "fail-closed" path that could block
+                // traffic without breaking the host app. When initialization
+                // fails the actual runtime behavior is identical to fail-open
+                // (passthrough): no interception, requests reach real
+                // downstreams. The previous wording ("fail-closed") was
+                // misleading because it implied traffic would be blocked.
+                // Use "fail-silent (passthrough)" to honestly describe the
+                // outcome: the agent silently does nothing.
+                log.error("FAILED to start Baafoo Agent (fail-silent, passthrough). " +
+                        "No interception will be applied; all requests will pass through to real downstreams. Error: {}", e.getMessage(), e);
             }
             initialized = false;
         }

@@ -44,14 +44,16 @@ public final class SocketChannelReadAdvice {
             byte[] data = new byte[bytesRead];
             ((java.nio.Buffer) buf).position(pos - bytesRead);
             buf.get(data);
-            ((java.nio.Buffer) buf).position(pos);
+            // L2: the trailing buf.position(pos) is redundant — buf.get(data)
+            // already advanced position by data.length (= bytesRead), so it is
+            // back to pos. The previous restore was a no-op.
 
-            // Inline bytesToHex — cannot call private method from inlined advice
-            StringBuilder sb = new StringBuilder(data.length * 2);
-            for (int i = 0; i < data.length; i++) {
-                sb.append(String.format("%02x", data[i] & 0xff));
-            }
-            String hex = sb.toString();
+            // M5: delegate to GlobalRouteState.bytesToHex — GlobalRouteState is
+            // packaged into the Bootstrap JAR, so this invokestatic resolves
+            // correctly from inlined advice. The previous inline loop used
+            // String.format("%02x", ...) which is ~50x slower (creates a
+            // Formatter + StringBuilder per byte).
+            String hex = GlobalRouteState.bytesToHex(data, 0, data.length);
 
             GlobalRouteState.addNioRecording(sessionInfo, "response", hex);
         } catch (Throwable t) {

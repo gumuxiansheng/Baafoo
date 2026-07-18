@@ -62,9 +62,22 @@ public class StatefulCounterStore {
     /**
      * Get the current count for a rule without incrementing.
      *
+     * <p><b>H7 — API misuse warning.</b> This method exposes the raw counter
+     * value, which may be {@code 0} after a reset triggered by
+     * {@link #resetIfThreshold(String, int)} or {@link #reset(String)}.
+     * External callers that need the count associated with a specific match
+     * should use {@link MatchEngine.MatchResult#getRequestCount()} (captured
+     * atomically at increment time) instead of this method, to avoid TOCTOU
+     * races between the match and a separate {@code get()} call.</p>
+     *
      * @param ruleId the rule ID
-     * @return the current count (0 if the rule has never been matched)
+     * @return the current count (0 if the rule has never been matched or was reset)
+     * @deprecated external callers should use
+     *             {@link MatchEngine.MatchResult#getRequestCount()} to obtain
+     *             the count for a matched request; this method is retained for
+     *             internal/monitoring use only.
      */
+    @Deprecated
     public int get(String ruleId) {
         if (ruleId == null || ruleId.isEmpty()) {
             return 0;
@@ -110,6 +123,11 @@ public class StatefulCounterStore {
         }
         // Use compute() for atomic read-check-remove to avoid TOCTOU race:
         // returning null from the BiFunction removes the entry atomically.
+        //
+        // Code-smell #7: a single-element boolean array is used because the
+        // BiFunction lambda body cannot assign to a bare boolean local — Java
+        // requires "effectively final" variables for lambda capture. The
+        // array wrapper is the standard idiom for mutable lambda state.
         final boolean[] reset = {false};
         counters.compute(ruleId, (k, v) -> {
             if (v != null && v.get() >= threshold) {

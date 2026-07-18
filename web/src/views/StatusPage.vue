@@ -82,6 +82,7 @@ export default {
 
     function isOnline(agent) {
       if (!agent.lastHeartbeat) return false
+      // M-6: lastHeartbeat is epoch milliseconds (matches Date.now()); 60000ms = 60s heartbeat window
       return (Date.now() - agent.lastHeartbeat) < 60000
     }
 

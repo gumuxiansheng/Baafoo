@@ -25,7 +25,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public final class JsonUtils {
 
-    /** Shared, thread-safe ObjectMapper instance. */
+    /**
+     * L1: Shared, thread-safe ObjectMapper instance.
+     *
+     * <p><b>Mutability warning</b>: {@code ObjectMapper} is thread-safe for
+     * read operations (readValue / writeValue) ONLY after configuration is
+     * complete. Reconfiguring this shared instance after startup
+     * (registering modules, changing features, adding mixins) is NOT safe
+     * under concurrent access and will affect every other consumer in the
+     * process. Callers that need a custom-configured mapper must create
+     * their own {@code new ObjectMapper()} (or {@code MAPPER.copy()}) —
+     * never mutate this singleton.</p>
+     */
     public static final ObjectMapper MAPPER = new ObjectMapper();
 
     private JsonUtils() {

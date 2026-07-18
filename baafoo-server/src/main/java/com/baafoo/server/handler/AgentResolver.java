@@ -39,6 +39,13 @@ public class AgentResolver {
         // unknownEnvironmentDefault. Falls back to null (→ safe PASSTHROUGH
         // default) for non-JDBC storage implementations (e.g. in-memory test
         // doubles). This mirrors the pattern used by ApiContext.getSceneService().
+        //
+        // TODO(M-4): expose getServerConfig() on the StorageService interface
+        // (or accept ServerConfig as a ctor param everywhere) so this instanceof
+        // downcast can be removed. The downcast is currently the only way to
+        // bridge the StorageService SPI to ServerConfig without changing the
+        // interface signature, which would break third-party StorageService
+        // implementations.
         this.config = (storage instanceof JdbcStorageService)
                 ? ((JdbcStorageService) storage).getServerConfig()
                 : null;

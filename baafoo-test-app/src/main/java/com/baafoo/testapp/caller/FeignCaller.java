@@ -46,16 +46,22 @@ public class FeignCaller implements BaafooTestApp.Caller {
         Response getWithQueryParams(@Param("foo") String foo, @Param("baz") String baz);
     }
 
+    /**
+     * L-16: Shared OkHttpClient — previously a new client (with its own connection pool and
+     * dispatcher thread pool) was built per FeignCaller instance. Sharing one client reuses
+     * connections across all tests and avoids leaking dispatcher threads when the caller is
+     * recreated. The client's lifecycle is process-wide so we don't close it here.
+     */
+    private static final okhttp3.OkHttpClient SHARED_OK_HTTP_CLIENT = new okhttp3.OkHttpClient.Builder()
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(5, TimeUnit.SECONDS)
+            .writeTimeout(5, TimeUnit.SECONDS)
+            .build();
+
     private final HttpbinApi api;
 
     public FeignCaller() {
-        okhttp3.OkHttpClient okHttpClient = new okhttp3.OkHttpClient.Builder()
-                .connectTimeout(5, TimeUnit.SECONDS)
-                .readTimeout(5, TimeUnit.SECONDS)
-                .writeTimeout(5, TimeUnit.SECONDS)
-                .build();
-
-        feign.okhttp.OkHttpClient feignOkHttp = new feign.okhttp.OkHttpClient(okHttpClient);
+        feign.okhttp.OkHttpClient feignOkHttp = new feign.okhttp.OkHttpClient(SHARED_OK_HTTP_CLIENT);
 
         this.api = Feign.builder()
                 .client(feignOkHttp)

@@ -13,10 +13,13 @@ public class QuickTest {
         System.out.println("=== Baafoo Quick Connectivity Test ===");
         System.out.println();
 
+        // H-7: 在 main 顶部声明 conn，每个 HTTP 块复用并在 finally 中 disconnect
+        HttpURLConnection conn = null;
+
         System.out.println("[1] HTTP call to local Baafoo stub port 9000 (Host: httpbin.org)...");
         try {
             URL url = new URL("http://127.0.0.1:9000/get");
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
             conn.setRequestProperty("Host", "httpbin.org");
             conn.setConnectTimeout(5000);
@@ -47,13 +50,16 @@ public class QuickTest {
             System.out.println("    (Connection refused — Agent may have redirected to a port that's not listening)");
         } catch (Exception e) {
             System.out.println("    Exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+        } finally {
+            if (conn != null) conn.disconnect();
+            conn = null;
         }
 
         System.out.println();
         System.out.println("[2] Baafoo Server management API...");
         try {
             URL url = new URL("http://127.0.0.1:8084/__baafoo__/api/rules");
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(3000);
             conn.setReadTimeout(3000);
@@ -71,6 +77,9 @@ public class QuickTest {
             System.out.println("    RESULT: Server is UP");
         } catch (Exception e) {
             System.out.println("    Exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+        } finally {
+            if (conn != null) conn.disconnect();
+            conn = null;
         }
 
         System.out.println();
@@ -95,7 +104,7 @@ public class QuickTest {
         System.out.println("[4] Direct HTTP to Baafoo stub port 9000 with Host: httpbin.org...");
         try {
             URL url = new URL("http://127.0.0.1:9000/get");
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
             conn.setRequestProperty("Host", "httpbin.org");
             conn.setConnectTimeout(3000);
@@ -114,6 +123,9 @@ public class QuickTest {
             System.out.println("    RESULT: " + ("true".equals(stubHeader) ? "Stub working!" : "Stub not matching"));
         } catch (Exception e) {
             System.out.println("    Exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+        } finally {
+            if (conn != null) conn.disconnect();
+            conn = null;
         }
 
         System.out.println();

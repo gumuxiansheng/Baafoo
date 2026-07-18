@@ -165,6 +165,7 @@ export default {
     }
 
     async function saveAssociation() {
+      // M-7: Wrap in try/catch/finally so partial failures don't leave saving=true and the dialog open
       saving.value = true
       const envName = currentEnv.name
       const currentAssociated = allRules.value
@@ -172,15 +173,22 @@ export default {
         .map(r => r.id)
       const toAdd = selectedRuleIds.value.filter(id => !currentAssociated.includes(id))
       const toRemove = currentAssociated.filter(id => !selectedRuleIds.value.includes(id))
-      if (toAdd.length > 0) {
-        await api.associateRulesToEnv(currentEnv.id, toAdd)
+      try {
+        if (toAdd.length > 0) {
+          await api.associateRulesToEnv(currentEnv.id, toAdd)
+        }
+        if (toRemove.length > 0) {
+          await api.dissociateRulesFromEnv(currentEnv.id, toRemove)
+        }
+        associateVisible.value = false
+        await loadRules()
+      } catch (e) {
+        // Partial failure: keep the dialog open so the user can retry; reload rules to reflect actual state
+        await loadRules()
+        throw e
+      } finally {
+        saving.value = false
       }
-      if (toRemove.length > 0) {
-        await api.dissociateRulesFromEnv(currentEnv.id, toRemove)
-      }
-      saving.value = false
-      associateVisible.value = false
-      await loadRules()
     }
 
     function modeTagType(mode) {

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <el-dialog
     v-model="visible"
     :title="$t('openapi.importTitle')"
@@ -190,6 +190,12 @@ export default {
     const ruleIdPrefix = ref('openapi-')
 
     function handleFileChange(file) {
+      // L-10: Guard against missing file.raw — Element Plus can emit change events for
+      // empty/aborted uploads where file.raw is undefined, which would throw on readAsText.
+      if (!file || !file.raw) {
+        ElMessage.error(t('openapi.fileReadFailed'))
+        return
+      }
       const reader = new FileReader()
       reader.onload = (e) => {
         jsonContent.value = e.target.result
@@ -307,13 +313,14 @@ export default {
     }
 
     async function loadEnvironments() {
+      // H-5: 显式 .catch 防止未处理的 Promise 拒绝
       try {
         const res = await api.getEnvironments()
         if (res.success && res.data) {
           environments.value = res.data
         }
       } catch (e) {
-        // ignore
+        ElMessage.error(t('openapi.envLoadFailed') + ': ' + (e?.message || e))
       }
     }
 

@@ -32,17 +32,20 @@ public class JmsCallerService {
             connection.start();
 
             Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
-            Destination destination = session.createQueue(queueName);
-            MessageProducer producer = session.createProducer(destination);
+            try {
+                Destination destination = session.createQueue(queueName);
+                MessageProducer producer = session.createProducer(destination);
 
-            TextMessage textMessage = session.createTextMessage(message);
-            producer.send(textMessage);
+                TextMessage textMessage = session.createTextMessage(message);
+                producer.send(textMessage);
 
-            result.put("success", true);
-            result.put("jmsMessageId", textMessage.getJMSMessageID());
-            log.info("JMS message sent: queue={}, jmsMessageId={}", queueName, textMessage.getJMSMessageID());
-
-            session.close();
+                result.put("success", true);
+                result.put("jmsMessageId", textMessage.getJMSMessageID());
+                log.info("JMS message sent: queue={}, jmsMessageId={}", queueName, textMessage.getJMSMessageID());
+            } finally {
+                // M-10: Close session in finally so a producer.send() failure can't leak it
+                try { session.close(); } catch (Exception ignored) {}
+            }
         } catch (Exception e) {
             result.put("success", false);
             result.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
@@ -64,6 +67,8 @@ public class JmsCallerService {
         Connection connection = null;
         try {
             ConnectionFactory factory = new org.apache.activemq.ActiveMQConnectionFactory(brokerUrl);
+            // M-22: Cast is ActiveMQ-specific; if other JMS providers (IBM MQ, RabbitMQ JMS) need to be
+            // supported, replace with a reflection-based getBrokerURL() lookup or a per-provider adapter.
             String actualUrl = ((org.apache.activemq.ActiveMQConnectionFactory) factory).getBrokerURL();
             result.put("actualBrokerUrl", actualUrl);
             result.put("intercepted", !actualUrl.equals(brokerUrl));
@@ -72,30 +77,33 @@ public class JmsCallerService {
             connection.start();
 
             Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
-            Destination destination = session.createQueue(queueName);
-            MessageConsumer consumer = session.createConsumer(destination);
+            try {
+                Destination destination = session.createQueue(queueName);
+                MessageConsumer consumer = session.createConsumer(destination);
 
-            Message msg = consumer.receive(5000);
-            if (msg == null) {
-                result.put("success", true);
-                result.put("count", 0);
-                result.put("messages", java.util.Collections.emptyList());
-            } else {
-                List<Map<String, Object>> messages = new ArrayList<Map<String, Object>>();
-                Map<String, Object> msgMap = new LinkedHashMap<String, Object>();
-                msgMap.put("jmsMessageId", msg.getJMSMessageID());
-                msgMap.put("jmsType", msg.getJMSType());
-                if (msg instanceof TextMessage) {
-                    msgMap.put("text", ((TextMessage) msg).getText());
+                Message msg = consumer.receive(5000);
+                if (msg == null) {
+                    result.put("success", true);
+                    result.put("count", 0);
+                    result.put("messages", java.util.Collections.emptyList());
+                } else {
+                    List<Map<String, Object>> messages = new ArrayList<Map<String, Object>>();
+                    Map<String, Object> msgMap = new LinkedHashMap<String, Object>();
+                    msgMap.put("jmsMessageId", msg.getJMSMessageID());
+                    msgMap.put("jmsType", msg.getJMSType());
+                    if (msg instanceof TextMessage) {
+                        msgMap.put("text", ((TextMessage) msg).getText());
+                    }
+                    messages.add(msgMap);
+                    result.put("success", true);
+                    result.put("count", 1);
+                    result.put("messages", messages);
                 }
-                messages.add(msgMap);
-                result.put("success", true);
-                result.put("count", 1);
-                result.put("messages", messages);
+                log.info("JMS received: queue={}", queueName);
+            } finally {
+                // M-10: Close session in finally so a receive failure can't leak it
+                try { session.close(); } catch (Exception ignored) {}
             }
-
-            session.close();
-            log.info("JMS received: queue={}", queueName);
         } catch (Exception e) {
             result.put("success", false);
             result.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
@@ -125,18 +133,21 @@ public class JmsCallerService {
             connection.start();
 
             Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
-            Destination destination = session.createTopic(topicName);
-            MessageProducer producer = session.createProducer(destination);
+            try {
+                Destination destination = session.createTopic(topicName);
+                MessageProducer producer = session.createProducer(destination);
 
-            TextMessage textMessage = session.createTextMessage(message);
-            producer.send(textMessage);
+                TextMessage textMessage = session.createTextMessage(message);
+                producer.send(textMessage);
 
-            result.put("success", true);
-            result.put("jmsMessageId", textMessage.getJMSMessageID());
-            result.put("destinationType", "topic");
-            log.info("JMS topic message sent: topic={}, jmsMessageId={}", topicName, textMessage.getJMSMessageID());
-
-            session.close();
+                result.put("success", true);
+                result.put("jmsMessageId", textMessage.getJMSMessageID());
+                result.put("destinationType", "topic");
+                log.info("JMS topic message sent: topic={}, jmsMessageId={}", topicName, textMessage.getJMSMessageID());
+            } finally {
+                // M-10: Close session in finally so a producer.send() failure can't leak it
+                try { session.close(); } catch (Exception ignored) {}
+            }
         } catch (Exception e) {
             result.put("success", false);
             result.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
@@ -166,30 +177,33 @@ public class JmsCallerService {
             connection.start();
 
             Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
-            Destination destination = session.createTopic(topicName);
-            MessageConsumer consumer = session.createConsumer(destination);
+            try {
+                Destination destination = session.createTopic(topicName);
+                MessageConsumer consumer = session.createConsumer(destination);
 
-            Message msg = consumer.receive(5000);
-            if (msg == null) {
-                result.put("success", true);
-                result.put("count", 0);
-                result.put("messages", java.util.Collections.emptyList());
-            } else {
-                List<Map<String, Object>> messages = new ArrayList<Map<String, Object>>();
-                Map<String, Object> msgMap = new LinkedHashMap<String, Object>();
-                msgMap.put("jmsMessageId", msg.getJMSMessageID());
-                if (msg instanceof TextMessage) {
-                    msgMap.put("text", ((TextMessage) msg).getText());
+                Message msg = consumer.receive(5000);
+                if (msg == null) {
+                    result.put("success", true);
+                    result.put("count", 0);
+                    result.put("messages", java.util.Collections.emptyList());
+                } else {
+                    List<Map<String, Object>> messages = new ArrayList<Map<String, Object>>();
+                    Map<String, Object> msgMap = new LinkedHashMap<String, Object>();
+                    msgMap.put("jmsMessageId", msg.getJMSMessageID());
+                    if (msg instanceof TextMessage) {
+                        msgMap.put("text", ((TextMessage) msg).getText());
+                    }
+                    messages.add(msgMap);
+                    result.put("success", true);
+                    result.put("count", 1);
+                    result.put("messages", messages);
                 }
-                messages.add(msgMap);
-                result.put("success", true);
-                result.put("count", 1);
-                result.put("messages", messages);
+                result.put("destinationType", "topic");
+                log.info("JMS topic received: topic={}", topicName);
+            } finally {
+                // M-10: Close session in finally so a receive failure can't leak it
+                try { session.close(); } catch (Exception ignored) {}
             }
-            result.put("destinationType", "topic");
-
-            session.close();
-            log.info("JMS topic received: topic={}", topicName);
         } catch (Exception e) {
             result.put("success", false);
             result.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());

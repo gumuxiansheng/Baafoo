@@ -120,8 +120,24 @@ public class McpApiHandler implements ResourceHandler {
             throw new McpException(404, "Unknown tool: " + toolName);
         }
 
+        // C-1: enforce safety level before executing the tool. The previous
+        // implementation fell back to "guest" when no auth was present and
+        // skipped the safety-level check entirely, so AUDIT_REQUIRED tools
+        // (delete_rule, reset_environment, ...) were reachable by developer
+        // and even anonymous callers.
+        String role = ctx.getAuth() != null ? ctx.getAuth().getRole() : null;
+        if (role == null) {
+            throw new McpException(401, "Authentication required for MCP tools");
+        }
+        McpSafetyLevel safety = tool.getSafetyLevel();
+        if (safety == McpSafetyLevel.AUDIT_REQUIRED && !"admin".equals(role)) {
+            throw new McpException(403, "Permission denied: tool '" + toolName + "' requires admin role, you have " + role);
+        }
+        if (safety == McpSafetyLevel.CONTROLLED_WRITE && "guest".equals(role)) {
+            throw new McpException(403, "Permission denied: tool '" + toolName + "' requires developer role or above, you have " + role);
+        }
+
         // Build MCP context from ApiContext
-        String role = ctx.getAuth() != null ? ctx.getAuth().getRole() : "guest";
         String username = ctx.getAuth() != null ? ctx.getAuth().getUsername() : null;
         McpToolContext mcpCtx = new McpToolContext(ctx.getStorage(), ctx.getAuthService(), role, username);
 

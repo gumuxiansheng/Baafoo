@@ -6,14 +6,13 @@ import com.baafoo.plugin.InterceptTarget;
 import com.baafoo.plugin.PluginEvent;
 import com.baafoo.plugin.RequestAdvice;
 import com.baafoo.plugin.RequestContext;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class KafkaRedirectPluginTest {
 
@@ -56,7 +55,7 @@ public class KafkaRedirectPluginTest {
 
         ConnectContext ctx = newConnectContext("kafka", "localhost", 9092);
         ConnectAdvice advice = plugin.onConnect(ctx);
-        assertTrue("localhost should passthrough (avoid redirect loop)", advice.isPassthrough());
+        assertTrue(advice.isPassthrough(), "localhost should passthrough (avoid redirect loop)");
     }
 
     @Test
@@ -66,7 +65,7 @@ public class KafkaRedirectPluginTest {
 
         ConnectContext ctx = newConnectContext("kafka", "127.0.0.1", 9092);
         ConnectAdvice advice = plugin.onConnect(ctx);
-        assertTrue("127.0.0.1 should passthrough", advice.isPassthrough());
+        assertTrue(advice.isPassthrough(), "127.0.0.1 should passthrough");
     }
 
     @Test
@@ -76,7 +75,7 @@ public class KafkaRedirectPluginTest {
 
         ConnectContext ctx = newConnectContext("kafka", "LOCALHOST", 9092);
         ConnectAdvice advice = plugin.onConnect(ctx);
-        assertTrue("'LOCALHOST' should passthrough", advice.isPassthrough());
+        assertTrue(advice.isPassthrough(), "'LOCALHOST' should passthrough");
     }
 
     @Test
@@ -86,31 +85,14 @@ public class KafkaRedirectPluginTest {
 
         ConnectContext ctx = newConnectContext("kafka", null, 9092);
         ConnectAdvice advice = plugin.onConnect(ctx);
-        assertTrue("Null host should still redirect", advice.isRedirect());
+        assertTrue(advice.isRedirect(), "Null host should still redirect");
     }
 
     // ---- onRequest (new API) ----
 
     @Test
-    public void testOnRequestExcludedTopic() {
+    public void testOnRequestAnyTopic() {
         KafkaRedirectPlugin plugin = new KafkaRedirectPlugin();
-        Map<String, Object> config = new HashMap<String, Object>();
-        config.put("excludeTopics", Arrays.asList("internal-health", "system-metrics"));
-        plugin.configure(config);
-        plugin.init();
-
-        RequestContext ctx = newRequestContext("kafka", "internal-health");
-        RequestAdvice advice = plugin.onRequest(ctx);
-
-        assertEquals(RequestAdvice.Action.CONTINUE, advice.getAction());
-    }
-
-    @Test
-    public void testOnRequestNonExcludedTopic() {
-        KafkaRedirectPlugin plugin = new KafkaRedirectPlugin();
-        Map<String, Object> config = new HashMap<String, Object>();
-        config.put("excludeTopics", Arrays.asList("internal-health"));
-        plugin.configure(config);
         plugin.init();
 
         RequestContext ctx = newRequestContext("kafka", "user-events");
@@ -154,11 +136,8 @@ public class KafkaRedirectPluginTest {
     }
 
     @Test
-    public void testDestroyClearsExcludeTopics() {
+    public void testDestroyNoThrow() {
         KafkaRedirectPlugin plugin = new KafkaRedirectPlugin();
-        Map<String, Object> config = new HashMap<String, Object>();
-        config.put("excludeTopics", Arrays.asList("a", "b"));
-        plugin.configure(config);
         plugin.init();
         plugin.destroy();
     }

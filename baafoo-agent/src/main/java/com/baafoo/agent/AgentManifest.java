@@ -29,9 +29,18 @@ public final class AgentManifest {
     /** Record-and-stub mode: record AND return stubs */
     public static final int MODE_RECORD_AND_STUB = 3;
 
+    /** Record-all mode: record ALL traffic, regardless of rule match */
+    public static final int MODE_RECORD_ALL = 4;
+
     // ---- Atomic route table (swap for hot-reload) ----
 
-    /** Current route table, atomically swappable */
+    /**
+     * Informational snapshot of the route table, atomically swappable.
+     * <p><b>M3:</b> ByteBuddy-inlined advice does NOT read this field — it
+     * reads {@code GlobalRouteState.ROUTES} (the Bootstrap-CL copy) directly.
+     * This field is updated by {@code RouteManager.rebuildRouteTable} alongside
+     * the GlobalRouteState swap for monitoring/testing only.</p>
+     */
     public static final AtomicReference<RouteTable> ROUTE_TABLE =
             new AtomicReference<RouteTable>(new RouteTable());
 
@@ -181,7 +190,11 @@ public final class AgentManifest {
      * @return true if recording is active
      */
     public static boolean isRecording() {
-        return currentMode == MODE_RECORD || currentMode == MODE_RECORD_AND_STUB;
+        // M6: include MODE_RECORD_ALL — previously this returned false for mode 4,
+        // contradicting RouteManager.isRecording() and GlobalRouteState.isRecording()
+        // (both of which treat RECORD_ALL as a recording mode).
+        return currentMode == MODE_RECORD || currentMode == MODE_RECORD_AND_STUB
+                || currentMode == MODE_RECORD_ALL;
     }
 
     /**
@@ -195,6 +208,8 @@ public final class AgentManifest {
             case 1: return "passthrough";
             case 2: return "record";
             case 3: return "record-and-stub";
+            // M6: previously fell through to "unknown" for mode 4.
+            case 4: return "record-all";
             default: return "unknown";
         }
     }

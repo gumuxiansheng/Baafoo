@@ -4,6 +4,7 @@ import com.baafoo.core.api.ApiResponse;
 import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.i18n.I18n;
 import com.baafoo.core.util.ChaosManager;
+import com.baafoo.server.auth.AuthFilter;
 import com.baafoo.server.auth.AuthService;
 import com.baafoo.server.mcp.McpApiHandler;
 import com.baafoo.server.storage.StorageService;
@@ -142,16 +143,23 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
         String remoteAddr = resolveRemoteAddr(ctx, request);
         AuthService.AuthResult auth = authenticate(request, remoteAddr);
 
+        // AuthFilter (placed before this handler in the pipeline) has already
+        // authenticated the request and stamped the resulting role/username on
+        // the X-Baafoo-Auth-Role / X-Baafoo-Auth-User headers. Honour that
+        // result instead of re-running authentication, so the guest read-only
+        // bypass granted by AuthFilter (H1 design) is preserved without
+        // duplicating the bypass logic here. C-2: the previous duplicate
+        // guest-bypass block is removed; unauthenticated non-GET requests now
+        // get a clean 401 from AuthFilter before reaching this handler.
+        String preAuthRole = request.headers().get("X-Baafoo-Auth-Role");
+        if (preAuthRole != null && !preAuthRole.isEmpty()) {
+            String preAuthUser = request.headers().get("X-Baafoo-Auth-User");
+            auth = new AuthService.AuthResult(true, preAuthRole, "Pre-authenticated by AuthFilter",
+                    (preAuthUser != null && !preAuthUser.isEmpty()) ? preAuthUser : null);
+        }
+
         if (!auth.isSuccess() && !path.startsWith(API_PREFIX + "auth/") && !path.equals(API_PREFIX + "status")) {
-            // Allow unauthenticated read-only access (guest browsing) for
-            // non-sensitive endpoints, consistent with AuthFilter logic.
-            boolean isReadMethod = "GET".equals(method) || "HEAD".equals(method);
-            boolean isSensitivePath = path.startsWith(API_PREFIX + "users");
-            if (isReadMethod && !isSensitivePath) {
-                auth = new AuthService.AuthResult(true, "guest", "Guest read access");
-            } else {
-                throw new ApiException(401, "Authentication failed: " + auth.getMessage());
-            }
+            throw new ApiException(401, "Authentication failed: " + auth.getMessage());
         }
 
         ApiContext apiCtx = new ApiContext(storage, authService, mapper, uri, auth, remoteAddr, eventBus, resolveI18n(request));
@@ -166,17 +174,9 @@ public class ManagementApiHandler extends SimpleChannelInboundHandler<FullHttpRe
     }
 
     private String resolveRemoteAddr(ChannelHandlerContext ctx, FullHttpRequest request) {
-        String forwarded = request.headers().get("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isEmpty()) {
-            return forwarded.split(",")[0].trim();
-        }
-        if (ctx.channel().remoteAddress() != null) {
-            String addr = ctx.channel().remoteAddress().toString();
-            if (addr.startsWith("/")) addr = addr.substring(1);
-            int colonIdx = addr.indexOf(':');
-            return colonIdx > 0 ? addr.substring(0, colonIdx) : addr;
-        }
-        return "unknown";
+        // C-2: reuse AuthFilter's trusted-proxy-aware resolver so XFF is only
+        // honoured when the direct peer is a configured trusted proxy.
+        return AuthFilter.resolveRemoteAddr(ctx, request, config);
     }
 
     private AuthService.AuthResult authenticate(FullHttpRequest request, String remoteAddr) {

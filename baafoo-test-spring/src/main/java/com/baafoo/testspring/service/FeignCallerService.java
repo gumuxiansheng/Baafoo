@@ -25,6 +25,18 @@ public class FeignCallerService {
 
     private static final Logger log = LoggerFactory.getLogger(FeignCallerService.class);
 
+    /**
+     * M-3: Shared OkHttpClient singleton. Each call previously built a new client,
+     * which created a fresh connection pool and thread pool per invocation and
+     * prevented keep-alive reuse. Reusing a single instance reuses connections and
+     * avoids leaking dispatcher threads.
+     */
+    private static final OkHttpClient SHARED_OK_HTTP_CLIENT = new OkHttpClient.Builder()
+            .connectTimeout(2, TimeUnit.SECONDS)
+            .readTimeout(2, TimeUnit.SECONDS)
+            .writeTimeout(2, TimeUnit.SECONDS)
+            .build();
+
     public interface HttpbinApi {
         @RequestLine("GET /get")
         Response get();
@@ -39,12 +51,7 @@ public class FeignCallerService {
 
     public Map<String, Object> callViaFeign(String baseUrl) {
         Map<String, Object> result = new LinkedHashMap<String, Object>();
-        OkHttpClient okHttpClient = new OkHttpClient.Builder()
-                .connectTimeout(2, TimeUnit.SECONDS)
-                .readTimeout(2, TimeUnit.SECONDS)
-                .writeTimeout(2, TimeUnit.SECONDS)
-                .build();
-        feign.okhttp.OkHttpClient feignOkHttp = new feign.okhttp.OkHttpClient(okHttpClient);
+        feign.okhttp.OkHttpClient feignOkHttp = new feign.okhttp.OkHttpClient(SHARED_OK_HTTP_CLIENT);
         HttpbinApi api = Feign.builder()
                 .client(feignOkHttp)
                 .encoder(new JacksonEncoder())
@@ -62,12 +69,7 @@ public class FeignCallerService {
 
     public Map<String, Object> callViaFeignPost(String baseUrl, String body) {
         Map<String, Object> result = new LinkedHashMap<String, Object>();
-        OkHttpClient okHttpClient = new OkHttpClient.Builder()
-                .connectTimeout(2, TimeUnit.SECONDS)
-                .readTimeout(2, TimeUnit.SECONDS)
-                .writeTimeout(2, TimeUnit.SECONDS)
-                .build();
-        feign.okhttp.OkHttpClient feignOkHttp = new feign.okhttp.OkHttpClient(okHttpClient);
+        feign.okhttp.OkHttpClient feignOkHttp = new feign.okhttp.OkHttpClient(SHARED_OK_HTTP_CLIENT);
         HttpbinApi api = Feign.builder()
                 .client(feignOkHttp)
                 .encoder(new JacksonEncoder())
@@ -97,6 +99,7 @@ public class FeignCallerService {
                 while ((line = reader.readLine()) != null) sb.append(line);
             }
             String body = sb.toString();
+            // M-14: Truncate large bodies so test report stays readable; this caller only needs enough to verify stubbing
             if (body.length() > 500) body = body.substring(0, 500) + "...";
             result.put("body", body);
         }

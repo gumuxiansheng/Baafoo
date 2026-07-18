@@ -52,6 +52,34 @@ public class MatchRequest {
         this.port = port;
     }
 
+    /**
+     * Smell #1: Copy constructor. Produces a shallow copy of all fields
+     * (the {@code headers}/{@code queryParams} maps are shared by reference —
+     * callers must not mutate them in-place after copying). Centralizes the
+     * field-by-field copy so new fields added to {@code MatchRequest} are
+     * picked up automatically instead of being missed at manual copy sites
+     * (e.g. {@link MatchEngine#matchWithFallback}).
+     *
+     * @param other the request to copy
+     */
+    public MatchRequest(MatchRequest other) {
+        if (other == null) {
+            return;
+        }
+        this.protocol = other.protocol;
+        this.host = other.host;
+        this.port = other.port;
+        this.serviceName = other.serviceName;
+        this.method = other.method;
+        this.path = other.path;
+        this.topic = other.topic;
+        this.headers = other.headers;
+        this.queryParams = other.queryParams;
+        this.body = other.body;
+        this.grpcService = other.grpcService;
+        this.grpcMethod = other.grpcMethod;
+    }
+
     // ---- Getters / fluent setters ----
 
     public String getProtocol() { return protocol; }

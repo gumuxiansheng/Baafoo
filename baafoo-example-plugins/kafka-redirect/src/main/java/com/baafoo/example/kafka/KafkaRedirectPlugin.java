@@ -8,20 +8,16 @@ import com.baafoo.plugin.PluginEvent;
 import com.baafoo.plugin.RequestAdvice;
 import com.baafoo.plugin.RequestContext;
 
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 
 /**
- * Example Baafoo plugin: redirects Kafka connections to a custom mock broker,
- * with optional topic-based filtering.
+ * Example Baafoo plugin: redirects Kafka connections to a custom mock broker.
  *
  * <p>Demonstrates the new phase-specific API hooks:</p>
  * <ul>
  *   <li>{@link #onConnect(ConnectContext)} — connection-phase redirect using
  *       {@link ConnectAdvice#redirect(String, int)}</li>
- *   <li>{@link #onRequest(RequestContext)} — request-phase topic filtering
- *       using {@link RequestAdvice}</li>
+ *   <li>{@link #onRequest(RequestContext)} — request-phase observation hook</li>
  *   <li>{@link #onEvent(PluginEvent)} — observation-only event logging</li>
  * </ul>
  *
@@ -32,22 +28,20 @@ import java.util.Set;
  *     kafka-redirect:
  *       redirectHost: "localhost"
  *       redirectPort: 9050
- *       excludeTopics:
- *         - "internal-health"
- *         - "system-metrics"
  * </pre>
  *
  * <p><b>Architecture note:</b> The topic is not available at
- * {@link ConnectContext} level (Socket.connect time). Topic-based exclusion
- * is therefore evaluated in {@link #onRequest}, where the parsed
- * {@link RequestContext#getTopic()} is available. The connection redirect
- * itself is decided in {@link #onConnect} based on host/port only.</p>
+ * {@link ConnectContext} level (Socket.connect time). Topic-based filtering
+ * cannot be evaluated at connect time, so this plugin no longer exposes an
+ * {@code excludeTopics} option — it was misleading because the connection
+ * was already redirected before the topic could be inspected. Use server-side
+ * rule matching ({@code enabled=false} / environment scoping) to filter
+ * topics instead.</p>
  */
 public class KafkaRedirectPlugin implements AgentPlugin {
 
     private String redirectHost = "localhost";
     private int redirectPort = 9050;
-    private final Set<String> excludeTopics = new HashSet<String>();
 
     @Override
     public String getName() {
@@ -67,20 +61,11 @@ public class KafkaRedirectPlugin implements AgentPlugin {
         if (config.containsKey("redirectPort")) {
             this.redirectPort = ((Number) config.get("redirectPort")).intValue();
         }
-        if (config.containsKey("excludeTopics")) {
-            Object topics = config.get("excludeTopics");
-            if (topics instanceof Iterable) {
-                for (Object topic : (Iterable<?>) topics) {
-                    excludeTopics.add(topic.toString());
-                }
-            }
-        }
     }
 
     @Override
     public void init() {
-        System.out.println("[KafkaRedirectPlugin] Initialized | redirect=" + redirectHost + ":" + redirectPort
-                + " | excludeTopics=" + excludeTopics);
+        System.out.println("[KafkaRedirectPlugin] Initialized | redirect=" + redirectHost + ":" + redirectPort);
     }
 
     // ---- New API hooks ----
@@ -89,7 +74,7 @@ public class KafkaRedirectPlugin implements AgentPlugin {
      * Connection-phase hook: redirect Kafka connections to the mock broker.
      *
      * <p>Topic is not available at this stage (Socket.connect time), so
-     * topic-based exclusion is deferred to {@link #onRequest}.</p>
+     * topic-based filtering is not possible here.</p>
      *
      * @param ctx connection context (protocol, host, port)
      * @return {@link ConnectAdvice#redirect} to the mock broker, or
@@ -105,23 +90,17 @@ public class KafkaRedirectPlugin implements AgentPlugin {
     }
 
     /**
-     * Request-phase hook: topic-based filtering.
+     * Request-phase hook: observation only.
      *
-     * <p>For excluded topics, returns {@link RequestAdvice#proceed()} so the
-     * request goes through normal agent rule matching without plugin
-     * interference. For non-excluded topics, also returns {@code proceed()}
-     * — the connection was already redirected at connect time, so the mock
-     * broker handles the request.</p>
+     * <p>The connection was already redirected at connect time, so the mock
+     * broker handles all requests. This hook returns {@code proceed()} for
+     * every topic — use server-side rule matching to filter by topic.</p>
      *
      * @param ctx request context (with topic, partition, key)
      * @return always {@link RequestAdvice#proceed()}
      */
     @Override
     public RequestAdvice onRequest(RequestContext ctx) {
-        String topic = ctx.getTopic();
-        if (topic != null && excludeTopics.contains(topic)) {
-            System.out.println("[KafkaRedirectPlugin] Excluded topic matched (connection already redirected): " + topic);
-        }
         return RequestAdvice.proceed();
     }
 
@@ -137,7 +116,6 @@ public class KafkaRedirectPlugin implements AgentPlugin {
 
     @Override
     public void destroy() {
-        excludeTopics.clear();
         System.out.println("[KafkaRedirectPlugin] Destroyed");
     }
 

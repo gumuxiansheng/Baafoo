@@ -50,10 +50,7 @@ public final class SocketConnectAdvice {
                 if ((GlobalRouteState.CURRENT_MODE == 2 || GlobalRouteState.CURRENT_MODE == 3
                         || GlobalRouteState.CURRENT_MODE == 4)
                         && port != GlobalRouteState.SERVER_PORT
-                        && port != GlobalRouteState.HTTP_PORT
-                        && port != GlobalRouteState.KAFKA_PORT
-                        && port != GlobalRouteState.PULSAR_PORT
-                        && port != GlobalRouteState.JMS_PORT) {
+                        && GlobalRouteState.isStreamRecordingPort(port)) {
                     String sessionId = java.util.UUID.randomUUID().toString();
                     GlobalRouteState.startRecording(System.identityHashCode(socket), sessionId, host, port);
                     GlobalRouteState.logInfo("[Baafoo] Socket recording (internal): " + host + ":" + port + " (sessionId=" + sessionId + ")");
@@ -84,10 +81,7 @@ public final class SocketConnectAdvice {
                     int targetPort = Integer.parseInt(routeValue[1]);
                     // Skip Socket-level recording for HTTP and MQ — the server-side
                     // handler records at the application layer (forward + record).
-                    if (targetPort != GlobalRouteState.HTTP_PORT
-                            && targetPort != GlobalRouteState.KAFKA_PORT
-                            && targetPort != GlobalRouteState.PULSAR_PORT
-                            && targetPort != GlobalRouteState.JMS_PORT) {
+                    if (GlobalRouteState.isStreamRecordingPort(targetPort)) {
                         String sessionId = java.util.UUID.randomUUID().toString();
                         GlobalRouteState.startRecording(System.identityHashCode(socket), sessionId, host, port);
                         GlobalRouteState.logInfo("[Baafoo] Socket recording: " + host + ":" + port + " (sessionId=" + sessionId + ")");
@@ -166,10 +160,7 @@ public final class SocketConnectAdvice {
 
                 int targetPort = Integer.parseInt(routeValue[1]);
                 // Register for stream-level recording (TCP, non-HTTP/MQ)
-                if (targetPort != GlobalRouteState.HTTP_PORT
-                        && targetPort != GlobalRouteState.KAFKA_PORT
-                        && targetPort != GlobalRouteState.PULSAR_PORT
-                        && targetPort != GlobalRouteState.JMS_PORT) {
+                if (GlobalRouteState.isStreamRecordingPort(targetPort)) {
                     String sessionId = java.util.UUID.randomUUID().toString();
                     GlobalRouteState.startRecording(System.identityHashCode(socket), sessionId, host, port);
                     GlobalRouteState.logInfo("[Baafoo] Socket recording (record-all): " + host + ":" + port + " (sessionId=" + sessionId + ")");
@@ -202,7 +193,13 @@ public final class SocketConnectAdvice {
                                 routeValue = new String[]{(String) extResult[1], String.valueOf(extResult[2])};
                                 GlobalRouteState.logInfo("[Baafoo] Socket plugin redirected (EXT): " + host + ":" + port + " -> " + routeValue[0] + ":" + routeValue[1]);
                             } else if (action == 2) {
+                                // H1: STUB-mode BLOCK must redirect to an unroutable address so
+                                // that Socket.connect() throws ConnectException. Previously this
+                                // branch only returned, which let the original connect() proceed
+                                // to the real downstream — silently ignoring the plugin's BLOCK.
+                                // Parity with the RECORD_ALL BLOCK branch above.
                                 GlobalRouteState.logInfo("[Baafoo] Socket blocked by plugin: " + (extResult.length > 3 ? extResult[3] : "blocked"));
+                                endpoint = new InetSocketAddress("0.0.0.0", 1);
                                 return;
                             }
                         }

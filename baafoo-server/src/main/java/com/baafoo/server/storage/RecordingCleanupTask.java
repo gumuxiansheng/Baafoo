@@ -1,11 +1,9 @@
 package com.baafoo.server.storage;
 
 import com.baafoo.core.config.ServerConfig;
-import com.baafoo.core.model.RecordingEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -122,13 +120,11 @@ public class RecordingCleanupTask {
     }
 
     private int deleteOldestRecordings(int count) {
-        List<RecordingEntry> oldest = storage.listRecordings(null, count);
-        int deleted = 0;
-        for (RecordingEntry r : oldest) {
-            if (storage.deleteRecording(r.getId())) {
-                deleted++;
-            }
-        }
-        return deleted;
+        // L-2: bulk-delete the N oldest recordings in a single SQL statement.
+        // Previously this method listed N rows then called deleteRecording(id)
+        // in a loop, issuing N+1 queries against the database. Under retention
+        // pressure (large maxSizeMb excess) that turned every cleanup cycle
+        // into a multi-second blocking operation.
+        return storage.deleteOldestN(count);
     }
 }

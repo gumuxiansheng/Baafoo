@@ -373,7 +373,10 @@
             </div>
             <div class="subsection-body">
               <el-input v-model="resp.body" type="textarea" :rows="6" :placeholder="bodyPlaceholder" />
-              <div class="form-hint" v-html="templateVarHint"></div>
+              <div class="form-hint">
+                <span v-html="templateVarHintHtml"></span>
+                <a href="javascript:void(0)" @click="toggleFakerRef" style="color:var(--bf-accent)">{{ moreFnText }}</a>
+              </div>
 
               <!-- Faker Quick Insert -->
               <div class="faker-ref-toggle">
@@ -466,7 +469,7 @@
 </template>
 
 <script>
-import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useRulesStore, useAuthStore } from '@/store'
@@ -516,22 +519,24 @@ export default {
       return inheritedEnvs.value.includes(val) ? 'warning' : ''
     }
 
-    // NOTE: templateVarHint contains {{...}} which would break vue-i18n interpolation.
-    // Keep it as a raw string, NOT an i18n key.
-    const templateVarHint = computed(() => {
+    // C-1: templateVarHintHtml contains only code-constant HTML (no i18n dict
+    // lookup, no onclick string concatenation). Safe to render via v-html.
+    // The clickable "more functions" link is rendered as a native <a> with
+    // @click in the template, so no inline event handler is needed.
+    const templateVarHintHtml = computed(() => {
       const isEn = locale.value === 'en'
       const prefix = isEn ? 'Template vars supported: ' : '支持模板变量: '
       const dynamicLabel = isEn ? 'Dynamic data: ' : '动态数据: '
-      const moreFn = isEn ? 'More functions...' : '更多函数...'
-      return `${prefix}<code>{{request.body.xxx}}</code> <code>{{request.header.xxx}}</code> <code>{{request.query.xxx}}</code> <code>{{request.path}}</code><br/>${dynamicLabel}<code>{{faker.phone}}</code> <code>{{faker.email}}</code> <code>{{faker.name}}</code> <code>{{faker.address}}</code> <code>{{faker.idCard}}</code> <code>{{faker.uuid}}</code> <code>{{faker.int.1.100}}</code> <a href="javascript:void(0)" onclick="document.dispatchEvent(new CustomEvent('toggle-faker-ref'))" style="color:var(--bf-accent)">${moreFn}</a>`
+      return `${prefix}<code>{{request.body.xxx}}</code> <code>{{request.header.xxx}}</code> <code>{{request.query.xxx}}</code> <code>{{request.path}}</code><br/>${dynamicLabel}<code>{{faker.phone}}</code> <code>{{faker.email}}</code> <code>{{faker.name}}</code> <code>{{faker.address}}</code> <code>{{faker.idCard}}</code> <code>{{faker.uuid}}</code> <code>{{faker.int.1.100}}</code> `
     })
 
-    // M22: extract handler so we can remove it on unmount
+    const moreFnText = computed(() => {
+      return locale.value === 'en' ? 'More functions...' : '更多函数...'
+    })
+
+    // C-1: handler bound directly via @click in the template; no document
+    // event listener needed anymore (removed inline onclick string concat).
     const toggleFakerRef = () => { showFakerRef.value = !showFakerRef.value }
-    // Listen for toggle-faker-ref event from v-html link
-    if (typeof document !== 'undefined') {
-      document.addEventListener('toggle-faker-ref', toggleFakerRef)
-    }
 
     const bodyPlaceholder = '{"code": 0, "data": {}}'
 
@@ -551,13 +556,6 @@ export default {
         { required: true, message: t('rules.protocolRequired'), trigger: 'change' }
       ]
     }
-
-    // M22: remove event listener on unmount
-    onBeforeUnmount(() => {
-      if (typeof document !== 'undefined') {
-        document.removeEventListener('toggle-faker-ref', toggleFakerRef)
-      }
-    })
 
     // M25: extract load logic so route param changes can trigger reload
     async function loadRule() {
@@ -581,8 +579,8 @@ export default {
         form.enabled = rule.value.enabled !== false
         form.tagsStr = (rule.value.tags || []).join(',')
         form.environments = rule.value.environments || []
-        form.conditions = JSON.parse(JSON.stringify(rule.value.conditions || []))
-        form.responses = JSON.parse(JSON.stringify(rule.value.responses || []))
+        form.conditions = structuredClone(rule.value.conditions || [])
+        form.responses = structuredClone(rule.value.responses || [])
         form.fakerSeed = rule.value.fakerSeed || null
         form.requestCountReset = rule.value.requestCountReset || null
         form.requestCharset = rule.value.requestCharset || null
@@ -810,7 +808,8 @@ export default {
               probability: f.probability != null ? f.probability : 1.0
             }
             if (f.type === 'HTTP_ERROR') {
-              fault.statusCodes = (f.statusCodesStr || '').split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n > 0)
+              // L-5: Use radix=10 to avoid legacy octal interpretation; filter out NaN/non-positive values
+              fault.statusCodes = (f.statusCodesStr || '').split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0)
               if (fault.statusCodes.length === 0) fault.statusCodes = [500]
             } else if (f.type === 'DELAY') {
               fault.delayMs = f.delayMs || 0
@@ -857,10 +856,10 @@ export default {
       if (res.success) allEnvironments.value = res.data
     }
 
-    loadEnvironments()
+    loadEnvironments().catch(e => ElMessage.error('Failed to load environments: ' + (e?.message || e)))
 
     return {
-      isNew, rule, loading, saving, form, formRef, formRules, allEnvironments, inheritedEnvs, envTagType, templateVarHint, bodyPlaceholder,
+      isNew, rule, loading, saving, form, formRef, formRules, allEnvironments, inheritedEnvs, envTagType, templateVarHintHtml, moreFnText, bodyPlaceholder,
       showFakerRef, fakerGroups, insertFakerVar,
       isGraphqlPath, isMqProtocol, isGrpcProtocol, addGraphqlHelper,
       addCondition, removeCondition,

@@ -107,33 +107,38 @@ public class HttpCaller implements BaafooTestApp.Caller {
     }
 
     private void printResponse(HttpURLConnection conn) throws Exception {
-        int code = conn.getResponseCode();
-        String stubHeader = conn.getHeaderField("X-Baafoo-Stub");
-        String ruleId = conn.getHeaderField("X-Baafoo-Rule-Id");
+        // H-7: 在 finally 中 disconnect 释放底层 socket，避免连接泄漏
+        try {
+            int code = conn.getResponseCode();
+            String stubHeader = conn.getHeaderField("X-Baafoo-Stub");
+            String ruleId = conn.getHeaderField("X-Baafoo-Rule-Id");
 
-        InputStream is = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
-        String body = "";
-        if (is != null) {
-            BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                sb.append(line);
+            InputStream is = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
+            String body = "";
+            if (is != null) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line);
+                }
+                reader.close();
+                body = sb.toString();
+                if (body.length() > 500) {
+                    body = body.substring(0, 500) + "... (truncated)";
+                }
             }
-            reader.close();
-            body = sb.toString();
-            if (body.length() > 500) {
-                body = body.substring(0, 500) + "... (truncated)";
-            }
-        }
 
-        boolean stubbed = "true".equals(stubHeader);
-        System.out.println("    状态码: " + code);
-        System.out.println("    挡板拦截: " + (stubbed ? "✓ 是" : "✗ 否"));
-        if (ruleId != null) {
-            System.out.println("    匹配规则: " + ruleId);
+            boolean stubbed = "true".equals(stubHeader);
+            System.out.println("    状态码: " + code);
+            System.out.println("    挡板拦截: " + (stubbed ? "✓ 是" : "✗ 否"));
+            if (ruleId != null) {
+                System.out.println("    匹配规则: " + ruleId);
+            }
+            System.out.println("    响应体: " + body);
+            System.out.println();
+        } finally {
+            conn.disconnect();
         }
-        System.out.println("    响应体: " + body);
-        System.out.println();
     }
 }

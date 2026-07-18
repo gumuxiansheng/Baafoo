@@ -122,19 +122,48 @@ export default {
 
     let timer = null
     let visibilityTimer = null
+    // H-6: 指数退避参数（失败时拉长轮询间隔，避免后端不可用时频繁重试）
+    const BASE_INTERVAL = 30000
+    const MAX_INTERVAL = 5 * 60 * 1000
+    let currentInterval = BASE_INTERVAL
+
+    async function pollOnce() {
+      // H-6: fetchStatus 返回 boolean 表示成功/失败；失败时拉长间隔（指数退避）
+      try {
+        const ok = await statusStore.fetchStatus()
+        statusConnected.value = ok
+        if (ok) {
+          currentInterval = BASE_INTERVAL
+        } else {
+          currentInterval = Math.min(currentInterval * 2, MAX_INTERVAL)
+        }
+      } finally {
+        scheduleNext()
+      }
+    }
+
+    function scheduleNext() {
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+      timer = setTimeout(() => {
+        pollOnce()
+      }, currentInterval)
+    }
 
     function startPolling() {
       if (timer) {
-        clearInterval(timer)
+        clearTimeout(timer)
         timer = null
       }
-      statusStore.fetchStatus()
-      timer = setInterval(() => statusStore.fetchStatus(), 30000)
+      currentInterval = BASE_INTERVAL
+      pollOnce()
     }
 
     function stopPolling() {
       if (timer) {
-        clearInterval(timer)
+        clearTimeout(timer)
         timer = null
       }
     }

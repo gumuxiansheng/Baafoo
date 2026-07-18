@@ -51,8 +51,12 @@ public class TdmqCallerService {
         config.put("protocol", "Pulsar Binary Protocol (compatible with TDMQ)");
         config.put("defaultPort", 6650);
         config.put("sdk", "org.apache.pulsar:pulsar-client (also covers com.tencent.tdmq:tdmq-client)");
+        // M-21: tdmqSdkAvailable refers ONLY to Tencent's repackaged tdmq-client jar — the existing
+        // pulsar-client already speaks the same binary protocol and works against TDMQ clusters out
+        // of the box. The flag is intentionally false here because this module does not pull in
+        // the Tencent-specific jar (it's optional for users who want Tencent's branded entry points).
         config.put("tdmqSdkAvailable", false);
-        config.put("tdmqSdkNote", "Add com.tencent.tdmq:tdmq-client dependency to use Tencent's SDK directly");
+        config.put("tdmqSdkNote", "Optional: add com.tencent.tdmq:tdmq-client to use Tencent's SDK entry points; pulsar-client already covers TDMQ");
         return config;
     }
 }

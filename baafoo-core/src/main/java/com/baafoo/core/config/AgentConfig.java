@@ -201,11 +201,23 @@ public class AgentConfig {
         /** API key for server authentication */
         private String apiKey;
 
+        /**
+         * Whether the server requires API-key authentication ({@code auth.enabled: true}
+         * on the server side). When {@code true}, the agent pre-validates that
+         * {@code apiKey} is non-empty at startup rather than failing later with
+         * opaque 401s on heartbeat/poll. Maps to {@code server.authEnabled} in
+         * the agent YAML.
+         */
+        private boolean authEnabled = false;
+
         public String getHost() { return host; }
         public void setHost(String host) { this.host = host; }
 
         public boolean isUseSsl() { return useSsl; }
         public void setUseSsl(boolean useSsl) { this.useSsl = useSsl; }
+
+        public boolean isAuthEnabled() { return authEnabled; }
+        public void setAuthEnabled(boolean authEnabled) { this.authEnabled = authEnabled; }
 
         public int getApiPort() { return apiPort; }
         public void setApiPort(int apiPort) { this.apiPort = apiPort; }

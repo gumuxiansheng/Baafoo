@@ -38,13 +38,12 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
     private final ServerConfig config;
 
     /**
-     * Shared {@link ObjectMapper} instance. {@code AuthFilter} is instantiated
-     * per Netty channel (see {@code BaafooServer.initChannel}), and
-     * ObjectMapper construction is relatively expensive (builds TypeFactory,
-     * serializer/deserializer caches). Jackson documents ObjectMapper as
-     * thread-safe after configuration in 2.x+, so a single shared static
-     * instance is the recommended pattern — previously a new mapper was
-     * created for every connection.
+     * L-8: shared {@link ObjectMapper}. {@code AuthFilter} is created per
+     * Netty channel, but ObjectMapper is expensive to construct and
+     * thread-safe after configuration (Jackson 2.x+), so a single shared
+     * static instance is reused across all channels. Delegates to the
+     * project-wide {@code JsonUtils.MAPPER} to keep serialization config
+     * consistent.
      */
     private static final ObjectMapper MAPPER = com.baafoo.core.util.JsonUtils.MAPPER;
 
@@ -146,6 +145,23 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
     }
 
     private String resolveRemoteAddr(ChannelHandlerContext ctx, FullHttpRequest request) {
+        return resolveRemoteAddr(ctx, request, config);
+    }
+
+    /**
+     * Resolve the client IP, honouring {@code X-Forwarded-For} only when the
+     * direct connection comes from a configured trusted proxy.
+     *
+     * <p>C-2: extracted as a shared utility so {@code ManagementApiHandler}
+     * applies the exact same trust decision as {@code AuthFilter}. When the
+     * direct peer is a trusted proxy, the <em>last</em> value in XFF is used
+     * — that is the IP the trusted proxy received the request from (the
+     * leftmost entry is the original client but is also the easiest to
+     * spoof via earlier untrusted hops). When the peer is not a trusted
+     * proxy the XFF header is ignored and the direct peer address is
+     * returned.</p>
+     */
+    public static String resolveRemoteAddr(ChannelHandlerContext ctx, FullHttpRequest request, ServerConfig config) {
         // Get the direct connection address first
         String directAddr = "unknown";
         if (ctx.channel().remoteAddress() != null) {
@@ -158,15 +174,21 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
         // Only trust X-Forwarded-For when the direct connection is from a trusted
         // proxy. Trusted proxies may be specified as exact IPs or CIDR ranges.
         String forwarded = request.headers().get("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isEmpty() && isTrustedProxy(directAddr)) {
-            return forwarded.split(",")[0].trim();
+        if (forwarded != null && !forwarded.isEmpty() && isTrustedProxy(directAddr, config)) {
+            String[] parts = forwarded.split(",");
+            // Last value = the IP the trusted proxy received the request from.
+            return parts[parts.length - 1].trim();
         }
 
         return directAddr;
     }
 
     private boolean isTrustedProxy(String addr) {
-        if (config.getAuth() == null || config.getAuth().getTrustedProxies() == null) {
+        return isTrustedProxy(addr, config);
+    }
+
+    private static boolean isTrustedProxy(String addr, ServerConfig config) {
+        if (config == null || config.getAuth() == null || config.getAuth().getTrustedProxies() == null) {
             return false;
         }
         for (String entry : config.getAuth().getTrustedProxies()) {
@@ -220,6 +242,7 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
                     Unpooled.copiedBuffer(json, StandardCharsets.UTF_8));
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json; charset=UTF-8");
             response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
+            // TODO: align with StubResponseRenderer's configurable CORS; tracked in M-2.
             response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
             response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, PUT, DELETE, OPTIONS");
             response.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "Content-Type, Authorization, X-Api-Key");

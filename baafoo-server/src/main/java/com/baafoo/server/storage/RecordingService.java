@@ -27,6 +27,16 @@ public interface RecordingService {
     boolean deleteRecording(String id);
 
     /**
+     * L-2: bulk-delete the {@code limit} oldest recordings in a single SQL
+     * statement. Used by {@link RecordingCleanupTask} for size-based cleanup
+     * to avoid the previous N+1 list-then-loop-delete pattern.
+     *
+     * @param limit max number of oldest recordings to delete
+     * @return number of recordings actually deleted
+     */
+    int deleteOldestN(int limit);
+
+    /**
      * Delete recordings older than the specified number of days.
      *
      * @param retentionDays number of days to retain

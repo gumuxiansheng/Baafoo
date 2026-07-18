@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
@@ -67,7 +68,10 @@ public class BaafooCli {
             dir.mkdirs();
         }
 
-        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        // L-17: BufferedReader wraps System.in — intentionally NOT closed here, because closing it
+        // would close System.in itself and break any subsequent reads from the console. It is fine
+        // to let it be GC'd when initInteractive returns.
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
 
         System.out.println("=== Baafoo Interactive Init ===");
         System.out.println("Project directory: " + dir.getAbsolutePath());
@@ -186,7 +190,10 @@ public class BaafooCli {
             System.out.println();
 
         } catch (Exception e) {
+            // L-2: Print stack trace to stderr so users can diagnose init failures (previously only
+            // the message was printed, hiding the actual cause of e.g. YAML write failures).
             System.err.println("Error: " + e.getMessage());
+            e.printStackTrace(System.err);
             System.exit(1);
         }
     }
@@ -223,6 +230,13 @@ public class BaafooCli {
                 String portStr = part.substring(colonIdx + 1).trim();
                 try {
                     int port = Integer.parseInt(portStr);
+                    // M-19: Validate port range (1-65535) — fall back to 8080 on out-of-range values
+                    // so a typo like "order-service:99999" doesn't silently produce a broken config.
+                    if (port < 1 || port > 65535) {
+                        System.err.println("  [WARN] Port " + port + " for service '" + name
+                                + "' is out of range (1-65535), using 8080 instead");
+                        port = 8080;
+                    }
                     services.add(new ServiceDef(name, port));
                 } catch (NumberFormatException e) {
                     services.add(new ServiceDef(part, 8080));
@@ -341,7 +355,9 @@ public class BaafooCli {
             System.out.println();
 
         } catch (Exception e) {
+            // L-2: Print stack trace to stderr so users can diagnose init failures
             System.err.println("Error: " + e.getMessage());
+            e.printStackTrace(System.err);
             System.exit(1);
         }
     }
@@ -383,7 +399,10 @@ public class BaafooCli {
         plugins.put("configs", Collections.emptyMap());
         config.put("plugins", plugins);
 
-        try (FileWriter w = new FileWriter(file)) {
+        // M-20: Use OutputStreamWriter with explicit UTF-8 instead of FileWriter — FileWriter uses
+        // the platform default encoding, which can mojibake the comments on non-UTF-8 JVMs (e.g.
+        // Windows with cp1252 or GBK).
+        try (OutputStreamWriter w = new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8)) {
             w.write("# Baafoo Agent Configuration\n");
             w.write("# Loaded by com.baafoo.core.config.ConfigLoader\n\n");
             YAML_MAPPER.writeValue(w, config);
@@ -418,21 +437,25 @@ public class BaafooCli {
         config.put("unmatchedDefault", "passthrough");
         
         // Database configuration
+        // L-14: The generated template uses an empty password for the embedded H2 instance. For
+        // production deployments, replace this with a real secret loaded from env vars / a secret
+        // manager — do NOT commit real credentials to source control.
         Map<String, Object> database = new LinkedHashMap<String, Object>();
         database.put("type", "h2");
         database.put("url", "jdbc:h2:mem:baafoo;DB_CLOSE_DELAY=-1");
         database.put("username", "sa");
         database.put("password", "");
         config.put("database", database);
-        
+
         // Authentication configuration
         Map<String, Object> auth = new LinkedHashMap<String, Object>();
         auth.put("enabled", false);
         auth.put("localBypass", false);
-        auth.put("tokenExpiryHours", 24);
+        auth.put("tokenExpiryHours", 4);
         config.put("auth", auth);
 
-        try (FileWriter w = new FileWriter(file)) {
+        // M-20: UTF-8 OutputStreamWriter (see writeAgentConfig)
+        try (OutputStreamWriter w = new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8)) {
             w.write("# Baafoo Server Configuration\n");
             w.write("# Loaded by com.baafoo.core.config.ConfigLoader\n\n");
             YAML_MAPPER.writeValue(w, config);
@@ -545,8 +568,8 @@ public class BaafooCli {
 
         YAML_MAPPER.writeValue(file, rules);
 
-        // Append comments
-        try (FileWriter w = new FileWriter(file, true)) {
+        // M-20: Append comments using UTF-8 to match the YAML content above
+        try (OutputStreamWriter w = new OutputStreamWriter(new FileOutputStream(file, true), StandardCharsets.UTF_8)) {
             w.write("\n# Add more rules below:\n");
             w.write("# - id: example-http-2\n");
             w.write("#   name: POST /api/users\n");

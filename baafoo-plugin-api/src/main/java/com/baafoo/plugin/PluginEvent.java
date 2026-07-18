@@ -183,6 +183,31 @@ public class PluginEvent {
         return (T) attributes.get(key);
     }
 
+    /**
+     * H-3: Type-safe attribute accessor with explicit expected class.
+     * Returns {@code null} if the attribute is absent or the stored value
+     * is not assignable to {@code expectedType}, avoiding unchecked
+     * {@code ClassCastException} at the call site.
+     *
+     * @param key          attribute key
+     * @param expectedType expected runtime type (must not be null)
+     * @param <T>          target type
+     * @return typed value, or {@code null} if absent or type mismatch
+     */
+    public <T> T getAttribute(String key, Class<T> expectedType) {
+        if (expectedType == null) {
+            throw new IllegalArgumentException("expectedType must not be null");
+        }
+        Object value = attributes.get(key);
+        if (value == null) {
+            return null;
+        }
+        if (!expectedType.isInstance(value)) {
+            return null;
+        }
+        return expectedType.cast(value);
+    }
+
     @Override
     public String toString() {
         return "PluginEvent{" + type + ", env=" + environmentId + ", attrs=" + attributes + "}";

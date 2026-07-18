@@ -20,7 +20,12 @@ public class AuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
-    private static final long DEFAULT_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000L;
+    // C-2: reduced from 24h to 4h to limit the blast radius of a stolen JWT
+    // (token is stored in localStorage on the SPA client, which is reachable
+    // by XSS). A shorter window reduces the value of an exfiltrated token.
+    // Operators wanting longer sessions should set auth.tokenExpiryHours and
+    // pair it with a refresh-token mechanism (not implemented yet).
+    private static final long DEFAULT_TOKEN_EXPIRY_MS = 4 * 60 * 60 * 1000L;
     private static final long MAX_TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000L;
 
     private final StorageService storage;
@@ -92,8 +97,18 @@ public class AuthService {
         if (jwtSecret != null && jwtSecret.length() >= 32) {
             this.jwtKey = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
         } else {
+            // L-5: secret too short (HS256 requires >= 32 bytes per RFC 8725
+            // §3.2). Fall back to a random key so the server still boots, but
+            // warn loudly: every restart rotates the key, which invalidates
+            // all outstanding JWTs (forces re-login for every user) and
+            // breaks any persisted JWT-based session in the web console.
+            // Operators must set auth.jwtSecret to a stable >=32-byte value
+            // in production (e.g. `openssl rand -base64 48`).
             this.jwtKey = Keys.secretKeyFor(SignatureAlgorithm.HS256);
-            log.warn("No custom JWT secret configured or secret too short, using auto-generated key. Tokens will not survive restarts.");
+            log.warn("No custom JWT secret configured or secret too short ({} chars, need >=32), "
+                    + "using auto-generated key. Tokens will not survive restarts. "
+                    + "Set auth.jwtSecret to a stable >=32-byte value in production.",
+                    jwtSecret == null ? 0 : jwtSecret.length());
         }
 
         log.info("AuthService initialized: authEnabled={}, localBypass={}", authEnabled, localBypass);
@@ -154,9 +169,17 @@ public class AuthService {
     }
 
     private AuthResult validateApiKey(String apiKey) {
-        String role = apiKeyRoleMap.get(apiKey);
-        if (role != null) {
-            return new AuthResult(true, role, "API Key authenticated");
+        // H-7: use constant-time comparison for the configured API keys to
+        // avoid timing side-channels. The previous Map.get(apiKey) returned
+        // in O(1) but leaked key-prefix information via per-byte early-exit
+        // in the underlying String.hashCode + equals path.
+        if (apiKey != null) {
+            byte[] apiKeyBytes = apiKey.getBytes(StandardCharsets.UTF_8);
+            for (Map.Entry<String, String> entry : apiKeyRoleMap.entrySet()) {
+                if (MessageDigest.isEqual(apiKeyBytes, entry.getKey().getBytes(StandardCharsets.UTF_8))) {
+                    return new AuthResult(true, entry.getValue(), "API Key authenticated");
+                }
+            }
         }
 
         User user = storage.getUserByApiKey(apiKey);
@@ -243,7 +266,11 @@ public class AuthService {
             md.update(salt);
             byte[] hashed = md.digest(password.getBytes(StandardCharsets.UTF_8));
             String computedHash = Base64.getEncoder().encodeToString(hashed);
-            return computedHash.equals(parts[1]);
+            // H-7: constant-time comparison to avoid timing leak of the
+            // stored hash via per-byte early-exit in String.equals.
+            return MessageDigest.isEqual(
+                    computedHash.getBytes(StandardCharsets.UTF_8),
+                    parts[1].getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
             log.error("Password verification failed: {}", e.getMessage());
             return false;
@@ -274,6 +301,12 @@ public class AuthService {
         if (password.length() < 8) {
             return new PasswordValidation(false, "密码长度不能少于8位");
         }
+        // L-6: upper bound on password length. 64 chars caps the bcrypt
+        // computation cost (bcrypt itself only uses the first 72 bytes, but
+        // a multi-KB password would still waste CPU on the pre-hash) and
+        // prevents an attacker from submitting pathologically long inputs
+        // to DoS the login endpoint. 64 chars is also the OWASP-recommended
+        // maximum for bcrypt-backed credentials.
         if (password.length() > 64) {
             return new PasswordValidation(false, "密码长度不能超过64位");
         }

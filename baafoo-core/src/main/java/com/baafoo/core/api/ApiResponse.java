@@ -82,10 +82,18 @@ public class ApiResponse<T> {
 
     @Override
     public String toString() {
+        // L4: include the data field's type (and identity hash for correlation)
+        // so the toString is actually useful in logs — previously toString
+        // omitted data entirely, making it impossible to tell two 200-OK
+        // responses apart. The value itself is NOT included to avoid dumping
+        // large payloads (e.g. paginated rule lists) into log lines.
         return "ApiResponse{" +
                 "success=" + success +
                 ", code=" + code +
                 ", message='" + message + '\'' +
+                ", data=" + (data != null
+                        ? data.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(data))
+                        : "null") +
                 '}';
     }
 }

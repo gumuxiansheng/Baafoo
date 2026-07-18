@@ -69,10 +69,16 @@ public class PluginClassLoader extends URLClassLoader {
         // SPI API + JDK classes must be resolved through the agent/plugin-api
         // loader, NOT bundled inside the plugin JAR. Using super.loadClass()
         // would be a no-op because parent is null.
+        // M7: also delegate sun.*/com.sun.*/jdk.* so a malicious or buggy plugin
+        // cannot override JDK internal classes (e.g. sun.net.www.http.HttpClient)
+        // by bundling a same-named class in its JAR.
         if (name.startsWith("com.baafoo.plugin.")
                 || name.startsWith("java.")
                 || name.startsWith("javax.")
-                || name.startsWith("org.slf4j.")) {
+                || name.startsWith("org.slf4j.")
+                || name.startsWith("sun.")
+                || name.startsWith("com.sun.")
+                || name.startsWith("jdk.")) {
             try {
                 c = spiLoader.loadClass(name);
                 if (c != null) {

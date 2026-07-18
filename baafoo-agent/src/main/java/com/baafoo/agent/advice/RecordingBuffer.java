@@ -9,10 +9,12 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Thread-safe buffer for recording entries captured during record mode.
@@ -27,28 +29,46 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>If the upload fails, entries are retained in a pending list and retried
  * on the next flush cycle (AC-05: local retention with retry).</p>
+ *
+ * <p><b>IO-thread safety (C1 fix)</b>: {@code add()} may be called from the
+ * Netty EventLoop via {@code SocketChannelReadAdvice/WriteAdvice} bridges.
+ * To avoid blocking the EventLoop on HTTP upload, threshold-triggered flushes
+ * are submitted to a dedicated single-thread {@code uploadExecutor} instead
+ * of being executed inline. The periodic and shutdown flushes also run on
+ * this executor.</p>
+ *
+ * <p><b>Bounded retry (C2 fix)</b>: {@code pendingRetry} is capped at
+ * {@link #MAX_PENDING_RETRY} entries; on overflow the oldest entry is
+ * dropped and counted in {@code droppedCount}.</p>
  */
 public class RecordingBuffer {
 
     private static final Logger log = LoggerFactory.getLogger(RecordingBuffer.class);
 
-    /**
-     * Backing queue for buffered recordings.
-     *
-     * <p>Previously a {@code CopyOnWriteArrayList} — but {@code add()} is on
-     * the hot path (one call per stubbed request), and COWArrayList.add
-     * copies the entire backing array each time, making it O(n) per insert
-     * (High 15). {@link ConcurrentLinkedQueue} offers O(1) lock-free
-     * append + drain via {@code poll()}.</p>
-     */
+    /** Upper bound on retained retry entries to prevent OOM under sustained upload failure. */
+    private static final int MAX_PENDING_RETRY = 10000;
+
     private final ConcurrentLinkedQueue<RecordingEntry> buffer = new ConcurrentLinkedQueue<RecordingEntry>();
     private final int maxBufferSize;
     private final int flushIntervalSec;
     private final ScheduledExecutorService scheduler;
     private ScheduledFuture<?> flushTask;
 
-    /** Entries that failed to upload and are pending retry (thread-safe) */
+    /** Entries that failed to upload and are pending retry (thread-safe, bounded). */
     private final ConcurrentLinkedQueue<RecordingEntry> pendingRetry = new ConcurrentLinkedQueue<RecordingEntry>();
+
+    /** Count of entries dropped due to {@link #pendingRetry} overflow (reset after each flush). */
+    private final AtomicLong droppedCount = new AtomicLong(0L);
+
+    /**
+     * Dedicated single-thread executor for HTTP upload work. Decouples upload
+     * latency (5s connect + 5s read) from caller threads — especially the
+     * Netty EventLoop, which must never block on network I/O.
+     */
+    private final ExecutorService uploadExecutor;
+
+    /** L10: latch to make {@link #stop()} one-shot and {@link #start()} fail-fast after stop. */
+    private volatile boolean stopped = false;
 
     public RecordingBuffer(int maxBufferSize, int flushIntervalSec) {
         this.maxBufferSize = maxBufferSize > 0 ? maxBufferSize : 100;
@@ -61,18 +81,35 @@ public class RecordingBuffer {
                 return t;
             }
         });
+        this.uploadExecutor = Executors.newSingleThreadExecutor(new java.util.concurrent.ThreadFactory() {
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, "baafoo-recording-uploader");
+                t.setDaemon(true);
+                return t;
+            }
+        });
     }
 
     /**
      * Add a recording entry to the buffer.
-     * If the buffer is full, triggers an immediate flush.
+     * If the buffer is full, triggers an asynchronous flush on the upload
+     * executor — never blocks the caller (which may be a Netty EventLoop).
      */
     public void add(RecordingEntry entry) {
         buffer.add(entry);
         // size() on ConcurrentLinkedQueue is O(n) but is only called once per
         // add — acceptable cost for a non-copying write path.
         if (buffer.size() >= maxBufferSize) {
-            flush();
+            // C1: do NOT call flush() inline — caller may be a Netty EventLoop.
+            // Submit to the dedicated uploader thread so the EventLoop is not
+            // blocked on the 5s+5s HTTP upload.
+            try {
+                uploadExecutor.submit(this::flush);
+            } catch (java.util.concurrent.RejectedExecutionException e) {
+                // Executor was shut down (e.g., during agent shutdown) — drop the
+                // flush trigger; the periodic/shutdown flush will pick up the data.
+                log.debug("Recording flush trigger rejected (executor shutting down)");
+            }
         }
     }
 
@@ -92,8 +129,13 @@ public class RecordingBuffer {
 
     /**
      * Start the periodic flush timer.
+     *
+     * @throws IllegalStateException if {@link #stop()} has already been called (L10).
      */
     public void start() {
+        if (stopped) {
+            throw new IllegalStateException("RecordingBuffer has been stopped and cannot be restarted");
+        }
         if (flushTask == null) {
             flushTask = scheduler.scheduleAtFixedRate(this::flush,
                     flushIntervalSec, flushIntervalSec, TimeUnit.SECONDS);
@@ -103,12 +145,27 @@ public class RecordingBuffer {
 
     /**
      * Stop the periodic flush timer and flush any remaining entries.
+     * One-shot: subsequent {@link #start()} calls will throw.
      */
     public void stop() {
+        stopped = true;
         if (flushTask != null) {
             flushTask.cancel(false);
             flushTask = null;
         }
+        // C1: stop accepting new async flushes, but drain the upload queue first
+        // so any in-flight threshold-triggered flush completes before the final
+        // synchronous flush below.
+        uploadExecutor.shutdown();
+        try {
+            if (!uploadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                uploadExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            uploadExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+        // Final synchronous flush of anything that remained in buffer/pendingRetry.
         flush();
         scheduler.shutdown();
     }
@@ -136,10 +193,8 @@ public class RecordingBuffer {
 
         ControlChannel channel = BaafooAgent.getControlChannel();
         if (channel == null) {
-            // No channel available; keep for retry
-            for (RecordingEntry e : batch) {
-                pendingRetry.add(e);
-            }
+            // No channel available; keep for retry (subject to MAX_PENDING_RETRY)
+            enqueueForRetry(batch);
             log.warn("ControlChannel not available, retaining {} entries for retry", batch.size());
             return;
         }
@@ -148,11 +203,28 @@ public class RecordingBuffer {
             channel.uploadRecordings(batch);
             log.debug("Flushed {} recording entries", batch.size());
         } catch (Exception ex) {
-            // Upload failed; keep entries for retry
-            for (RecordingEntry retryEntry : batch) {
-                pendingRetry.add(retryEntry);
-            }
+            // Upload failed; keep entries for retry (subject to MAX_PENDING_RETRY)
+            enqueueForRetry(batch);
             log.warn("Recording upload failed, retaining {} entries for retry: {}", batch.size(), ex.getMessage());
+        }
+    }
+
+    /**
+     * Re-enqueue a batch of entries for retry, enforcing {@link #MAX_PENDING_RETRY}.
+     * On overflow the oldest entries are dropped (FIFO eviction via poll()) and
+     * counted in {@link #droppedCount}.
+     */
+    private void enqueueForRetry(List<RecordingEntry> batch) {
+        for (RecordingEntry retryEntry : batch) {
+            if (pendingRetry.size() >= MAX_PENDING_RETRY) {
+                // C2: bounded — drop the oldest entry to make room.
+                pendingRetry.poll();
+                droppedCount.incrementAndGet();
+            }
+            pendingRetry.add(retryEntry);
+        }
+        if (droppedCount.get() > 0) {
+            log.warn("Dropped {} recording entries due to pendingRetry overflow", droppedCount.getAndSet(0));
         }
     }
 

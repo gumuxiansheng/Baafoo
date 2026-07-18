@@ -36,14 +36,29 @@ public class MatchEngine {
      *
      * <p>Access is synchronized on the map instance — pattern compile is rare
      * relative to pattern lookup, so the lock is uncontended in practice.</p>
+     *
+     * <p>L8: constant renamed from {@code PATTERN_CACHE_MAX} to
+     * {@code MATCH_PATTERN_CACHE_MAX} to disambiguate from other pattern
+     * caches that may exist in sibling utility classes (e.g. body-template
+     * caches). This field is the cap for the rule-matching regex cache only.</p>
+     *
+     * <p>L15: {@link java.util.Collections#synchronizedMap} is used instead of
+     * {@link ConcurrentHashMap} because the cache relies on
+     * {@link java.util.LinkedHashMap}'s access-order eviction
+     * ({@code accessOrder=true}, the {@code true} arg in the constructor
+     * above). {@code ConcurrentHashMap} does not support access-order
+     * iteration, so we accept the coarse-grained lock in exchange for LRU
+     * semantics. Contention is low because Pattern.compile is rare relative
+     * to cache hits, and the synchronized block in {@link #matchRegex} covers
+     * only a get-or-compile, not the actual match.</p>
      */
-    private static final int PATTERN_CACHE_MAX = 512;
+    private static final int MATCH_PATTERN_CACHE_MAX = 512;
     private final Map<String, Pattern> patternCache =
             java.util.Collections.synchronizedMap(
                     new java.util.LinkedHashMap<String, Pattern>(64, 0.75f, true) {
                         @Override
                         protected boolean removeEldestEntry(Map.Entry<String, Pattern> eldest) {
-                            return size() > PATTERN_CACHE_MAX;
+                            return size() > MATCH_PATTERN_CACHE_MAX;
                         }
                     });
 
@@ -144,16 +159,10 @@ public class MatchEngine {
         if (!result.isMatched() && req.getPort() > 0) {
             // M3: create a copy with port=0 instead of mutating the original request,
             // which could be read concurrently by other threads during match().
-            MatchRequest fallbackReq = new MatchRequest(req.getProtocol(), req.getHost(), 0)
-                    .setServiceName(req.getServiceName())
-                    .setMethod(req.getMethod())
-                    .setPath(req.getPath())
-                    .setTopic(req.getTopic())
-                    .setHeaders(req.getHeaders())
-                    .setQueryParams(req.getQueryParams())
-                    .setBody(req.getBody())
-                    .setGrpcService(req.getGrpcService())
-                    .setGrpcMethod(req.getGrpcMethod());
+            // Smell #1: use the copy constructor so future fields added to
+            // MatchRequest are picked up automatically — the previous manual
+            // copy would silently miss any new field.
+            MatchRequest fallbackReq = new MatchRequest(req).setPort(0);
             result = match(rules, fallbackReq);
         }
         return result;
@@ -212,6 +221,16 @@ public class MatchEngine {
         return rule.getProtocol().equalsIgnoreCase(protocol);
     }
 
+    /**
+     * M8: Match the rule's target (service name / host / port) against the
+     * request. Null/empty fields on the rule mean "wildcard" (match anything);
+     * null {@code host} on the request means the caller does not know the
+     * target host (e.g. MQ broker frames carry no host info), in which case
+     * host filtering is skipped rather than failing the match — this is
+     * required so MQ rules without a host constraint still match. Port
+     * filtering is skipped when either the rule or the request omits a port
+     * (rule port null/<=0 or request port <=0).
+     */
     private boolean matchesTarget(Rule rule, String host, int port, String serviceName) {
         // Service name match (Consul). When the request carries a serviceName
         // (e.g. MQ protocols), match strictly by serviceName. When the request
@@ -229,8 +248,12 @@ public class MatchEngine {
 
         // Host match — null host means caller doesn't know target host (e.g. MQ broker),
         // in which case we skip host filtering instead of failing the match.
-        if (rule.getHost() != null && !rule.getHost().isEmpty()) {
-            if (host != null && !rule.getHost().equalsIgnoreCase(host)) return false;
+        // M8: make the null-host skip explicit (previously the inner
+        // `host != null && ...` guard implicitly achieved the same result,
+        // but it was easy to misread as "rule host is ignored when host is
+        // null" without a corresponding comment at the entry of the block).
+        if (rule.getHost() != null && !rule.getHost().isEmpty() && host != null) {
+            if (!rule.getHost().equalsIgnoreCase(host)) return false;
         }
 
         // Port match (port <= 0 means "any port", so we skip port filtering)
@@ -245,6 +268,14 @@ public class MatchEngine {
      * Match conditions and return the response entry index along with the
      * request count captured at increment time.
      *
+     * <p>C1 fix: the per-rule counter is incremented ONLY after all
+     * non-{@code requestCount} rule-level conditions match. This prevents
+     * non-matching traffic from polluting the counter and ensures
+     * {@code requestCount equals N} conditions can actually hit their target
+     * value (previously the counter was inflated by every request that reached
+     * the rule, even those that failed other conditions, making
+     * {@code equals N} unreachable for the true matching traffic).</p>
+     *
      * @return int array [responseIdx, count] if matched, or null if no match.
      *         Using the captured count avoids a TOCTOU race between
      *         incrementAndGet() and a separate get() call.
@@ -255,14 +286,30 @@ public class MatchEngine {
 
         List<MatchCondition> conditions = rule.getConditions();
 
-        // Increment per-rule counter (1-based) BEFORE evaluating conditions,
-        // so that requestCount conditions at both rule level and response
-        // entry level use the same incremented count.
-        int count = counterStore.incrementAndGet(rule.getId());
-
-        // Check if all rule-level conditions match.
+        // Phase 1: evaluate all non-requestCount rule-level conditions FIRST,
+        // before touching the counter. If any fails, the rule does not match
+        // and the counter is NOT incremented.
         if (conditions != null && !conditions.isEmpty()) {
             for (MatchCondition cond : conditions) {
+                if (cond == null || cond.getType() == null) continue;
+                if ("requestCount".equals(cond.getType())) continue; // deferred to phase 2
+                if (!matchSingleCondition(cond, method, path, topic, headers, queryParams, body, 0)) {
+                    return null;
+                }
+            }
+        }
+
+        // All non-requestCount conditions matched — increment the per-rule
+        // counter now. The counter tracks how many requests have reached the
+        // stateful check for this rule (i.e., matched all other conditions).
+        int count = counterStore.incrementAndGet(rule.getId());
+
+        // Phase 2: evaluate requestCount rule-level conditions with the
+        // incremented count.
+        if (conditions != null && !conditions.isEmpty()) {
+            for (MatchCondition cond : conditions) {
+                if (cond == null || cond.getType() == null) continue;
+                if (!"requestCount".equals(cond.getType())) continue;
                 if (!matchSingleCondition(cond, method, path, topic, headers, queryParams, body, count)) {
                     return null;
                 }
@@ -522,6 +569,19 @@ public class MatchEngine {
      *   <li>{@code { user { id } }} → "query" (anonymous query, default)</li>
      * </ul>
      *
+     * <p>M7: comment handling. Only line-style comments ({@code #...}) are
+     * stripped before keyword detection — this matches the GraphQL spec
+     * (§2.1.5) which defines {@code #} as the only comment syntax. Block
+     * strings ({@code """..."""}) are NOT treated as comments: per spec
+     * (§2.2.1) they are string literals, not comments, and may legally
+     * contain {@code query} / {@code mutation} keywords that must NOT be
+     * mistaken for the operation type. The current tokenizer does not parse
+     * string literals, so a block string containing a leading operation
+     * keyword could in theory mislead detection — but in practice the
+     * operation keyword always precedes any description block string, so
+     * this is safe for well-formed queries. A full lexer would be needed
+     * to handle adversarial inputs.</p>
+     *
      * @param body the HTTP request body (expected to be a GraphQL JSON request)
      * @return the operation type string, or {@code null} if the body is not a
      *         valid GraphQL request (e.g. missing {@code query} field)
@@ -648,7 +708,16 @@ public class MatchEngine {
     }
 
     private boolean applyOperator(String actual, String operator, String expected, boolean caseSensitive) {
-        // null actual: no operator can match (exists is handled by callers via containsKey).
+        // M6: null actual — no operator can match. Note that the "exists"
+        // operator has TWO different semantics depending on condition type:
+        //   - For "header" / "query" / "bodyJsonPath": callers short-circuit
+        //     via containsKey / JsonPathUtil.exists BEFORE delegating here,
+        //     so "exists" tests key presence, not value non-emptiness.
+        //   - For "body" / "method" / "path" / "topic" / "grpcService" /
+        //     "grpcMethod" / "graphqlOperationName" / "graphqlOperationType":
+        //     "exists" reaches this switch and means "actual is non-null AND
+        //     non-empty" (value presence, since these conditions have no
+        //     separate key to test).
         if (actual == null) return false;
 
         switch (operator) {
@@ -784,17 +853,15 @@ public class MatchEngine {
                     new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
 
     private boolean matchWithTimeout(Pattern pattern, String input) {
-        // Fast path: for short inputs and simple patterns, run inline to avoid
-        // the thread-pool overhead. We only offload to the executor when the
-        // input is non-trivial in length.
+        // C2 fix: ALL regex matches go through the timeout-protected executor.
+        // The previous fast path (input.length() < 64 → inline match) bypassed
+        // the ReDoS timeout — but catastrophic backtracking is independent of
+        // input length; a 63-char input can still cause exponential blowup.
         // Uses Matcher.find() (substring match) for consistency with
         // TcpStubHandler.matchRegex and common mock-tool semantics. Users
         // who need whole-string anchoring can prefix with '^' and suffix
         // with '$' in their regex pattern.
         if (input == null) return false;
-        if (input.length() < 64) {
-            return pattern.matcher(input).find();
-        }
 
         java.util.concurrent.Future<Boolean> future;
         try {

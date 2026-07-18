@@ -65,8 +65,18 @@ public final class FaultInjector {
             if (fault == null || fault.getType() == null) {
                 continue;
             }
+            // L12: clamp probability to [0.0, 1.0]. nextDouble() returns a
+            // value in [0.0, 1.0), so any probability <= 0.0 means "never
+            // trigger" and any probability >= 1.0 means "always trigger".
+            // Without the clamp, a misconfigured probability > 1.0 would
+            // still always trigger (correct by accident) but a NaN would
+            // make every comparison false and silently disable the fault.
+            double probability = fault.getProbability();
+            if (probability <= 0.0 || Double.isNaN(probability)) {
+                continue;
+            }
             double roll = random.nextDouble();
-            if (roll >= fault.getProbability()) {
+            if (roll >= probability) {
                 continue;
             }
             // This fault is triggered
@@ -124,11 +134,35 @@ public final class FaultInjector {
         if (statusCodes == null || statusCodes.isEmpty()) {
             return 500; // default to 500 if misconfigured
         }
-        if (statusCodes.size() == 1) {
-            return statusCodes.get(0);
+        // L11: filter out null entries — a misconfigured fault could carry a
+        // list like [500, null, 503] from lax JSON parsing. Without this
+        // filter, picking the null slot would NPE on auto-unboxing to int.
+        // We iterate rather than stream-collect to avoid allocating a new list
+        // on the hot fault-evaluation path.
+        Integer first = null;
+        int nonNullCount = 0;
+        for (Integer code : statusCodes) {
+            if (code != null) {
+                if (first == null) first = code;
+                nonNullCount++;
+            }
         }
+        if (nonNullCount == 0) {
+            return 500; // all entries null — treat as misconfigured
+        }
+        if (nonNullCount == 1) {
+            return first;
+        }
+        // Pick uniformly among the non-null entries. We re-roll on null hits
+        // rather than building an index map — nulls are rare (misconfig),
+        // so the expected number of iterations is ~1.
         int idx = random.nextInt(statusCodes.size());
-        return statusCodes.get(idx);
+        Integer picked = statusCodes.get(idx);
+        while (picked == null) {
+            idx = random.nextInt(statusCodes.size());
+            picked = statusCodes.get(idx);
+        }
+        return picked;
     }
 
     /**

@@ -2,6 +2,15 @@ package com.baafoo.agent;
 
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * @deprecated Informational only, not used by advice. ByteBuddy-inlined advice
+ * reads {@link GlobalRouteState#ROUTES} directly (the Bootstrap-CL copy); this
+ * App-CL-only {@code RouteTable} is kept as a snapshot for monitoring/testing
+ * and is updated atomically by {@code RouteManager.rebuildRouteTable} alongside
+ * the GlobalRouteState swap. Will be removed in a future version once
+ * monitoring is migrated to read GlobalRouteState.ROUTES directly.
+ */
+@Deprecated
 public final class RouteTable {
 
     private final ConcurrentHashMap<String, GlobalRouteState.HostPort> routes;

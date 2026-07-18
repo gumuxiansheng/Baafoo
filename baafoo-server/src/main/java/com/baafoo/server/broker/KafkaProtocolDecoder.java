@@ -66,6 +66,11 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
     private static final short INIT_PRODUCER_ID = 22;
     private static final short DESCRIBE_CONFIGS = 32;
 
+    // C-3: bounds used by parseRecordBatch to reject malformed batches that
+    // would otherwise drive unbounded allocations on the broker EventLoop.
+    private static final int MAX_RECORDS_COUNT = 10000;
+    private static final int MAX_RECORD_FIELD_SIZE = 1024 * 1024; // 1MB per key/value
+
     // Kafka error codes
     private static final short NONE = 0;
     private static final short UNKNOWN_SERVER_ERROR = -1;
@@ -1156,6 +1161,15 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
             buf.skipBytes(4);  // baseSequence
             int recordsCount = buf.readInt();
 
+            // C-3: bounds-check recordsCount before using it as the ArrayList
+            // capacity hint and the loop bound. A malformed/attacker-controlled
+            // count could otherwise trigger an OOM (Integer.MAX_VALUE capacity
+            // hint) or a long CPU-bound loop.
+            if (recordsCount < 0 || recordsCount > MAX_RECORDS_COUNT) {
+                buf.release();
+                return null;
+            }
+
             List<ParsedRecord> records = new ArrayList<ParsedRecord>(recordsCount);
             for (int i = 0; i < recordsCount && buf.isReadable(); i++) {
                 int recordLen = readVarint(buf);
@@ -1169,6 +1183,12 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 int keyLen = readVarint(buf);
                 byte[] key = null;
                 if (keyLen >= 0) {
+                    // C-3: cap individual field allocations to prevent OOM on
+                    // a malformed length prefix inside an otherwise-valid batch.
+                    if (keyLen > MAX_RECORD_FIELD_SIZE) {
+                        buf.release();
+                        return null;
+                    }
                     key = new byte[keyLen];
                     buf.readBytes(key);
                 }
@@ -1176,6 +1196,10 @@ public class KafkaProtocolDecoder extends SimpleChannelInboundHandler<ByteBuf> {
                 int valueLen = readVarint(buf);
                 byte[] value = null;
                 if (valueLen >= 0) {
+                    if (valueLen > MAX_RECORD_FIELD_SIZE) {
+                        buf.release();
+                        return null;
+                    }
                     value = new byte[valueLen];
                     buf.readBytes(value);
                 }

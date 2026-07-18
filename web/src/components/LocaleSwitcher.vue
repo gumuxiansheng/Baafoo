@@ -19,11 +19,10 @@
 </template>
 
 <script setup>
-import { computed, getCurrentInstance } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { locale } = useI18n()
-const instance = getCurrentInstance()
 
 const currentLocale = computed(() => locale.value)
 const currentLabel = computed(() => locale.value === 'zh-CN' ? '中文' : 'EN')
@@ -33,13 +32,10 @@ function switchLocale(lang) {
   locale.value = lang
   localStorage.setItem('baafoo_locale', lang)
 
-  // Update Element Plus locale via the global config
-  const elLocales = instance?.appContext?.config?.globalProperties?.$elLocales
-  if (elLocales && elLocales[lang] && instance?.appContext?.config?.globalProperties?.$ELEMENT) {
-    instance.appContext.config.globalProperties.$ELEMENT.locale = elLocales[lang]
-  }
-
-  // Reload to ensure all components pick up the new locale cleanly
+  // M-5: Removed the dead $ELEMENT/$elLocales block — this app uses Element Plus with the
+  // ElConfigProvider component (set in App.vue) for locale switching, not the legacy
+  // global $ELEMENT property. The window.location.reload() below re-mounts the app and
+  // is enough for all components to pick up the new locale cleanly.
   window.location.reload()
 }
 </script>

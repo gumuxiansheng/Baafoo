@@ -107,8 +107,10 @@ public class BaafooTestApp {
         try {
             caller.run();
         } catch (Exception e) {
+            // L-3: Stack trace goes to stderr (the conventional stream for errors) so that
+            // stdout stays clean for the test result table.
             System.out.println("  ✗ 异常: " + e.getMessage());
-            e.printStackTrace(System.out);
+            e.printStackTrace(System.err);
         }
     }
 

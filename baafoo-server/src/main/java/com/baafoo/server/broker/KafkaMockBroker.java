@@ -61,9 +61,13 @@ public class KafkaMockBroker {
                     @Override
                     protected void initChannel(SocketChannel ch) {
                         ChannelPipeline p = ch.pipeline();
-                        // Kafka protocol: 4-byte big-endian length prefix
+                        // Kafka protocol: 4-byte big-endian length prefix.
+                        // H-5: cap at 10MB (aligned with BaafooServer's
+                        // HttpObjectAggregator). The previous 100MB limit allowed
+                        // a single client to OOM the broker EventLoop; real
+                        // produce batches are well under 10MB.
                         p.addLast(new LengthFieldBasedFrameDecoder(
-                                100 * 1024 * 1024, // maxFrameLength: 100MB (large produce batches)
+                                10 * 1024 * 1024, // maxFrameLength: 10MB
                                 0,                  // lengthFieldOffset
                                 4,                  // lengthFieldLength
                                 0,                  // lengthAdjustment

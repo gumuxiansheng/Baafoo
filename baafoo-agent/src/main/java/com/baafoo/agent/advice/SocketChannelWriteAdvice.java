@@ -44,14 +44,13 @@ public final class SocketChannelWriteAdvice {
             byte[] data = new byte[bytesWritten];
             ((java.nio.Buffer) buf).position(pos - bytesWritten);
             buf.get(data);
-            ((java.nio.Buffer) buf).position(pos);
+            // L2: the trailing buf.position(pos) is redundant — buf.get(data)
+            // already advanced position by data.length (= bytesWritten), so it
+            // is back to pos. The previous restore was a no-op.
 
-            // Inline bytesToHex — cannot call private method from inlined advice
-            StringBuilder sb = new StringBuilder(data.length * 2);
-            for (int i = 0; i < data.length; i++) {
-                sb.append(String.format("%02x", data[i] & 0xff));
-            }
-            String hex = sb.toString();
+            // M5: delegate to GlobalRouteState.bytesToHex — see SocketChannelReadAdvice
+            // for rationale (Bootstrap-CL-visible static, ~50x faster than String.format).
+            String hex = GlobalRouteState.bytesToHex(data, 0, data.length);
 
             GlobalRouteState.addNioRecording(sessionInfo, "request", hex);
         } catch (Throwable t) {

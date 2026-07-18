@@ -245,7 +245,18 @@ public class ServerConfig {
 
         @Override
         public String toString() {
-            return "AuthConfig{enabled=" + enabled + ", localBypass=" + localBypass + "}";
+            // M11: include all fields (jwtSecret and apiKeys are intentionally
+            // omitted from the toString to avoid leaking credentials into logs).
+            // tokenExpiryHours, trustedProxies, and enabled/localBypass are
+            // safe to log and previously were missing — making it hard to
+            // diagnose auth misconfigurations from a single "Loaded server
+            // config" log line.
+            return "AuthConfig{enabled=" + enabled
+                    + ", localBypass=" + localBypass
+                    + ", tokenExpiryHours=" + tokenExpiryHours
+                    + ", apiKeyCount=" + (apiKeys != null ? apiKeys.size() : 0)
+                    + ", trustedProxies=" + trustedProxies
+                    + '}';
         }
     }
 }

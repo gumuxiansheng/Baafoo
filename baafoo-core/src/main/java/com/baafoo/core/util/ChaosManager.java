@@ -110,7 +110,7 @@ public class ChaosManager {
      * @param profileName the name of the profile to activate
      * @return list of generated rules (empty if profile not found or already active)
      */
-    public ActivateResult activate(String profileName) {
+    public synchronized ActivateResult activate(String profileName) {
         ChaosProfile profile = profiles.get(profileName);
         if (profile == null) {
             return ActivateResult.notFound(profileName);
@@ -234,7 +234,8 @@ public class ChaosManager {
                 : "Chaos: " + profile.getName() + " #" + index);
         rule.setProtocol("http");
         rule.setEnabled(true);
-        rule.setPriority(50); // Higher priority than normal rules (default 100)
+        // H6 fix: read priority from the profile (default 50, configurable).
+        rule.setPriority(profile.getPriority()); // Higher priority than normal rules (default 100)
 
         // Environments from profile
         if (profile.getEnvironments() != null) {
@@ -276,7 +277,15 @@ public class ChaosManager {
     }
 
     private String generateRuleId(String profileName, int index) {
-        return CHAOS_RULE_ID_PREFIX + profileName + "-" + index;
+        // Cap the index suffix to 4 digits to keep rule IDs bounded
+        // (code-smell #8). For indices > 9999 only the last 4 digits are
+        // used, which is sufficient to distinguish rules within a single
+        // profile while preventing unbounded ID growth.
+        String suffix = String.valueOf(index);
+        if (suffix.length() > 4) {
+            suffix = suffix.substring(suffix.length() - 4);
+        }
+        return CHAOS_RULE_ID_PREFIX + profileName + "-" + suffix;
     }
 
     // ===== Result classes =====

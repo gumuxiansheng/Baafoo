@@ -13,6 +13,8 @@ import org.slf4j.LoggerFactory;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -60,6 +62,15 @@ public class ControlChannel {
 
     private ScheduledFuture<?> heartbeatTask;
     private ScheduledFuture<?> pollTask;
+
+    /**
+     * H6: registration status flag. Set to {@code true} by the background
+     * registration thread after a successful {@code register()} call.
+     * {@code doHeartbeat()} and {@code doPollRules()} skip work while this is
+     * false — the server doesn't know about this agent until registration
+     * succeeds, so heartbeat/poll would just produce 401/404s.
+     */
+    private volatile boolean registered = false;
 
     public ControlChannel(AgentConfig config) {
         this.config = config;
@@ -123,36 +134,75 @@ public class ControlChannel {
     }
 
     /**
-     * Start the control channel: register, then start heartbeat + poll loops.
+     * Start the control channel: spawn the registration thread, then start
+     * heartbeat + poll loops.
+     *
+     * <p>H6: registration runs on a dedicated daemon thread so that premain
+     * is not blocked for up to ~70s (3 retries × backoff + 5s connect × 3).
+     * Heartbeat and poll start immediately but skip work until
+     * {@link #registered} flips to true.</p>
+     *
+     * @throws IllegalStateException if (M10) the server requires auth
+     *         ({@code server.authEnabled: true}) but no {@code apiKey} is
+     *         configured — failing fast here is far clearer than a stream
+     *         of 401 responses on heartbeat/poll.
      */
     public void start() {
         if (!running.compareAndSet(false, true)) {
             return;
         }
 
-        // 1. Register with server (with retries)
-        boolean registered = false;
-        for (int i = 0; i < config.getConnectionRetries(); i++) {
-            registered = register();
-            if (registered) break;
-            if (i < config.getConnectionRetries() - 1) {
-                long backoff = config.getRetryBackoffMs() * (i + 1);
-                log.warn("Registration attempt {}/{} failed, retrying in {}ms...",
-                        i + 1, config.getConnectionRetries(), backoff);
-                try { Thread.sleep(backoff); } catch (InterruptedException e) { break; }
+        // M10: pre-validate apiKey if auth is enabled. Without this the agent
+        // would appear to start successfully and then fail every heartbeat/poll
+        // with HTTP 401, which is much harder to diagnose than a startup error.
+        AgentConfig.ServerConnection sc = config.getServer();
+        if (sc != null && sc.isAuthEnabled()) {
+            String apiKey = sc.getApiKey();
+            if (apiKey == null || apiKey.isEmpty()) {
+                throw new IllegalStateException(
+                        "Server requires auth (server.authEnabled=true) but agent apiKey is not configured. "
+                                + "Set 'server.apiKey' in agent YAML.");
             }
         }
-        if (!registered) {
-            log.warn("Failed to register with server at {} after {} attempts, will retry via poll",
-                    getServerBaseUrl(), config.getConnectionRetries());
-        }
 
-        // 2. Start heartbeat
+        // 1. Register with server on a daemon thread (H6). The retry loop can
+        // block for up to ~70s (3 retries × backoff + 5s connect each); running
+        // it inline would block premain and delay application startup.
+        Thread registerThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                boolean ok = false;
+                for (int i = 0; i < config.getConnectionRetries(); i++) {
+                    ok = register();
+                    if (ok) break;
+                    if (i < config.getConnectionRetries() - 1) {
+                        long backoff = config.getRetryBackoffMs() * (i + 1);
+                        log.warn("Registration attempt {}/{} failed, retrying in {}ms...",
+                                i + 1, config.getConnectionRetries(), backoff);
+                        try {
+                            Thread.sleep(backoff);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+                }
+                if (!ok) {
+                    log.warn("Failed to register with server at {} after {} attempts; "
+                                    + "heartbeat/poll will retry registration on subsequent cycles",
+                            getServerBaseUrl(), config.getConnectionRetries());
+                }
+            }
+        }, "baafoo-control-register");
+        registerThread.setDaemon(true);
+        registerThread.start();
+
+        // 2. Start heartbeat (skips work until registered == true)
         heartbeatTask = scheduler.scheduleAtFixedRate(this::heartbeat, 0, config.getHeartbeatIntervalSec(), TimeUnit.SECONDS);
 
         pollTask = scheduler.scheduleAtFixedRate(this::pollRules, 0, config.getPollIntervalSec(), TimeUnit.SECONDS);
 
-        log.info("Control channel started (heartbeat={}s, poll={}s)",
+        log.info("Control channel started (heartbeat={}s, poll={}s, registration async)",
                 config.getHeartbeatIntervalSec(), config.getPollIntervalSec());
     }
 
@@ -236,6 +286,8 @@ public class ControlChannel {
                     // Retry DNS resolution for SERVER_HOST_IP now that network is confirmed up
                     com.baafoo.agent.AgentManifest.resolveServerHostIp();
 
+                    // H6: flip the registration flag so heartbeat/poll stop skipping.
+                    registered = true;
                     return true;
                 } else {
                     log.warn("Registration response missing 'data' field: {}", body);
@@ -263,6 +315,12 @@ public class ControlChannel {
     }
 
     private void doHeartbeat() {
+        // H6: skip until registration has succeeded. The server doesn't know
+        // about this agent yet, so a heartbeat would be rejected (401/404).
+        if (!registered) {
+            log.debug("Heartbeat skipped — not yet registered with server");
+            return;
+        }
         if (!circuitBreaker.allowRequest()) {
             log.debug("Heartbeat skipped — circuit breaker OPEN (failures={})",
                     circuitBreaker.getConsecutiveFailures());
@@ -301,6 +359,12 @@ public class ControlChannel {
     }
 
     private void doPollRules() {
+        // H6: skip until registration has succeeded. The server doesn't know
+        // about this agent yet, so poll would return 401/404 (not 204/200).
+        if (!registered) {
+            log.debug("Poll skipped — not yet registered with server");
+            return;
+        }
         if (!circuitBreaker.allowRequest()) {
             log.debug("Poll skipped — circuit breaker OPEN (failures={})",
                     circuitBreaker.getConsecutiveFailures());
@@ -368,10 +432,13 @@ public class ControlChannel {
             List<RecordingEntry> batch = recordings.subList(i, Math.min(i + batchSize, recordings.size()));
             try {
                 String json = mapper.writeValueAsString(batch);
-                HttpURLConnection conn = post(API_BASE + "/agent/recordings?agentId="
-                        + (config.getAgentId() != null ? config.getAgentId() : "")
-                        + "&environment=" + (config.getEnvironment() != null ? config.getEnvironment() : ""),
-                        json);
+                // M2: URL-encode agentId and environment. Previously they were
+                // concatenated raw — a value containing '&' or '=' or non-ASCII
+                // would silently corrupt the query string or 400 on the server.
+                java.util.LinkedHashMap<String, String> params = new java.util.LinkedHashMap<String, String>();
+                params.put("agentId", config.getAgentId() != null ? config.getAgentId() : "");
+                params.put("environment", config.getEnvironment() != null ? config.getEnvironment() : "");
+                HttpURLConnection conn = post(buildUrl(API_BASE + "/agent/recordings", params), json);
                 int code = conn.getResponseCode();
                 if (code == 200) {
                     log.info("Uploaded {} recordings (batch {}/{})", batch.size(),
@@ -386,6 +453,29 @@ public class ControlChannel {
                 throw new RuntimeException(e);
             }
         }
+    }
+
+    /**
+     * M2: build a URL with query parameters, URL-encoding each value with
+     * UTF-8. Skips entries whose value is null. Returns just the
+     * {@code path?k1=v1&k2=v2} portion (caller prepends the server base URL).
+     */
+    private String buildUrl(String path, Map<String, String> params) {
+        if (params == null || params.isEmpty()) {
+            return path;
+        }
+        StringBuilder sb = new StringBuilder(path);
+        sb.append(path.indexOf('?') >= 0 ? '&' : '?');
+        boolean first = true;
+        for (Map.Entry<String, String> e : params.entrySet()) {
+            if (e.getValue() == null) continue;
+            if (!first) sb.append('&');
+            sb.append(URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8));
+            sb.append('=');
+            sb.append(URLEncoder.encode(e.getValue(), StandardCharsets.UTF_8));
+            first = false;
+        }
+        return sb.toString();
     }
 
     // --- HTTP helpers (JDK HttpURLConnection only, NO Netty) ---

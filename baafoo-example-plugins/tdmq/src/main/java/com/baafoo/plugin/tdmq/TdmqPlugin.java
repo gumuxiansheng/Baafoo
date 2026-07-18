@@ -5,6 +5,8 @@ import com.baafoo.plugin.ConnectAdvice;
 import com.baafoo.plugin.ConnectContext;
 import com.baafoo.plugin.InterceptTarget;
 import com.baafoo.plugin.PluginEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * TDMQ / Pulsar 2.7.4 protocol-adapter plugin.
@@ -29,6 +31,9 @@ import com.baafoo.plugin.PluginEvent;
 public class TdmqPlugin implements AgentPlugin {
 
     private static final String PLUGIN_NAME = "tdmq";
+    // L-1: Use SLF4J (this example-plugin module pulls in slf4j-api via pom); previously
+    // System.out was used which bypassed the host app's logging configuration.
+    private static final Logger log = LoggerFactory.getLogger(TdmqPlugin.class);
 
     /** Dedicated TDMQ stub broker port (distinct from the default PULSAR_PORT 9003). */
     static final int TDMQ_BROKER_PORT = 9005;
@@ -45,9 +50,7 @@ public class TdmqPlugin implements AgentPlugin {
 
     @Override
     public void init() {
-        // SLF4J is intentionally not used here to keep the plugin-API module
-        // dependency-free; the plugin prints via System.out on the App CL.
-        System.out.println("[TDMQ Plugin] Initialized for Pulsar/TDMQ 2.7.4");
+        log.info("[TDMQ Plugin] Initialized for Pulsar/TDMQ 2.7.4");
     }
 
     // ---- New API hooks ----
@@ -80,13 +83,13 @@ public class TdmqPlugin implements AgentPlugin {
     @Override
     public void onEvent(PluginEvent event) {
         if (event.getType() == PluginEvent.Type.CONNECTION_REDIRECTED) {
-            System.out.println("[TDMQ Plugin] Event: " + event);
+            log.debug("[TDMQ Plugin] Event: {}", event);
         }
     }
 
     @Override
     public void destroy() {
-        System.out.println("[TDMQ Plugin] Destroyed");
+        log.info("[TDMQ Plugin] Destroyed");
     }
 
     // ---- Helpers ----

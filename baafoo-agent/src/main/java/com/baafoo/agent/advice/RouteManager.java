@@ -25,7 +25,12 @@ public final class RouteManager {
 
     private static final MatchEngine MATCH_ENGINE = new MatchEngine();
 
-    private static volatile EnvironmentMode currentMode = EnvironmentMode.RECORD_AND_STUB;
+    // L6: initial mode is STUB to match GlobalRouteState.CURRENT_MODE's initial
+    // value of 0 (MODE_STUB). Previously this was RECORD_AND_STUB (3), which left
+    // the App-CL currentMode and the Bootstrap-CL CURRENT_MODE inconsistent until
+    // the first setMode() call synced them — advice running during that window
+    // observed conflicting mode values across the two CLs.
+    private static volatile EnvironmentMode currentMode = EnvironmentMode.STUB;
 
     private static volatile boolean recording = false;
 
@@ -48,7 +53,11 @@ public final class RouteManager {
                 return Integer.compare(a.getPriority(), b.getPriority());
             }
         });
-        RULES.set(sorted);
+        // L3: wrap in unmodifiableList so callers of getRules() cannot mutate the
+        // live list (which would desynchronize it from the route table). The list
+        // passed to rebuildRouteTable below is still readable through the wrapper.
+        List<Rule> immutable = Collections.unmodifiableList(sorted);
+        RULES.set(immutable);
         log.info("Rules updated: {} rules loaded", sorted.size());
 
         rebuildRouteTable(sorted);
@@ -90,7 +99,12 @@ public final class RouteManager {
                 break;
         }
 
-        AgentManifest.currentMode = modeValue;
+        // H3: use AgentManifest.setCurrentMode() so the App-CL GlobalRouteState.CURRENT_MODE
+        // is synced atomically with AgentManifest.currentMode. Previously this was a direct
+        // field assignment that left GlobalRouteState.CURRENT_MODE (read by Bootstrap-CL
+        // advice) stuck at 0 until syncModeToBootstrapCL ran — and even then, only the
+        // Bootstrap-CL copy was updated, not the App-CL copy.
+        AgentManifest.setCurrentMode(modeValue);
 
         syncModeToBootstrapCL(modeValue);
     }
@@ -152,11 +166,15 @@ public final class RouteManager {
             }
         }
 
-        // Atomic swap: replace the entire map reference instead of clear+putAll
-        // to avoid a window where concurrent readers see an empty route table
-        GlobalRouteState.ROUTES = newRoutes;
-
-        // Build a new RouteTable and swap atomically
+        // H4: build the RouteTable FIRST, in a local variable. Only after the
+        // full build succeeds (no NumberFormatException, no other parse error)
+        // do we perform the three atomic swaps. The previous order swapped
+        // GlobalRouteState.ROUTES before building the RouteTable, so a malformed
+        // route key (e.g. an IPv6 literal like "[::1]:8080") would throw
+        // NumberFormatException from Integer.parseInt and leave the three state
+        // locations inconsistent: GlobalRouteState.ROUTES already pointed at the
+        // new map, AgentManifest.ROUTE_TABLE still held the old table, and
+        // syncRoutesToBootstrapCL was never called.
         RouteTable newTable = new RouteTable();
         for (Map.Entry<String, GlobalRouteState.HostPort> entry : newRoutes.entrySet()) {
             String key = entry.getKey();
@@ -165,17 +183,31 @@ public final class RouteManager {
                 String serviceName = key.substring(4);
                 newTable.putService(serviceName, value.host, value.port);
             } else {
-                int colonIdx = key.indexOf(':');
+                // M1: use lastIndexOf(':') so IPv6 literals like "[::1]:8080"
+                // parse correctly — the host portion may contain multiple ':'.
+                int colonIdx = key.lastIndexOf(':');
                 if (colonIdx > 0) {
                     String host = key.substring(0, colonIdx);
-                    int port = Integer.parseInt(key.substring(colonIdx + 1));
-                    newTable.put(host, port, value.host, value.port);
+                    try {
+                        int port = Integer.parseInt(key.substring(colonIdx + 1));
+                        newTable.put(host, port, value.host, value.port);
+                    } catch (NumberFormatException nfe) {
+                        // H4: skip a single malformed route key instead of failing
+                        // the entire rebuild. Without this catch, one bad rule
+                        // would leave GlobalRouteState.ROUTES, AgentManifest.ROUTE_TABLE,
+                        // and the Bootstrap-CL copy all in different states.
+                        log.warn("Skipping malformed route key (unparseable port): {}", key);
+                    }
                 } else {
                     newTable.getRoutes().put(key, value);
                 }
             }
         }
         newTable.incrementVersion();
+
+        // H4: atomic swap — all three state locations are updated in sequence
+        // after the new RouteTable has been fully constructed.
+        GlobalRouteState.ROUTES = newRoutes;
         AgentManifest.ROUTE_TABLE.set(newTable);
 
         log.info("RouteTable rebuilt: {} routes (GlobalRouteState.ROUTES size={})", newRoutes.size(), GlobalRouteState.ROUTES.size());
@@ -250,19 +282,28 @@ public final class RouteManager {
         if (buffer != null) {
             buffer.flush();
         }
-        // Also drain any remaining entries in the legacy buffer via poll() —
-        // snapshot+clear under COWArrayList had a race where entries added
-        // between snapshot and clear would be lost.
-        RecordingEntry e;
-        List<RecordingEntry> batch = new ArrayList<RecordingEntry>();
-        while ((e = RECORDING_BUFFER.poll()) != null) {
-            batch.add(e);
-        }
-        if (!batch.isEmpty()) {
-            ControlChannel channel = BaafooAgent.getControlChannel();
-            if (channel != null) {
-                channel.uploadRecordings(batch);
+        // M8: legacy path — recordingBuffer is non-null after BaafooAgent.initRecording(),
+        // so this branch only runs during early bootstrap. Upload failures here are logged
+        // but NOT retried (no equivalent of RecordingBuffer.pendingRetry on this path).
+        // Wrapped in try-catch so a transient upload failure cannot tear down the JVM
+        // shutdown hook that calls this method.
+        try {
+            // Also drain any remaining entries in the legacy buffer via poll() —
+            // snapshot+clear under COWArrayList had a race where entries added
+            // between snapshot and clear would be lost.
+            RecordingEntry e;
+            List<RecordingEntry> batch = new ArrayList<RecordingEntry>();
+            while ((e = RECORDING_BUFFER.poll()) != null) {
+                batch.add(e);
             }
+            if (!batch.isEmpty()) {
+                ControlChannel channel = BaafooAgent.getControlChannel();
+                if (channel != null) {
+                    channel.uploadRecordings(batch);
+                }
+            }
+        } catch (Throwable t) {
+            log.warn("Legacy recording flush failed (entries may be lost): {}", t.getMessage());
         }
     }
 
@@ -298,7 +339,11 @@ public final class RouteManager {
             // P2-4: re-throw actionable configuration errors so the operator sees them
             throw e;
         } catch (Exception e) {
+            // M9: re-throw so the caller (updateRules / setMode via circuit breaker)
+            // can observe the failure. Previously this was silently swallowed, leaving
+            // the Bootstrap CL copy of CURRENT_MODE stale with no signal to the operator.
             log.error("Failed to sync mode to Bootstrap CL: {}", e.getMessage());
+            throw new RuntimeException("Bootstrap CL mode sync failed", e);
         }
     }
 
@@ -332,7 +377,10 @@ public final class RouteManager {
         } catch (IllegalStateException e) {
             throw e;
         } catch (Exception e) {
+            // M9: re-throw so updateRules / circuit breaker can observe the failure
+            // and the operator is alerted that the Bootstrap CL copy is stale.
             log.error("Failed to sync routes to Bootstrap CL: {}", e.getMessage());
+            throw new RuntimeException("Bootstrap CL routes sync failed", e);
         }
     }
 }

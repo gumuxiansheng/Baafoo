@@ -224,8 +224,15 @@ public class PassthroughProxy {
     }
 
     private String determineProtocol(String host, int port, Map<String, String> headers) {
+        // H-8: only honour X-Forwarded-Proto when its value is exactly "http"
+        // or "https". The previous implementation returned any client-supplied
+        // string verbatim, allowing attackers to inject arbitrary scheme
+        // values that could later be reflected into logs, redirect URLs, or
+        // downstream requests. Trusted-proxy gating would be stricter but
+        // requires a config reference this class does not currently hold; the
+        // allow-list is the minimum-security fix.
         String forwardedProto = headers.get("X-Forwarded-Proto");
-        if (forwardedProto != null && !forwardedProto.isEmpty()) {
+        if ("http".equals(forwardedProto) || "https".equals(forwardedProto)) {
             return forwardedProto;
         }
         if (port == 443) {

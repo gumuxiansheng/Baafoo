@@ -10,6 +10,11 @@ import java.util.Map;
  * fields) before rule matching. Plugins can inspect, modify, or short-circuit.</p>
  *
  * <p>Only uses JDK types — no domain model dependency.</p>
+ *
+ * <p><b>Thread-safety:</b> Not thread-safe. The {@code modifiedHeaders} and
+ * {@code modifiedBody} fields are mutable via their setters and are intended to be
+ * modified by a single thread within one plugin invocation. Concurrent access to a
+ * shared instance requires external synchronization.</p>
  */
 public class RequestContext {
 

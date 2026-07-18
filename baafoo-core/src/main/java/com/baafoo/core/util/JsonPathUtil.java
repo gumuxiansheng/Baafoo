@@ -88,17 +88,19 @@ public final class JsonPathUtil {
     /**
      * Check whether a JSON body contains a value at the given path.
      *
+     * <p>H4 fix: previously this method called {@link #extract} (which parses
+     * the body) and then re-parsed the body again to distinguish missing
+     * paths from present-but-empty-string values. Now the body is parsed
+     * only once and the existing {@link #navigate} helper is reused.</p>
+     *
      * @param body     the raw JSON body string
      * @param jsonPath dot-notation path, optionally prefixed with {@code $.}
-     * @return true if the path resolves to a non-missing node
+     * @return true if the path resolves to a non-missing, non-null node
      */
     public static boolean exists(String body, String jsonPath) {
         if (body == null || body.isEmpty() || jsonPath == null || jsonPath.isEmpty()) {
             return false;
         }
-        String value = extract(body, jsonPath);
-        // extract returns "" for both missing paths AND present-but-empty-string values.
-        // To distinguish, re-parse and check node presence directly.
         try {
             JsonNode root = MAPPER.readTree(body);
             JsonNode node = navigate(root, normalizePath(jsonPath));

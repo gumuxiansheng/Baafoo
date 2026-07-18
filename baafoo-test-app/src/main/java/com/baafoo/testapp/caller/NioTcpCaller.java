@@ -61,6 +61,10 @@ public class NioTcpCaller implements BaafooTestApp.Caller {
             ByteBuffer readBuf = ByteBuffer.allocate(4096);
             int len = channel.read(readBuf);
             if (len > 0) {
+                // L-7: Cast to java.nio.Buffer is intentional — ByteBuffer.flip() was inherited
+                // from Buffer in Java 8, but Java 9+ made flip() final on ByteBuffer and only
+                // Buffer.flip() remains overridable. The cast forces the call to use Buffer.flip()
+                // so the code compiles cleanly on both Java 8 and 9+.
                 ((java.nio.Buffer) readBuf).flip();
                 byte[] data = new byte[readBuf.remaining()];
                 readBuf.get(data);

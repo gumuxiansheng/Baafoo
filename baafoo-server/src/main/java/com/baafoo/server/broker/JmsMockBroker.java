@@ -186,9 +186,10 @@ public class JmsMockBroker {
                                    String charset) throws Exception {
         ensureStarted();
         Connection connection = null;
+        Session session = null;
         try {
             connection = internalCf.createConnection();
-            Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+            session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
 
             Destination destination = resolveDestination(session, destinationName);
             MessageProducer producer = session.createProducer(destination);
@@ -229,6 +230,17 @@ public class JmsMockBroker {
             connection.start();
             log.info("Sent preset message to {}: {} bytes, delay={}ms", destinationName, body.length(), delayMs);
         } finally {
+            // L-4: close session explicitly before connection. Per JMS spec,
+            // connection.close() implicitly closes its sessions, but doing it
+            // explicitly guarantees session resources (producers/consumers) are
+            // released even if connection.close() throws. Close order: session
+            // first (child), then connection (parent).
+            if (session != null) {
+                try {
+                    session.close();
+                } catch (Exception ignored) {
+                }
+            }
             if (connection != null) {
                 try {
                     connection.close();

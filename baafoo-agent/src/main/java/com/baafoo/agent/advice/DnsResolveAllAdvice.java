@@ -17,6 +17,15 @@ import java.net.InetAddress;
  * methods in a class and tries to apply them to the target method, causing a
  * "Duplicate advice" error when two methods with different return types
  * (InetAddress vs InetAddress[]) are in the same class.</p>
+ *
+ * <p><b>L1 — keep parity with {@link DnsResolveAdvice}</b>: the
+ * record-then-redirect logic below is intentionally duplicated across the two
+ * DNS advice classes. ByteBuddy-inlined advice cannot delegate to a shared
+ * helper that lives in the AppClassLoader, and merging both into one class
+ * triggers the "Duplicate advice" error described above. Any change to the
+ * service-name lookup, host fallback, re-entry guard, or hostName-preserving
+ * InetAddress construction here MUST be mirrored in {@link DnsResolveAdvice}
+ * (and vice versa).</p>
  */
 public final class DnsResolveAllAdvice {
 

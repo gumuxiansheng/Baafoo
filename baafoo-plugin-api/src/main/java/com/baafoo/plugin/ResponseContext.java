@@ -1,5 +1,7 @@
 package com.baafoo.plugin;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -7,6 +9,10 @@ import java.util.Map;
  *
  * <p>Carries the response after stub generation or real upstream response,
  * before it is sent to the client. Plugins can inspect, replace, or augment.</p>
+ *
+ * <p><b>Thread-safety:</b> Not thread-safe. The {@code body} field is mutable via
+ * its setter. The {@code headers} field is defensively copied on construction to
+ * isolate the context from subsequent mutations of the source map.</p>
  */
 public class ResponseContext {
 
@@ -26,7 +32,8 @@ public class ResponseContext {
         this.ruleId = ruleId;
         this.ruleName = ruleName;
         this.statusCode = statusCode;
-        this.headers = headers;
+        // M-2: Defensive copy to isolate the context from later mutations of the source map
+        this.headers = headers != null ? new LinkedHashMap<>(headers) : Collections.emptyMap();
         this.body = body;
         this.request = request;
         this.stubbed = stubbed;

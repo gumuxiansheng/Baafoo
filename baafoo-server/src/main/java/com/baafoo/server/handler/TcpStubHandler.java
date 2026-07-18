@@ -50,6 +50,16 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
     /** Attribute key for tracking current round index in multi-round interaction */
     private static final AttributeKey<Integer> ATTR_ROUND_INDEX = AttributeKey.valueOf("tcpRoundIndex");
 
+    /**
+     * M-7: Upper bound on a single inbound TCP frame. TCP is a stream protocol
+     * with no length prefix, so Netty delivers whatever bytes have arrived;
+     * without a cap a misbehaving client could drive unbounded allocation on
+     * the EventLoop (similar protection to KafkaMockBroker's 10MB frame limit).
+     * 10MB matches {@link com.baafoo.server.broker.KafkaMockBroker} and
+     * {@link com.baafoo.server.broker.PulsarFrameDecoder}.
+     */
+    private static final int MAX_INBOUND_BYTES = 10 * 1024 * 1024;
+
     private final StorageService storage;
     private final MatchEngine matchEngine;
     private final AgentResolver agentResolver;
@@ -106,6 +116,15 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) {
+        // M-7: reject oversized inbound TCP frames to protect the EventLoop
+        // from unbounded allocation. Close the channel — partial stream state
+        // is unrecoverable for a malformed client.
+        if (msg.readableBytes() > MAX_INBOUND_BYTES) {
+            log.warn("TCP inbound frame too large ({} bytes > {} max) from {}; closing channel",
+                    msg.readableBytes(), MAX_INBOUND_BYTES, ctx.channel().remoteAddress());
+            ctx.close();
+            return;
+        }
         byte[] data = new byte[msg.readableBytes()];
         msg.readBytes(data);
         String payload = new String(data, StandardCharsets.UTF_8);

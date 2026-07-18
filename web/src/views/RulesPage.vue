@@ -88,7 +88,7 @@
         <el-table-column :label="$t('rules.actions')" min-width="260" fixed="right" v-if="authStore.canWriteRule">
           <template #default="{ row }">
             <el-button size="small" text @click="editRule(row)" v-if="authStore.canWriteRule">{{ $t('rules.edit') }}</el-button>
-            <el-button size="small" text @click="undoRuleItem(row)" :disabled="row.version <= 1" v-if="authStore.canWriteRule">{{ $t('rules.undo') }}</el-button>
+            <el-button size="small" text @click="undoRuleItem(row)" :disabled="!row.version || isNaN(row.version) || row.version <= 1" v-if="authStore.canWriteRule">{{ $t('rules.undo') }}</el-button>
             <el-popconfirm :title="$t('rules.confirmDelete')" @confirm="deleteRuleItem(row.id)" v-if="authStore.canWriteRule">
               <template #reference>
                 <el-button size="small" text type="danger">{{ $t('rules.delete') }}</el-button>

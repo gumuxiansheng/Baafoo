@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="login-container">
     <div class="login-card">
       <div class="login-header">
@@ -66,6 +66,11 @@ export default {
     const { t } = useI18n()
     const formRef = ref(null)
     const loading = ref(false)
+    // L-11: Brute-force throttle — after 5 consecutive failures the login button is locked for 30s.
+    const MAX_ATTEMPTS = 5
+    const LOCKOUT_MS = 30 * 1000
+    const loginAttemptCount = ref(0)
+    const loginLockedUntil = ref(null)
 
     const form = reactive({
       username: '',
@@ -79,16 +84,32 @@ export default {
 
     const handleLogin = async () => {
       if (!formRef.value) return
+      // L-11: Rate-limit login attempts to slow down brute-force guesses. After MAX_ATTEMPTS
+      // failures the button is locked for LOCKOUT_MS before the user can try again.
+      if (loginLockedUntil.value && Date.now() < loginLockedUntil.value) {
+        const secs = Math.ceil((loginLockedUntil.value - Date.now()) / 1000)
+        ElMessage.error(t('login.loginError', { 0: `too many attempts, retry in ${secs}s` }))
+        return
+      }
       await formRef.value.validate(async (valid) => {
         if (!valid) return
         loading.value = true
         try {
           const success = await authStore.login(form.username, form.password)
           if (success) {
+            loginAttemptCount.value = 0
+            loginLockedUntil.value = null
             ElMessage.success(t('login.loginSuccess'))
             router.push('/')
           } else {
-            ElMessage.error(t('login.loginFailed'))
+            loginAttemptCount.value += 1
+            if (loginAttemptCount.value >= MAX_ATTEMPTS) {
+              loginLockedUntil.value = Date.now() + LOCKOUT_MS
+              loginAttemptCount.value = 0
+              ElMessage.error(t('login.loginError', { 0: `too many attempts, locked for ${LOCKOUT_MS / 1000}s` }))
+            } else {
+              ElMessage.error(t('login.loginFailed'))
+            }
           }
         } catch (e) {
           ElMessage.error(t('login.loginError', { 0: e.message || t('common.unknownError') }))

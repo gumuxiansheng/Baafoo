@@ -21,7 +21,19 @@ public class ConfigLoader {
 
     private static final ObjectMapper YAML_MAPPER = createSafeYamlMapper();
 
-    /** M17: Pattern for ${ENV_VAR:default} or ${ENV_VAR} in config values */
+    /**
+     * M17: Pattern for ${ENV_VAR:default} or ${ENV_VAR} in config values.
+     *
+     * <p>M4: Substitution is single-pass and NON-recursive — the replacement
+     * value of an env var is inserted verbatim and is NOT re-scanned for
+     * further {@code ${...}} placeholders. This avoids unbounded expansion
+     * loops (e.g. an env var whose value itself contains {@code ${SELF}}).
+     * Nested placeholders like {@code ${${FOO}}} therefore resolve the
+     * <em>outer</em> placeholder to the literal text of the inner one, not to
+     * the value of {@code FOO}. Callers needing recursive resolution must
+     * invoke {@link #resolveEnvVars(String)} explicitly in a loop and
+     * bound the iteration count.</p>
+     */
     private static final Pattern ENV_PATTERN = Pattern.compile("\\$\\{([^}:]+)(?::([^}]*))?\\}");
 
     private static ObjectMapper createSafeYamlMapper() {
@@ -93,13 +105,9 @@ public class ConfigLoader {
             if (in == null) {
                 throw new IOException("Resource not found: " + resourcePath);
             }
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int n;
-            while ((n = in.read(buffer)) != -1) {
-                baos.write(buffer, 0, n);
-            }
-            String yamlContent = resolveEnvVars(new String(baos.toByteArray(), StandardCharsets.UTF_8));
+            // M5: delegate to the shared readAndResolve helper (was a duplicate
+            // copy of the buffer-read loop that also lived in readYamlWithEnvSubstitution).
+            String yamlContent = readAndResolve(in);
             return YAML_MAPPER.readValue(yamlContent, configClass);
         }
     }
@@ -142,14 +150,32 @@ public class ConfigLoader {
      */
     private static String readYamlWithEnvSubstitution(File file) throws IOException {
         try (InputStream in = Files.newInputStream(file.toPath())) {
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int n;
-            while ((n = in.read(buffer)) != -1) {
-                baos.write(buffer, 0, n);
-            }
-            String yamlContent = new String(baos.toByteArray(), StandardCharsets.UTF_8);
-            return resolveEnvVars(yamlContent);
+            // M5: reuse the shared readAndResolve helper instead of duplicating
+            // the buffer-read loop here.
+            return readAndResolve(in);
         }
+    }
+
+    /**
+     * M5: Shared helper — fully reads an {@link InputStream} into a UTF-8
+     * string and applies environment variable substitution. Extracted from
+     * the previously duplicated implementations in
+     * {@link #loadFromClasspath} and {@link #readYamlWithEnvSubstitution}.
+     *
+     * <p>The caller is responsible for closing the stream (try-with-resources).</p>
+     *
+     * @param in the input stream to read (not closed by this method)
+     * @return the stream content with env vars resolved
+     * @throws IOException on read error
+     */
+    private static String readAndResolve(InputStream in) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int n;
+        while ((n = in.read(buffer)) != -1) {
+            baos.write(buffer, 0, n);
+        }
+        String yamlContent = new String(baos.toByteArray(), StandardCharsets.UTF_8);
+        return resolveEnvVars(yamlContent);
     }
 }

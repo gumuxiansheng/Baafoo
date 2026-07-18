@@ -46,8 +46,26 @@ public class JdbcUserService extends BaseJdbcService implements UserService {
 
     @Override
     public User createUser(User user) {
+        // M-9: validate the role code resolves to a real sys_role row before
+        // INSERT. The UserMapper.createUser SQL uses a subquery
+        // (SELECT id FROM sys_role WHERE code = #{role}) which silently
+        // writes NULL role_id when the code is unknown — that would later
+        // break role-based authz checks. Fail fast here instead.
+        String role = user != null ? user.getRole() : null;
+        if (role == null || role.isEmpty()) {
+            log.warn("createUser rejected: role is null or empty (username={})",
+                    user != null ? user.getUsername() : null);
+            return null;
+        }
         try (SqlSession session = openSession()) {
-            session.getMapper(UserMapper.class).createUser(user);
+            UserMapper mapper = session.getMapper(UserMapper.class);
+            Long roleId = mapper.findRoleIdByCode(role);
+            if (roleId == null) {
+                log.warn("createUser rejected: role '{}' does not exist in sys_role (username={})",
+                        role, user.getUsername());
+                return null;
+            }
+            mapper.createUser(user);
             return user;
         } catch (Exception e) {
             log.error("Failed to create user: {}", e.getMessage());

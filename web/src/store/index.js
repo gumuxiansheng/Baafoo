@@ -12,9 +12,12 @@ export const useStatusStore = defineStore('status', {
         const res = await api.getStatus()
         if (res.success) {
           this.status = res.data
+          return true
         }
+        return false
       } catch (e) {
-        // ignore
+        // H-6: 返回 false 让调用方可以感知失败（如 App.vue 设置断连状态、退避）
+        return false
       }
     }
   }
@@ -119,6 +122,8 @@ export const useAuthStore = defineStore('auth', {
         this.token = res.data.token
         this.role = res.data.role
         this.username = username
+        // SECURITY: token stored in localStorage; ensure strict CSP and no v-html
+        // (see C-1 fix). Consider HttpOnly cookie migration in future.
         localStorage.setItem('baafoo_token', res.data.token)
         // M23: don't persist role in localStorage — it's fetched from server via fetchMe()
         localStorage.setItem('baafoo_username', username)

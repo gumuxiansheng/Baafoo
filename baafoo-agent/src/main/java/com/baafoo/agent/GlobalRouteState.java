@@ -309,6 +309,56 @@ public final class GlobalRouteState {
         }
     }
 
+    // ---- bytesToHex (M5) ----
+    //
+    // Shared hex encoder used by RecordingInputStream / RecordingOutputStream
+    // (App CL) and SocketChannelReadAdvice / SocketChannelWriteAdvice (inlined
+    // into Bootstrap CL classes). Lives here so the advice can call it via an
+    // invokestatic instruction — GlobalRouteState is packaged into the Bootstrap
+    // JAR by BaafooAgent.createBootstrapJar(), making it visible from both CLs.
+    // The implementation references only java.lang.* (char[], String) so it is
+    // safe to inline into Bootstrap-CL-loaded classes.
+    private static final char[] HEX_CHARS = "0123456789abcdef".toCharArray();
+
+    /**
+     * Encode a byte range as a lowercase hex string.
+     *
+     * @param bytes  source byte array (null → empty string)
+     * @param offset start offset within the array
+     * @param length number of bytes to encode
+     * @return lowercase hex string (length = {@code length * 2})
+     */
+    public static String bytesToHex(byte[] bytes, int offset, int length) {
+        if (bytes == null || length <= 0) {
+            return "";
+        }
+        char[] out = new char[length * 2];
+        for (int i = 0; i < length; i++) {
+            int v = bytes[offset + i] & 0xff;
+            out[i * 2] = HEX_CHARS[v >>> 4];
+            out[i * 2 + 1] = HEX_CHARS[v & 0x0f];
+        }
+        return new String(out);
+    }
+
+    /**
+     * L9: true for ports where stream-level recording should be applied
+     * (generic TCP, gRPC, etc.). False for HTTP/Kafka/Pulsar/JMS stub ports,
+     * where the server-side handler records at the application layer —
+     * registering stream recording there would duplicate.
+     *
+     * <p>Consolidates the duplicated {@code port != HTTP_PORT && port != KAFKA_PORT
+     * && port != PULSAR_PORT && port != JMS_PORT} check that previously appeared
+     * inline in {@code SocketConnectAdvice}, {@code NioSocketConnectAdvice}, and
+     * {@code NioSocketFinishConnectAdvice}.</p>
+     */
+    public static boolean isStreamRecordingPort(int port) {
+        return port != HTTP_PORT
+                && port != KAFKA_PORT
+                && port != PULSAR_PORT
+                && port != JMS_PORT;
+    }
+
     /** @return the LogBridge manager (App-CL only; null on the Bootstrap CL). */
     public static LogBridge getLogBridge() {
         return logBridge;

@@ -92,7 +92,10 @@ public class VarintCodecTest {
     public void testReadVarint64Exhausted() {
         byte[] data = new byte[0];
         int[] pos = {0};
-        assertEquals(0L, VarintCodec.readVarint64(data, pos));
+        // L13 fix: readVarint64 now returns -1L on EOF (consistent with the
+        // 32-bit readVarint overloads) instead of 0, which was ambiguous with
+        // a legitimately decoded zero value (see testReadVarint64SingleByte).
+        assertEquals(-1L, VarintCodec.readVarint64(data, pos));
     }
 
     // ==================== varintSize ====================

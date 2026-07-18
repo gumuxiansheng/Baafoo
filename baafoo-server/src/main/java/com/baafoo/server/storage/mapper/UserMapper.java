@@ -13,6 +13,15 @@ public interface UserMapper {
 
     User getUserByApiKey(@Param("apiKey") String apiKey);
 
+    /**
+     * M-9: look up the sys_role primary key by role code. Used by
+     * {@link JdbcUserService#createUser} to validate the role before insert,
+     * so a typo'd role code surfaces as a 400 instead of silently writing
+     * a NULL role_id (the {@code createUser} SQL uses a subquery that
+     * returns NULL for unknown codes).
+     */
+    Long findRoleIdByCode(@Param("code") String code);
+
     int createUser(User user);
 
     int updateUserRole(@Param("username") String username, @Param("role") String role);

@@ -3,6 +3,8 @@ package com.baafoo.server.handler;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
@@ -66,6 +68,17 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
     private final PassthroughProxy passthroughProxy;
     /** P2: Event bus for firing plugin events (may be null) */
     private com.baafoo.core.event.EventBus eventBus;
+    /**
+     * H-4: dedicated thread pool for {@code storage.addRecording} so the Netty
+     * EventLoop never blocks on JDBC writes. RecordingEntry holds body data as
+     * {@code String}/{@code byte[]} (NOT {@code ByteBuf}), so no retain/release
+     * dance is needed when crossing thread boundaries.
+     */
+    private final ExecutorService recordingExecutor = Executors.newFixedThreadPool(4, r -> {
+        Thread t = new Thread(r, "baafoo-recording-writer");
+        t.setDaemon(true);
+        return t;
+    });
 
     /**
      * Note: this handler must NOT be annotated with {@code @Sharable} — each
@@ -97,6 +110,23 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
         if (eventBus != null) {
             eventBus.fire(event);
         }
+    }
+
+    /**
+     * H-4: persist a recording off the Netty EventLoop. RecordingEntry bodies
+     * are {@code String}/{@code byte[]} (not {@code ByteBuf}), so no
+     * retain/release is required when handing the entry to another thread.
+     * Errors are logged and swallowed — recording persistence must not break
+     * the response path.
+     */
+    private void asyncPersist(RecordingEntry recording) {
+        recordingExecutor.execute(() -> {
+            try {
+                storage.addRecording(recording);
+            } catch (Exception e) {
+                log.warn("Recording persist failed: {}", e.getMessage());
+            }
+        });
     }
 
     /**
@@ -193,7 +223,8 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                     rec.setAgentId(agentId);
                     rec.setAgentIp(agentIp);
                     rec.setEnvironmentId(agentEnvironment);
-                    storage.addRecording(rec);
+                    // H-4: persist recording off the EventLoop.
+                    asyncPersist(rec);
                     // P2: Fire RECORDING_SAVED event
                     fireEvent(PluginEvent.recordingSaved(rec.getId(), "http", agentEnvironment));
                 }
@@ -286,7 +317,8 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                                         agentEnvironment, "http", host, port, method, path, headers, requestBody,
                                         error.getMessage(), System.currentTimeMillis() - startTime,
                                         agentId, agentIp);
-                                storage.addRecording(recording);
+                                // H-4: persist off the EventLoop.
+                                asyncPersist(recording);
                             }
                             StubResponseRenderer.sendError(ctx, HttpResponseStatus.BAD_GATEWAY,
                                     "Passthrough failed: " + error.getMessage());
@@ -315,7 +347,8 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                                     agentEnvironment, "http", host, port, method, path, headers, requestBody,
                                     result.statusCode, result.responseHeaders, responseBodyStr,
                                     result.responseTimeMs, agentId, agentIp);
-                            storage.addRecording(recording);
+                            // H-4: persist off the EventLoop.
+                            asyncPersist(recording);
                         }
 
                         ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
@@ -349,7 +382,8 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                                         headers, requestBody, error.getMessage(),
                                         System.currentTimeMillis() - startTime, agentId, agentIp);
                                 recording.setUnmatched(true);
-                                storage.addRecording(recording);
+                                // H-4: persist off the EventLoop.
+                                asyncPersist(recording);
                             }
                             StubResponseRenderer.sendError(ctx, HttpResponseStatus.BAD_GATEWAY,
                                     "Passthrough failed: " + error.getMessage());
@@ -377,7 +411,8 @@ public class HttpStubHandler extends SimpleChannelInboundHandler<FullHttpRequest
                                     headers, requestBody, result.statusCode, result.responseHeaders,
                                     responseBodyStr, result.responseTimeMs, agentId, agentIp);
                             recording.setUnmatched(true);
-                            storage.addRecording(recording);
+                            // H-4: persist off the EventLoop.
+                            asyncPersist(recording);
                         }
 
                         ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);

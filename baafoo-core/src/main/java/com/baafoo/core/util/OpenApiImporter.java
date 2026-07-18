@@ -77,8 +77,11 @@ public final class OpenApiImporter {
             throw new OpenApiImportException("OpenAPI spec content is empty", 0);
         }
 
-        // DoS protection: reject oversized payloads before parsing
-        if (jsonContent.length() > MAX_INPUT_SIZE_BYTES) {
+        // DoS protection: reject oversized payloads before parsing.
+        // M13 fix: use UTF-8 byte length instead of String.length(), since
+        // multi-byte characters (e.g. CJK) make the actual byte payload
+        // larger than the char count. MAX_INPUT_SIZE_BYTES is in bytes.
+        if (jsonContent.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_INPUT_SIZE_BYTES) {
             throw new OpenApiImportException(
                     "OpenAPI spec exceeds maximum allowed size of "
                             + (MAX_INPUT_SIZE_BYTES / 1024 / 1024) + " MB", 0);
@@ -264,13 +267,17 @@ public final class OpenApiImporter {
 
         // Find first 2xx status code (prefer 200, then any 2xx)
         String statusCode = findFirstSuccessStatus(responses);
-        if (statusCode != null) {
-            try {
-                entry.setStatusCode(Integer.parseInt(statusCode));
-            } catch (NumberFormatException e) {
-                entry.setStatusCode(200);
-            }
-        } else {
+        // H5 fix: guard against null statusCode. findFirstSuccessStatus can
+        // return null when responses is null/empty (although the caller
+        // filters that case) or when it falls through all branches. A null
+        // statusCode would cause responses.get(null) → null, producing an
+        // empty body silently. Default to "200" to keep behavior explicit.
+        if (statusCode == null) {
+            statusCode = "200";
+        }
+        try {
+            entry.setStatusCode(Integer.parseInt(statusCode));
+        } catch (NumberFormatException e) {
             entry.setStatusCode(200);
         }
 
@@ -382,9 +389,15 @@ public final class OpenApiImporter {
     String generateFromSchema(JsonNode schema) {
         if (schema == null || schema.isNull()) return "";
 
-        // Check for $ref / allOf / oneOf / anyOf — not supported in Phase 1
-        if (schema.has("$ref") || schema.has("allOf")
-                || schema.has("oneOf") || schema.has("anyOf")) {
+        // Smell #4: extract the composition-keyword check to a shared helper
+        // so the list of unsupported keywords stays in sync between
+        // generateFromSchema and generatePlaceholderValue. The control flow
+        // here is intentionally NOT delegated to generatePlaceholderValue
+        // because the two methods disagree on the default type when
+        // "type" is absent (this method defaults to "object", the other to
+        // "string") — collapsing them would silently change the placeholder
+        // generated for type-less schemas with properties.
+        if (hasCompositionKeyword(schema)) {
             return "{}";
         }
 
@@ -433,6 +446,18 @@ public final class OpenApiImporter {
     }
 
     /**
+     * Smell #4: helper — true if the schema uses a composition keyword
+     * ({@code $ref}, {@code allOf}, {@code oneOf}, {@code anyOf}) that
+     * Phase 1 does not resolve. Used by both {@link #generateFromSchema}
+     * and {@link #generatePlaceholderValue} so the list of unsupported
+     * keywords stays in sync.
+     */
+    private static boolean hasCompositionKeyword(JsonNode schema) {
+        return schema.has("$ref") || schema.has("allOf")
+                || schema.has("oneOf") || schema.has("anyOf");
+    }
+
+    /**
      * Generate a placeholder value for a single schema property.
      */
     private Object generatePlaceholderValue(JsonNode schema) {
@@ -448,9 +473,9 @@ public final class OpenApiImporter {
             return jsonNodeToObject(defaultValue);
         }
 
-        // Check for $ref / composition keywords — not supported
-        if (schema.has("$ref") || schema.has("allOf")
-                || schema.has("oneOf") || schema.has("anyOf")) {
+        // Check for $ref / composition keywords — not supported.
+        // Smell #4: use the shared hasCompositionKeyword helper.
+        if (hasCompositionKeyword(schema)) {
             return null;
         }
 

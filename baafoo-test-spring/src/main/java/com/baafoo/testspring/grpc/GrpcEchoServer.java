@@ -14,10 +14,6 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -62,28 +58,9 @@ public class GrpcEchoServer implements ApplicationRunner {
 
     private Server server;
 
+    // L-6: Reuse the shared STRING_MARSHALLER from GrpcCallerService to avoid duplicate marshaller code
     private static final MethodDescriptor.Marshaller<String> MARSHALLER =
-            new MethodDescriptor.Marshaller<String>() {
-                @Override
-                public InputStream stream(String value) {
-                    return new ByteArrayInputStream(value.getBytes(StandardCharsets.UTF_8));
-                }
-
-                @Override
-                public String parse(InputStream stream) {
-                    try {
-                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                        byte[] buf = new byte[4096];
-                        int n;
-                        while ((n = stream.read(buf)) != -1) {
-                            bos.write(buf, 0, n);
-                        }
-                        return new String(bos.toByteArray(), StandardCharsets.UTF_8);
-                    } catch (Exception e) {
-                        throw new RuntimeException("gRPC marshaller parse failed", e);
-                    }
-                }
-            };
+            com.baafoo.testspring.service.GrpcCallerService.STRING_MARSHALLER;
 
     private static MethodDescriptor<String, String> method(
             String service, String methodName, MethodType type) {
@@ -172,10 +149,11 @@ public class GrpcEchoServer implements ApplicationRunner {
             server = builder.build();
             server.start();
             log.info("[Baafoo] GrpcEchoServer listening on :{}", PORT);
-        } catch (Throwable t) {
+        } catch (Exception e) {
+            // M-4: Catch Exception rather than Throwable — Errors (OOM, StackOverflow) should propagate
             // Non-fatal: if the port is busy (e.g. another instance) the app
             // still boots; only gRPC PASSTHROUGH/RECORD tests would be affected.
-            log.warn("[Baafoo] GrpcEchoServer failed to start on :{} — {}", PORT, t.getMessage());
+            log.warn("[Baafoo] GrpcEchoServer failed to start on :{} — {}", PORT, e.getMessage());
         }
     }
 

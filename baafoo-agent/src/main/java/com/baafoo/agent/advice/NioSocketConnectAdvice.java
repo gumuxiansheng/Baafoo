@@ -50,10 +50,7 @@ public final class NioSocketConnectAdvice {
                 if ((GlobalRouteState.CURRENT_MODE == 2 || GlobalRouteState.CURRENT_MODE == 3
                         || GlobalRouteState.CURRENT_MODE == 4)
                         && port != GlobalRouteState.SERVER_PORT
-                        && port != GlobalRouteState.HTTP_PORT
-                        && port != GlobalRouteState.KAFKA_PORT
-                        && port != GlobalRouteState.PULSAR_PORT
-                        && port != GlobalRouteState.JMS_PORT) {
+                        && GlobalRouteState.isStreamRecordingPort(port)) {
                     String sessionId = java.util.UUID.randomUUID().toString();
                     GlobalRouteState.startRecording(System.identityHashCode(channel), sessionId, host, port);
                     GlobalRouteState.logInfo("[Baafoo] NIO Socket recording (internal): " + host + ":" + port + " (sessionId=" + sessionId + ")");
@@ -84,10 +81,7 @@ public final class NioSocketConnectAdvice {
                     int targetPort = Integer.parseInt(routeValue[1]);
                     // Skip Socket-level recording for HTTP and MQ — the server-side
                     // handler records at the application layer (forward + record).
-                    if (targetPort != GlobalRouteState.HTTP_PORT
-                            && targetPort != GlobalRouteState.KAFKA_PORT
-                            && targetPort != GlobalRouteState.PULSAR_PORT
-                            && targetPort != GlobalRouteState.JMS_PORT) {
+                    if (GlobalRouteState.isStreamRecordingPort(targetPort)) {
                         String sessionId = java.util.UUID.randomUUID().toString();
                         GlobalRouteState.startRecording(System.identityHashCode(channel), sessionId, host, port);
                         GlobalRouteState.logInfo("[Baafoo] NIO Socket recording: " + host + ":" + port + " (sessionId=" + sessionId + ")");
@@ -159,10 +153,7 @@ public final class NioSocketConnectAdvice {
 
                 int targetPort = Integer.parseInt(routeValue[1]);
                 // Register for stream-level recording (TCP, non-HTTP/MQ)
-                if (targetPort != GlobalRouteState.HTTP_PORT
-                        && targetPort != GlobalRouteState.KAFKA_PORT
-                        && targetPort != GlobalRouteState.PULSAR_PORT
-                        && targetPort != GlobalRouteState.JMS_PORT) {
+                if (GlobalRouteState.isStreamRecordingPort(targetPort)) {
                     String sessionId = java.util.UUID.randomUUID().toString();
                     GlobalRouteState.startRecording(System.identityHashCode(channel), sessionId, host, port);
                     GlobalRouteState.logInfo("[Baafoo] NIO Socket recording (record-all): " + host + ":" + port + " (sessionId=" + sessionId + ")");

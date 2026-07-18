@@ -25,7 +25,10 @@ public class ConsulDnsCaller implements BaafooTestApp.Caller {
             InetAddress addr = InetAddress.getByName(SERVICE_NAME);
             System.out.println("    解析结果: " + addr.getHostAddress());
 
-            boolean redirected = addr.getHostAddress().equals("127.0.0.1");
+            // M-18: Use InetAddress.isLoopbackAddress() instead of string-comparing "127.0.0.1" —
+            // the agent may redirect to any loopback address (127.0.0.2, ::1, etc.), and the
+            // string comparison would miss those cases.
+            boolean redirected = addr.isLoopbackAddress();
             System.out.println("    挡板拦截: " + (redirected ? "✓ 是 (DNS 被重定向到本地)" : "✗ 否"));
         } catch (java.net.UnknownHostException e) {
             System.out.println("    解析失败: " + e.getMessage());
@@ -43,7 +46,8 @@ public class ConsulDnsCaller implements BaafooTestApp.Caller {
                 System.out.println("      → " + addr.getHostAddress());
             }
 
-            boolean redirected = addrs.length > 0 && addrs[0].getHostAddress().equals("127.0.0.1");
+            // M-18: Use isLoopbackAddress() to robustly detect any loopback redirect (see testGetByName)
+            boolean redirected = addrs.length > 0 && addrs[0].isLoopbackAddress();
             System.out.println("    挡板拦截: " + (redirected ? "✓ 是 (DNS 被重定向到本地)" : "✗ 否"));
         } catch (java.net.UnknownHostException e) {
             System.out.println("    解析失败: " + e.getMessage());

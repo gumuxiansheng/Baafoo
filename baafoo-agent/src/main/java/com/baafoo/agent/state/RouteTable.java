@@ -44,7 +44,17 @@ public final class RouteTable {
         return null;
     }
 
-    /** Look up the first route whose key matches the given host (with or without port). */
+    /**
+     * Look up the first route whose key matches the given host (with or without port).
+     *
+     * <p><b>L8 — O(n) scan</b>: the host:port fallback below iterates the entire
+     * ROUTES map because the keyset mixes {@code "host"} and {@code "host:port"}
+     * entries. The map is bounded by the number of registered rules (typically
+     * &lt; 100), so the linear scan is acceptable. For large route tables (e.g.,
+     * thousands of rules), consider adding a separate {@code hostOnlyRoutes}
+     * index ({@code Map<String, HostPort>}) populated in {@link #addRoute} /
+     * {@link #addService} / {@link #setRoutes} to make this lookup O(1).</p>
+     */
     public GlobalRouteState.HostPort lookupByHost(String host) {
         if (host == null) return null;
         ConcurrentHashMap<String, GlobalRouteState.HostPort> routes = GlobalRouteState.ROUTES;
