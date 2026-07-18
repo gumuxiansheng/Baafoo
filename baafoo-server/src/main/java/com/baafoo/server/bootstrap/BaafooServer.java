@@ -341,7 +341,7 @@ public class BaafooServer {
             String tempPassword = generateTempPassword();
             User admin = new User();
             admin.setUsername("admin");
-            admin.setPasswordHash(authService.hashPassword(tempPassword));
+            admin.setPassword(authService.hashPassword(tempPassword));
             admin.setDisplayName("系统管理员");
             admin.setEmail("admin@baafoo.local");
             admin.setRole("admin");
@@ -359,7 +359,7 @@ public class BaafooServer {
 
         // Check if password hash needs migration from SHA-256 to bcrypt (P0-1/P0-2 fix)
         // Do NOT reset the password — just log a warning. Rehash happens on next login.
-        if (authService.needsRehash(existing.getPasswordHash())) {
+        if (authService.needsRehash(existing.getPassword())) {
             log.warn("Admin password uses legacy SHA-256 hashing — it will be upgraded to bcrypt on next login");
         }
     }

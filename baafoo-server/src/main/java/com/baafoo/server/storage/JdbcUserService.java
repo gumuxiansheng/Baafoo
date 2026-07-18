@@ -1,7 +1,6 @@
 package com.baafoo.server.storage;
 
 import com.baafoo.core.model.User;
-import com.baafoo.core.util.IdGenerator;
 import com.baafoo.server.storage.mapper.UserMapper;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -47,13 +46,6 @@ public class JdbcUserService extends BaseJdbcService implements UserService {
 
     @Override
     public User createUser(User user) {
-        if (user.getId() == null || user.getId().isEmpty()) {
-            user.setId(IdGenerator.uuid());
-        }
-        long now = System.currentTimeMillis();
-        user.setCreatedAt(now);
-        user.setUpdatedAt(now);
-
         try (SqlSession session = openSession()) {
             session.getMapper(UserMapper.class).createUser(user);
             return user;
@@ -66,7 +58,7 @@ public class JdbcUserService extends BaseJdbcService implements UserService {
     @Override
     public boolean updateUserRole(String username, String role) {
         try (SqlSession session = openSession()) {
-            return session.getMapper(UserMapper.class).updateUserRole(username, role, System.currentTimeMillis()) > 0;
+            return session.getMapper(UserMapper.class).updateUserRole(username, role) > 0;
         } catch (Exception e) {
             log.error("Failed to update role for user {}: {}", username, e.getMessage());
             return false;
@@ -76,7 +68,7 @@ public class JdbcUserService extends BaseJdbcService implements UserService {
     @Override
     public boolean updateUserApiKey(String username, String apiKey) {
         try (SqlSession session = openSession()) {
-            return session.getMapper(UserMapper.class).updateUserApiKey(username, apiKey, System.currentTimeMillis()) > 0;
+            return session.getMapper(UserMapper.class).updateUserApiKey(username, apiKey) > 0;
         } catch (Exception e) {
             log.error("Failed to update API key for user {}: {}", username, e.getMessage());
             return false;
@@ -84,9 +76,9 @@ public class JdbcUserService extends BaseJdbcService implements UserService {
     }
 
     @Override
-    public boolean updateUserPassword(String username, String passwordHash) {
+    public boolean updateUserPassword(String username, String password) {
         try (SqlSession session = openSession()) {
-            return session.getMapper(UserMapper.class).updateUserPassword(username, passwordHash, System.currentTimeMillis()) > 0;
+            return session.getMapper(UserMapper.class).updateUserPassword(username, password) > 0;
         } catch (Exception e) {
             log.error("Failed to update password for user {}: {}", username, e.getMessage());
             return false;
@@ -96,7 +88,7 @@ public class JdbcUserService extends BaseJdbcService implements UserService {
     @Override
     public boolean updateUserLastLogin(String username) {
         try (SqlSession session = openSession()) {
-            return session.getMapper(UserMapper.class).updateUserLastLogin(username, System.currentTimeMillis()) > 0;
+            return session.getMapper(UserMapper.class).updateUserLastLogin(username) > 0;
         } catch (Exception e) {
             log.error("Failed to update last login for user {}: {}", username, e.getMessage());
             return false;

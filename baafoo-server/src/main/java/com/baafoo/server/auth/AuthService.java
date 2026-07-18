@@ -178,12 +178,12 @@ public class AuthService {
             return new LoginResult(false, null, null, "Invalid username or password");
         }
 
-        if (!verifyPassword(password, user.getPasswordHash())) {
+        if (!verifyPassword(password, user.getPassword())) {
             return new LoginResult(false, null, null, "Invalid username or password");
         }
 
         // Migrate legacy SHA-256 hash to bcrypt on successful login
-        if (needsRehash(user.getPasswordHash())) {
+        if (needsRehash(user.getPassword())) {
             String newHash = hashPassword(password);
             storage.updateUserPassword(username, newHash);
             log.info("Upgraded password hash from SHA-256 to bcrypt for user: {}", username);

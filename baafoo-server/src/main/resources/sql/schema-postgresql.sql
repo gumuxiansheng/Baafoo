@@ -133,20 +133,47 @@ CREATE TABLE IF NOT EXISTS agents (
 );
 ALTER TABLE agents ADD COLUMN agent_ip VARCHAR(45);
 
-CREATE TABLE IF NOT EXISTS users (
-  id VARCHAR(36) PRIMARY KEY,
-  username VARCHAR(255) NOT NULL UNIQUE,
-  password_hash VARCHAR(512) NOT NULL,
-  display_name VARCHAR(255),
-  email VARCHAR(255),
-  role VARCHAR(50) DEFAULT 'guest',
-  api_key VARCHAR(255),
-  created_at BIGINT,
-  updated_at BIGINT,
-  last_login_at BIGINT
+CREATE TABLE IF NOT EXISTS sys_role (
+  id BIGSERIAL PRIMARY KEY,
+  code VARCHAR(50) NOT NULL UNIQUE,
+  name VARCHAR(100),
+  description VARCHAR(255),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-ALTER TABLE users ADD COLUMN display_name VARCHAR(255);
-ALTER TABLE users ADD COLUMN email VARCHAR(255);
+
+CREATE TABLE IF NOT EXISTS user_account (
+  id BIGSERIAL PRIMARY KEY,
+  external_id UUID NOT NULL UNIQUE DEFAULT uuid_generate_v4(),
+  username VARCHAR(64) NOT NULL UNIQUE,
+  password VARCHAR(255) NOT NULL,
+  display_name VARCHAR(100),
+  email VARCHAR(200),
+  phone VARCHAR(30),
+  avatar VARCHAR(500),
+  role_id BIGINT REFERENCES sys_role(id),
+  status SMALLINT NOT NULL DEFAULT 1,
+  api_key VARCHAR(255),
+  must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+  last_login_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Idempotent column narrowing / additions for existing installs (PostgreSQL
+-- syntax: ALTER COLUMN <name> TYPE <type>). Errors are tolerated by DdlBuilder
+-- when the column already matches the target type.
+ALTER TABLE user_account ALTER COLUMN username TYPE VARCHAR(64);
+ALTER TABLE user_account ALTER COLUMN password TYPE VARCHAR(255);
+ALTER TABLE user_account ALTER COLUMN display_name TYPE VARCHAR(100);
+ALTER TABLE user_account ALTER COLUMN email TYPE VARCHAR(200);
+ALTER TABLE user_account ADD COLUMN IF NOT EXISTS phone VARCHAR(30);
+ALTER TABLE user_account ADD COLUMN IF NOT EXISTS avatar VARCHAR(500);
+
+INSERT INTO sys_role (code, name) SELECT 'admin', 'Administrator' WHERE NOT EXISTS (SELECT 1 FROM sys_role WHERE code = 'admin');
+INSERT INTO sys_role (code, name) SELECT 'developer', 'Developer' WHERE NOT EXISTS (SELECT 1 FROM sys_role WHERE code = 'developer');
+INSERT INTO sys_role (code, name) SELECT 'tester', 'Tester' WHERE NOT EXISTS (SELECT 1 FROM sys_role WHERE code = 'tester');
+INSERT INTO sys_role (code, name) SELECT 'guest', 'Guest' WHERE NOT EXISTS (SELECT 1 FROM sys_role WHERE code = 'guest');
 
 -- --- Indexes ---
 CREATE INDEX IF NOT EXISTS idx_rules_protocol ON rules(protocol);
@@ -167,8 +194,10 @@ CREATE INDEX IF NOT EXISTS idx_agents_environment ON agents(environment);
 CREATE INDEX IF NOT EXISTS idx_rule_history_rule_id ON rule_history(rule_id);
 CREATE INDEX IF NOT EXISTS idx_mq_relationships_from ON mq_relationships(from_protocol, from_topic);
 CREATE INDEX IF NOT EXISTS idx_mq_relationships_to ON mq_relationships(to_protocol, to_topic);
-CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-CREATE INDEX IF NOT EXISTS idx_users_api_key ON users(api_key);
+CREATE INDEX IF NOT EXISTS idx_user_account_username ON user_account(username);
+CREATE INDEX IF NOT EXISTS idx_user_account_api_key ON user_account(api_key);
+CREATE INDEX IF NOT EXISTS idx_user_account_role_id ON user_account(role_id);
+CREATE INDEX IF NOT EXISTS idx_user_account_status ON user_account(status);
 
 -- --- PostgreSQL Full-Text Search ---
 ALTER TABLE recordings ADD COLUMN search_vector tsvector;

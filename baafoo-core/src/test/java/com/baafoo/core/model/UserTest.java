@@ -15,8 +15,8 @@ public class UserTest {
     @Test
     public void testSetAndGetId() {
         User user = new User();
-        user.setId("u-001");
-        assertEquals("u-001", user.getId());
+        user.setId(42L);
+        assertEquals(Long.valueOf(42L), user.getId());
     }
 
     @Test
@@ -27,10 +27,10 @@ public class UserTest {
     }
 
     @Test
-    public void testSetAndGetPasswordHash() {
+    public void testSetAndGetPassword() {
         User user = new User();
-        user.setPasswordHash("abc123");
-        assertEquals("abc123", user.getPasswordHash());
+        user.setPassword("abc123");
+        assertEquals("abc123", user.getPassword());
     }
 
     @Test
@@ -62,32 +62,11 @@ public class UserTest {
     }
 
     @Test
-    public void testSetAndGetCreatedAt() {
-        User user = new User();
-        user.setCreatedAt(1700000000000L);
-        assertEquals(Long.valueOf(1700000000000L), user.getCreatedAt());
-    }
-
-    @Test
-    public void testSetAndGetUpdatedAt() {
-        User user = new User();
-        user.setUpdatedAt(1700000000000L);
-        assertEquals(Long.valueOf(1700000000000L), user.getUpdatedAt());
-    }
-
-    @Test
-    public void testSetAndGetLastLoginAt() {
-        User user = new User();
-        user.setLastLoginAt(1700000000000L);
-        assertEquals(Long.valueOf(1700000000000L), user.getLastLoginAt());
-    }
-
-    @Test
     public void testNullFieldsByDefault() {
         User user = new User();
         assertNull(user.getId());
         assertNull(user.getUsername());
-        assertNull(user.getPasswordHash());
+        assertNull(user.getPassword());
         assertNull(user.getDisplayName());
         assertNull(user.getEmail());
         assertNull(user.getApiKey());

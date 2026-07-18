@@ -130,7 +130,7 @@ public class AuthServiceTest {
         User user = new User();
         AuthService svc = new AuthService(storage, null, true, false, null);
         String hash = svc.hashPassword("correct-password");
-        user.setPasswordHash(hash);
+        user.setPassword(hash);
         when(storage.getUserByUsername("testuser")).thenReturn(user);
 
         AuthService.LoginResult result = svc.login("testuser", "wrong-password", null);
@@ -144,7 +144,7 @@ public class AuthServiceTest {
         user.setRole("developer");
         AuthService svc = new AuthService(storage, null, true, false, null);
         String hash = svc.hashPassword("ValidPass1!");
-        user.setPasswordHash(hash);
+        user.setPassword(hash);
         when(storage.getUserByUsername("testuser")).thenReturn(user);
 
         AuthService.LoginResult result = svc.login("testuser", "ValidPass1!", null);
@@ -161,7 +161,7 @@ public class AuthServiceTest {
         user.setRole("tester");
         AuthService svc = new AuthService(storage, null, true, false, null);
         String hash = svc.hashPassword("ValidPass1!");
-        user.setPasswordHash(hash);
+        user.setPassword(hash);
         when(storage.getUserByUsername("testuser")).thenReturn(user);
 
         AuthService.LoginResult result = svc.login("testuser", "ValidPass1!", 999999999L);

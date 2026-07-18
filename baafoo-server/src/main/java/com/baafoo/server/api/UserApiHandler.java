@@ -35,6 +35,8 @@ class UserApiHandler implements ResourceHandler {
             String password = (String) reqBody.get("password");
             String displayName = (String) reqBody.get("displayName");
             String email = (String) reqBody.get("email");
+            String phone = (String) reqBody.get("phone");
+            String avatar = (String) reqBody.get("avatar");
             String role = (String) reqBody.get("role");
             if (username == null || username.isEmpty()) {
                 return ApiResponse.fail(400, i18n.get("user.username_required"));
@@ -52,9 +54,11 @@ class UserApiHandler implements ResourceHandler {
             }
             User user = new User();
             user.setUsername(username);
-            user.setPasswordHash(ctx.authService.hashPassword(password));
+            user.setPassword(ctx.authService.hashPassword(password));
             user.setDisplayName(displayName != null ? displayName : username);
             user.setEmail(email);
+            user.setPhone(phone);
+            user.setAvatar(avatar);
             user.setRole(role);
             User created = ctx.storage.createUser(user);
             return ApiResponse.created(toSafeResponse(created));
@@ -116,6 +120,8 @@ class UserApiHandler implements ResourceHandler {
         safe.username = u.getUsername();
         safe.displayName = u.getDisplayName();
         safe.email = u.getEmail();
+        safe.phone = u.getPhone();
+        safe.avatar = u.getAvatar();
         safe.role = u.getRole();
         safe.apiKey = u.getApiKey() != null;
         safe.createdAt = u.getCreatedAt();
@@ -178,7 +184,7 @@ class UserApiHandler implements ResourceHandler {
             }
             User user = new User();
             user.setUsername(username);
-            user.setPasswordHash(ctx.authService.hashPassword(password));
+            user.setPassword(ctx.authService.hashPassword(password));
             user.setDisplayName(displayName.isEmpty() ? username : displayName);
             user.setEmail(email.isEmpty() ? null : email);
             user.setRole(role);

@@ -23,7 +23,7 @@ public interface UserService {
 
     boolean updateUserApiKey(String username, String apiKey);
 
-    boolean updateUserPassword(String username, String passwordHash);
+    boolean updateUserPassword(String username, String password);
 
     boolean updateUserLastLogin(String username);
 

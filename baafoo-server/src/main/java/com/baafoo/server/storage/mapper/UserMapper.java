@@ -15,13 +15,13 @@ public interface UserMapper {
 
     int createUser(User user);
 
-    int updateUserRole(@Param("username") String username, @Param("role") String role, @Param("updatedAt") long updatedAt);
+    int updateUserRole(@Param("username") String username, @Param("role") String role);
 
-    int updateUserApiKey(@Param("username") String username, @Param("apiKey") String apiKey, @Param("updatedAt") long updatedAt);
+    int updateUserApiKey(@Param("username") String username, @Param("apiKey") String apiKey);
 
-    int updateUserPassword(@Param("username") String username, @Param("passwordHash") String passwordHash, @Param("updatedAt") long updatedAt);
+    int updateUserPassword(@Param("username") String username, @Param("password") String password);
 
-    int updateUserLastLogin(@Param("username") String username, @Param("lastLoginAt") long lastLoginAt);
+    int updateUserLastLogin(@Param("username") String username);
 
     int deleteUser(@Param("username") String username);
 }

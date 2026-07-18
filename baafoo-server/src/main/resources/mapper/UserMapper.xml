@@ -5,54 +5,90 @@
 
     <resultMap id="userResultMap" type="com.baafoo.core.model.User">
         <id property="id" column="id"/>
+        <result property="externalId" column="external_id"
+                typeHandler="com.baafoo.server.storage.mybatis.UuidTypeHandler"/>
         <result property="username" column="username"/>
-        <result property="passwordHash" column="password_hash"/>
+        <result property="password" column="password"/>
         <result property="displayName" column="display_name"/>
         <result property="email" column="email"/>
+        <result property="phone" column="phone"/>
+        <result property="avatar" column="avatar"/>
         <result property="role" column="role"/>
+        <result property="roleId" column="role_id"/>
         <result property="apiKey" column="api_key"/>
+        <result property="status" column="status"/>
+        <result property="mustChangePassword" column="must_change_password"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
         <result property="lastLoginAt" column="last_login_at"/>
     </resultMap>
 
+    <sql id="userColumns">
+        ua.id, ua.external_id, ua.username, ua.password, ua.display_name, ua.email,
+        ua.phone, ua.avatar,
+        ua.role_id, ua.status, ua.api_key, ua.must_change_password,
+        ua.last_login_at, ua.created_at, ua.updated_at,
+        sr.code as role
+    </sql>
+
     <select id="listUsers" resultMap="userResultMap">
-        SELECT * FROM users ORDER BY created_at ASC
+        SELECT <include refid="userColumns"/>
+        FROM user_account ua
+        LEFT JOIN sys_role sr ON ua.role_id = sr.id
+        ORDER BY ua.created_at ASC
     </select>
 
     <select id="getUserByUsername" resultMap="userResultMap">
-        SELECT * FROM users WHERE username = #{username}
+        SELECT <include refid="userColumns"/>
+        FROM user_account ua
+        LEFT JOIN sys_role sr ON ua.role_id = sr.id
+        WHERE ua.username = #{username}
     </select>
 
     <select id="getUserByApiKey" resultMap="userResultMap">
-        SELECT * FROM users WHERE api_key = #{apiKey}
+        SELECT <include refid="userColumns"/>
+        FROM user_account ua
+        LEFT JOIN sys_role sr ON ua.role_id = sr.id
+        WHERE ua.api_key = #{apiKey}
     </select>
 
-    <insert id="createUser">
-        INSERT INTO users (id, username, password_hash, display_name, email, role,
-            api_key, created_at, updated_at, last_login_at)
-        VALUES (#{id}, #{username}, #{passwordHash}, #{displayName}, #{email}, #{role},
-            #{apiKey}, #{createdAt}, #{updatedAt}, #{lastLoginAt})
+    <insert id="createUser" parameterType="com.baafoo.core.model.User" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO user_account (username, password, display_name, email, phone, avatar,
+            role_id, api_key, must_change_password, status)
+        VALUES (#{username}, #{password}, #{displayName}, #{email}, #{phone}, #{avatar},
+            (SELECT id FROM sys_role WHERE code = #{role}),
+            #{apiKey}, #{mustChangePassword, jdbcType=BOOLEAN}, #{status, jdbcType=TINYINT})
     </insert>
 
     <update id="updateUserRole">
-        UPDATE users SET role = #{role}, updated_at = #{updatedAt} WHERE username = #{username}
+        UPDATE user_account
+        SET role_id = (SELECT id FROM sys_role WHERE code = #{role}),
+            updated_at = NOW()
+        WHERE username = #{username}
     </update>
 
     <update id="updateUserApiKey">
-        UPDATE users SET api_key = #{apiKey}, updated_at = #{updatedAt} WHERE username = #{username}
+        UPDATE user_account
+        SET api_key = #{apiKey},
+            updated_at = NOW()
+        WHERE username = #{username}
     </update>
 
     <update id="updateUserPassword">
-        UPDATE users SET password_hash = #{passwordHash}, updated_at = #{updatedAt} WHERE username = #{username}
+        UPDATE user_account
+        SET password = #{password},
+            updated_at = NOW()
+        WHERE username = #{username}
     </update>
 
     <update id="updateUserLastLogin">
-        UPDATE users SET last_login_at = #{lastLoginAt} WHERE username = #{username}
+        UPDATE user_account
+        SET last_login_at = NOW()
+        WHERE username = #{username}
     </update>
 
     <delete id="deleteUser">
-        DELETE FROM users WHERE username = #{username}
+        DELETE FROM user_account WHERE username = #{username}
     </delete>
 
 </mapper>

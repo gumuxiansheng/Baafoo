@@ -9,6 +9,7 @@ import com.baafoo.server.storage.mybatis.EnvironmentModeTypeHandler;
 import com.baafoo.server.storage.mybatis.JsonTypeHandler;
 import com.baafoo.server.storage.mybatis.MatchConditionListHandler;
 import com.baafoo.server.storage.mybatis.ResponseEntryListHandler;
+import com.baafoo.server.storage.mybatis.UuidTypeHandler;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.apache.ibatis.mapping.DatabaseIdProvider;
@@ -181,6 +182,7 @@ public class JdbcStorageService implements StorageService {
         configuration.getTypeHandlerRegistry().register(MatchConditionListHandler.class);
         configuration.getTypeHandlerRegistry().register(ResponseEntryListHandler.class);
         configuration.getTypeHandlerRegistry().register(EnvironmentModeTypeHandler.class);
+        configuration.getTypeHandlerRegistry().register(UuidTypeHandler.class);
 
         // Set database ID provider
         DatabaseIdProvider databaseIdProvider = new org.apache.ibatis.mapping.VendorDatabaseIdProvider();
@@ -502,8 +504,8 @@ public class JdbcStorageService implements StorageService {
     }
 
     @Override
-    public boolean updateUserPassword(String username, String passwordHash) {
-        return userService.updateUserPassword(username, passwordHash);
+    public boolean updateUserPassword(String username, String password) {
+        return userService.updateUserPassword(username, password);
     }
 
     @Override
