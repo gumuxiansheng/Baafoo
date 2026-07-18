@@ -14,7 +14,6 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -470,12 +469,22 @@ public class ControlChannel {
         for (Map.Entry<String, String> e : params.entrySet()) {
             if (e.getValue() == null) continue;
             if (!first) sb.append('&');
-            sb.append(URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8));
+            sb.append(urlEncode(e.getKey()));
             sb.append('=');
-            sb.append(URLEncoder.encode(e.getValue(), StandardCharsets.UTF_8));
+            sb.append(urlEncode(e.getValue()));
             first = false;
         }
         return sb.toString();
+    }
+
+    /** Java 8 兼容的 URL 编码：URLEncoder.encode(String, Charset) 在 Java 10 才加入。 */
+    private static String urlEncode(String s) {
+        try {
+            return URLEncoder.encode(s, "UTF-8");
+        } catch (java.io.UnsupportedEncodingException e) {
+            // UTF-8 是 JVM 规范保证可用的字符集，理论上不会进入此分支
+            throw new IllegalStateException("UTF-8 not supported", e);
+        }
     }
 
     // --- HTTP helpers (JDK HttpURLConnection only, NO Netty) ---
