@@ -144,7 +144,7 @@ CREATE TABLE IF NOT EXISTS sys_role (
 
 CREATE TABLE IF NOT EXISTS user_account (
   id BIGSERIAL PRIMARY KEY,
-  external_id UUID NOT NULL UNIQUE DEFAULT uuid_generate_v4(),
+  external_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
   username VARCHAR(64) NOT NULL UNIQUE,
   password VARCHAR(255) NOT NULL,
   display_name VARCHAR(100),

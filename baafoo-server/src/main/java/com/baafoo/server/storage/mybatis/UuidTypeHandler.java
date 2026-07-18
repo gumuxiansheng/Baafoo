@@ -29,7 +29,7 @@ import java.util.UUID;
  * the binary UUID protocol on PostgreSQL instead of parsing a string literal.</p>
  *
  * <p>Currently applied to {@code user_account.external_id}. The DB column is
- * always populated by a server-side default ({@code uuid_generate_v4()} on
+ * always populated by a server-side default ({@code gen_random_uuid()} on
  * PostgreSQL / {@code RANDOM_UUID()} on H2), so {@code setNonNullParameter} is
  * only exercised if application code ever starts assigning external_id
  * explicitly (e.g. for cross-system correlation).</p>

@@ -215,7 +215,7 @@ public class JdbcStorageServiceTest {
         // Phone / avatar are new nullable columns added when aligning the
         // user_account schema with the cross-project unified table. They must
         // round-trip through INSERT + SELECT. external_id is DB-generated
-        // (RANDOM_UUID() on H2 / uuid_generate_v4() on PostgreSQL) and must
+        // (RANDOM_UUID() on H2 / gen_random_uuid() on PostgreSQL) and must
         // be returned as a String thanks to UuidTypeHandler.
         User user = new User();
         user.setUsername("alice");
