@@ -58,6 +58,7 @@ temp_extract/
 testing/tmp/
 testing/7_Others/tmp/
 testing/enterprise/spring-cloud-alibaba/agents/
+testing/3_SystemTest/junit-report.xml
 
 # Python cache
 __pycache__/

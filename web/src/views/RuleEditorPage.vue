@@ -566,48 +566,51 @@ export default {
       }
 
       loading.value = true
-      const id = route.params.id
-      await rulesStore.fetchRule(id)
-      rule.value = rulesStore.currentRule
-      if (rule.value) {
-        form.name = rule.value.name || ''
-        form.protocol = rule.value.protocol || 'http'
-        form.host = rule.value.host || ''
-        form.port = rule.value.port
-        form.serviceName = rule.value.serviceName || ''
-        form.priority = rule.value.priority || 100
-        form.enabled = rule.value.enabled !== false
-        form.tagsStr = (rule.value.tags || []).join(',')
-        form.environments = rule.value.environments || []
-        form.conditions = structuredClone(rule.value.conditions || [])
-        form.responses = structuredClone(rule.value.responses || [])
-        form.fakerSeed = rule.value.fakerSeed || null
-        form.requestCountReset = rule.value.requestCountReset || null
-        form.requestCharset = rule.value.requestCharset || null
-        // Load fault injection
-        const fi = rule.value.faultInjection
-        if (fi && fi.faults && fi.faults.length > 0) {
-          form.faultInjectionEnabled = true
-          form.faults = fi.faults.map(f => ({
-            type: f.type || 'HTTP_ERROR',
-            probability: f.probability != null ? f.probability : 1.0,
-            statusCodesStr: (f.statusCodes || []).join(','),
-            delayMs: f.delayMs || 0
-          }))
-        } else {
-          form.faultInjectionEnabled = false
-          form.faults = []
+      try {
+        const id = route.params.id
+        await rulesStore.fetchRule(id)
+        rule.value = rulesStore.currentRule
+        if (rule.value) {
+          form.name = rule.value.name || ''
+          form.protocol = rule.value.protocol || 'http'
+          form.host = rule.value.host || ''
+          form.port = rule.value.port
+          form.serviceName = rule.value.serviceName || ''
+          form.priority = rule.value.priority || 100
+          form.enabled = rule.value.enabled !== false
+          form.tagsStr = (rule.value.tags || []).join(',')
+          form.environments = rule.value.environments || []
+          form.conditions = JSON.parse(JSON.stringify(rule.value.conditions || []))
+          form.responses = JSON.parse(JSON.stringify(rule.value.responses || []))
+          form.fakerSeed = rule.value.fakerSeed || null
+          form.requestCountReset = rule.value.requestCountReset || null
+          form.requestCharset = rule.value.requestCharset || null
+          // Load fault injection
+          const fi = rule.value.faultInjection
+          if (fi && fi.faults && fi.faults.length > 0) {
+            form.faultInjectionEnabled = true
+            form.faults = fi.faults.map(f => ({
+              type: f.type || 'HTTP_ERROR',
+              probability: f.probability != null ? f.probability : 1.0,
+              statusCodesStr: (f.statusCodes || []).join(','),
+              delayMs: f.delayMs || 0
+            }))
+          } else {
+            form.faultInjectionEnabled = false
+            form.faults = []
+          }
+          if (form.responses.length === 0) {
+            form.responses.push({ name: `${t('rules.responseDefault')}`, statusCode: 200, delayMs: 0, body: '', headers: {}, condition: null })
+          }
+          const res = await api.getInheritedEnvironments(id)
+          if (res.success && res.data) {
+            inheritedEnvs.value = res.data
+            form.environments = (form.environments || []).filter(e => !inheritedEnvs.value.includes(e))
+          }
         }
-        if (form.responses.length === 0) {
-          form.responses.push({ name: `${t('rules.responseDefault')}`, statusCode: 200, delayMs: 0, body: '', headers: {}, condition: null })
-        }
-        const res = await api.getInheritedEnvironments(id)
-        if (res.success && res.data) {
-          inheritedEnvs.value = res.data
-          form.environments = (form.environments || []).filter(e => !inheritedEnvs.value.includes(e))
-        }
+      } finally {
+        loading.value = false
       }
-      loading.value = false
     }
 
     onMounted(loadRule)
