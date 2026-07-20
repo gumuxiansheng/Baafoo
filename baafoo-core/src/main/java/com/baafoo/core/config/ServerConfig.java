@@ -1,5 +1,7 @@
 package com.baafoo.core.config;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -284,6 +286,7 @@ public class ServerConfig {
         public boolean isSecure() { return secure; }
         public void setSecure(boolean secure) { this.secure = secure; }
 
+        @JsonIgnore
         public String getLoginUrl() {
             try {
                 return baseUrl + "/api/sso/login?project="
