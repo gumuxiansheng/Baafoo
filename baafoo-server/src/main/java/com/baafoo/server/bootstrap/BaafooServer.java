@@ -6,6 +6,7 @@ import com.baafoo.core.model.User;
 import com.baafoo.server.api.*;
 import com.baafoo.server.auth.AuthFilter;
 import com.baafoo.server.auth.AuthService;
+import com.baafoo.server.auth.SsoCallbackHandler;
 import com.baafoo.server.broker.JmsMockBroker;
 import com.baafoo.server.broker.KafkaMockBroker;
 import com.baafoo.server.broker.PulsarMockBroker;
@@ -184,6 +185,7 @@ public class BaafooServer {
                         ChannelPipeline p = ch.pipeline();
                         p.addLast(new HttpServerCodec());
                         p.addLast(new HttpObjectAggregator(10 * 1024 * 1024));
+                        p.addLast(new SsoCallbackHandler(authService, config));
                         p.addLast(new AuthFilter(authService, config));
                         p.addLast(new ManagementApiHandler(storage, authService, new com.baafoo.core.util.ChaosManager(), config, eventBus,
                                 new java.util.function.Supplier<java.util.Map<String, String>>() {

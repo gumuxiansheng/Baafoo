@@ -75,7 +75,7 @@ auth:
   #   - 127.0.0.1
   #   - 10.0.0.0/8
   # JWT signing secret (at least 32 characters). If not set, auto-generated key is used.
-  # jwtSecret: "change-me-to-a-long-random-secret-string"
+  jwtSecret: ${BAAFOO_JWT_SECRET:}
   # JWT token expiry in hours (default: 24, max: 168/7 days)
   tokenExpiryHours: 24
   # Static API Key to role mapping. Requests with X-Api-Key header matching a key below

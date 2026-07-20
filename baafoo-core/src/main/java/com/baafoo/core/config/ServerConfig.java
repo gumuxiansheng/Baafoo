@@ -224,6 +224,8 @@ public class ServerConfig {
         private Map<String, String> apiKeys;
         /** Trusted proxy IPs that are allowed to set X-Forwarded-For (empty = trust none) */
         private java.util.Set<String> trustedProxies = new java.util.HashSet<>();
+        /** SSO configuration */
+        private SsoConfig sso = new SsoConfig();
 
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -243,6 +245,9 @@ public class ServerConfig {
         public java.util.Set<String> getTrustedProxies() { return trustedProxies; }
         public void setTrustedProxies(java.util.Set<String> trustedProxies) { this.trustedProxies = trustedProxies; }
 
+        public SsoConfig getSso() { return sso; }
+        public void setSso(SsoConfig sso) { this.sso = sso; }
+
         @Override
         public String toString() {
             // M11: include all fields (jwtSecret and apiKeys are intentionally
@@ -256,7 +261,44 @@ public class ServerConfig {
                     + ", tokenExpiryHours=" + tokenExpiryHours
                     + ", apiKeyCount=" + (apiKeys != null ? apiKeys.size() : 0)
                     + ", trustedProxies=" + trustedProxies
+                    + ", sso=" + sso
                     + '}';
+        }
+    }
+
+    public static class SsoConfig {
+        private String baseUrl = "http://localhost:8085";
+        private String callbackUrl = "http://localhost:8084/sso/callback";
+        private String projectCode = "BAAFOO";
+        private boolean secure = false;
+
+        public String getBaseUrl() { return baseUrl; }
+        public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+
+        public String getCallbackUrl() { return callbackUrl; }
+        public void setCallbackUrl(String callbackUrl) { this.callbackUrl = callbackUrl; }
+
+        public String getProjectCode() { return projectCode; }
+        public void setProjectCode(String projectCode) { this.projectCode = projectCode; }
+
+        public boolean isSecure() { return secure; }
+        public void setSecure(boolean secure) { this.secure = secure; }
+
+        public String getLoginUrl() {
+            try {
+                return baseUrl + "/api/sso/login?project="
+                        + java.net.URLEncoder.encode(projectCode, "UTF-8")
+                        + "&callback="
+                        + java.net.URLEncoder.encode(callbackUrl, "UTF-8");
+            } catch (java.io.UnsupportedEncodingException e) {
+                // UTF-8 is guaranteed by the Java spec; this should never happen
+                return baseUrl + "/api/sso/login?project=" + projectCode + "&callback=" + callbackUrl;
+            }
+        }
+
+        @Override
+        public String toString() {
+            return "SsoConfig{baseUrl='" + baseUrl + "', callbackUrl='" + callbackUrl + "', projectCode='" + projectCode + "', secure=" + secure + '}';
         }
     }
 }

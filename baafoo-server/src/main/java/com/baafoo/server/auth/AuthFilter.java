@@ -33,6 +33,7 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
     private static final String API_PREFIX = "/__baafoo__/api/";
     private static final String AUTH_PREFIX = "/__baafoo__/api/auth/";
     private static final String STATUS_PATH = "/__baafoo__/api/status";
+    private static final String BAAFOO_TOKEN_COOKIE = "baafoo_token";
 
     private final AuthService authService;
     private final ServerConfig config;
@@ -87,7 +88,13 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
         String remoteAddr = resolveRemoteAddr(ctx, request);
         String authHeader = request.headers().get("Authorization");
         String apiKeyHeader = request.headers().get("X-Api-Key");
+        // Also check for token in cookie (for browser SSO flows)
+        String cookieToken = extractCookie(request, BAAFOO_TOKEN_COOKIE);
         AuthService.AuthResult auth = authService.authenticate(authHeader, apiKeyHeader, remoteAddr);
+        // If header-based auth failed but we have a cookie token, try that
+        if (!auth.isSuccess() && cookieToken != null) {
+            auth = authService.authenticate("Bearer " + cookieToken, null, remoteAddr);
+        }
 
         if (!auth.isSuccess()) {
             // Allow unauthenticated read-only access (guest browsing) for
@@ -99,7 +106,13 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
             if (isReadMethod && !isSensitivePath) {
                 auth = new AuthService.AuthResult(true, "guest", "Guest read access");
             } else {
-                sendJson(ctx, 401, ApiResponse.fail(401, "Authentication failed: " + auth.getMessage()));
+                // Browser requests (Accept: text/html) get redirected to SSO login
+                String acceptHeader = request.headers().get(HttpHeaderNames.ACCEPT);
+                if (acceptHeader != null && acceptHeader.contains("text/html")) {
+                    sendRedirect(ctx, config.getAuth().getSso().getLoginUrl());
+                } else {
+                    sendJson(ctx, 401, ApiResponse.fail(401, "Authentication failed: " + auth.getMessage()));
+                }
                 return;
             }
         }
@@ -122,6 +135,40 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
     private static String extractPath(String uri) {
         int queryIdx = uri.indexOf('?');
         return queryIdx >= 0 ? uri.substring(0, queryIdx) : uri;
+    }
+
+    /**
+     * Extract a cookie value from the Cookie header.
+     */
+    private static String extractCookie(FullHttpRequest request, String cookieName) {
+        String cookieHeader = request.headers().get(HttpHeaderNames.COOKIE);
+        if (cookieHeader == null || cookieHeader.isEmpty()) {
+            return null;
+        }
+        String[] cookies = cookieHeader.split(";");
+        for (String cookie : cookies) {
+            String trimmed = cookie.trim();
+            int eqIdx = trimmed.indexOf('=');
+            if (eqIdx > 0) {
+                String name = trimmed.substring(0, eqIdx).trim();
+                String value = trimmed.substring(eqIdx + 1).trim();
+                if (cookieName.equals(name)) {
+                    return value;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Send a 302 redirect response for browser SSO flows.
+     */
+    private void sendRedirect(ChannelHandlerContext ctx, String location) {
+        FullHttpResponse response = new DefaultFullHttpResponse(
+                HttpVersion.HTTP_1_1, HttpResponseStatus.FOUND);
+        response.headers().set(HttpHeaderNames.LOCATION, location);
+        response.headers().set(HttpHeaderNames.CONTENT_LENGTH, 0);
+        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
     }
 
     private String methodToAction(String method) {

@@ -154,8 +154,16 @@ public class AuthService {
                     .parseClaimsJws(token)
                     .getBody();
 
-            String username = claims.getSubject();
-            String role = claims.get("role", String.class);
+            // Ehre SSO unified JWT format: username and roleCode are custom claims
+            // (not subject/role). Fall back to legacy format for backward compat.
+            String username = claims.get("username", String.class);
+            if (username == null) {
+                username = claims.getSubject();
+            }
+            String role = claims.get("roleCode", String.class);
+            if (role == null) {
+                role = claims.get("role", String.class);
+            }
 
             if (username == null || role == null) {
                 return new AuthResult(false, null, "Invalid token: missing claims");
@@ -226,7 +234,13 @@ public class AuthService {
         long now = System.currentTimeMillis();
         return Jwts.builder()
                 .setSubject(username)
+                .claim("username", username)
                 .claim("role", role)
+                .claim("roleCode", role)
+                .claim("userId", username)
+                .claim("displayName", username)
+                .claim("roleId", role)
+                .setIssuer("ehre")
                 .setIssuedAt(new Date(now))
                 .setExpiration(new Date(now + expiryMs))
                 .signWith(jwtKey, SignatureAlgorithm.HS256)
