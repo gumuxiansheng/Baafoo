@@ -1,5 +1,7 @@
 package com.baafoo.server.auth;
 
+import com.baafoo.core.config.ServerConfig;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
@@ -8,20 +10,23 @@ import io.netty.handler.codec.http.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.baafoo.core.config.ServerConfig;
-
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.time.Duration;
+import java.util.Map;
 
 /**
  * Netty ChannelHandler that processes SSO callback requests at /sso/callback.
  *
- * <p>When the Ehre SSO portal authenticates a user, it redirects back to
- * {@code /sso/callback?token=<jwt>}. This handler extracts the token from
- * the query string, validates it via {@link AuthService}, sets a cookie
- * ({@code baafoo_token}) on the response, and redirects the browser to
- * the Baafoo home page.</p>
+ * <p>Authorization Code flow (P0-1.1 rectification):
+ * <ol>
+ *   <li>Ehre redirects browser here with {@code ?code=...}</li>
+ *   <li>This handler POSTs to Ehre {@code /api/sso/token} to exchange code for JWT</li>
+ *   <li>JWT is set as a cookie — never appears in URL</li>
+ * </ol></p>
  *
  * <p>This handler must be placed <em>before</em> {@link AuthFilter} in the
  * Netty pipeline so that the callback path is reachable without
@@ -30,18 +35,24 @@ import java.util.regex.Pattern;
 public class SsoCallbackHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
 
     private static final Logger log = LoggerFactory.getLogger(SsoCallbackHandler.class);
+    private static final ObjectMapper MAPPER = com.baafoo.core.util.JsonUtils.MAPPER;
 
     private static final String CALLBACK_PATH = "/sso/callback";
     private static final String COOKIE_NAME = "baafoo_token";
     private static final String HOME_REDIRECT = "/";
-    private static final Pattern TOKEN_PARAM = Pattern.compile("[?&]token=([^&]+)");
+    private static final String PROJECT_CODE = "BAAFOO";
+    private static final int COOKIE_MAX_AGE = 86400; // 24h, aligned with token expiration
 
     private final AuthService authService;
     private final ServerConfig config;
+    private final HttpClient httpClient;
 
     public SsoCallbackHandler(AuthService authService, ServerConfig config) {
         this.authService = authService;
         this.config = config;
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                .build();
     }
 
     @Override
@@ -61,20 +72,34 @@ public class SsoCallbackHandler extends SimpleChannelInboundHandler<FullHttpRequ
             return;
         }
 
-        // Extract token from query string
-        String token = extractQueryParam(uri, "token");
-        if (token == null || token.isEmpty()) {
-            log.warn("SSO callback received without token parameter");
+        // Extract code from query string (NOT token — Authorization Code mode)
+        String code = extractQueryParam(uri, "code");
+        if (code == null || code.isEmpty()) {
+            log.warn("SSO callback received without code parameter");
             sendRedirect(ctx, HOME_REDIRECT);
             return;
         }
 
+        // Exchange code for token via server-to-server POST to Ehre
+        String token;
+        try {
+            token = exchangeCodeForToken(code);
+        } catch (Exception e) {
+            log.error("SSO code exchange failed: {}", e.getMessage());
+            sendRedirect(ctx, config.getAuth().getSso().getLoginUrl());
+            return;
+        }
+
+        if (token == null || token.isEmpty()) {
+            log.warn("SSO token exchange returned empty token");
+            sendRedirect(ctx, config.getAuth().getSso().getLoginUrl());
+            return;
+        }
+
         // Validate the JWT token using AuthService
-        // We pass the token as a Bearer header to reuse AuthService.authenticate
         AuthService.AuthResult authResult = authService.authenticate("Bearer " + token, null, "sso-callback");
         if (!authResult.isSuccess()) {
             log.warn("SSO callback token validation failed: {}", authResult.getMessage());
-            // Redirect to SSO login again
             sendRedirect(ctx, config.getAuth().getSso().getLoginUrl());
             return;
         }
@@ -95,10 +120,41 @@ public class SsoCallbackHandler extends SimpleChannelInboundHandler<FullHttpRequ
                 + "; HttpOnly"
                 + (secure ? "; Secure" : "")
                 + "; SameSite=Lax"
-                + "; Max-Age=" + (4 * 60 * 60); // 4 hours, matching default token expiry
+                + "; Max-Age=" + COOKIE_MAX_AGE;
         response.headers().set(HttpHeaderNames.SET_COOKIE, cookieValue);
 
         ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+    }
+
+    /**
+     * Exchange auth code for JWT token via POST to Ehre /api/sso/token.
+     */
+    private String exchangeCodeForToken(String code) throws Exception {
+        String ssoBaseUrl = config.getAuth().getSso().getBaseUrl();
+        String tokenEndpoint = ssoBaseUrl + "/api/sso/token";
+
+        String jsonBody = MAPPER.writeValueAsString(Map.of(
+                "code", code,
+                "projectCode", PROJECT_CODE
+        ));
+
+        HttpRequest httpRequest = HttpRequest.newBuilder()
+                .uri(URI.create(tokenEndpoint))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .timeout(Duration.ofSeconds(10))
+                .build();
+
+        HttpResponse<String> resp = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+
+        if (resp.statusCode() != 200) {
+            log.warn("SSO token exchange returned status {}: {}", resp.statusCode(), resp.body());
+            return null;
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = MAPPER.readValue(resp.body(), Map.class);
+        return (String) body.get("token");
     }
 
     private static String extractPath(String uri) {
@@ -107,12 +163,16 @@ public class SsoCallbackHandler extends SimpleChannelInboundHandler<FullHttpRequ
     }
 
     private static String extractQueryParam(String uri, String paramName) {
-        Matcher matcher = TOKEN_PARAM.matcher(uri);
-        if (matcher.find()) {
-            try {
-                return java.net.URLDecoder.decode(matcher.group(1), StandardCharsets.UTF_8.name());
-            } catch (Exception e) {
-                return matcher.group(1);
+        // Generic query param extraction (replaces the old token-only regex)
+        String query = uri.contains("?") ? uri.substring(uri.indexOf('?') + 1) : "";
+        for (String pair : query.split("&")) {
+            String[] kv = pair.split("=", 2);
+            if (kv.length == 2 && kv[0].equals(paramName)) {
+                try {
+                    return java.net.URLDecoder.decode(kv[1], StandardCharsets.UTF_8.name());
+                } catch (Exception e) {
+                    return kv[1];
+                }
             }
         }
         return null;

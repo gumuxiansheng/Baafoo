@@ -97,24 +97,18 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
         }
 
         if (!auth.isSuccess()) {
-            // Allow unauthenticated read-only access (guest browsing) for
-            // non-sensitive endpoints. The RBAC matrix already grants READ
-            // to any role including guest. Sensitive paths like /users
-            // still require proper authentication.
+            // P1-5.1: No guest fallback. Unauthenticated requests must either
+            // redirect to SSO (browser) or get 401 (API). Previously, GET
+            // requests were auto-granted "guest" role, which bypassed SSO.
             boolean isReadMethod = "GET".equals(method) || "HEAD".equals(method);
-            boolean isSensitivePath = path.startsWith("/__baafoo__/api/users");
-            if (isReadMethod && !isSensitivePath) {
-                auth = new AuthService.AuthResult(true, "guest", "Guest read access");
+            // Browser requests (Accept: text/html) get redirected to SSO login
+            String acceptHeader = request.headers().get(HttpHeaderNames.ACCEPT);
+            if (acceptHeader != null && acceptHeader.contains("text/html")) {
+                sendRedirect(ctx, config.getAuth().getSso().getLoginUrl());
             } else {
-                // Browser requests (Accept: text/html) get redirected to SSO login
-                String acceptHeader = request.headers().get(HttpHeaderNames.ACCEPT);
-                if (acceptHeader != null && acceptHeader.contains("text/html")) {
-                    sendRedirect(ctx, config.getAuth().getSso().getLoginUrl());
-                } else {
-                    sendJson(ctx, 401, ApiResponse.fail(401, "Authentication failed: " + auth.getMessage()));
-                }
-                return;
+                sendJson(ctx, 401, ApiResponse.fail(401, "Authentication failed: " + auth.getMessage()));
             }
+            return;
         }
 
         // Check permission using the simplified checkPermission method

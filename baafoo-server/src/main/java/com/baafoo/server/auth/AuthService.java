@@ -150,6 +150,7 @@ public class AuthService {
         try {
             Claims claims = Jwts.parserBuilder()
                     .setSigningKey(jwtKey)
+                    .requireIssuer("ehre")
                     .build()
                     .parseClaimsJws(token)
                     .getBody();
@@ -163,6 +164,12 @@ public class AuthService {
             String role = claims.get("roleCode", String.class);
             if (role == null) {
                 role = claims.get("role", String.class);
+            }
+
+            // Verify audience
+            String aud = claims.getAudience();
+            if (aud == null || !"BAAFOO".equals(aud)) {
+                return new AuthResult(false, null, "Invalid token: audience mismatch");
             }
 
             if (username == null || role == null) {
@@ -241,6 +248,7 @@ public class AuthService {
                 .claim("displayName", username)
                 .claim("roleId", role)
                 .setIssuer("ehre")
+                .setAudience("BAAFOO")
                 .setIssuedAt(new Date(now))
                 .setExpiration(new Date(now + expiryMs))
                 .signWith(jwtKey, SignatureAlgorithm.HS256)
