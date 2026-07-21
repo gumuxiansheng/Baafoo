@@ -515,6 +515,11 @@ public class JdbcStorageService implements StorageService {
     }
 
     @Override
+    public boolean updateUserProfile(String username, String displayName, String email, String phone) {
+        return userService.updateUserProfile(username, displayName, email, phone);
+    }
+
+    @Override
     public boolean updateUserLastLogin(String username) {
         return userService.updateUserLastLogin(username);
     }
