@@ -71,6 +71,12 @@ const routes = [
     name: 'Status',
     component: () => import('@/views/StatusPage.vue'),
     meta: { title: 'nav.status' }
+  },
+  {
+    path: '/profile',
+    name: 'Profile',
+    component: () => import('@/views/ProfilePage.vue'),
+    meta: { title: 'nav.profile' }
   }
 ]
 

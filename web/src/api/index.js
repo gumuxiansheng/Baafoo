@@ -44,6 +44,8 @@ export default {
   // --- Auth ---
   login: (username, password) => http.post('/auth/login', { username, password }),
   getAuthMe: () => http.get('/auth/me'),
+  changePassword: (oldPassword, newPassword) => http.put('/auth/me/password', { oldPassword, newPassword }),
+  updateProfile: (data) => http.put('/auth/me', data),
 
   // --- Users ---
   getUsers: () => http.get('/users'),

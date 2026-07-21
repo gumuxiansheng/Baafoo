@@ -538,6 +538,34 @@
     "environments": "环境管理",
     "status": "系统状态",
     "logs": "请求日志",
-    "ruleEditor": "规则编辑"
+    "ruleEditor": "规则编辑",
+    "profile": "个人信息"
+  },
+  "profile": {
+    "title": "个人信息",
+    "username": "用户名",
+    "displayName": "显示名",
+    "displayNamePlaceholder": "请输入显示名",
+    "email": "邮箱",
+    "phone": "手机号",
+    "phonePlaceholder": "请输入手机号",
+    "save": "保存",
+    "saveSuccess": "保存成功",
+    "saveFail": "保存失败",
+    "changePassword": "修改密码",
+    "oldPassword": "旧密码",
+    "oldPasswordPlaceholder": "请输入旧密码",
+    "newPassword": "新密码",
+    "newPasswordPlaceholder": "请输入新密码",
+    "confirmPassword": "确认密码",
+    "confirmPasswordPlaceholder": "请再次输入新密码",
+    "changePasswordBtn": "修改密码",
+    "passwordChanged": "密码修改成功",
+    "passwordChangeFail": "密码修改失败",
+    "oldPasswordRequired": "请输入旧密码",
+    "newPasswordRequired": "请输入新密码",
+    "passwordMismatch": "两次密码不一致",
+    "ssoBlocked": "由统一管理系统维护，请前往 Ehre 修改",
+    "goEhre": "前往 Ehre 修改"
   }
 }

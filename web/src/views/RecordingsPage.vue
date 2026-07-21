@@ -494,10 +494,79 @@ export default {
       return 'info'
     })
 
+    // Group TCP/UDP passthrough recordings by sessionId for display.
+    // Only sessionIds with 2+ records on the current page form a group;
+    // single records (HTTP, server-side TCP stub, orphan TCP entries) stay as-is.
+    const tableRows = computed(() => {
+      const rows = recordings.value
+      const sessionCounts = new Map()
+      for (const row of rows) {
+        const sid = row.sessionId
+        if (sid && sid.trim()) {
+          sessionCounts.set(sid, (sessionCounts.get(sid) || 0) + 1)
+        }
+      }
+      const groups = new Map()
+      const result = []
+      for (const row of rows) {
+        const sid = row.sessionId && row.sessionId.trim() ? row.sessionId : null
+        if (sid && sessionCounts.get(sid) >= 2) {
+          let group = groups.get(sid)
+          if (!group) {
+            group = {
+              id: 'group-' + sid,
+              sessionId: sid,
+              children: [],
+              __isGroup: true
+            }
+            groups.set(sid, group)
+            result.push(group)
+          }
+          group.children.push(row)
+          // Use the earliest record for the group's summary display fields.
+          if (!group.recordedAt || row.recordedAt < group.recordedAt) {
+            group.protocol = row.protocol
+            group.agentId = row.agentId
+            group.agentIp = row.agentIp
+            group.host = row.host
+            group.port = row.port
+            group.path = row.path
+            group.ruleName = row.ruleName
+            group.ruleId = row.ruleId
+            group.recordedAt = row.recordedAt
+          }
+        } else {
+          result.push(row)
+        }
+      }
+      return result
+    })
+
+    const rowClassName = ({ row }) => row.__isGroup ? 'group-row' : 'single-row'
+
+    const uniqueDirections = (children) => {
+      const seen = new Set()
+      const result = []
+      for (const c of children || []) {
+        if (c.direction && !seen.has(c.direction)) {
+          seen.add(c.direction)
+          result.push(c.direction)
+        }
+      }
+      return result
+    }
+
+    const getDataPreview = (rec) => {
+      const text = rec.dataHex || rec.requestBody || ''
+      const max = 80
+      return text.length > max ? text.substring(0, max) + '…' : (text || '-')
+    }
+
     onMounted(loadRecordings)
     return {
       recordings, loading, detailVisible, currentRecording,
       currentPage, pageSize, total, searchParams,
+      tableRows, rowClassName, uniqueDirections, getDataPreview,
       loadRecordings, onSearch, onReset, onPageChange, onSizeChange,
       viewDetail, deleteItem, formatHeaders, formatTime,
       isHttpProtocol, isGrpcProtocol, isTcpUdpProtocol, isNonHttpProtocol, isJmsProtocol,
@@ -544,4 +613,14 @@ h4 { margin: 8px 0; color: var(--bf-text-secondary); }
 :deep(.recording-detail-dialog .el-dialog__body) { padding-top: 8px; }
 :deep(.el-descriptions__label) { width: 110px; }
 :deep(.el-form--inline .el-form-item) { margin-right: 12px; margin-bottom: 8px; }
+:deep(.el-table__row.single-row .el-table__expand-icon) { visibility: hidden; pointer-events: none; }
+:deep(.el-table__row.group-row > td) { background-color: var(--bf-bg-secondary); }
+.pair-expanded { padding: 4px 12px 4px 48px; }
+.pair-expanded :deep(.el-table) { border-radius: var(--bf-radius); }
+.pair-expanded :deep(.el-table td) { padding: 6px 8px; }
+.pair-data-preview { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--bf-text-secondary); word-break: break-all; }
+.group-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--bf-text-muted); }
+.group-count { font-size: 12px; color: var(--bf-text-muted); font-weight: 600; }
+.dir-tag { margin-right: 4px; }
+.dir-tag:last-child { margin-right: 0; }
 </style>

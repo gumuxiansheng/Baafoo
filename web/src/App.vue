@@ -16,8 +16,18 @@
           <LocaleSwitcher />
           <template v-if="authStore.isLoggedIn">
             <span class="header-badge badge-role">{{ roleLabel }}</span>
-            <span class="user-name">{{ authStore.username }}</span>
-            <el-button class="btn-header-logout" text size="small" @click="handleLogout">{{ $t('app.logout') }}</el-button>
+            <el-dropdown @command="handleUserCommand">
+              <span class="user-name" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                {{ authStore.username }}
+                <el-icon style="font-size: 12px"><ArrowDown /></el-icon>
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="profile">{{ $t('nav.profile') }}</el-dropdown-item>
+                  <el-dropdown-item command="logout" divided>{{ $t('app.logout') }}</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
           <template v-else>
             <span class="header-badge badge-guest">{{ $t('app.guest') }}</span>
@@ -90,12 +100,13 @@ import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStatusStore, useAuthStore } from '@/store'
 import { useI18n } from 'vue-i18n'
+import { ArrowDown } from '@element-plus/icons-vue'
 import BaafooLogo from '@/components/BaafooLogo.vue'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 
 export default {
   name: 'App',
-  components: { BaafooLogo, LocaleSwitcher },
+  components: { BaafooLogo, LocaleSwitcher, ArrowDown },
   setup() {
     const route = useRoute()
     const router = useRouter()
@@ -118,6 +129,14 @@ export default {
     const handleLogout = () => {
       authStore.logout()
       router.push('/login')
+    }
+
+    const handleUserCommand = (command) => {
+      if (command === 'logout') {
+        handleLogout()
+      } else if (command === 'profile') {
+        router.push('/profile')
+      }
     }
 
     let timer = null
@@ -193,7 +212,7 @@ export default {
 
     return {
       activeMenu, statusConnected, ruleCount, envCount, agentCount,
-      authStore, roleLabel, handleLogout, t
+      authStore, roleLabel, handleLogout, handleUserCommand, t
     }
   }
 }

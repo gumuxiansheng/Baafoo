@@ -538,6 +538,34 @@
     "environments": "Environments",
     "status": "System Status",
     "logs": "Request Logs",
-    "ruleEditor": "Rule Editor"
+    "ruleEditor": "Rule Editor",
+    "profile": "Profile"
+  },
+  "profile": {
+    "title": "Profile",
+    "username": "Username",
+    "displayName": "Display Name",
+    "displayNamePlaceholder": "Enter display name",
+    "email": "Email",
+    "phone": "Phone",
+    "phonePlaceholder": "Enter phone number",
+    "save": "Save",
+    "saveSuccess": "Saved successfully",
+    "saveFail": "Save failed",
+    "changePassword": "Change Password",
+    "oldPassword": "Old Password",
+    "oldPasswordPlaceholder": "Enter old password",
+    "newPassword": "New Password",
+    "newPasswordPlaceholder": "Enter new password",
+    "confirmPassword": "Confirm Password",
+    "confirmPasswordPlaceholder": "Re-enter new password",
+    "changePasswordBtn": "Change Password",
+    "passwordChanged": "Password changed",
+    "passwordChangeFail": "Failed to change password",
+    "oldPasswordRequired": "Please enter old password",
+    "newPasswordRequired": "Please enter new password",
+    "passwordMismatch": "Passwords do not match",
+    "ssoBlocked": "Managed by Ehre. Please go to Ehre to change.",
+    "goEhre": "Go to Ehre"
   }
 }
