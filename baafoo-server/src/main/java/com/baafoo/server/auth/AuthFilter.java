@@ -97,9 +97,23 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
         }
 
         if (!auth.isSuccess()) {
-            // Authentication failed (invalid token/api-key). Reject with 401.
-            // Note: guest access is handled inside AuthService.authenticate()
-            // which returns success with "guest" role for unauthenticated requests.
+            // Guest mode (Baafoo feature): unauthenticated read requests to
+            // guest-eligible resources are allowed through with the "guest"
+            // role. Writes and reads on restricted resources (users) still
+            // require authentication. Guest eligibility is determined by
+            // getRequiredRoleForAction: if the minimum required role for the
+            // implied action/resource is "guest", the request is guest-eligible.
+            String resource = AuthService.inferResourceFromPath(path);
+            String requiredRole = getRequiredRoleForAction(resource, methodToAction(method));
+            if ("guest".equals(requiredRole)) {
+                request.headers().set("X-Baafoo-Auth-Role", "guest");
+                request.headers().set("X-Baafoo-Auth-User", "");
+                ctx.fireChannelRead(request.retain());
+                return;
+            }
+
+            // Authentication failed (invalid token/api-key or no credentials
+            // on a non-guest-eligible resource). Reject with 401.
             String acceptHeader = request.headers().get(HttpHeaderNames.ACCEPT);
             if (acceptHeader != null && acceptHeader.contains("text/html")) {
                 sendRedirect(ctx, config.getAuth().getSso().getLoginUrl());
@@ -174,12 +188,15 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
     }
 
     private static String getRequiredRoleForAction(String resource, String action) {
+        // User resource always requires admin, including reads — this keeps
+        // unauthenticated guest mode off the user management endpoints.
+        if ("user".equals(resource)) return "admin";
+        // For reads on other resources, guest is the minimum required role.
         if ("read".equals(action)) return "guest";
         if ("rule".equals(resource)) return "developer";
         if ("scene".equals(resource)) return "tester";
         if ("environment".equals(resource)) return "admin";
         if ("recording".equals(resource)) return "tester";
-        if ("user".equals(resource)) return "admin";
         return "admin";
     }
 

@@ -136,11 +136,12 @@ public class AuthService {
             return validateApiKey(apiKeyHeader);
         }
 
-        // No credentials provided — fall back to guest role for read-only access.
-        // This is Baafoo's design: unauthenticated GET requests get "guest" role
-        // which allows read access to rules/scenes/environments etc. via the
-        // hasPermission(READ) check below.
-        return new AuthResult(true, "guest", "Guest access");
+        // No credentials provided — authentication required.
+        // Guest access for unauthenticated read requests is handled by
+        // AuthFilter, which selectively allows GET/HEAD requests to
+        // guest-eligible resources (rules/scenes/environments/recordings,
+        // but NOT users) to pass through with the "guest" role.
+        return new AuthResult(false, null, "Authentication required");
     }
 
     private boolean isLocalAddress(String addr) {
