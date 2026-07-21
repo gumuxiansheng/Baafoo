@@ -140,7 +140,7 @@ public class AuthService {
         // This is Baafoo's design: unauthenticated GET requests get "guest" role
         // which allows read access to rules/scenes/environments etc. via the
         // hasPermission(READ) check below.
-        return new AuthResult(true, "guest", "Guest access");;
+        return new AuthResult(true, "guest", "Guest access");
     }
 
     private boolean isLocalAddress(String addr) {
