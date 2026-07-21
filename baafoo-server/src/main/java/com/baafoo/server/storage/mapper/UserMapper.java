@@ -30,6 +30,11 @@ public interface UserMapper {
 
     int updateUserPassword(@Param("username") String username, @Param("password") String password);
 
+    int updateUserProfile(@Param("username") String username,
+                         @Param("displayName") String displayName,
+                         @Param("email") String email,
+                         @Param("phone") String phone);
+
     int updateUserLastLogin(@Param("username") String username);
 
     int deleteUser(@Param("username") String username);

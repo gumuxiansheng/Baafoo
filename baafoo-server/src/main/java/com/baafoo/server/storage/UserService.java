@@ -25,6 +25,8 @@ public interface UserService {
 
     boolean updateUserPassword(String username, String password);
 
+    boolean updateUserProfile(String username, String displayName, String email, String phone);
+
     boolean updateUserLastLogin(String username);
 
     boolean deleteUser(String username);

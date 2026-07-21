@@ -104,6 +104,16 @@ public class JdbcUserService extends BaseJdbcService implements UserService {
     }
 
     @Override
+    public boolean updateUserProfile(String username, String displayName, String email, String phone) {
+        try (SqlSession session = openSession()) {
+            return session.getMapper(UserMapper.class).updateUserProfile(username, displayName, email, phone) > 0;
+        } catch (Exception e) {
+            log.error("Failed to update profile for user {}: {}", username, e.getMessage());
+            return false;
+        }
+    }
+
+    @Override
     public boolean updateUserLastLogin(String username) {
         try (SqlSession session = openSession()) {
             return session.getMapper(UserMapper.class).updateUserLastLogin(username) > 0;

@@ -113,22 +113,11 @@ class AuthApiHandler implements ResourceHandler {
             if (user == null) {
                 return ApiResponse.fail(404, "User not found");
             }
-            if (displayName != null && !displayName.isEmpty()) {
-                user.setDisplayName(displayName);
+            boolean updated = ctx.storage.updateUserProfile(username, displayName, email, phone);
+            if (!updated) {
+                return ApiResponse.fail(500, "Failed to update profile");
             }
-            if (email != null) {
-                user.setEmail(email);
-            }
-            if (phone != null) {
-                user.setPhone(phone);
-            }
-            // Persist via storage service. Baafoo storage does not have a
-            // dedicated updateProfile method, so we reuse updateUserPassword
-            // pattern: direct SQL update would be ideal, but for now we
-            // only support password changes (the most common self-service).
-            // Profile update requires a storage method — return a friendly
-            // message if the storage layer doesn't support it yet.
-            return ApiResponse.fail(501, "Profile update not yet supported in Baafoo storage layer");
+            return ApiResponse.ok("Profile updated", null);
         }
 
         return null;

@@ -90,6 +90,17 @@
         WHERE username = #{username}
     </update>
 
+    <update id="updateUserProfile">
+        UPDATE user_account
+        <set>
+            <if test="displayName != null">display_name = #{displayName},</if>
+            <if test="email != null">email = #{email},</if>
+            <if test="phone != null">phone = #{phone},</if>
+            updated_at = NOW(),
+        </set>
+        WHERE username = #{username}
+    </update>
+
     <update id="updateUserLastLogin">
         UPDATE user_account
         SET last_login_at = NOW()

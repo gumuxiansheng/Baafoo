@@ -54,8 +54,48 @@
     </el-card>
 
     <el-card shadow="never" style="margin-top: 16px" v-loading="loading">
-      <el-table :data="recordings" stripe size="small" max-height="500" :empty-text="$t('recordings.noData')">
-        <el-table-column prop="id" label="ID" width="120" show-overflow-tooltip />
+      <el-table :data="tableRows" row-key="id" :row-class-name="rowClassName" stripe size="small" max-height="500" :empty-text="$t('recordings.noData')">
+        <el-table-column type="expand" width="40">
+          <template #default="{ row }">
+            <template v-if="row.__isGroup">
+              <div class="pair-expanded">
+                <el-table :data="row.children" size="small" :show-header="false" border>
+                  <el-table-column width="80">
+                    <template #default="{ row: child }">
+                      <el-tag size="small" :type="directionType(child.direction)">{{ $t(directionLabel(child.direction)) }}</el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column>
+                    <template #default="{ row: child }">
+                      <span class="pair-data-preview">{{ getDataPreview(child) }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column width="170">
+                    <template #default="{ row: child }">{{ formatTime(child.recordedAt) }}</template>
+                  </el-table-column>
+                  <el-table-column width="140" align="right">
+                    <template #default="{ row: child }">
+                      <el-button size="small" text @click="viewDetail(child)">{{ $t('recordings.detail') }}</el-button>
+                      <el-popconfirm :title="$t('recordings.confirmDelete')" @confirm="deleteItem(child.id)" v-if="authStore.canWriteRecording">
+                        <template #reference>
+                          <el-button size="small" text type="danger">{{ $t('recordings.delete') }}</el-button>
+                        </template>
+                      </el-popconfirm>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </template>
+          </template>
+        </el-table-column>
+        <el-table-column prop="id" label="ID" width="120" show-overflow-tooltip>
+          <template #default="{ row }">
+            <template v-if="row.__isGroup">
+              <span class="group-id">session:{{ (row.sessionId || '').substring(0, 8) }}</span>
+            </template>
+            <template v-else>{{ row.id }}</template>
+          </template>
+        </el-table-column>
         <el-table-column prop="ruleName" :label="$t('recordings.rule')" width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.ruleName || (row.ruleId ? row.ruleId : $t('recordings.unmatched')) }}</template>
         </el-table-column>
@@ -64,9 +104,12 @@
         <el-table-column prop="protocol" :label="$t('recordings.protocol')" width="105">
           <template #default="{ row }"><el-tag size="small">{{ (row.protocol || '').toUpperCase() }}</el-tag></template>
         </el-table-column>
-        <el-table-column prop="method" :label="$t('recordings.method')" width="80">
+        <el-table-column prop="method" :label="$t('recordings.method')" width="100">
           <template #default="{ row }">
-            <template v-if="isNonHttpProtocol(row.protocol)">
+            <template v-if="row.__isGroup">
+              <el-tag v-for="d in uniqueDirections(row.children)" :key="d" size="small" :type="directionType(d)" class="dir-tag">{{ $t(directionLabel(d)) }}</el-tag>
+            </template>
+            <template v-else-if="isNonHttpProtocol(row.protocol)">
               <el-tag v-if="row.direction" size="small" :type="directionType(row.direction)">{{ $t(directionLabel(row.direction)) }}</el-tag>
               <el-tag v-else size="small" type="info">{{ row.method }}</el-tag>
             </template>
@@ -81,12 +124,17 @@
         </el-table-column>
         <el-table-column :label="$t('recordings.actions')" min-width="180" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" text @click="viewDetail(row)">{{ $t('recordings.detail') }}</el-button>
-            <el-popconfirm :title="$t('recordings.confirmDelete')" @confirm="deleteItem(row.id)" v-if="authStore.canWriteRecording">
-              <template #reference>
-                <el-button size="small" text type="danger">{{ $t('recordings.delete') }}</el-button>
-              </template>
-            </el-popconfirm>
+            <template v-if="row.__isGroup">
+              <span class="group-count">×{{ row.children.length }}</span>
+            </template>
+            <template v-else>
+              <el-button size="small" text @click="viewDetail(row)">{{ $t('recordings.detail') }}</el-button>
+              <el-popconfirm :title="$t('recordings.confirmDelete')" @confirm="deleteItem(row.id)" v-if="authStore.canWriteRecording">
+                <template #reference>
+                  <el-button size="small" text type="danger">{{ $t('recordings.delete') }}</el-button>
+                </template>
+              </el-popconfirm>
+            </template>
           </template>
         </el-table-column>
       </el-table>
