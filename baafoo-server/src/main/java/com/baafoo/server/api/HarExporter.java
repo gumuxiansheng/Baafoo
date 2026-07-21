@@ -127,7 +127,13 @@ public class HarExporter {
         sb.append(protocol).append("://");
         if (rec.getHost() != null) sb.append(rec.getHost());
         if (rec.getPort() > 0) sb.append(":").append(rec.getPort());
-        if (rec.getPath() != null) sb.append(rec.getPath());
+        // For TCP/UDP the path field is borrowed to hold "host:port" (already
+        // appended above) — skip it here to avoid "tcp://host:port:host:port".
+        // For HTTP/gRPC path is a real URL path; for MQ protocols it is the
+        // topic/destination — both are appended as-is (pre-existing behavior).
+        if (rec.getPath() != null && !"tcp".equals(protocol) && !"udp".equals(protocol)) {
+            sb.append(rec.getPath());
+        }
         return sb.toString();
     }
 

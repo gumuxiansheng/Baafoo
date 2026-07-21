@@ -67,10 +67,17 @@ public class RecordingOutputStream extends FilterOutputStream {
         try {
             RecordingEntry entry = new RecordingEntry();
             entry.setSessionId(sessionId);
-            entry.setProtocol(GlobalRouteState.inferProtocol(host, port));
+            String inferredProtocol = GlobalRouteState.inferProtocol(host, port);
+            entry.setProtocol(inferredProtocol);
             entry.setDirection("request");
             entry.setHost(host);
             entry.setPort(port);
+            // Borrow path for "host:port" on TCP/UDP streams — see BaafooAgent.NIO_RECORDING_HANDLER.
+            if (inferredProtocol == null || inferredProtocol.isEmpty()
+                    || "tcp".equalsIgnoreCase(inferredProtocol)
+                    || "udp".equalsIgnoreCase(inferredProtocol)) {
+                entry.setPath(host + ":" + port);
+            }
             entry.setDataHex(GlobalRouteState.bytesToHex(data, offset, length));
             entry.setRecordedAt(System.currentTimeMillis());
             recordingBuffer.add(entry);

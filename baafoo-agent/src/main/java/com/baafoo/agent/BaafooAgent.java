@@ -436,12 +436,22 @@ public class BaafooAgent {
             String host = sessionInfo[1];
             int port = parseSessionPort(sessionInfo[2]);
             if (port < 0) return;
+            String inferredProtocol = GlobalRouteState.inferProtocol(host, port);
             RecordingEntry entry = new RecordingEntry();
             entry.setSessionId(sessionInfo[0]);
             entry.setHost(host);
             entry.setPort(port);
-            entry.setProtocol(GlobalRouteState.inferProtocol(host, port));
+            entry.setProtocol(inferredProtocol);
             entry.setDirection(direction);
+            // For TCP (and unidentified stream protocols), borrow the path field
+            // for "host:port" so the recordings/logs list shows a meaningful
+            // identifier. Higher-level protocols (http/kafka/jms/grpc/pulsar) have
+            // their own dedicated handlers that set a real path — skip those.
+            if (inferredProtocol == null || inferredProtocol.isEmpty()
+                    || "tcp".equalsIgnoreCase(inferredProtocol)
+                    || "udp".equalsIgnoreCase(inferredProtocol)) {
+                entry.setPath(host + ":" + port);
+            }
             entry.setDataHex(hexData);
             entry.setRecordedAt(System.currentTimeMillis());
             recordingBuffer.add(entry);

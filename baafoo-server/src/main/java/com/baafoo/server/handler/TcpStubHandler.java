@@ -227,8 +227,13 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
             String decodedPayload = decodeWithRuleCharset(data, result.getRule(), payload);
 
             if (currentMode == EnvironmentMode.RECORD || currentMode == EnvironmentMode.RECORD_AND_STUB || currentMode == EnvironmentMode.RECORD_ALL) {
+                // TCP has no native path concept; borrow the path field to hold
+                // "host:port" so the recordings/logs list shows a meaningful
+                // identifier and path-based search can match TCP recordings
+                // (consistent with Kafka/JMS borrowing path for topic/destination).
+                String tcpPath = stubHost + ":" + stubPort;
                 RecordingEntry rec = RecordingHelper.buildFromStub(
-                        result, "tcp", stubHost, stubPort, null, null,
+                        result, "tcp", stubHost, stubPort, null, tcpPath,
                         Collections.<String, String>emptyMap(), decodedPayload);
                 rec.setAgentId(agentId);
                 rec.setAgentIp(agentIp);
@@ -260,6 +265,8 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                 rec.setProtocol("tcp");
                 rec.setHost(stubHost);
                 rec.setPort(stubPort);
+                // Borrow the path field for "host:port" — see channelRead0 for rationale.
+                rec.setPath(stubHost + ":" + stubPort);
                 rec.setDirection("request");
                 rec.setDataHex(hexPayload);
                 rec.setRequestBody(payload);
@@ -524,8 +531,10 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
                                 String payload, String stubHost, int stubPort) {
         EnvironmentMode currentMode = agentResolver.resolveEnvironmentMode(agentEnvironment);
         if (currentMode == EnvironmentMode.RECORD || currentMode == EnvironmentMode.RECORD_AND_STUB || currentMode == EnvironmentMode.RECORD_ALL) {
+            // Borrow the path field for "host:port" — see channelRead0 for rationale.
+            String tcpPath = stubHost + ":" + stubPort;
             RecordingEntry rec = RecordingHelper.buildFromStub(
-                    rule, entry, "tcp", stubHost, stubPort, null, null,
+                    rule, entry, "tcp", stubHost, stubPort, null, tcpPath,
                     Collections.<String, String>emptyMap(), payload);
             rec.setAgentId(agentId);
             rec.setAgentIp(agentIp);
