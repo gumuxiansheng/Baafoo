@@ -87,3 +87,11 @@ auth:
   # apiKeys:
   #   dev-key-001: developer
   #   test-key-001: tester
+  # SSO configuration
+  sso:
+    baseUrl: ${SSO_BASE_URL:http://localhost:8085}
+    callbackUrl: ${SSO_CALLBACK_URL:http://localhost:8084/sso/callback}
+    projectCode: BAAFOO
+    secure: ${SSO_COOKIE_SECURE:false}
+    # When true, user profile/password changes are redirected to Ehre.
+    useEhreProfile: ${SSO_USE_EHRE_PROFILE:false}

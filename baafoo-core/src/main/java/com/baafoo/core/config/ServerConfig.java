@@ -273,6 +273,8 @@ public class ServerConfig {
         private String callbackUrl = "http://localhost:8084/sso/callback";
         private String projectCode = "BAAFOO";
         private boolean secure = false;
+        /** When true, user profile/password changes are redirected to Ehre. */
+        private boolean useEhreProfile = false;
 
         public String getBaseUrl() { return baseUrl; }
         public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
@@ -285,6 +287,9 @@ public class ServerConfig {
 
         public boolean isSecure() { return secure; }
         public void setSecure(boolean secure) { this.secure = secure; }
+
+        public boolean isUseEhreProfile() { return useEhreProfile; }
+        public void setUseEhreProfile(boolean useEhreProfile) { this.useEhreProfile = useEhreProfile; }
 
         @JsonIgnore
         public String getLoginUrl() {
@@ -301,7 +306,7 @@ public class ServerConfig {
 
         @Override
         public String toString() {
-            return "SsoConfig{baseUrl='" + baseUrl + "', callbackUrl='" + callbackUrl + "', projectCode='" + projectCode + "', secure=" + secure + '}';
+            return "SsoConfig{baseUrl='" + baseUrl + "', callbackUrl='" + callbackUrl + "', projectCode='" + projectCode + "', secure=" + secure + ", useEhreProfile=" + useEhreProfile + '}';
         }
     }
 }

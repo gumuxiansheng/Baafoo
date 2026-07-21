@@ -1,5 +1,6 @@
 package com.baafoo.server.api;
 
+import com.baafoo.core.config.ServerConfig;
 import com.baafoo.core.event.EventBus;
 import com.baafoo.core.i18n.I18n;
 import com.baafoo.server.auth.AuthService;
@@ -19,19 +20,26 @@ public class ApiContext {
     final EventBus eventBus;
     /** i18n message resolver for the request locale */
     final I18n i18n;
+    /** Server configuration (may be null in test contexts) */
+    final ServerConfig config;
 
     ApiContext(StorageService storage, AuthService authService, ObjectMapper mapper, String uri,
                AuthService.AuthResult auth, String remoteAddr) {
-        this(storage, authService, mapper, uri, auth, remoteAddr, null, I18n.defaultInstance());
+        this(storage, authService, mapper, uri, auth, remoteAddr, null, I18n.defaultInstance(), null);
     }
 
     ApiContext(StorageService storage, AuthService authService, ObjectMapper mapper, String uri,
                AuthService.AuthResult auth, String remoteAddr, EventBus eventBus) {
-        this(storage, authService, mapper, uri, auth, remoteAddr, eventBus, I18n.defaultInstance());
+        this(storage, authService, mapper, uri, auth, remoteAddr, eventBus, I18n.defaultInstance(), null);
     }
 
     ApiContext(StorageService storage, AuthService authService, ObjectMapper mapper, String uri,
                AuthService.AuthResult auth, String remoteAddr, EventBus eventBus, I18n i18n) {
+        this(storage, authService, mapper, uri, auth, remoteAddr, eventBus, i18n, null);
+    }
+
+    ApiContext(StorageService storage, AuthService authService, ObjectMapper mapper, String uri,
+               AuthService.AuthResult auth, String remoteAddr, EventBus eventBus, I18n i18n, ServerConfig config) {
         this.storage = storage;
         this.authService = authService;
         this.mapper = mapper;
@@ -40,6 +48,7 @@ public class ApiContext {
         this.remoteAddr = remoteAddr;
         this.eventBus = eventBus;
         this.i18n = i18n;
+        this.config = config;
     }
 
     String queryParam(String key) {
@@ -82,4 +91,7 @@ public class ApiContext {
     public String getRemoteAddr() { return remoteAddr; }
     public String getUri() { return uri; }
     public EventBus getEventBus() { return eventBus; }
+
+    /** Server configuration, or null in test contexts. */
+    public ServerConfig getConfig() { return config; }
 }
