@@ -136,10 +136,11 @@ public class AuthService {
             return validateApiKey(apiKeyHeader);
         }
 
-        // No credentials provided — reject instead of falling back to guest.
-        // Previously this returned AuthResult(true, "guest", ...) which allowed
-        // anonymous read access to all API endpoints including user lists.
-        return new AuthResult(false, null, "Authentication required");
+        // No credentials provided — fall back to guest role for read-only access.
+        // This is Baafoo's design: unauthenticated GET requests get "guest" role
+        // which allows read access to rules/scenes/environments etc. via the
+        // hasPermission(READ) check below.
+        return new AuthResult(true, "guest", "Guest access");;
     }
 
     private boolean isLocalAddress(String addr) {

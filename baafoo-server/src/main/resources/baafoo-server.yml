@@ -55,7 +55,11 @@ unmatchedDefault: passthrough
 # type: "h2" (embedded, default) or "postgresql" (external)
 database:
   type: h2
-  url: "jdbc:h2:mem:baafoo;DB_CLOSE_DELAY=-1"
+  # File-based H2 — data persists across server restarts.
+  # When url is omitted, JdbcStorageService builds "jdbc:h2:file:<dataDir>/baafoo"
+  # using dataDir above (~/.baafoo/data → $HOME/.baafoo/data).
+  # Do NOT use "jdbc:h2:mem:" — in-memory H2 loses ALL data on JVM shutdown.
+  # url: "jdbc:h2:file:~/.baafoo/data/baafoo;DB_CLOSE_DELAY=-1"
   # For PostgreSQL, set url, username, password
   # url: jdbc:postgresql://localhost:5432/baafoo
   # username: postgres

@@ -97,11 +97,9 @@ public class AuthFilter extends SimpleChannelInboundHandler<FullHttpRequest> {
         }
 
         if (!auth.isSuccess()) {
-            // P1-5.1: No guest fallback. Unauthenticated requests must either
-            // redirect to SSO (browser) or get 401 (API). Previously, GET
-            // requests were auto-granted "guest" role, which bypassed SSO.
-            boolean isReadMethod = "GET".equals(method) || "HEAD".equals(method);
-            // Browser requests (Accept: text/html) get redirected to SSO login
+            // Authentication failed (invalid token/api-key). Reject with 401.
+            // Note: guest access is handled inside AuthService.authenticate()
+            // which returns success with "guest" role for unauthenticated requests.
             String acceptHeader = request.headers().get(HttpHeaderNames.ACCEPT);
             if (acceptHeader != null && acceptHeader.contains("text/html")) {
                 sendRedirect(ctx, config.getAuth().getSso().getLoginUrl());

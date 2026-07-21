@@ -1,6 +1,8 @@
 package com.baafoo.core.util;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 /**
  * Shared {@link ObjectMapper} singleton for the entire Baafoo codebase.
@@ -36,8 +38,18 @@ public final class JsonUtils {
      * process. Callers that need a custom-configured mapper must create
      * their own {@code new ObjectMapper()} (or {@code MAPPER.copy()}) —
      * never mutate this singleton.</p>
+     *
+     * <p>Configuration: registers {@link JavaTimeModule} and disables
+     * {@link SerializationFeature#WRITE_DATES_AS_TIMESTAMPS} so that Java 8
+     * date/time types (OffsetDateTime, LocalDateTime, etc.) are serialized
+     * as ISO-8601 strings. Without this, any DTO exposing
+     * {@code OffsetDateTime} (e.g. UserSafeResponse.createdAt) would trigger
+     * "Java 8 date/time type not supported by default" at serialization time
+     * and close the HTTP channel without sending a response.</p>
      */
-    public static final ObjectMapper MAPPER = new ObjectMapper();
+    public static final ObjectMapper MAPPER = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     private JsonUtils() {
         // Utility class — no instantiation

@@ -10,12 +10,12 @@ import io.netty.handler.codec.http.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -42,17 +42,15 @@ public class SsoCallbackHandler extends SimpleChannelInboundHandler<FullHttpRequ
     private static final String HOME_REDIRECT = "/";
     private static final String PROJECT_CODE = "BAAFOO";
     private static final int COOKIE_MAX_AGE = 86400; // 24h, aligned with token expiration
+    private static final int CONNECT_TIMEOUT_MS = 5000;
+    private static final int READ_TIMEOUT_MS = 10000;
 
     private final AuthService authService;
     private final ServerConfig config;
-    private final HttpClient httpClient;
 
     public SsoCallbackHandler(AuthService authService, ServerConfig config) {
         this.authService = authService;
         this.config = config;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(5))
-                .build();
     }
 
     @Override
@@ -128,32 +126,55 @@ public class SsoCallbackHandler extends SimpleChannelInboundHandler<FullHttpRequ
 
     /**
      * Exchange auth code for JWT token via POST to Ehre /api/sso/token.
+     * Uses HttpURLConnection (Java 8 compatible).
      */
+    @SuppressWarnings("unchecked")
     private String exchangeCodeForToken(String code) throws Exception {
         String ssoBaseUrl = config.getAuth().getSso().getBaseUrl();
         String tokenEndpoint = ssoBaseUrl + "/api/sso/token";
 
-        String jsonBody = MAPPER.writeValueAsString(Map.of(
-                "code", code,
-                "projectCode", PROJECT_CODE
-        ));
+        // Build JSON body using HashMap (Java 8 compatible, no Map.of)
+        Map<String, String> bodyMap = new HashMap<>();
+        bodyMap.put("code", code);
+        bodyMap.put("projectCode", PROJECT_CODE);
+        String jsonBody = MAPPER.writeValueAsString(bodyMap);
 
-        HttpRequest httpRequest = HttpRequest.newBuilder()
-                .uri(URI.create(tokenEndpoint))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .timeout(Duration.ofSeconds(10))
-                .build();
+        URL url = new URL(tokenEndpoint);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+        conn.setReadTimeout(READ_TIMEOUT_MS);
+        conn.setDoOutput(true);
 
-        HttpResponse<String> resp = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+        // Write request body
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
+        }
 
-        if (resp.statusCode() != 200) {
-            log.warn("SSO token exchange returned status {}: {}", resp.statusCode(), resp.body());
+        int statusCode = conn.getResponseCode();
+        InputStream is = (statusCode >= 200 && statusCode < 300) ? conn.getInputStream() : conn.getErrorStream();
+        if (is == null) {
+            log.warn("SSO token exchange returned status {} with no body", statusCode);
             return null;
         }
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> body = MAPPER.readValue(resp.body(), Map.class);
+        // Read response body
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        byte[] buffer = new byte[1024];
+        int len;
+        while ((len = is.read(buffer)) != -1) {
+            baos.write(buffer, 0, len);
+        }
+        is.close();
+        conn.disconnect();
+
+        if (statusCode != 200) {
+            log.warn("SSO token exchange returned status {}: {}", statusCode, baos.toString("UTF-8"));
+            return null;
+        }
+
+        Map<String, Object> body = MAPPER.readValue(baos.toByteArray(), Map.class);
         return (String) body.get("token");
     }
 
@@ -163,7 +184,6 @@ public class SsoCallbackHandler extends SimpleChannelInboundHandler<FullHttpRequ
     }
 
     private static String extractQueryParam(String uri, String paramName) {
-        // Generic query param extraction (replaces the old token-only regex)
         String query = uri.contains("?") ? uri.substring(uri.indexOf('?') + 1) : "";
         for (String pair : query.split("&")) {
             String[] kv = pair.split("=", 2);

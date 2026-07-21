@@ -461,7 +461,7 @@
       "tester": "Tester",
       "guest": "Guest"
     },
-    "csvTemplateContent": "username,password,display_name,email,role_code\njohn,Jo@2026!,John Doe,john@example.com,developer\njane,Ja#2026!,Jane Smith,jane@example.com,tester"
+    "csvTemplateContent": "username,password,display_name,email,role_code\njohn,Jo{'@'}2026!,John Doe,john{'@'}example.com,developer\njane,Ja#2026!,Jane Smith,jane{'@'}example.com,tester"
   },
   "login": {
     "subtitle": "Mock Service Console",
