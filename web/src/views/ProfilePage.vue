@@ -1,86 +1,98 @@
 <template>
-  <div class="profile-page">
-    <el-card class="profile-card">
-      <template #header>
-        <div class="card-header">
-          <span>{{ $t('profile.title') }}</span>
-        </div>
-      </template>
+  <div class="profile-container">
+    <el-row :gutter="20">
+      <!-- 个人信息卡片 -->
+      <el-col :xs="24" :sm="24" :md="12" :lg="12">
+        <el-card class="profile-card">
+          <template #header>
+            <div class="card-header">
+              <el-icon><User /></el-icon>
+              <span>{{ $t('profile.title') }}</span>
+            </div>
+          </template>
 
-      <el-alert
-        v-if="ssoBlocked"
-        :title="ssoMessage"
-        type="warning"
-        :closable="false"
-        show-icon
-        style="margin-bottom: 20px"
-      >
-        <template #default>
-          <p>{{ ssoMessage }}</p>
-          <el-button type="primary" size="small" @click="goEhre">{{ $t('profile.goEhre') }}</el-button>
-        </template>
-      </el-alert>
+          <el-alert
+            v-if="ssoBlocked"
+            :title="ssoMessage"
+            type="warning"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 20px"
+          >
+            <template #default>
+              <p>{{ ssoMessage }}</p>
+              <el-button type="primary" size="small" @click="goEhre">{{ $t('profile.goEhre') }}</el-button>
+            </template>
+          </el-alert>
 
-      <el-form :model="profileForm" label-width="100px" style="max-width: 500px">
-        <el-form-item :label="$t('profile.username')">
-          <el-input :value="profileForm.username" disabled />
-        </el-form-item>
-        <el-form-item :label="$t('profile.displayName')">
-          <el-input v-model="profileForm.displayName" :disabled="ssoBlocked" :placeholder="$t('profile.displayNamePlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="$t('profile.email')">
-          <el-input v-model="profileForm.email" :disabled="ssoBlocked" placeholder="email@example.com" />
-        </el-form-item>
-        <el-form-item :label="$t('profile.phone')">
-          <el-input v-model="profileForm.phone" :disabled="ssoBlocked" :placeholder="$t('profile.phonePlaceholder')" />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="saveProfile" :disabled="ssoBlocked" :loading="saving">{{ $t('profile.save') }}</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
+          <el-form :model="profileForm" label-width="100px">
+            <el-form-item :label="$t('profile.username')">
+              <el-input :value="profileForm.username" disabled />
+            </el-form-item>
+            <el-form-item :label="$t('profile.displayName')">
+              <el-input v-model="profileForm.displayName" :disabled="ssoBlocked" :placeholder="$t('profile.displayNamePlaceholder')" />
+            </el-form-item>
+            <el-form-item :label="$t('profile.email')">
+              <el-input v-model="profileForm.email" :disabled="ssoBlocked" placeholder="email@example.com" />
+            </el-form-item>
+            <el-form-item :label="$t('profile.phone')">
+              <el-input v-model="profileForm.phone" :disabled="ssoBlocked" :placeholder="$t('profile.phonePlaceholder')" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="saveProfile" :disabled="ssoBlocked" :loading="saving">{{ $t('profile.save') }}</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+      </el-col>
 
-    <el-card class="profile-card" style="margin-top: 20px">
-      <template #header>
-        <div class="card-header">
-          <span>{{ $t('profile.changePassword') }}</span>
-        </div>
-      </template>
+      <!-- 修改密码卡片 -->
+      <el-col :xs="24" :sm="24" :md="12" :lg="12">
+        <el-card class="password-card">
+          <template #header>
+            <div class="card-header">
+              <el-icon><Lock /></el-icon>
+              <span>{{ $t('profile.changePassword') }}</span>
+            </div>
+          </template>
 
-      <el-alert
-        v-if="ssoBlocked"
-        :title="ssoMessage"
-        type="warning"
-        :closable="false"
-        show-icon
-        style="margin-bottom: 20px"
-      />
+          <el-alert
+            v-if="ssoBlocked"
+            :title="ssoMessage"
+            type="warning"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 20px"
+          />
 
-      <el-form :model="passwordForm" label-width="100px" style="max-width: 500px">
-        <el-form-item :label="$t('profile.oldPassword')">
-          <el-input v-model="passwordForm.oldPassword" type="password" :disabled="ssoBlocked" show-password :placeholder="$t('profile.oldPasswordPlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="$t('profile.newPassword')">
-          <el-input v-model="passwordForm.newPassword" type="password" :disabled="ssoBlocked" show-password :placeholder="$t('profile.newPasswordPlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="$t('profile.confirmPassword')">
-          <el-input v-model="passwordForm.confirmPassword" type="password" :disabled="ssoBlocked" show-password :placeholder="$t('profile.confirmPasswordPlaceholder')" />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="savePassword" :disabled="ssoBlocked" :loading="changingPassword">{{ $t('profile.changePasswordBtn') }}</el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
+          <el-form :model="passwordForm" label-width="100px">
+            <el-form-item :label="$t('profile.oldPassword')">
+              <el-input v-model="passwordForm.oldPassword" type="password" :disabled="ssoBlocked" show-password :placeholder="$t('profile.oldPasswordPlaceholder')" />
+            </el-form-item>
+            <el-form-item :label="$t('profile.newPassword')">
+              <el-input v-model="passwordForm.newPassword" type="password" :disabled="ssoBlocked" show-password :placeholder="$t('profile.newPasswordPlaceholder')" />
+            </el-form-item>
+            <el-form-item :label="$t('profile.confirmPassword')">
+              <el-input v-model="passwordForm.confirmPassword" type="password" :disabled="ssoBlocked" show-password :placeholder="$t('profile.confirmPasswordPlaceholder')" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="savePassword" :disabled="ssoBlocked" :loading="changingPassword">{{ $t('profile.changePasswordBtn') }}</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+      </el-col>
+    </el-row>
   </div>
 </template>
 
 <script>
 import { ElMessage } from 'element-plus'
+import { User, Lock } from '@element-plus/icons-vue'
 import api from '@/api'
 import { useAuthStore } from '@/store'
 
 export default {
   name: 'UserProfile',
+  components: { User, Lock },
   data() {
     return {
       profileForm: {
@@ -103,12 +115,10 @@ export default {
   async created() {
     const authStore = useAuthStore()
     this.profileForm.username = authStore.username || ''
-    // Try to load full profile from /auth/me
     try {
       const res = await api.getAuthMe()
       if (res && res.success && res.data) {
         this.profileForm.username = res.data.username || this.profileForm.username
-        // displayName/email/phone may not be in auth/me response, try anyway
       }
     } catch (e) {
       // ignore
@@ -176,12 +186,22 @@ export default {
 </script>
 
 <style scoped>
-.profile-page {
-  max-width: 700px;
-  margin: 0 auto;
+.profile-container {
+  padding: 20px;
+}
+.profile-card,
+.password-card {
+  margin-bottom: 20px;
 }
 .card-header {
-  font-size: 16px;
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 500;
+}
+.card-header .el-icon {
+  font-size: 20px;
+  color: var(--el-color-primary);
 }
 </style>
