@@ -49,7 +49,7 @@
         <el-table-column prop="path" :label="$t('logs.path')" min-width="200" show-overflow-tooltip />
         <el-table-column prop="responseStatusCode" :label="$t('logs.statusCode')" width="80" align="center" />
         <el-table-column prop="responseTimeMs" :label="$t('logs.latencyMs')" width="90" align="center" />
-        <el-table-column prop="recordedAt" :label="$t('logs.time')" width="180">
+        <el-table-column prop="recordedAt" :label="$t('logs.time')" width="200">
           <template #default="{ row }">{{ formatTime(row.recordedAt) }}</template>
         </el-table-column>
       </el-table>

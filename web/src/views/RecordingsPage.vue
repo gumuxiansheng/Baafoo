@@ -119,10 +119,10 @@
         <el-table-column prop="path" :label="$t('recordings.path')" min-width="180" show-overflow-tooltip />
         <el-table-column prop="responseStatusCode" :label="$t('recordings.statusCode')" width="70" align="center" />
         <el-table-column prop="responseTimeMs" :label="$t('logs.latencyMs')" width="80" align="center" />
-        <el-table-column prop="recordedAt" :label="$t('recordings.recordedAt')" width="170">
+        <el-table-column prop="recordedAt" :label="$t('recordings.recordedAt')" width="200">
           <template #default="{ row }">{{ formatTime(row.recordedAt) }}</template>
         </el-table-column>
-        <el-table-column :label="$t('recordings.actions')" min-width="180" fixed="right">
+        <el-table-column :label="$t('recordings.actions')" width="120" align="right" fixed="right">
           <template #default="{ row }">
             <template v-if="row.__isGroup">
               <span class="group-count">×{{ row.children.length }}</span>
@@ -620,7 +620,7 @@ h4 { margin: 8px 0; color: var(--bf-text-secondary); }
 .pair-expanded :deep(.el-table td) { padding: 6px 8px; }
 .pair-data-preview { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--bf-text-secondary); word-break: break-all; }
 .group-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--bf-text-muted); }
-.group-count { font-size: 12px; color: var(--bf-text-muted); font-weight: 600; }
+.group-count { font-size: 12px; color: var(--bf-text-muted); font-weight: 600; padding: 2px 8px; border-radius: var(--bf-radius); background-color: var(--bf-bg); border: 1px solid var(--bf-border); }
 .dir-tag { margin-right: 4px; }
 .dir-tag:last-child { margin-right: 0; }
 </style>
