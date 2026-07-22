@@ -54,7 +54,7 @@
     </el-card>
 
     <el-card shadow="never" style="margin-top: 16px" v-loading="loading">
-      <el-table :data="tableRows" row-key="id" :row-class-name="rowClassName" stripe size="small" max-height="500" :empty-text="$t('recordings.noData')">
+      <el-table class="recordings-table" :data="tableRows" row-key="id" :row-class-name="rowClassName" stripe size="small" max-height="500" :empty-text="$t('recordings.noData')">
         <el-table-column type="expand" width="40">
           <template #default="{ row }">
             <template v-if="row.__isGroup">
@@ -614,7 +614,7 @@ h4 { margin: 8px 0; color: var(--bf-text-secondary); }
 :deep(.el-descriptions__label) { width: 110px; }
 :deep(.el-form--inline .el-form-item) { margin-right: 12px; margin-bottom: 8px; }
 :deep(.el-table__row.single-row .el-table__expand-icon) { visibility: hidden; pointer-events: none; }
-:deep(.el-table__row.group-row > td) { background-color: var(--bf-bg-secondary); }
+:deep(.el-table__row.group-row > td) { background-color: #f5f5f4; }
 .pair-expanded { padding: 4px 12px 4px 48px; }
 .pair-expanded :deep(.el-table) { border-radius: var(--bf-radius); }
 .pair-expanded :deep(.el-table td) { padding: 6px 8px; }
@@ -623,4 +623,24 @@ h4 { margin: 8px 0; color: var(--bf-text-secondary); }
 .group-count { font-size: 12px; color: var(--bf-text-muted); font-weight: 600; padding: 2px 8px; border-radius: var(--bf-radius); background-color: var(--bf-bg); border: 1px solid var(--bf-border); }
 .dir-tag { margin-right: 4px; }
 .dir-tag:last-child { margin-right: 0; }
+</style>
+
+<!-- 非 scoped 全局样式：修复 Element Plus 2.5 fixed 列透明问题。
+     EP 对固定列 td 设置 `background: inherit`，但 <tr> 无显式背景色，
+     导致固定列继承到 transparent，滚动列的文字从下方透出。
+     直接在 td 上用 `background` 简写 + !important 覆盖 inherit。
+     用硬编码颜色值避免 CSS 变量解析问题。 -->
+<style>
+.recordings-table .el-table__body-wrapper tr.el-table__row > td.el-table-fixed-column--right {
+  background: #ffffff !important;
+}
+.recordings-table .el-table--striped .el-table__body-wrapper tr.el-table__row--striped > td.el-table-fixed-column--right {
+  background: #fafaf9 !important;
+}
+.recordings-table .el-table__body-wrapper tr.el-table__row.group-row > td.el-table-fixed-column--right {
+  background: #f5f5f4 !important;
+}
+.recordings-table .el-table__body-wrapper tr.el-table__row.hover-row > td.el-table-fixed-column--right {
+  background: #f5f5f4 !important;
+}
 </style>
