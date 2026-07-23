@@ -112,8 +112,9 @@ test.describe('Baafoo Web 控制台新功能测试', () => {
     await firstRow.locator('button:has-text("详情")').click()
     await expect(page.locator('.el-dialog__title:has-text("录制详情")')).toBeVisible()
     const detailDialog = page.locator('.el-dialog:has(.el-dialog__title:has-text("录制详情"))')
-    await expect(detailDialog.locator('h4:has-text("请求")')).toBeVisible()
-    await expect(detailDialog.locator('h4:has-text("响应")')).toBeVisible()
+    // 请求/响应区段标题渲染为 <span class="section-title">（RecordingsPage.vue）
+    await expect(detailDialog.locator('.section-title:has-text("请求")')).toBeVisible()
+    await expect(detailDialog.locator('.section-title:has-text("响应")')).toBeVisible()
     await page.locator('.el-dialog__headerbtn').click()
 
     // 重置搜索

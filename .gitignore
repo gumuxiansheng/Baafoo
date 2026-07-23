@@ -59,6 +59,9 @@ testing/tmp/
 testing/7_Others/tmp/
 testing/enterprise/spring-cloud-alibaba/agents/
 testing/3_SystemTest/junit-report.xml
+# UI test report — regenerated each run by testing/6_UITest/run-ui-tests.{ps1,sh}
+testing/6_UITest/playwright-report/
+web/test-results/
 
 # Python cache
 __pycache__/
