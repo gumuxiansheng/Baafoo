@@ -122,7 +122,7 @@
         <el-table-column prop="recordedAt" :label="$t('recordings.recordedAt')" width="200">
           <template #default="{ row }">{{ formatTime(row.recordedAt) }}</template>
         </el-table-column>
-        <el-table-column :label="$t('recordings.actions')" width="120" align="right" fixed="right">
+        <el-table-column :label="$t('recordings.actions')" width="140" fixed="right">
           <template #default="{ row }">
             <template v-if="row.__isGroup">
               <span class="group-count">×{{ row.children.length }}</span>
