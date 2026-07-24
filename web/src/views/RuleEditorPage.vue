@@ -204,6 +204,122 @@
         </div>
       </el-card>
 
+      <!-- TCP Match Configuration -->
+      <el-card shadow="never" class="section-card" v-if="isTcpProtocol">
+        <template #header>
+          <div class="section-header">
+            <span class="section-title">{{ $t('rules.tcpMatchConfig') }}</span>
+            <el-form-item :label="$t('rules.tcpLoop')" class="inline-switch">
+              <el-switch v-model="form.tcpLoop" />
+            </el-form-item>
+          </div>
+        </template>
+
+        <div class="form-hint tcp-match-hint">{{ $t('rules.tcpMatchHint') }}</div>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item :label="$t('rules.tcpPrefixHex')">
+              <el-input v-model="form.tcpPrefixHex" :placeholder="$t('rules.tcpPrefixHexPlaceholder')" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="$t('rules.tcpPattern')">
+              <el-input v-model="form.tcpPattern" :placeholder="$t('rules.tcpPatternPlaceholder')" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
+          <el-col :span="6">
+            <el-form-item :label="$t('rules.tcpOffsetStart')">
+              <el-input-number v-model="form.tcpOffsetStart" :min="-1" :max="65535" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6">
+            <el-form-item :label="$t('rules.tcpOffsetEnd')">
+              <el-input-number v-model="form.tcpOffsetEnd" :min="-1" :max="65535" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="$t('rules.tcpOffsetHex')">
+              <el-input v-model="form.tcpOffsetHex" placeholder="e.g. 0001a4ff" />
+              <div class="form-hint">{{ $t('rules.tcpOffsetHint') }}</div>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <div v-if="form.tcpLoop" class="form-hint tcp-loop-hint">{{ $t('rules.tcpLoopHint') }}</div>
+
+        <!-- TCP Rounds -->
+        <div class="tcp-rounds-section">
+          <div class="subsection-header">
+            <span class="subsection-title">{{ $t('rules.tcpRounds') }}</span>
+            <el-button size="small" type="primary" plain @click="addTcpRound" v-if="authStore.canWriteRule">{{ $t('rules.addTcpRound') }}</el-button>
+          </div>
+          <div class="form-hint">{{ $t('rules.tcpRoundHint') }}</div>
+
+          <div v-if="form.tcpRounds.length === 0" class="empty-hint">
+            {{ $t('rules.noConditionMatch') }}
+          </div>
+
+          <div v-for="(round, rIdx) in form.tcpRounds" :key="'tcp-round-' + rIdx" class="tcp-round-card">
+            <div class="tcp-round-card-header">
+              <span class="tcp-round-card-title">{{ $t('rules.tcpRounds') }} #{{ rIdx + 1 }}</span>
+              <el-button size="small" type="danger" text @click="removeTcpRound(rIdx)" v-if="authStore.canWriteRule">{{ $t('rules.deleteCondition') }}</el-button>
+            </div>
+            <el-row :gutter="10">
+              <el-col :span="8">
+                <el-form-item :label="$t('rules.tcpRoundName')" size="small">
+                  <el-input v-model="round.name" size="small" :placeholder="$t('rules.tcpRoundName')" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item :label="$t('rules.tcpRoundPrefixHex')" size="small">
+                  <el-input v-model="round.prefixHex" size="small" :placeholder="$t('rules.tcpPrefixHexPlaceholder')" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item :label="$t('rules.tcpRoundPattern')" size="small">
+                  <el-input v-model="round.pattern" size="small" :placeholder="$t('rules.tcpPatternPlaceholder')" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="10">
+              <el-col :span="6">
+                <el-form-item :label="$t('rules.responseNameLabel')" size="small">
+                  <el-input v-model="round.response.name" size="small" :placeholder="$t('rules.responseNamePlaceholder')" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="6">
+                <el-form-item :label="$t('rules.statusCodeLabel')" size="small">
+                  <el-input-number v-model="round.response.statusCode" :min="100" :max="599" size="small" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="6">
+                <el-form-item :label="$t('rules.delayMs')" size="small">
+                  <el-input-number v-model="round.response.delayMs" :min="0" :max="60000" size="small" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="6">
+                <el-form-item :label="$t('rules.encoding')" size="small">
+                  <el-select v-model="round.response.charset" size="small" clearable placeholder="UTF-8" style="width: 100%">
+                    <el-option label="UTF-8" value="UTF-8" />
+                    <el-option label="GBK" value="GBK" />
+                    <el-option label="GB2312" value="GB2312" />
+                    <el-option label="Big5" value="Big5" />
+                    <el-option label="ISO-8859-1" value="ISO-8859-1" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-form-item :label="$t('rules.responseBody')" size="small">
+              <el-input v-model="round.response.body" type="textarea" :rows="3" :placeholder="bodyPlaceholder" />
+            </el-form-item>
+          </div>
+        </div>
+      </el-card>
+
       <!-- Response Branches -->
       <el-card shadow="never" class="section-card">
         <template #header>
@@ -515,6 +631,10 @@ export default {
       return form.protocol === 'grpc'
     })
 
+    const isTcpProtocol = computed(() => {
+      return form.protocol === 'tcp'
+    })
+
     const envTagType = (val) => {
       return inheritedEnvs.value.includes(val) ? 'warning' : ''
     }
@@ -545,7 +665,11 @@ export default {
       serviceName: '', priority: 100, enabled: true,
       tagsStr: '', environments: [], conditions: [], responses: [],
       fakerSeed: null, requestCountReset: null, requestCharset: null,
-      faultInjectionEnabled: false, faults: []
+      faultInjectionEnabled: false, faults: [],
+      // TCP-specific fields
+      tcpPrefixHex: '', tcpPattern: '', tcpLoop: false,
+      tcpOffsetStart: 0, tcpOffsetEnd: 0, tcpOffsetHex: '',
+      tcpRounds: []
     })
 
     const formRules = {
@@ -585,6 +709,29 @@ export default {
           form.fakerSeed = rule.value.fakerSeed || null
           form.requestCountReset = rule.value.requestCountReset || null
           form.requestCharset = rule.value.requestCharset || null
+          // Load TCP-specific fields
+          form.tcpPrefixHex = rule.value.tcpPrefixHex || ''
+          form.tcpPattern = rule.value.tcpPattern || ''
+          form.tcpLoop = rule.value.tcpLoop === true
+          form.tcpOffsetStart = rule.value.tcpOffsetStart != null ? rule.value.tcpOffsetStart : 0
+          form.tcpOffsetEnd = rule.value.tcpOffsetEnd != null ? rule.value.tcpOffsetEnd : 0
+          form.tcpOffsetHex = rule.value.tcpOffsetHex || ''
+          form.tcpRounds = JSON.parse(JSON.stringify(rule.value.tcpRounds || [])).map(r => ({
+            name: r.name || '',
+            pattern: r.pattern || '',
+            prefixHex: r.prefixHex || '',
+            offsetStart: r.offsetStart != null ? r.offsetStart : -1,
+            offsetEnd: r.offsetEnd != null ? r.offsetEnd : -1,
+            offsetHex: r.offsetHex || '',
+            response: {
+              name: r.response?.name || '',
+              statusCode: r.response?.statusCode != null ? r.response.statusCode : 200,
+              delayMs: r.response?.delayMs != null ? r.response.delayMs : 0,
+              body: r.response?.body || '',
+              charset: r.response?.charset || null,
+              headers: r.response?.headers || {}
+            }
+          }))
           // Load fault injection
           const fi = rule.value.faultInjection
           if (fi && fi.faults && fi.faults.length > 0) {
@@ -713,6 +860,18 @@ export default {
       form.faults.splice(idx, 1)
     }
 
+    function addTcpRound() {
+      form.tcpRounds.push({
+        name: '', pattern: '', prefixHex: '',
+        offsetStart: -1, offsetEnd: -1, offsetHex: '',
+        response: { name: '', statusCode: 200, delayMs: 0, body: '', headers: {} }
+      })
+    }
+
+    function removeTcpRound(idx) {
+      form.tcpRounds.splice(idx, 1)
+    }
+
     async function resetRuleState() {
       try {
         const res = await api.resetRuleState(route.params.id)
@@ -822,6 +981,31 @@ export default {
         }
       }
 
+      // Build TCP-specific fields (only included when protocol=tcp)
+      const tcpFields = form.protocol === 'tcp' ? {
+        tcpPrefixHex: form.tcpPrefixHex || null,
+        tcpPattern: form.tcpPattern || null,
+        tcpLoop: form.tcpLoop === true,
+        tcpOffsetStart: form.tcpOffsetStart != null ? form.tcpOffsetStart : -1,
+        tcpOffsetEnd: form.tcpOffsetEnd != null ? form.tcpOffsetEnd : -1,
+        tcpOffsetHex: form.tcpOffsetHex || null,
+        tcpRounds: (form.tcpRounds || []).map(r => ({
+          name: r.name || null,
+          pattern: r.pattern || null,
+          prefixHex: r.prefixHex || null,
+          offsetStart: r.offsetStart != null ? r.offsetStart : -1,
+          offsetEnd: r.offsetEnd != null ? r.offsetEnd : -1,
+          offsetHex: r.offsetHex || null,
+          response: {
+            name: r.response?.name || null,
+            statusCode: r.response?.statusCode != null ? r.response.statusCode : 200,
+            delayMs: r.response?.delayMs != null ? r.response.delayMs : 0,
+            body: r.response?.body || '',
+            charset: r.response?.charset || null
+          }
+        }))
+      } : {}
+
       const data = {
         name: form.name,
         protocol: form.protocol,
@@ -837,7 +1021,8 @@ export default {
         fakerSeed: form.fakerSeed || null,
         requestCountReset: form.requestCountReset || null,
         requestCharset: form.requestCharset || null,
-        faultInjection: faultInjection
+        faultInjection: faultInjection,
+        ...tcpFields
       }
 
       let res
@@ -864,11 +1049,12 @@ export default {
     return {
       isNew, rule, loading, saving, form, formRef, formRules, allEnvironments, inheritedEnvs, envTagType, templateVarHintHtml, moreFnText, bodyPlaceholder,
       showFakerRef, fakerGroups, insertFakerVar,
-      isGraphqlPath, isMqProtocol, isGrpcProtocol, addGraphqlHelper,
+      isGraphqlPath, isMqProtocol, isGrpcProtocol, isTcpProtocol, addGraphqlHelper,
       addCondition, removeCondition,
       addResponse, removeResponse, addResponseCondition,
       getResponseHeaders, addResponseHeader, removeResponseHeader,
       addFault, removeFault, resetRuleState,
+      addTcpRound, removeTcpRound,
       onConditionTypeChange, getValuePlaceholder, saveRule, authStore
     }
   }
@@ -1108,5 +1294,42 @@ export default {
   color: var(--bf-text-muted);
   font-size: 14px;
   margin-left: 12px;
+}
+
+/* TCP Match Configuration */
+.tcp-match-hint {
+  margin-bottom: 16px;
+}
+.tcp-loop-hint {
+  margin-top: 4px;
+  margin-bottom: 12px;
+}
+.tcp-rounds-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--bf-border-light);
+}
+.tcp-round-card {
+  border: 1px solid var(--bf-border);
+  border-radius: var(--bf-radius);
+  padding: 16px;
+  margin-bottom: 12px;
+  background: var(--bf-surface);
+}
+.tcp-round-card:last-child {
+  margin-bottom: 0;
+}
+.tcp-round-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--bf-border-light);
+}
+.tcp-round-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--bf-text-secondary);
 }
 </style>
