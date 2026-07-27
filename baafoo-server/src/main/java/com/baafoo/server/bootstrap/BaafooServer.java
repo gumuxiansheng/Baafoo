@@ -184,7 +184,7 @@ public class BaafooServer {
                     protected void initChannel(SocketChannel ch) {
                         ChannelPipeline p = ch.pipeline();
                         p.addLast(new HttpServerCodec());
-                        p.addLast(new HttpObjectAggregator(10 * 1024 * 1024));
+                        p.addLast(new HttpObjectAggregator(30 * 1024 * 1024));
                         p.addLast(new SsoCallbackHandler(authService, config));
                         p.addLast(new AuthFilter(authService, config));
                         p.addLast(new ManagementApiHandler(storage, authService, new com.baafoo.core.util.ChaosManager(), config, eventBus,
@@ -211,7 +211,7 @@ public class BaafooServer {
                     protected void initChannel(SocketChannel ch) {
                         ChannelPipeline p = ch.pipeline();
                         p.addLast(new HttpServerCodec());
-                        p.addLast(new HttpObjectAggregator(10 * 1024 * 1024));
+                        p.addLast(new HttpObjectAggregator(30 * 1024 * 1024));
                         p.addLast(new HttpStubHandler(storage, config, workerGroup, eventBus));
                     }
                 });

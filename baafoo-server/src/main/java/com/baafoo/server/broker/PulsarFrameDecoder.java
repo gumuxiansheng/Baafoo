@@ -24,13 +24,13 @@ class PulsarFrameDecoder extends ByteToMessageDecoder {
     private static final Logger log = LoggerFactory.getLogger(PulsarFrameDecoder.class);
 
     /**
-     * Maximum frame size: 10 MB.
+     * Maximum frame size: 30 MB.
      * H-5: aligned with KafkaMockBroker / BaafooServer HttpObjectAggregator so
      * a single client cannot OOM the broker EventLoop. Real Pulsar frames are
      * well below this limit (Pulsar's default maxMessageSize is 1MB; even
      * batched payloads rarely exceed a few MB).
      */
-    private static final int MAX_FRAME_SIZE = 10 * 1024 * 1024;
+    private static final int MAX_FRAME_SIZE = 30 * 1024 * 1024;
 
     @Override
     public void handlerAdded(ChannelHandlerContext ctx) {

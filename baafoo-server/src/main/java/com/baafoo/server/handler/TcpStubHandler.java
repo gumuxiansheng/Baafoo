@@ -54,11 +54,11 @@ public class TcpStubHandler extends SimpleChannelInboundHandler<ByteBuf> {
      * M-7: Upper bound on a single inbound TCP frame. TCP is a stream protocol
      * with no length prefix, so Netty delivers whatever bytes have arrived;
      * without a cap a misbehaving client could drive unbounded allocation on
-     * the EventLoop (similar protection to KafkaMockBroker's 10MB frame limit).
-     * 10MB matches {@link com.baafoo.server.broker.KafkaMockBroker} and
+     * the EventLoop (similar protection to KafkaMockBroker's 30MB frame limit).
+     * 30MB matches {@link com.baafoo.server.broker.KafkaMockBroker} and
      * {@link com.baafoo.server.broker.PulsarFrameDecoder}.
      */
-    private static final int MAX_INBOUND_BYTES = 10 * 1024 * 1024;
+    private static final int MAX_INBOUND_BYTES = 30 * 1024 * 1024;
 
     private final StorageService storage;
     private final MatchEngine matchEngine;

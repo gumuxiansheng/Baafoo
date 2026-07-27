@@ -39,7 +39,7 @@ public class PassthroughProxy {
      * to the client as 502 BAD_GATEWAY. Previously hardcoded to 65536, which
      * silently broke PASSTHROUGH/RECORD modes for any non-trivial response.
      */
-    private static final int MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+    private static final int MAX_RESPONSE_BYTES = 30 * 1024 * 1024;
 
     static final Set<String> HOP_BY_HOP_HEADERS = new HashSet<String>();
     static {

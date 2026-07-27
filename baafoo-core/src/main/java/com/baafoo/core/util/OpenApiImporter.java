@@ -48,10 +48,10 @@ public final class OpenApiImporter {
     private static final Pattern PATH_PARAM_PATTERN = Pattern.compile("\\{[^}]+}");
 
     /**
-     * Maximum allowed input size for an OpenAPI spec, in bytes (10 MB).
+     * Maximum allowed input size for an OpenAPI spec, in bytes (30 MB).
      * Prevents DoS via oversized payloads that could cause OOM during parsing.
      */
-    public static final int MAX_INPUT_SIZE_BYTES = 10 * 1024 * 1024;
+    public static final int MAX_INPUT_SIZE_BYTES = 30 * 1024 * 1024;
 
     private final ObjectMapper mapper;
 
