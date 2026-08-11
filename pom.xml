@@ -35,23 +35,25 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <!-- Core -->
-        <jackson.version>2.15.3</jackson.version>
+        <!-- Jackson 2.18.8 (LTS, Java 8 compatible): fixes CVE-2025-52999 (core async-parser DoS),
+             CVE-2026-59888 (@JsonIgnore bypass), CVE-2026-54512 (PolymorphicTypeValidator bypass, 8.1). -->
+        <jackson.version>2.18.8</jackson.version>
         <snakeyaml.version>2.2</snakeyaml.version>
 
         <!-- Agent -->
         <byte-buddy.version>1.14.14</byte-buddy.version>
 
         <!-- Server -->
-        <netty.version>4.1.100.Final</netty.version>
+        <netty.version>4.1.136.Final</netty.version>
         <artemis.version>2.19.1</artemis.version>
         <h2.version>2.2.224</h2.version>
         <hikaricp.version>4.0.3</hikaricp.version>
-        <postgresql.version>42.7.1</postgresql.version>
+        <postgresql.version>42.7.5</postgresql.version>
         <mybatis.version>3.5.15</mybatis.version>
 
         <!-- Logging -->
         <slf4j.version>1.7.36</slf4j.version>
-        <logback.version>1.2.13</logback.version>
+        <logback.version>1.3.15</logback.version>
 
         <!-- JWT -->
         <jjwt.version>0.11.5</jjwt.version>
@@ -61,6 +63,17 @@
 
         <!-- Spring Boot -->
         <spring-boot.version>2.7.18</spring-boot.version>
+
+        <!-- Security overrides (SCA remediation, all Java 8 compatible) -->
+        <!-- Guava: CVE-2023-2976 fixed in 32.0.1; -jre flavor supports Java 8 -->
+        <guava.version>33.6.0-jre</guava.version>
+        <!-- Commons Text: CVE-2022-42889 (Text4Shell) fixed in 1.10.0 -->
+        <commons-text.version>1.12.0</commons-text.version>
+        <!-- snappy-java (test scope): CVE-2023-43642 fixed in 1.1.10.3 -->
+        <snappy-java.version>1.1.10.4</snappy-java.version>
+        <!-- Spring / Tomcat (test-spring only): patch within Java 8 lines -->
+        <spring.version>5.3.39</spring.version>
+        <tomcat.version>9.0.102</tomcat.version>
 
         <!-- Test -->
         <junit.version>4.13.2</junit.version>
@@ -207,6 +220,109 @@
                 <groupId>org.mindrot</groupId>
                 <artifactId>jbcrypt</artifactId>
                 <version>${jbcrypt.version}</version>
+            </dependency>
+
+            <!-- Security overrides (SCA remediation) -->
+            <!-- Guava: CVE-2023-2976 (insecure temp dir) fixed in 32.0.1 -->
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>${guava.version}</version>
+            </dependency>
+            <!-- Commons Text: CVE-2022-42889 (Text4Shell RCE) fixed in 1.10.0 -->
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-text</artifactId>
+                <version>${commons-text.version}</version>
+            </dependency>
+            <!-- BouncyCastle (jdk15on) is DEFERRED: CVE-2024-34447 etc. are fixed in 1.78,
+                 but 1.78 only ships the jdk18on coordinates (jdk15on was retired at 1.78).
+                 Switching requires excluding jdk15on from pulsar-client / bouncy-castle-bc and
+                 adding jdk18on:1.78. Since BouncyCastle is test-scope only (Pulsar test client)
+                 and CVE-2024-34447 (BCJSSE hostname verification) is not exploitable in Baafoo's
+                 usage, defer this to avoid risking the Pulsar system tests. Revisit with jdk18on
+                 after validating Pulsar client startup against the system-test suite. -->
+            <!-- snappy-java: CVE-2023-43642 (integer overflow) fixed in 1.1.10.3 -->
+            <dependency>
+                <groupId>org.xerial.snappy</groupId>
+                <artifactId>snappy-java</artifactId>
+                <version>${snappy-java.version}</version>
+            </dependency>
+
+            <!-- Spring / Tomcat patch overrides (SCA remediation, Java 8 lines only).
+                 These MUST precede the spring-boot-dependencies BOM import so they win.
+                 Spring: CVE-2024-38816 / CVE-2024-38819 fixed in 5.3.39.
+                 Tomcat: CVE-2025-24813 fixed in 9.0.102. -->
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-core</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-context</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-beans</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-aop</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-expression</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-jcl</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-web</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-webmvc</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-tx</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-jdbc</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-test</artifactId>
+                <version>${spring.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tomcat.embed</groupId>
+                <artifactId>tomcat-embed-core</artifactId>
+                <version>${tomcat.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tomcat.embed</groupId>
+                <artifactId>tomcat-embed-el</artifactId>
+                <version>${tomcat.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.tomcat.embed</groupId>
+                <artifactId>tomcat-embed-websocket</artifactId>
+                <version>${tomcat.version}</version>
             </dependency>
 
             <!-- Logging -->
