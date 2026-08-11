@@ -72,3 +72,5 @@ sdks/go/baafoo/baafoo.test
 proxy/baafoo-proxy
 proxy/proxy.exe
 proxy/proxy.test
+
+tools/**/bin
