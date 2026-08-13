@@ -1,0 +1,28 @@
+# gates-toolkit .gitignore
+
+# 二进制产物 — 不提交到 git，由 fetch-binaries 脚本从配置的 URL 下载
+bin/wan/wan.exe
+bin/wan/wan-linux-arm64
+bin/wan/wan-linux-amd64
+bin/wan/wan
+bin/sql-guard/sqlguard.exe
+bin/sql-guard/sqlguard-linux-arm64
+bin/sql-guard/sqlguard-linux-amd64
+bin/sql-guard/sqlguard
+bin/java-guard/java-guard.exe
+bin/java-guard/java-guard-linux-arm64
+bin/java-guard/java-guard-linux-amd64
+bin/java-guard/java-guard
+bin/java-guard/java-parser/java-parser.jar
+
+# 版本标记文件（由 fetch-binaries 生成）
+bin/**/.version
+
+# OS 临时文件
+.DS_Store
+Thumbs.db
+
+# 编辑器
+.idea/
+.vscode/
+*.swp

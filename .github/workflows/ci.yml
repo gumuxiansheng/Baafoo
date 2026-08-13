@@ -95,6 +95,65 @@ jobs:
           if-no-files-found: warn
 
   # ---------------------------------------------------------------------------
+  # Code gates: sql-guard + java-guard, orchestrated by gates-toolkit (wan).
+  # Incremental (ratchet) gating: PRs diff against the base branch, pushes diff
+  # against event.before — only new/changed code must pass the gate; legacy
+  # violations are tolerated until cleaned up. Binaries are downloaded per
+  # gates-toolkit/versions.toml and cached by that file's hash (sql-guard
+  # linux-amd64 falls back to a source build until its Release asset is
+  # published — see versions.toml comments).
+  # ---------------------------------------------------------------------------
+  gates:
+    name: Code Gates (sql-guard / java-guard)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history + all branch refs so the incremental diff can
+          # resolve origin/<base> on pull requests.
+          fetch-depth: 0
+
+      - name: Cache gate binaries
+        uses: actions/cache@v4
+        with:
+          path: gates-toolkit/bin
+          key: gates-bin-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gates-toolkit/versions.toml') }}
+          restore-keys: gates-bin-${{ runner.os }}-${{ runner.arch }}-
+
+      # java-guard runs its parser via java -jar (JRE 8+ required).
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Prepare gates (fetch binaries + setup)
+        run: >-
+          bash gates-toolkit/scripts/ci-setup.sh . multi-module
+          baafoo-server
+          baafoo-agent baafoo-cli baafoo-core baafoo-plugin-api baafoo-server baafoo-spring-boot-starter-test
+
+      # Incremental diff base: PR -> base branch; push -> the previous head
+      # (event.before). Falls back to HEAD~1 when before is unavailable
+      # (e.g. newly pushed branch).
+      - name: Resolve diff base
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "BASE_REF=origin/${{ github.base_ref }}" >> "$GITHUB_ENV"
+          else
+            BEFORE="${{ github.event.before }}"
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              BEFORE="HEAD~1"
+            fi
+            echo "BASE_REF=$BEFORE" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run gates
+        run: tools/wan/bin/wan run tools/wan/workflows/ci-unix.yml -C . --quiet
+
+  # ---------------------------------------------------------------------------
   # Frontend: install and build the Vue 3 console (web/).
   # ---------------------------------------------------------------------------
   frontend:

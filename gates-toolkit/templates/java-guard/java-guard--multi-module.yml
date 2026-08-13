@@ -1,0 +1,17 @@
+# JavaGuard 配置 — 多模块 Maven 项目
+# 扫描列表中的多个模块 src/main/java
+
+rules:
+  min_severity: info
+  params:
+    J006:
+      max_lines: 50
+
+scan:
+  exclude:
+    - generated
+    - target
+    - test
+
+# 多模块列表 — 实际使用时由 setup-gates 注入
+modules: {{MODULES_LIST}}

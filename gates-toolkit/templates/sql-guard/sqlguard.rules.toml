@@ -1,0 +1,220 @@
+# SqlGuard 规则配置 — 默认规则集
+# 包含 9 条 P0 规则（CI 门禁）和 13 条 P1 规则（默认关闭，按需启用）
+
+# ================================================================================
+# P0 规则（默认启用，CI 门禁必跑）
+# ================================================================================
+
+[[rules]]
+id = "DDL001"
+name = "no_drop_table"
+group = "ddl-safety"
+description = "Disallow DROP TABLE in DDL scripts"
+enabled = true
+script_path = "config/rules/ddl/no_drop_table.rhai"
+applies_to = ["ddl"]
+severity = "error"
+
+[[rules]]
+id = "DDL002"
+name = "primary_key_required"
+group = "ddl-safety"
+description = "CREATE TABLE must have a PRIMARY KEY"
+enabled = true
+script_path = "config/rules/ddl/primary_key_required.rhai"
+applies_to = ["ddl"]
+severity = "warning"
+
+[[rules]]
+id = "DML001"
+name = "no_select_all"
+group = "dml-safety"
+description = "Disallow SELECT * in DML scripts"
+enabled = true
+script_path = "config/rules/dml/no_select_all.rhai"
+applies_to = ["dml"]
+severity = "error"
+
+[[rules]]
+id = "DML002"
+name = "no_delete_update_without_where"
+group = "dml-safety"
+description = "DELETE/UPDATE must have a WHERE clause"
+enabled = true
+script_path = "config/rules/dml/no_delete_update_without_where.rhai"
+applies_to = ["dml"]
+severity = "error"
+
+[[rules]]
+id = "DML003"
+name = "insert_columns_required"
+group = "dml-safety"
+description = "INSERT must specify target columns"
+enabled = true
+script_path = "config/rules/dml/insert_columns_required.rhai"
+applies_to = ["dml"]
+severity = "error"
+
+[[rules]]
+id = "DML004"
+name = "subquery_alias_required"
+group = "dml-style"
+description = "Subqueries in FROM must have an alias"
+enabled = true
+script_path = "config/rules/dml/subquery_alias_required.rhai"
+applies_to = ["dml"]
+severity = "error"
+
+[[rules]]
+id = "DML006"
+name = "no_join_without_condition"
+group = "dml-safety"
+description = "JOIN must have ON or USING condition"
+enabled = true
+script_path = "config/rules/dml/no_join_without_condition.rhai"
+applies_to = ["dml"]
+severity = "error"
+
+[[rules]]
+id = "DML108"
+name = "no_constant_where"
+group = "dml-convention"
+description = "Avoid constant/tautology conditions in WHERE clause"
+enabled = true
+script_path = "config/rules/dml/no_constant_where.rhai"
+applies_to = ["dml"]
+severity = "warning"
+
+# ================================================================================
+# P1 规则（默认关闭，按需取消注释启用）
+# ================================================================================
+
+# [[rules]]
+# id = "DML005"
+# name = "column_references_qualified"
+# group = "dml-style"
+# description = "Qualify column references with table name in multi-table queries"
+# enabled = true
+# script_path = "config/rules/dml/column_references_qualified.rhai"
+# applies_to = ["dml"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DML007"
+# name = "no_nested_case"
+# group = "dml-style"
+# description = "Avoid nested CASE expressions"
+# enabled = true
+# script_path = "config/rules/dml/no_nested_case.rhai"
+# applies_to = ["dml"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DML008"
+# name = "no_order_by_in_subquery"
+# group = "dml-style"
+# description = "ORDER BY in subquery is ambiguous"
+# enabled = true
+# script_path = "config/rules/dml/no_order_by_in_subquery.rhai"
+# applies_to = ["dml"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DML011"
+# name = "no_unused_cte"
+# group = "dml-style"
+# description = "WITH clause CTEs must be referenced"
+# enabled = true
+# script_path = "config/rules/dml/no_unused_cte.rhai"
+# applies_to = ["dml"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DML012"
+# name = "no_unused_join"
+# group = "dml-style"
+# description = "Joined tables must be referenced in WHERE/SELECT"
+# enabled = true
+# script_path = "config/rules/dml/no_unused_join.rhai"
+# applies_to = ["dml"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DML013"
+# name = "order_by_required_for_pagination"
+# group = "dml-style"
+# description = "Pagination queries should have ORDER BY"
+# enabled = true
+# script_path = "config/rules/dml/order_by_required_for_pagination.rhai"
+# applies_to = ["dml"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DML014"
+# name = "union_all_preferred"
+# group = "dml-style"
+# description = "Prefer UNION ALL over UNION when duplicates are acceptable"
+# enabled = true
+# script_path = "config/rules/dml/union_all_preferred.rhai"
+# applies_to = ["dml"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DML015"
+# name = "use_coalesce"
+# group = "dml-style"
+# description = "Use COALESCE instead of ISNULL/CASE for null handling"
+# enabled = true
+# script_path = "config/rules/dml/use_coalesce.rhai"
+# applies_to = ["dml"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DML016"
+# name = "use_is_null"
+# group = "dml-style"
+# description = "Use IS NULL instead of = NULL"
+# enabled = true
+# script_path = "config/rules/dml/use_is_null.rhai"
+# applies_to = ["dml"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DDL003"
+# name = "index_naming_convention"
+# group = "ddl-safety"
+# description = "Index names must follow naming convention"
+# enabled = true
+# script_path = "config/rules/ddl/index_naming_convention.rhai"
+# applies_to = ["ddl"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DDL004"
+# name = "table_name_naming"
+# group = "ddl-safety"
+# description = "Table names must follow naming convention"
+# enabled = true
+# script_path = "config/rules/ddl/table_name_naming.rhai"
+# applies_to = ["ddl"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DDL005"
+# name = "no_reserved_keyword_naming"
+# group = "ddl-safety"
+# description = "Identifiers must not use reserved keywords"
+# enabled = true
+# script_path = "config/rules/ddl/no_reserved_keyword_naming.rhai"
+# applies_to = ["ddl"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DDL006"
+# name = "no_redundant_index"
+# group = "ddl-safety"
+# description = "Avoid redundant indexes (left-prefix overlap)"
+# enabled = true
+# script_path = "config/rules/ddl/no_redundant_index.rhai"
+# applies_to = ["ddl"]
+# severity = "warning"

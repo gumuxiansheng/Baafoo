@@ -1,0 +1,63 @@
+# wan workflow: CI gate (多模块, Linux)
+# 由 setup-gates 生成，工作目录为项目根（通过 wan -C 传入）
+#
+# 与 pre-commit 模板的区别：
+#   pre-commit 用 --base HEAD / --diff HEAD 检查未提交改动（本地场景）；
+#   CI 检出是干净的，--base HEAD 会得到空 diff、门禁空转，因此 CI 模板
+#   通过环境变量 BASE_REF 指定增量基线：
+#     - pull request : BASE_REF=origin/<base-branch>（PR 全部改动）
+#     - push         : BASE_REF=<event.before> 或由 CI 传入，默认 HEAD~1
+#
+# 为什么不做全量扫描：存量代码通常超过 gate 阈值（如 minor: 20），
+# 全量硬门禁会让 CI 一开始就全红。增量门禁（ratchet）只要求新增/修改
+# 的代码干净，存量债务可后续逐步清理；如需全量，把 BASE_REF 设为
+# 仓库根提交（git rev-list --max-parents=0 HEAD）即可。
+version: 1
+env:
+  JAVAGUARD_PARSER_JAR: tools/java-guard/java-parser/java-parser.jar
+
+jobs:
+  sql-guard-check:
+    steps:
+      - name: SqlGuard check
+        shell: bash
+        run: |
+          set -e
+          SQLGUARD="tools/sql-guard/bin/sqlguard"
+          CONFIG="tools/sql-guard/sqlguard.toml"
+          TARGET="{{SQL_MODULE}}/src/main/resources"
+          BASE="${BASE_REF:-HEAD~1}"
+          echo "==> SqlGuard incremental check (base: $BASE)"
+          "$SQLGUARD" check-diff --base "$BASE" -c "$CONFIG" -f plain "$TARGET"
+          echo "OK SqlGuard passed"
+
+  java-guard-check:
+    needs: []
+    steps:
+      - name: JavaGuard scan
+        shell: bash
+        run: |
+          set -e
+          JAVAGUARD="tools/java-guard/bin/java-guard"
+          CONFIG="tools/java-guard/java-guard.yml"
+          GATE="tools/java-guard/gate-config.yml"
+          MODULES="{{MODULES_LIST}}"
+          BASE="${BASE_REF:-HEAD~1}"
+          for MOD in $MODULES; do
+            SRC="$MOD/src/main/java"
+            [ ! -d "$SRC" ] && continue
+            echo "==> JavaGuard incremental scan $MOD (diff: $BASE..HEAD)"
+            "$JAVAGUARD" scan "$SRC" --config "$CONFIG" --gate --gate-config "$GATE" --diff "$BASE..HEAD" -f console
+          done
+          echo "OK JavaGuard passed"
+
+  gate-summary:
+    needs: [sql-guard-check, java-guard-check]
+    if: success()
+    steps:
+      - name: Gate passed
+        shell: bash
+        run: |
+          echo "========================================"
+          echo "  OK All CI gate checks passed"
+          echo "========================================"

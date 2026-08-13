@@ -1,0 +1,44 @@
+# SqlGuard 配置 — Spring Boot 单模块项目
+# 扫描 backend 下的 SQL 与 Mapper XML
+
+dialect = "postgresql"
+
+[structure]
+paths = []
+strict = false
+
+[[classification.rules]]
+name = "ddl-by-ext"
+pattern = "**/*.sql"
+type = "ddl"
+priority = 10
+
+[[classification.rules]]
+name = "dml-by-ext"
+pattern = "**/*.dml"
+type = "dml"
+priority = 10
+
+rules_file = "sqlguard.rules.toml"
+
+[output]
+formats = ["plain", "json"]
+
+[mapper]
+enabled = true
+paths = ["../../backend/src/main/resources/mapper"]
+patterns = ["**/*Mapper.xml"]
+
+[scan]
+exclude_dirs = [
+  ".git", ".svn", ".hg", ".bzr",
+  "target", "node_modules", "build", "dist", "out",
+  ".idea", ".vscode",
+]
+
+[file_check]
+enabled = true
+check_encoding = true
+check_line_ending = false
+encoding_severity = "error"
+line_ending_severity = "warning"

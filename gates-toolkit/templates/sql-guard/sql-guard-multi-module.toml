@@ -1,0 +1,44 @@
+# SqlGuard 配置 — 多模块 Maven 项目
+# 注意：实际使用时需要把 {{SQL_MODULE}} 替换成你的 SQL/Mapper 所在模块
+
+dialect = "postgresql"
+
+[structure]
+paths = []
+strict = false
+
+[[classification.rules]]
+name = "ddl-by-ext"
+pattern = "**/*.sql"
+type = "ddl"
+priority = 10
+
+[[classification.rules]]
+name = "dml-by-ext"
+pattern = "**/*.dml"
+type = "dml"
+priority = 10
+
+rules_file = "sqlguard.rules.toml"
+
+[output]
+formats = ["plain", "json"]
+
+[mapper]
+enabled = true
+paths = ["../../{{SQL_MODULE}}/src/main/resources/mapper"]
+patterns = ["**/*Mapper.xml"]
+
+[scan]
+exclude_dirs = [
+  ".git", ".svn", ".hg", ".bzr",
+  "target", "node_modules", "build", "dist", "out",
+  ".idea", ".vscode",
+]
+
+[file_check]
+enabled = true
+check_encoding = true
+check_line_ending = false
+encoding_severity = "error"
+line_ending_severity = "warning"

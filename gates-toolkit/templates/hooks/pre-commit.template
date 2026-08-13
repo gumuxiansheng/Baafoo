@@ -1,0 +1,56 @@
+#!/bin/sh
+# pre-commit hook — 代码门禁（自动跳过无 SQL/Java 改动）
+# 安装说明见 gates-toolkit/README.md
+
+set -e
+
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+TOOLS_DIR="$PROJECT_ROOT/tools"
+
+# 快速跳过：没有 staged 改动时不跑门禁
+CHANGED="$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)"
+if [ -z "$CHANGED" ]; then
+  echo "[pre-commit] no staged changes, skipping gate"
+  exit 0
+fi
+
+# 智能跳过：仅当涉及 SQL/Mapper/Java 时才触发门禁
+NEED_SQL=false
+NEED_JAVA=false
+for f in $CHANGED; do
+  case "$f" in
+    *.sql|*.ddl|*.dml|*Mapper.xml) NEED_SQL=true ;;
+    *.java) NEED_JAVA=true ;;
+  esac
+done
+
+if [ "$NEED_SQL" = false ] && [ "$NEED_JAVA" = false ]; then
+  echo "[pre-commit] changes do not involve SQL/Java, skipping gate"
+  exit 0
+fi
+
+export JAVAGUARD_PARSER_JAR="$TOOLS_DIR/java-guard/java-parser/java-parser.jar"
+
+# 优先用 wan 编排（传 -C 让 wan 以项目根为工作目录，workflow 内用相对路径）
+WAN_BIN="$TOOLS_DIR/wan/bin/wan"
+if [ -x "$WAN_BIN" ] || [ -x "$WAN_BIN.exe" ]; then
+  # Windows 用 pwsh workflow，Linux/macOS 用 bash workflow
+  WORKFLOW_FILE="$TOOLS_DIR/wan/workflows/pre-commit-unix.yml"
+  if [ -f "$TOOLS_DIR/wan/workflows/pre-commit-win.yml" ] && command -v pwsh >/dev/null 2>&1; then
+    WORKFLOW_FILE="$TOOLS_DIR/wan/workflows/pre-commit-win.yml"
+  fi
+  if [ -f "$WORKFLOW_FILE" ]; then
+    "$WAN_BIN" run -C "$PROJECT_ROOT" "$WORKFLOW_FILE"
+    exit $?
+  fi
+fi
+
+# fallback: 直接调用工具
+{{FALLBACK_SQL_BLOCK}}
+
+{{FALLBACK_JAVA_BLOCK}}
+
+echo ""
+echo "? All gate checks passed"
+echo ""
+exit 0

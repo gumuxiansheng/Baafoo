@@ -1,0 +1,59 @@
+# wan workflow: pre-commit gate (多模块, Windows)
+# 由 setup-gates 生成，工作目录为项目根（通过 wan -C 传入）
+# 增量检查：仅扫描 git diff HEAD 改动的文件
+version: 1
+env:
+  JAVAGUARD_PARSER_JAR: tools/java-guard/java-parser/java-parser.jar
+
+jobs:
+  sql-guard-check:
+    steps:
+      - name: SqlGuard 检查
+        shell: pwsh
+        run: |
+          $sqlguard = "tools/sql-guard/bin/sqlguard.exe"
+          $config = "tools/sql-guard/sqlguard.toml"
+          $target = "{{SQL_MODULE}}/src/main/resources"
+          Write-Host "==> SqlGuard 增量检查 (base: HEAD)"
+          & $sqlguard check-diff --base HEAD -c $config -f plain $target
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host ""
+            Write-Host "✗ SqlGuard 门禁未通过" -ForegroundColor Red
+            exit 1
+          }
+          Write-Host "✓ SqlGuard 检查通过"
+
+  java-guard-check:
+    needs: []
+    steps:
+      - name: JavaGuard 扫描
+        shell: pwsh
+        run: |
+          $javaguard = "tools/java-guard/bin/java-guard.exe"
+          $config = "tools/java-guard/java-guard.yml"
+          $gateConfig = "tools/java-guard/gate-config.yml"
+          $modules = @({{MODULES_ARRAY_PS}})
+
+          foreach ($mod in $modules) {
+            $srcPath = "$mod/src/main/java"
+            if (-not (Test-Path $srcPath)) { continue }
+            Write-Host "==> JavaGuard 增量扫描 $mod (diff: HEAD)"
+            & $javaguard scan $srcPath --config $config --gate --gate-config $gateConfig --diff HEAD -f console
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host ""
+              Write-Host "✗ JavaGuard 门禁未通过: $mod" -ForegroundColor Red
+              exit 1
+            }
+          }
+          Write-Host "✓ JavaGuard 检查通过"
+
+  gate-summary:
+    needs: [sql-guard-check, java-guard-check]
+    if: success()
+    steps:
+      - name: 门禁通过
+        shell: pwsh
+        run: |
+          Write-Host "========================================"
+          Write-Host "  ✓ 所有门禁检查通过，允许提交"
+          Write-Host "========================================"

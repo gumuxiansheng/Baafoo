@@ -1,0 +1,14 @@
+# JavaGuard 配置 — Spring Boot 单模块项目
+# 扫描 backend/src/main/java 下的 Java 源码
+
+rules:
+  min_severity: info
+  params:
+    J006:
+      max_lines: 50
+
+scan:
+  exclude:
+    - generated
+    - target
+    - test

@@ -1,0 +1,7 @@
+# CI Gate 配置
+
+gate:
+  max_critical: 0
+  max_major: 0
+  max_minor: 20
+  max_info: 100

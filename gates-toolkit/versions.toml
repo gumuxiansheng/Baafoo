@@ -1,0 +1,64 @@
+# gates-toolkit 版本配置
+#
+# 人工填写每个工具各平台二进制的下载地址。
+# 脚本 fetch-binaries.ps1 / fetch-binaries.sh 读取此文件下载二进制到 bin/。
+#
+# URL 可以是任意可公开访问的直链（CNB Release 附件、GitHub Release Asset、对象存储等）。
+# 留空 "" 表示该平台暂不提供，下载时会跳过并告警。
+#
+# version 字段用于版本比较：本地存在同版本时跳过下载，低于配置版本时自动更新。
+
+[wan]
+version = "0.1.0"
+
+  [wan.windows_amd64]
+  url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.0/wan-windows-amd64.exe"
+  # 例: "https://cnb.cool/mikezhu/wan/-/releases/tag/v0.1.0/downloads/wan-windows-amd64.exe"
+  filename = "wan.exe"
+
+  [wan.linux_arm64]
+  url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.0/wan-linux-arm64"
+  filename = "wan-linux-arm64"
+
+  [wan.linux_amd64]
+  url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.0/wan-linux-amd64"
+  filename = "wan-linux-amd64"
+
+[sql-guard]
+version = "0.2.0"
+
+  [sql-guard.windows_amd64]
+  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.0/sqlguard.exe"
+  filename = "sqlguard.exe"
+
+  [sql-guard.linux_arm64]
+  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.0/sqlguard-linux-arm64"
+  filename = "sqlguard-linux-arm64"
+
+  # 注意：sql-guard v0.2.0 Release 暂未上传 linux-amd64 产物（已确认 404）。
+  # 留空暂不提供；CI 中由 scripts/ci-setup.sh 从源码兜底构建。
+  # 待 Release 补齐 sqlguard-linux-amd64 附件后，填入 URL 即可切换为下载模式：
+  # url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.0/sqlguard-linux-amd64"
+  [sql-guard.linux_amd64]
+  url = ""
+  filename = "sqlguard-linux-amd64"
+
+[java-guard]
+version = "0.1.0"
+
+  [java-guard.windows_amd64]
+  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.0/java-guard-windows-amd64.exe"
+  filename = "java-guard.exe"
+
+  [java-guard.linux_arm64]
+  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.0/java-guard-linux-arm64"
+  filename = "java-guard-linux-arm64"
+
+  [java-guard.linux_amd64]
+  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.0/java-guard-linux-amd64"
+  filename = "java-guard-linux-amd64"
+
+  # java-parser.jar 是平台无关的，只列一次
+  [java-guard.java_parser]
+  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.0/java-parser.jar"
+  filename = "java-parser.jar"

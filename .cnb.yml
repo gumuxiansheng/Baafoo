@@ -4,45 +4,23 @@ master:
       runner:
         cpus: 2
       docker:
+        # rust 镜像：sql-guard linux-amd64 预编译产物未发布前，ci-setup 需 cargo 兜底构建
         image: rust:1.77-bookworm
+      volumes:
+        # 缓存 cargo  registry，加速 sql-guard 源码兜底构建
+        - /root/.cargo:copy-on-write
       stages:
-        - name: compile-sql-guard
+        # gates-toolkit：下载预编译二进制（缺失则源码兜底）→ setup-gates 安装到 tools/
+        - name: setup-gates
           script: |
-            git clone https://cnb.cool/mikezhu/sql-guard.git /tmp/sql-guard
-            cd /tmp/sql-guard
-            cargo build --release --bin sqlguard
-            cp target/release/sqlguard $PWD/tools/sql-guard/bin/sqlguard
-            chmod +x $PWD/tools/sql-guard/bin/sqlguard
-        - name: compile-java-guard
-          script: |
-            git clone https://cnb.cool/mikezhu/java-guard.git /tmp/java-guard
-            cd /tmp/java-guard
-            cargo build --release
-            cp target/release/java-guard $PWD/tools/java-guard/bin/java-guard
-            chmod +x $PWD/tools/java-guard/bin/java-guard
-        - name: sql-guard-check
+            bash gates-toolkit/scripts/ci-setup.sh . multi-module \
+              baafoo-server \
+              baafoo-agent baafoo-cli baafoo-core baafoo-plugin-api baafoo-server baafoo-spring-boot-starter-test
+        # push 全量扫描（BASE_REF 未设置）
+        - name: run-gates
           stage: check
           script: |
-            ./tools/sql-guard/bin/sqlguard check \
-              -c tools/sql-guard/sqlguard.toml \
-              -f json -o sqlguard-reports/ \
-              baafoo-server/src/main/resources
-        - name: java-guard-check
-          stage: check
-          script: |
-            export JAVAGUARD_PARSER_JAR="$PWD/tools/java-guard/java-parser/java-parser.jar"
-            apt-get update -qq && apt-get install -y -qq default-jdk-headless > /dev/null 2>&1 || true
-            java -version 2>&1 || true
-            MODULES="baafoo-agent baafoo-cli baafoo-core baafoo-plugin-api baafoo-server baafoo-spring-boot-starter-test"
-            for MOD in $MODULES; do
-              SRC="$PWD/$MOD/src/main/java"
-              [ ! -d "$SRC" ] && continue
-              echo "==> JavaGuard scanning $MOD"
-              ./tools/java-guard/bin/java-guard scan "$SRC" \
-                --config tools/java-guard/java-guard.yml \
-                --gate --gate-config tools/java-guard/gate-config.yml \
-                -f console
-            done
+            tools/wan/bin/wan run tools/wan/workflows/ci-unix.yml -C . --quiet
 
     - name: test-and-build
       runner:
@@ -118,46 +96,21 @@ master:
         cpus: 2
       docker:
         image: rust:1.77-bookworm
+      volumes:
+        - /root/.cargo:copy-on-write
       stages:
-        - name: compile-sql-guard
-          script: |
-            git clone https://cnb.cool/mikezhu/sql-guard.git /tmp/sql-guard
-            cd /tmp/sql-guard
-            cargo build --release --bin sqlguard
-            cp target/release/sqlguard $PWD/tools/sql-guard/bin/sqlguard
-            chmod +x $PWD/tools/sql-guard/bin/sqlguard
-        - name: compile-java-guard
-          script: |
-            git clone https://cnb.cool/mikezhu/java-guard.git /tmp/java-guard
-            cd /tmp/java-guard
-            cargo build --release
-            cp target/release/java-guard $PWD/tools/java-guard/bin/java-guard
-            chmod +x $PWD/tools/java-guard/bin/java-guard
-        - name: sql-guard-incremental
-          stage: check
+        - name: setup-gates
           script: |
             git fetch origin ${{ cnb.pull_request.base_ref }}
-            ./tools/sql-guard/bin/sqlguard check-diff \
-              --base origin/${{ cnb.pull_request.base_ref }} \
-              -c tools/sql-guard/sqlguard.toml \
-              -f json -o sqlguard-reports/ \
-              baafoo-server/src/main/resources
-        - name: java-guard-incremental
+            bash gates-toolkit/scripts/ci-setup.sh . multi-module \
+              baafoo-server \
+              baafoo-agent baafoo-cli baafoo-core baafoo-plugin-api baafoo-server baafoo-spring-boot-starter-test
+        # PR 增量扫描（BASE_REF = PR 目标分支）
+        - name: run-gates
           stage: check
           script: |
-            export JAVAGUARD_PARSER_JAR="$PWD/tools/java-guard/java-parser/java-parser.jar"
-            apt-get update -qq && apt-get install -y -qq default-jdk-headless > /dev/null 2>&1 || true
-            MODULES="baafoo-agent baafoo-cli baafoo-core baafoo-plugin-api baafoo-server baafoo-spring-boot-starter-test"
-            for MOD in $MODULES; do
-              SRC="$PWD/$MOD/src/main/java"
-              [ ! -d "$SRC" ] && continue
-              echo "==> JavaGuard scanning $MOD"
-              ./tools/java-guard/bin/java-guard scan "$SRC" \
-                --config tools/java-guard/java-guard.yml \
-                --gate --gate-config tools/java-guard/gate-config.yml \
-                --diff origin/${{ cnb.pull_request.base_ref }}..HEAD \
-                -f console
-            done
+            export BASE_REF="origin/${{ cnb.pull_request.base_ref }}"
+            tools/wan/bin/wan run tools/wan/workflows/ci-unix.yml -C . --quiet
 
     - name: pr-check
       runner:

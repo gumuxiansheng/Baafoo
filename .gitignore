@@ -73,4 +73,4 @@ proxy/baafoo-proxy
 proxy/proxy.exe
 proxy/proxy.test
 
-tools/**/bin
+tools

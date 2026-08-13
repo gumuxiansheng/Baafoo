@@ -1,0 +1,50 @@
+# wan workflow: pre-commit gate (多模块, Linux)
+# 由 setup-gates 生成，工作目录为项目根（通过 wan -C 传入）
+# 增量检查：仅扫描 git diff HEAD 改动的文件
+version: 1
+env:
+  JAVAGUARD_PARSER_JAR: tools/java-guard/java-parser/java-parser.jar
+
+jobs:
+  sql-guard-check:
+    steps:
+      - name: SqlGuard check
+        shell: bash
+        run: |
+          set -e
+          SQLGUARD="tools/sql-guard/bin/sqlguard"
+          CONFIG="tools/sql-guard/sqlguard.toml"
+          TARGET="{{SQL_MODULE}}/src/main/resources"
+          echo "==> SqlGuard incremental check (base: HEAD)"
+          "$SQLGUARD" check-diff --base HEAD -c "$CONFIG" -f plain "$TARGET"
+          echo "? SqlGuard passed"
+
+  java-guard-check:
+    needs: []
+    steps:
+      - name: JavaGuard scan
+        shell: bash
+        run: |
+          set -e
+          JAVAGUARD="tools/java-guard/bin/java-guard"
+          CONFIG="tools/java-guard/java-guard.yml"
+          GATE="tools/java-guard/gate-config.yml"
+          MODULES="{{MODULES_LIST}}"
+          for MOD in $MODULES; do
+            SRC="${MOD}/src/main/java"
+            [ ! -d "$SRC" ] && continue
+            echo "==> JavaGuard incremental scan $MOD (diff: HEAD)"
+            "$JAVAGUARD" scan "$SRC" --config "$CONFIG" --gate --gate-config "$GATE" --diff HEAD -f console
+          done
+          echo "? JavaGuard passed"
+
+  gate-summary:
+    needs: [sql-guard-check, java-guard-check]
+    if: success()
+    steps:
+      - name: Gate passed
+        shell: bash
+        run: |
+          echo "========================================"
+          echo "  ? All gate checks passed, commit allowed"
+          echo "========================================"
