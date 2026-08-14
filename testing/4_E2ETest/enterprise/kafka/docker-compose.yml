@@ -15,7 +15,9 @@ services:
     # Apache official Kafka image (KRaft mode). Previously used soldevelo/kafka
     # (bitnami fork) but it generated a new random cluster ID on every restart,
     # causing infinite restart loops. apache/kafka uses a stable CLUSTER_ID env var.
-    image: apache/kafka:latest
+    # Pinned to a fixed minor (was: latest, a moving tag that broke CI reproducibility
+    # and pulled unpredictably large/slow images).
+    image: apache/kafka:3.8.1
     container_name: baafoo-enterprise-kafka
     networks:
       - baafoo-enterprise-net
@@ -37,6 +39,10 @@ services:
       - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
       - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
       - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+      # Cap broker heap so the full enterprise stack fits on a single CI runner
+      # (apache/kafka defaults are larger and caused OOM-style web-server failures
+      # in sibling apps sharing the runner).
+      - KAFKA_HEAP_OPTS=-Xms256m -Xmx512m
       # Stable cluster ID - prevents random ID regeneration on restart
       - CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
     healthcheck:

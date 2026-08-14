@@ -101,6 +101,20 @@ Write-Host ""
 
 $apiKeyHeader = @{ "X-Api-Key" = $ApiKey; "Content-Type" = "application/json" }
 
+# Give the app (and its depends_on Kafka broker) time to come up before asserting.
+$waitUrl = "$AppBaseUrl/api/stub-demo/health"
+$waited = 0; $ready = $false
+Write-Host "  [wait] polling kafka-test-app ($waitUrl) up to 120s..." -ForegroundColor Gray
+while ($waited -lt 120) {
+    try {
+        $r = Invoke-WebRequest -Uri $waitUrl -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+        if ($r.StatusCode -eq 200) { $ready = $true; break }
+    } catch {}
+    Start-Sleep -Seconds 3
+    $waited += 3
+}
+Write-Host "  [wait] kafka-test-app $(if ($ready) { "ready after ${waited}s" } else { "NOT ready after 120s (continuing)" })" -ForegroundColor Gray
+
 # ========== EG-KAFKA-001: 应用健康检查 ==========
 try {
     $response = Invoke-WebRequest -Uri "$AppBaseUrl/api/stub-demo/health" -UseBasicParsing -TimeoutSec 10

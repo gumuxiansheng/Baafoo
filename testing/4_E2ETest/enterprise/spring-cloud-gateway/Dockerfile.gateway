@@ -20,7 +20,11 @@ RUN mkdir -p /root/.baafoo/data
 
 EXPOSE 8080
 
-ENV JAVA_OPTS="-XX:-UseContainerSupport -Xms128m -Xmx256m --add-opens java.base/java.net=ALL-UNNAMED" \
+# Java 17: the Baafoo agent instruments JDK NIO classes (NioSocketConnectAdvice
+# hooks java.nio.channels.SocketChannel / sun.nio.ch.*) which are encapsulated in
+# modules. Without these --add-opens the gateway's Reactor Netty web stack fails to
+# start after the agent premain-registers, leaving the web server down (EG-GW-001/003/005/006/010).
+ENV JAVA_OPTS="-XX:-UseContainerSupport -Xms128m -Xmx256m --add-opens java.base/java.net=ALL-UNNAMED --add-opens java.base/java.nio.channels=ALL-UNNAMED --add-opens java.base/sun.nio.ch=ALL-UNNAMED" \
     BAAFOO_SERVER_HOST="baafoo-server" \
     BAAFOO_ENV="enterprise-gateway"
 

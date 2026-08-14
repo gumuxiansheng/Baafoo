@@ -110,6 +110,29 @@ restore_env_mode() {
     [[ -n "$env_id" ]] && switch_env_mode "$env_id" "$mode" 2>/dev/null || true
 }
 
+# Wait for the test app's web server to be reachable before asserting.
+# Absorbs slow container/JVM/bean startup so a not-yet-ready app does not
+# immediately fail EG-KAFKA-001 (recurring CI "services not fully ready when
+# tests run" failure mode). Non-fatal: if the app is genuinely down the
+# assertions below still fail with a clear signal.
+wait_for_app() {
+    local url="$1" expect="$2" name="$3" max="${4:-120}"
+    local waited=0
+    echo "  [wait] polling $name ($url) up to ${max}s..."
+    while [ "$waited" -lt "$max" ]; do
+        local body
+        body=$(curl -sf "$url" 2>/dev/null)
+        if [[ -n "$body" && ("$body" == "$expect" || "$expect" == "ANY") ]]; then
+            echo "  [wait] $name ready after ${waited}s"
+            return 0
+        fi
+        sleep 3
+        waited=$((waited + 3))
+    done
+    echo "  [wait] $name NOT ready after ${max}s (continuing to assertions)"
+    return 1
+}
+
 echo -e "${CYAN}============================================${NC}"
 echo -e "${CYAN}  Kafka 企业级测试 - 冒烟测试${NC}"
 echo -e "${CYAN}============================================${NC}"
@@ -117,6 +140,9 @@ echo ""
 echo "Server: $SERVER_BASE_URL"
 echo "App:    $APP_BASE_URL"
 echo ""
+
+# Give the app (and its depends_on Kafka broker) time to come up before asserting.
+wait_for_app "${APP_BASE_URL}/api/stub-demo/health" "OK" "kafka-test-app" 120 || true
 
 # ========== EG-KAFKA-001: 应用健康检查 ==========
 resp=$(app_get "/api/stub-demo/health" 2>/dev/null)

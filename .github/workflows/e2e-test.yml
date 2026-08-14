@@ -121,7 +121,8 @@ jobs:
             case "$app" in
               kafka)
                 echo "Waiting for kafka test app..."
-                timeout 120 bash -c 'until curl -sf http://localhost:18090/api/stub-demo/health >/dev/null 2>&1; do sleep 3; done' && echo "  [OK] kafka app up" || echo "  [WARN] kafka app not ready"
+                # 240s: covers the Kafka broker (depends_on service_healthy) AND the app.
+                timeout 240 bash -c 'until curl -sf http://localhost:18090/api/stub-demo/health >/dev/null 2>&1; do sleep 3; done' && echo "  [OK] kafka app up" || echo "  [WARN] kafka app not ready"
                 ;;
               petclinic)
                 echo "Waiting for petclinic app..."
@@ -141,7 +142,8 @@ jobs:
                 ;;
               spring-cloud-gateway)
                 echo "Waiting for gateway..."
-                timeout 180 bash -c 'until curl -sf http://localhost:18080/actuator/health >/dev/null 2>&1; do sleep 3; done' && echo "  [OK] gateway up" || echo "  [WARN] gateway not ready"
+                # 240s: Java 17 + Reactor Netty cold start is slow.
+                timeout 240 bash -c 'until curl -sf http://localhost:18080/actuator/health >/dev/null 2>&1; do sleep 3; done' && echo "  [OK] gateway up" || echo "  [WARN] gateway not ready"
                 echo "Waiting for gateway backend..."
                 timeout 120 bash -c 'until curl -sf http://localhost:18092/api/stub-demo/health >/dev/null 2>&1; do sleep 3; done' && echo "  [OK] gateway backend up" || echo "  [WARN] gateway backend not ready"
                 ;;

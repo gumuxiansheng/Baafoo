@@ -54,6 +54,26 @@ backend_get() { curl -sf "$BACKEND_BASE_URL$1" 2>/dev/null; }
 get_env_id() { api_get "/__baafoo__/api/environments" 2>/dev/null | jq -r --arg name "$1" '.data[] | select(.name == $name or .id == $name) | .id' 2>/dev/null | head -1; }
 switch_mode() { curl -sf -H "X-Api-Key: $API_KEY" -H "Content-Type: application/json" -X PUT -d "{\"mode\":\"$2\"}" "$SERVER_BASE_URL/__baafoo__/api/environments/$1" >/dev/null 2>&1; sleep "$MODE_SETTLE_WAIT"; }
 
+# Wait for the gateway's web server to be reachable before asserting.
+# Absorbs slow JVM/Reactor-Netty startup (and, after the --add-opens fix for
+# Java 17 NIO interception, the gateway web server now actually binds).
+# Non-fatal: assertions below still fail with a clear signal if it is down.
+wait_for_app() {
+    local url="$1" name="$3" max="${4:-120}"
+    local waited=0
+    echo "  [wait] polling $name ($url) up to ${max}s..."
+    while [ "$waited" -lt "$max" ]; do
+        if curl -sf "$url" >/dev/null 2>&1; then
+            echo "  [wait] $name ready after ${waited}s"
+            return 0
+        fi
+        sleep 3
+        waited=$((waited + 3))
+    done
+    echo "  [wait] $name NOT ready after ${max}s (continuing to assertions)"
+    return 1
+}
+
 echo -e "${CYAN}============================================${NC}"
 echo -e "${CYAN}  Spring Cloud Gateway 企业级测试 - 冒烟测试${NC}"
 echo -e "${CYAN}============================================${NC}"
@@ -61,6 +81,9 @@ echo ""
 
 GW_ENV_ID=$(get_env_id "enterprise-gateway" 2>/dev/null || echo "")
 BACKEND_ENV_ID=$(get_env_id "enterprise-gateway-backend" 2>/dev/null || echo "")
+
+# Give the gateway (Java 17 + Reactor Netty) time to bind before asserting.
+wait_for_app "${GATEWAY_BASE_URL}/actuator/health" "gateway" 120 || true
 
 # ========== EG-GW-001 ==========
 health=$(curl -sf "$GATEWAY_BASE_URL/actuator/health" 2>/dev/null | jq -r '.status' 2>/dev/null || echo "")

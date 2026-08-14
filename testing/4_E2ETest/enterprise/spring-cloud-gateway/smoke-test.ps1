@@ -90,6 +90,20 @@ Write-Host "  Spring Cloud Gateway 企业级测试 - 冒烟测试" -ForegroundCo
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
 
+# Give the gateway (Java 17 + Reactor Netty) time to bind before asserting.
+$waitUrl = "$GatewayBaseUrl/actuator/health"
+$waited = 0; $ready = $false
+Write-Host "  [wait] polling gateway ($waitUrl) up to 120s..." -ForegroundColor Gray
+while ($waited -lt 120) {
+    try {
+        $r = Invoke-WebRequest -Uri $waitUrl -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+        if ($r.StatusCode -eq 200) { $ready = $true; break }
+    } catch {}
+    Start-Sleep -Seconds 3
+    $waited += 3
+}
+Write-Host "  [wait] gateway $(if ($ready) { "ready after ${waited}s" } else { "NOT ready after 120s (continuing)" })" -ForegroundColor Gray
+
 # =========================================================================
 # EG-GW-001: Gateway 启动 + Agent 挂载无异常 (P0, EG-COMMON-001)
 # =========================================================================
