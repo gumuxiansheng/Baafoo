@@ -1,6 +1,6 @@
 # Baafoo 依赖安全加固报告（SCA Remediation）
 
-- **生成日期**：2026-08-11
+- **生成日期**：2026-08-11　**最后修订**：2026-08-15（更正 Logback 结论：1.2.x 仍受 CVE-2024-12798/12801 影响，Java 8 + SB2.7 不可修复，已回退并列为残留风险 §6）
 - **范围**：`baafoo-parent` 及全部子模块解析后的依赖树（agent / server / core / test-spring / test-pulsar / spring-boot-starter-test 等）
 - **方法**：原始 Scantist 报告链接需登录，按用户指示改为**自行对解析依赖树做 SCA 分析**，交叉比对公开 CVE 数据库（NVD、GitHub Advisory、Apache 公告、厂商发布说明）。
 - **硬约束**：项目基线 `java.version=1.8`；Spring Boot `2.7.18`（已 EOL）；ActiveMQ Artemis `2.19.1`（最后一个 Java 8 版本，2.20.0+ 需 Java 11）。所有修复必须在 **Java 8 兼容**前提下进行。
@@ -13,7 +13,6 @@
 |------|-------------|-------------------|----------|------|
 | **Netty** | 4.1.100.Final → **4.1.136.Final** | CVE-2026-56817(XXE,8.3)、CVE-2026-56819(内存泄漏)、CVE-2026-55833(zip bomb)、CVE-2026-59900(HTTP/2 host 头走私) 等 20+ 项 2026 CVE | server/agent 直接依赖 | ✅ |
 | **PostgreSQL** | 42.7.1 → **42.7.5** | CVE-2024-1597（SQL 注入，CVSS 9.8，≥42.7.2 修复） | server | ✅ |
-| **Logback** | 1.2.13 → **1.3.15** | CVE-2024-12798、CVE-2024-12801（1.3.x 为 Java 8 安全维护线） | server | ✅ |
 | **Jackson** | 2.15.3 → **2.18.8** | CVE-2025-52999（core 异步解析器栈溢出 DoS）、CVE-2026-59888（`@JsonIgnore` 绕过）、CVE-2026-54512（PolymorphicTypeValidator 绕过，CVSS 8.1） | core/server/agent(relocated)/test-spring | ✅ |
 | **Guava** | 30.1-jre → **33.6.0-jre** | CVE-2023-2976（临时目录权限，≥32.0.1 修复） | transitive（Artemis） | ✅ |
 | **commons-text** | 1.8 → **1.12.0** | CVE-2022-42889（Text4Shell RCE，≥1.10.0 修复） | transitive（commons-configuration2） | ✅ |
@@ -26,7 +25,8 @@
 ### 编译与解析证据
 - `mvn compile -pl baafoo-server,baafoo-agent,baafoo-test-spring,baafoo-test-pulsar,baafoo-spring-boot-starter-test -am` → **BUILD SUCCESS**
 - 解析版本（dependency:tree 实际输出）：
-  - server：`netty-all:4.1.136.Final`、`postgresql:42.7.5`、`guava:33.6.0-jre`、`commons-text:1.12.0`、`logback-classic:1.3.15`、`snappy-java:1.1.10.4(test)`、`jackson-databind:2.18.8`、`jackson-core:2.18.8`
+  - server：`netty-all:4.1.136.Final`、`postgresql:42.7.5`、`guava:33.6.0-jre`、`commons-text:1.12.0`、`snappy-java:1.1.10.4(test)`、`jackson-databind:2.18.8`、`jackson-core:2.18.8`
+  - 日志栈（未升级，见 §6）：`slf4j-api:1.7.36`、`logback-classic:1.2.12`、`logback-core:1.2.12`（Spring Boot 2.7.18 BOM 原生组合）
   - test-spring：`spring-core:5.3.39`、`spring-web:5.3.39`、`tomcat-embed-core:9.0.102`、`jackson-databind:2.18.8`
 
 ---
@@ -59,11 +59,17 @@
 - 因与 Artemis 2.19.1 同被 Java 8 锁定，建议**随 Java 17 迁移一并升级**，避免单独升级破坏 Artemis 集成。
 - 备注：`commons-beanutils:1.9.4` 已是修复版本（CVE-2019-10086 / CVE-2014-0114 已修），无需处理。
 
+### 6. Logback 1.2.x — CVE-2024-12798 / CVE-2024-12801【Java 8 + Spring Boot 2.7 不可修复】
+- **CVE-2024-12798**（JaninoEventEvaluator ACE，CVSS 7.3）、**CVE-2024-12801**（SaxEventRecorder SSRF，CVSS 2.4）：影响 logback-core **0.1 – 1.3.14**（含整个 1.2.x 线）。修复只在 **logback 1.3.15**（需 slf4j 2.0 → Spring Boot 3 → Java 17）或 **1.4.13+/1.5.13+**（需 Java 11）。**1.2.x 全线从未出补丁**——初版报告误判 1.2.13 已修复，已更正。
+- **为何不能升**：Spring Boot 2.7 的 `LogbackLoggingSystem.getLoggerContext()` 直接调用 slf4j 1.7 的 `StaticLoggerBinder.getSingleton()`；logback 1.3 不再提供该类 → 升到 1.3.x 会令 `baafoo-test-spring` 全部单测 `NoClassDefFoundError: org/slf4j/impl/StaticLoggerBinder`（已实测、已回退）。Spring Boot 3.0 才支持 slf4j 2.0 / logback 1.3。
+- **处置**：维持 Spring Boot 2.7 原生 `logback 1.2.12 + slf4j 1.7.36`，把该 CVE 列为残留风险。**实际可利用性低**：两个 CVE 均要求攻击者对 logback 配置文件有写权限或能注入指向恶意配置的环境变量（本地提权前置）；Baafoo 服务端日志配置为可信、非用户可写，生产部署中风险等级低。
+- **彻底修复**：随 Java 17 + Spring Boot 3.x 迁移一并完成（届时 logback 升到 1.3.15+ / slf4j 2.0）。
+
 ---
 
 ## 三、结论与建议
 
-本轮在 **Java 8 兼容边界内，把所有可修的漏洞全部修复并通过编译验证**：Netty / PostgreSQL / Logback / Jackson / Guava / commons-text / snappy-java / Tomcat 已升到最新可用补丁；Spring 升到免费线最新的 5.3.39。
+本轮在 **Java 8 兼容边界内，把所有可修的漏洞全部修复并通过编译验证**：Netty / PostgreSQL / Jackson / Guava / commons-text / snappy-java / Tomcat 已升到最新可用补丁；Spring 升到免费线最新的 5.3.39。Logback 因 Spring Boot 2.7 基线约束无法在 Java 8 下修复 CVE-2024-12798/12801，已回退为 BOM 原生 1.2.12 并列为残留风险（见 §6）。
 
 所有**无法在 Java 8 下根除的风险**（Artemis CVE-2026-27446 CRITICAL、Spring 5.3.x EOL 的 38816/38819、BouncyCastle jdk15on 退役、Spring Boot 2.7.x EOL、commons-configuration2 2.7）**共同指向同一条出路：升级到 Java 17 + Spring Boot 3.x**。该迁移同时解锁：
 - Artemis 2.52.0+（修复 CVE-2026-27446）
@@ -76,5 +82,5 @@
 ---
 
 ## 附：修改清单（baafoo-parent/pom.xml）
-- `<properties>`：`netty.version`→4.1.136.Final、`postgresql.version`→42.7.5、`logback.version`→1.3.15、`jackson.version`→2.18.8、`guava.version`→33.6.0-jre、`commons-text.version`→1.12.0、`snappy-java.version`→1.1.10.4、`spring.version`→5.3.39、`tomcat.version`→9.0.102
+- `<properties>`：`netty.version`→4.1.136.Final、`postgresql.version`→42.7.5、`jackson.version`→2.18.8、`guava.version`→33.6.0-jre、`commons-text.version`→1.12.0、`snappy-java.version`→1.1.10.4、`spring.version`→5.3.39、`tomcat.version`→9.0.102（注：logback 回退为 Spring Boot 2.7 BOM 原生 1.2.12，未设 `logback.version` 覆盖）
 - `<dependencyManagement>`（BOM import 前）：新增 guava / commons-text / snappy-java / spring-* / tomcat-embed-* 显式覆盖条目；BouncyCastle 条目保留注释说明暂缓原因。
