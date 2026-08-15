@@ -11,11 +11,13 @@ jobs:
       - name: SqlGuard 检查
         shell: pwsh
         run: |
-          $sqlguard = "gates-tools/sql-guard/bin/sqlguard.exe"
-          $config = "gates-tools/sql-guard/sqlguard.toml"
-          $target = "{{SQL_MODULE}}/src/main/resources"
-          Write-Host "==> SqlGuard 增量检查 (base: HEAD)"
-          & $sqlguard check-diff --base HEAD -c $config -f plain $target
+          # SqlGuard 增量检查（需 sqlguard >= 0.2.2）：check-diff 的 diff 终点是工作区，
+          # staged/unstaged/untracked 改动全覆盖，pre-commit 场景直接用 --base HEAD。
+          # 必须从项目根运行（git diff 按 CWD 输出文件路径）。
+          [Console]::OutputEncoding = [Text.Encoding]::UTF8
+          $sgBin = "gates-tools/sql-guard/bin/sqlguard.exe"
+          Write-Host "==> SqlGuard 增量检查 (base: HEAD, 含未提交改动)"
+          & $sgBin check-diff --base HEAD -c gates-tools/sql-guard/sqlguard.toml -f plain .
           if ($LASTEXITCODE -ne 0) {
             Write-Host ""
             Write-Host "✗ SqlGuard 门禁未通过" -ForegroundColor Red

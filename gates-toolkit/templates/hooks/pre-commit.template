@@ -50,11 +50,13 @@ if [ -d "$PROJECT_ROOT/gates-toolkit" ] && [ -f "$TOOLS_DIR/.meta" ]; then
 fi
 
 # 智能跳过：仅当涉及 SQL/Mapper/Java 时才触发门禁
+# （xml 放宽到全部 *.xml：非 Mapper XML 由后续检查按 "mapper" 路径特征再过滤，
+#   避免遗漏 MapperViolation_xxx.xml 这类不以 Mapper.xml 结尾的命名）
 NEED_SQL=false
 NEED_JAVA=false
 for f in $CHANGED; do
   case "$f" in
-    *.sql|*.ddl|*.dml|*Mapper.xml) NEED_SQL=true ;;
+    *.sql|*.ddl|*.dml|*.xml) NEED_SQL=true ;;
     *.java) NEED_JAVA=true ;;
   esac
 done
@@ -83,6 +85,9 @@ if [ -x "$WAN_BIN" ]; then
     # 若直接透传，弹窗首行会是检查横幅而不是错误信息；终端里看到的内容不变。
     GATE_RC=0
     GATE_OUTPUT="$("$WAN_BIN" run -C "$PROJECT_ROOT" "$WORKFLOW_FILE" 2>&1)" || GATE_RC=$?
+    # 剥离 ANSI 颜色码：wan 在管道下仍输出颜色，IDE 弹窗/输出面板会把 ESC 序列
+    # 显示成 [1m[36m 之类的乱码（先捕获再剥离，保留 wan 退出码）。
+    GATE_OUTPUT="$(printf '%s\n' "$GATE_OUTPUT" | sed "s/$(printf '\033')\\[[0-9;]*[mK]//g")"
     if [ "$GATE_RC" -ne 0 ]; then
       echo "✗ 代码门禁未通过，提交已被阻止（违规明细如下）" >&2
       printf '%s\n' "$GATE_OUTPUT" >&2
@@ -95,8 +100,20 @@ if [ -x "$WAN_BIN" ]; then
   fi
 fi
 
-# fallback: 直接调用工具
-{{FALLBACK_SQL_BLOCK}}
+# fallback: 直接调用工具（wan 缺失时）
+# SqlGuard 增量检查（需 sqlguard >= 0.2.2）：check-diff 的 diff 终点是工作区，
+# staged/unstaged/untracked 改动全覆盖，pre-commit 场景直接用 --base HEAD。
+# 从项目根运行（git diff 按 CWD 输出文件路径）。
+echo ""
+echo "=== SqlGuard Check (incremental) ==="
+SG_BIN="$TOOLS_DIR/sql-guard/bin/sqlguard"
+if [ -f "$SG_BIN.exe" ]; then SG_BIN="$SG_BIN.exe"; fi
+( cd "$PROJECT_ROOT" && "$SG_BIN" check-diff --base HEAD \
+    -c "$TOOLS_DIR/sql-guard/sqlguard.toml" -f plain . ) || {
+  echo "✗ SqlGuard 门禁未通过，提交已被阻止。修复后重试；确认跳过: git commit --no-verify" >&2
+  exit 1
+}
+echo "✓ SqlGuard passed"
 
 {{FALLBACK_JAVA_BLOCK}}
 

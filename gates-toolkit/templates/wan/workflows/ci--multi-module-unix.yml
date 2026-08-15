@@ -25,10 +25,9 @@ jobs:
           set -e
           SQLGUARD="gates-tools/sql-guard/bin/sqlguard"
           CONFIG="gates-tools/sql-guard/sqlguard.toml"
-          TARGET="{{SQL_MODULE}}/src/main/resources"
           BASE="${BASE_REF:-HEAD~1}"
           echo "==> SqlGuard incremental check (base: $BASE)"
-          "$SQLGUARD" check-diff --base "$BASE" -c "$CONFIG" -f plain "$TARGET"
+          "$SQLGUARD" check-diff --base "$BASE" -c "$CONFIG" -f plain .
           echo "✓ SqlGuard passed"
 
   java-guard-check:

@@ -12,11 +12,13 @@ jobs:
         shell: bash
         run: |
           set -e
-          SQLGUARD="gates-tools/sql-guard/bin/sqlguard"
-          CONFIG="gates-tools/sql-guard/sqlguard.toml"
-          TARGET="{{SQL_MODULE}}/src/main/resources"
-          echo "==> SqlGuard incremental check (base: HEAD)"
-          "$SQLGUARD" check-diff --base HEAD -c "$CONFIG" -f plain "$TARGET"
+          # SqlGuard incremental check (requires sqlguard >= 0.2.2): check-diff diffs
+          # to the working tree — staged/unstaged/untracked changes all covered.
+          # Must run from project root (git diff outputs CWD-relative paths).
+          SG_BIN="gates-tools/sql-guard/bin/sqlguard"
+          if [ -f "$SG_BIN.exe" ]; then SG_BIN="$SG_BIN.exe"; fi
+          echo "==> SqlGuard incremental check (base: HEAD, uncommitted changes included)"
+          "$SG_BIN" check-diff --base HEAD -c gates-tools/sql-guard/sqlguard.toml -f plain .
           echo "✓ SqlGuard passed"
 
   java-guard-check:

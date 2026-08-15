@@ -432,21 +432,6 @@ if ($ProjectType -eq "spring-boot") {
 Write-Host "==> 生成 pre-commit hook"
 $hookTpl = Read-TextFileUtf8 "$ToolkitRoot/templates/hooks/pre-commit.template"
 if ($ProjectType -eq "spring-boot") {
-    $sqlBlock = @'
-echo ""
-echo "=== SqlGuard Check ==="
-SQLGUARD="$TOOLS_DIR/sql-guard/bin/sqlguard"
-SQL_CONFIG="$TOOLS_DIR/sql-guard/sqlguard.toml"
-SQL_TARGET="$PROJECT_ROOT/__BACKEND__/src/main/resources"
-if [ -f "$SQLGUARD.exe" ]; then SQLGUARD="$SQLGUARD.exe"; fi
-"$SQLGUARD" check-diff --base HEAD -c "$SQL_CONFIG" -f plain "$SQL_TARGET" || {
-  echo "✗ SqlGuard 门禁未通过，提交已被阻止。修复后重试；确认跳过: git commit --no-verify" >&2
-  exit 1
-}
-echo "✓ SqlGuard passed"
-'@
-    $sqlBlock = $sqlBlock.Replace('__BACKEND__', $BackendDir)
-
     $javaBlock = @'
 echo ""
 echo "=== JavaGuard Check ==="
@@ -464,24 +449,8 @@ echo "✓ JavaGuard passed"
 '@
     $javaBlock = $javaBlock.Replace('__BACKEND__', $BackendDir)
 
-    $hookTpl = $hookTpl.Replace("{{FALLBACK_SQL_BLOCK}}", $sqlBlock)
     $hookTpl = $hookTpl.Replace("{{FALLBACK_JAVA_BLOCK}}", $javaBlock)
 } else {
-    $sqlBlock = @'
-echo ""
-echo "=== SqlGuard Check ==="
-SQLGUARD="$TOOLS_DIR/sql-guard/bin/sqlguard"
-SQL_CONFIG="$TOOLS_DIR/sql-guard/sqlguard.toml"
-SQL_TARGET="$PROJECT_ROOT/__SQL_MODULE__/src/main/resources"
-if [ -f "$SQLGUARD.exe" ]; then SQLGUARD="$SQLGUARD.exe"; fi
-"$SQLGUARD" check-diff --base HEAD -c "$SQL_CONFIG" -f plain "$SQL_TARGET" || {
-  echo "✗ SqlGuard 门禁未通过，提交已被阻止。修复后重试；确认跳过: git commit --no-verify" >&2
-  exit 1
-}
-echo "✓ SqlGuard passed"
-'@
-    $sqlBlock = $sqlBlock.Replace('__SQL_MODULE__', $SqlModule)
-
     # 注意：必须用单引号 here-string + 占位符替换。双引号 here-string 里 \$TOOLS_DIR
     # 会被 PowerShell 当作变量展开（变量名大小写不敏感，命中 $toolsDir = 绝对路径），
     # 生成损坏的 hook 脚本。
@@ -507,7 +476,6 @@ echo "✓ JavaGuard passed"
 '@
     $javaBlock = $javaBlock.Replace('__MODULES_LIST__', $modulesList)
 
-    $hookTpl = $hookTpl.Replace("{{FALLBACK_SQL_BLOCK}}", $sqlBlock)
     $hookTpl = $hookTpl.Replace("{{FALLBACK_JAVA_BLOCK}}", $javaBlock)
 }
 $hookTpl | Write-TextFileUtf8NoBom "$toolsDir/hooks/pre-commit"
@@ -609,8 +577,8 @@ $readme += "- Windows: ``gates-tools\gatecheck.cmd``（双击即可）`n"
 $readme += "- Linux/macOS: ``bash gates-tools/gatecheck.sh```n`n"
 $readme += "等价于以下完整命令（也可单独执行）:`n`n"
 $readme += '```powershell' + "`n"
-$readme += "# SqlGuard`n"
-$readme += "gates-tools/sql-guard/bin/sqlguard.exe check-diff --base HEAD -c gates-tools/sql-guard/sqlguard.toml -f plain $BackendDir/src/main/resources`n`n"
+$readme += "# SqlGuard（pre-commit 自动增量检查未提交改动；手动全量在项目根运行）`n"
+$readme += "gates-tools/sql-guard/bin/sqlguard.exe check -c gates-tools/sql-guard/sqlguard.toml -f plain .`n`n"
 $readme += "# JavaGuard`n"
 $readme += "`$env:JAVAGUARD_PARSER_JAR = `"gates-tools/java-guard/java-parser/java-parser.jar`"`n"
 $readme += "gates-tools/java-guard/bin/java-guard.exe scan $BackendDir/src/main/java --rules-dir gates-tools/java-guard/rules --config gates-tools/java-guard/java-guard.yml --gate --gate-config gates-tools/java-guard/gate-config.yml --diff HEAD -f console`n`n"

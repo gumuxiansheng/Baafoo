@@ -378,17 +378,6 @@ fi
 echo "==> 生成 pre-commit hook"
 HOOK_TPL="$(cat "$TOOLKIT_ROOT/templates/hooks/pre-commit.template")"
 if [ "$PROJECT_TYPE" = "spring-boot" ]; then
-  SQL_BLOCK='echo ""
-echo "=== SqlGuard Check ==="
-SQLGUARD="$TOOLS_DIR/sql-guard/bin/sqlguard"
-SQL_CONFIG="$TOOLS_DIR/sql-guard/sqlguard.toml"
-SQL_TARGET="$PROJECT_ROOT/'"$BACKEND_DIR"'/src/main/resources"
-if [ -f "$SQLGUARD.exe" ]; then SQLGUARD="$SQLGUARD.exe"; fi
-"$SQLGUARD" check-diff --base HEAD -c "$SQL_CONFIG" -f plain "$SQL_TARGET" || {
-  echo "✗ SqlGuard 门禁未通过，提交已被阻止。修复后重试；确认跳过: git commit --no-verify" >&2
-  exit 1
-}
-echo "✓ SqlGuard passed"'
   JAVA_BLOCK='echo ""
 echo "=== JavaGuard Check ==="
 JAVAGUARD="$TOOLS_DIR/java-guard/bin/java-guard"
@@ -402,20 +391,8 @@ JAVA_TARGET="$PROJECT_ROOT/'"$BACKEND_DIR"'/src/main/java"
   exit 1
 }
 echo "✓ JavaGuard passed"'
-  HOOK_TPL="${HOOK_TPL//\{\{FALLBACK_SQL_BLOCK\}\}/$SQL_BLOCK}"
   HOOK_TPL="${HOOK_TPL//\{\{FALLBACK_JAVA_BLOCK\}\}/$JAVA_BLOCK}"
 else
-  SQL_BLOCK='echo ""
-echo "=== SqlGuard Check ==="
-SQLGUARD="$TOOLS_DIR/sql-guard/bin/sqlguard"
-SQL_CONFIG="$TOOLS_DIR/sql-guard/sqlguard.toml"
-SQL_TARGET="$PROJECT_ROOT/'"$SQL_MODULE"'/src/main/resources"
-if [ -f "$SQLGUARD.exe" ]; then SQLGUARD="$SQLGUARD.exe"; fi
-"$SQLGUARD" check-diff --base HEAD -c "$SQL_CONFIG" -f plain "$SQL_TARGET" || {
-  echo "✗ SqlGuard 门禁未通过，提交已被阻止。修复后重试；确认跳过: git commit --no-verify" >&2
-  exit 1
-}
-echo "✓ SqlGuard passed"'
   MODULES_LIST="${JAVA_MODULES[*]}"
   JAVA_BLOCK="echo \"\"
 echo \"=== JavaGuard Check ===\"
@@ -433,8 +410,7 @@ for MOD in \$MODULES; do
     exit 1
   }
 done
-echo \"✓ JavaGuard passed\""
-  HOOK_TPL="${HOOK_TPL//\{\{FALLBACK_SQL_BLOCK\}\}/$SQL_BLOCK}"
+echo "✓ JavaGuard passed\""
   HOOK_TPL="${HOOK_TPL//\{\{FALLBACK_JAVA_BLOCK\}\}/$JAVA_BLOCK}"
 fi
 printf '%s' "$HOOK_TPL" > "$TOOLS_DIR/hooks/pre-commit"
@@ -536,8 +512,8 @@ echo "==> 生成 gates-tools/README.md"
   echo ""
   echo "等价于以下完整命令（也可单独执行）:"
   echo '```bash'
-  echo "# SqlGuard"
-  echo "gates-tools/sql-guard/bin/sqlguard check-diff --base HEAD -c gates-tools/sql-guard/sqlguard.toml -f plain $BACKEND_DIR/src/main/resources"
+  echo "# SqlGuard（pre-commit 自动增量检查未提交改动；手动全量在项目根运行）"
+  echo "gates-tools/sql-guard/bin/sqlguard check -c gates-tools/sql-guard/sqlguard.toml -f plain ."
   echo ""
   echo "# JavaGuard"
   echo "export JAVAGUARD_PARSER_JAR=gates-tools/java-guard/java-parser/java-parser.jar"

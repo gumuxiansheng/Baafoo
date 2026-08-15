@@ -26,8 +26,11 @@ formats = ["plain", "json"]
 
 [mapper]
 enabled = true
-paths = ["../../backend/src/main/resources/mapper"]
-patterns = ["**/*Mapper.xml"]
+# 注意：paths 相对「扫描根（check/check-diff 的 PATH 参数）」解析，非 CWD 也非配置文件目录。
+# 统一约定：从项目根运行，PATH 传 "."（pre-commit / gatecheck / CI 均已按此处理）。
+paths = ["backend/src/main/resources/mapper"]
+# mapper 目录下全部 XML 均扫描（不要求以 Mapper.xml 结尾，覆盖 XxxViolation.xml 等命名）
+patterns = ["**/*.xml"]
 
 [scan]
 exclude_dirs = [

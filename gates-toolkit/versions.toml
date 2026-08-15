@@ -25,22 +25,22 @@ version = "0.1.1"
   filename = "wan-linux-amd64"
 
 [sql-guard]
-version = "0.2.1"
+version = "0.2.2"
 
   [sql-guard.windows_amd64]
-  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.1/sqlguard-x86_64-pc-windows-gnu.exe"
+  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.2/sqlguard-x86_64-pc-windows-gnu.exe"
   filename = "sqlguard.exe"
 
   [sql-guard.linux_arm64]
-  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.1/sqlguard-aarch64-unknown-linux-musl"
+  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.2/sqlguard-aarch64-unknown-linux-musl"
   filename = "sqlguard-linux-arm64"
 
   [sql-guard.linux_amd64]
-  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.1/sqlguard-x86_64-unknown-linux-musl"
+  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.2/sqlguard-x86_64-unknown-linux-musl"
   filename = "sqlguard-linux-amd64"
 
 [java-guard]
-version = "0.1.0"
+version = "0.1.1"
 
   [java-guard.windows_amd64]
   url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.1/java-guard-windows-amd64.exe"
