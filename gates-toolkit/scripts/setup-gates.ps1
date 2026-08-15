@@ -78,6 +78,87 @@ function Write-TextFileUtf8NoBom {
         [System.IO.File]::WriteAllText($Path, $Content, (New-Object System.Text.UTF8Encoding($false)))
     }
 }
+# 从 versions.toml 读取工具配置版本（简易解析，与 fetch-binaries.ps1 一致）
+function Get-ConfigVersion([string]$tool) {
+    $vf = Join-Path $ToolkitRoot "versions.toml"
+    if (-not (Test-Path $vf)) { return $null }
+    $raw = [System.IO.File]::ReadAllText($vf, [System.Text.Encoding]::UTF8)
+    $inSection = $false
+    foreach ($line in ($raw -split "`n")) {
+        $t = $line.Trim()
+        if ($t -match '^\[(.+)\]$') { $inSection = ($matches[1].Trim() -eq $tool); continue }
+        if ($inSection -and $t -match '^version\s*=\s*"(.*)"') { return $matches[1] }
+    }
+    return $null
+}
+
+# 比较版本号: 返回 -1 (a<b), 0 (a==b), 1 (a>b)，算法与 fetch-binaries.ps1 一致
+function Compare-VersionString([string]$a, [string]$b) {
+    if (-not $a) { return -1 }
+    if (-not $b) { return 1 }
+    $aParts = $a.Split('.')
+    $bParts = $b.Split('.')
+    $maxLen = [Math]::Max($aParts.Count, $bParts.Count)
+    for ($i = 0; $i -lt $maxLen; $i++) {
+        $avRaw = if ($i -lt $aParts.Count) { $aParts[$i] } else { "0" }
+        $bvRaw = if ($i -lt $bParts.Count) { $bParts[$i] } else { "0" }
+        $av = 0; $bv = 0
+        if ([int]::TryParse($avRaw, [ref]$av) -and [int]::TryParse($bvRaw, [ref]$bv)) {
+            if ($av -lt $bv) { return -1 }
+            if ($av -gt $bv) { return 1 }
+        } else {
+            $cmp = [string]::Compare($avRaw, $bvRaw, [System.StringComparison]::OrdinalIgnoreCase)
+            if ($cmp -lt 0) { return -1 }
+            if ($cmp -gt 0) { return 1 }
+        }
+    }
+    return 0
+}
+
+# 计算 toolkit 内容指纹（staleness 检测用，pre-commit hook 用相同算法重算比对）
+# 覆盖所有会流入 gates-tools 的输入：versions.toml + templates/** + bin/**/rules/**
+# 字节流 = versions.toml 字节 + 按相对路径序排列的(":" + 相对路径 + ":" + 文件字节)
+# 注意：与 templates/hooks/pre-commit.template 中的指纹算法必须保持一致
+function Get-ToolkitFingerprint {
+    $rel = New-Object System.Collections.Generic.List[string]
+    $tplRoot = Join-Path $ToolkitRoot "templates"
+    if (Test-Path $tplRoot) {
+        Get-ChildItem -Path $tplRoot -Recurse -File | ForEach-Object {
+            $rel.Add("templates/" + ($_.FullName.Substring($tplRoot.Length + 1)).Replace('\', '/'))
+        }
+    }
+    foreach ($rulesRel in @("bin/sql-guard/rules", "bin/java-guard/rules")) {
+        $rulesRoot = Join-Path $ToolkitRoot $rulesRel
+        if (Test-Path $rulesRoot) {
+            Get-ChildItem -Path $rulesRoot -Recurse -File | ForEach-Object {
+                $rel.Add($rulesRel + "/" + ($_.FullName.Substring($rulesRoot.Length + 1)).Replace('\', '/'))
+            }
+        }
+    }
+    $rel.Sort([System.StringComparer]::Ordinal)
+
+    $enc = New-Object System.Text.UTF8Encoding($false)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $ms = New-Object System.IO.MemoryStream
+    try {
+        $vt = Join-Path $ToolkitRoot "versions.toml"
+        if (Test-Path $vt) {
+            $b = [System.IO.File]::ReadAllBytes($vt); $ms.Write($b, 0, $b.Length)
+        }
+        foreach ($r in $rel) {
+            $b = $enc.GetBytes(":${r}:"); $ms.Write($b, 0, $b.Length)
+            $full = Join-Path $ToolkitRoot ($r -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+            if (Test-Path $full) {
+                $b = [System.IO.File]::ReadAllBytes($full); $ms.Write($b, 0, $b.Length)
+            }
+        }
+        $hash = $sha.ComputeHash($ms.ToArray())
+        return ($hash | ForEach-Object { $_.ToString("x2") }) -join ''
+    } finally {
+        $sha.Dispose(); $ms.Dispose()
+    }
+}
+
 # 从当前目录向上找 git 仓库根（零参数模式用）
 function Find-GitRoot([string]$start) {
     $d = $start
@@ -224,7 +305,7 @@ New-Item -ItemType Directory -Path "$toolsDir/commit-message" -Force | Out-Null
 Write-Host "==> 检查工具二进制"
 $fetchScript = Join-Path $ToolkitRoot "scripts/fetch-binaries.ps1"
 if (Test-Path $fetchScript) {
-    # 检查是否已有二进制
+    # 检查是否需要下载：二进制缺失，或本地 .version 落后于 versions.toml 配置版本
     $needFetch = $false
     $bins = @(
         "$ToolkitRoot/bin/wan/$WanBin",
@@ -235,15 +316,35 @@ if (Test-Path $fetchScript) {
     foreach ($b in $bins) {
         if (-not (Test-Path $b)) { $needFetch = $true; break }
     }
+
+    # 版本落后检查：覆盖"管理员升级 toolkit（versions.toml 变更）后，成员本地二进制落后"的场景，
+    # 重跑一次 setup 即完成配置+规则+二进制整体升级。
+    # 仅在 .version 存在时比较；二进制在而 .version 缺失（如手工交叉编译覆盖）视为未落后，
+    # 避免误覆盖手工放置的二进制。
+    if (-not $needFetch) {
+        foreach ($tool in @("wan", "sql-guard", "java-guard")) {
+            $cfgVer = Get-ConfigVersion $tool
+            $verFile = Join-Path $ToolkitRoot "bin/$tool/.version"
+            if ($cfgVer -and (Test-Path $verFile)) {
+                $localVer = [System.IO.File]::ReadAllText($verFile, [System.Text.Encoding]::UTF8).Trim()
+                if ($localVer -and ((Compare-VersionString $localVer $cfgVer) -lt 0)) {
+                    $needFetch = $true
+                    Write-Host "  发现可升级版本: $tool 本地 v$localVer < 配置 v$cfgVer"
+                    break
+                }
+            }
+        }
+    }
+
     if ($needFetch) {
-        Write-Host "  二进制不完整，执行下载..."
+        Write-Host "  二进制不完整或版本落后，执行下载..."
         & $fetchScript -Platform $InstallPlatform
         if ($LASTEXITCODE -ne 0) {
             Write-Error "二进制下载失败，请检查 versions.toml 中的 URL 配置"
             exit 1
         }
     } else {
-        Write-Host "  二进制已存在，跳过下载"
+        Write-Host "  二进制已存在且版本匹配配置，跳过下载"
     }
 } else {
     Write-Warning "fetch-binaries.ps1 不存在，假设二进制已在 bin/ 中"
@@ -338,7 +439,10 @@ SQLGUARD="$TOOLS_DIR/sql-guard/bin/sqlguard"
 SQL_CONFIG="$TOOLS_DIR/sql-guard/sqlguard.toml"
 SQL_TARGET="$PROJECT_ROOT/__BACKEND__/src/main/resources"
 if [ -f "$SQLGUARD.exe" ]; then SQLGUARD="$SQLGUARD.exe"; fi
-"$SQLGUARD" check-diff --base HEAD -c "$SQL_CONFIG" -f plain "$SQL_TARGET" || exit 1
+"$SQLGUARD" check-diff --base HEAD -c "$SQL_CONFIG" -f plain "$SQL_TARGET" || {
+  echo "✗ SqlGuard 门禁未通过，提交已被阻止。修复后重试；确认跳过: git commit --no-verify" >&2
+  exit 1
+}
 echo "✓ SqlGuard passed"
 '@
     $sqlBlock = $sqlBlock.Replace('__BACKEND__', $BackendDir)
@@ -352,7 +456,10 @@ GATE_CONFIG="$TOOLS_DIR/java-guard/gate-config.yml"
 if [ -f "$JAVAGUARD.exe" ]; then JAVAGUARD="$JAVAGUARD.exe"; fi
 JAVA_TARGET="$PROJECT_ROOT/__BACKEND__/src/main/java"
 [ ! -d "$JAVA_TARGET" ] && { echo "skip: source dir not found"; exit 0; }
-"$JAVAGUARD" scan "$JAVA_TARGET" --rules-dir "$TOOLS_DIR/java-guard/rules" --config "$JAVA_CONFIG" --gate --gate-config "$GATE_CONFIG" --diff HEAD -f console || exit 1
+"$JAVAGUARD" scan "$JAVA_TARGET" --rules-dir "$TOOLS_DIR/java-guard/rules" --config "$JAVA_CONFIG" --gate --gate-config "$GATE_CONFIG" --diff HEAD -f console || {
+  echo "✗ JavaGuard 门禁未通过，提交已被阻止。修复后重试；确认跳过: git commit --no-verify" >&2
+  exit 1
+}
 echo "✓ JavaGuard passed"
 '@
     $javaBlock = $javaBlock.Replace('__BACKEND__', $BackendDir)
@@ -367,28 +474,38 @@ SQLGUARD="$TOOLS_DIR/sql-guard/bin/sqlguard"
 SQL_CONFIG="$TOOLS_DIR/sql-guard/sqlguard.toml"
 SQL_TARGET="$PROJECT_ROOT/__SQL_MODULE__/src/main/resources"
 if [ -f "$SQLGUARD.exe" ]; then SQLGUARD="$SQLGUARD.exe"; fi
-"$SQLGUARD" check-diff --base HEAD -c "$SQL_CONFIG" -f plain "$SQL_TARGET" || exit 1
+"$SQLGUARD" check-diff --base HEAD -c "$SQL_CONFIG" -f plain "$SQL_TARGET" || {
+  echo "✗ SqlGuard 门禁未通过，提交已被阻止。修复后重试；确认跳过: git commit --no-verify" >&2
+  exit 1
+}
 echo "✓ SqlGuard passed"
 '@
     $sqlBlock = $sqlBlock.Replace('__SQL_MODULE__', $SqlModule)
 
+    # 注意：必须用单引号 here-string + 占位符替换。双引号 here-string 里 \$TOOLS_DIR
+    # 会被 PowerShell 当作变量展开（变量名大小写不敏感，命中 $toolsDir = 绝对路径），
+    # 生成损坏的 hook 脚本。
     $modulesList = ($JavaModules -join ' ')
-    $javaBlock = @"
+    $javaBlock = @'
 echo ""
 echo "=== JavaGuard Check ==="
-JAVAGUARD=\"\$TOOLS_DIR/java-guard/bin/java-guard\"
-JAVA_CONFIG=\"\$TOOLS_DIR/java-guard/java-guard.yml\"
-GATE_CONFIG=\"\$TOOLS_DIR/java-guard/gate-config.yml\"
-if [ -f \"\$JAVAGUARD.exe\" ]; then JAVAGUARD=\"\$JAVAGUARD.exe\"; fi
-MODULES=\"$modulesList\"
-for MOD in \$MODULES; do
-  SRC=\"\$PROJECT_ROOT/\$MOD/src/main/java\"
-  [ ! -d \"\$SRC\" ] && continue
-  echo \"  scanning \$MOD ...\"
-  \"\$JAVAGUARD\" scan \"\$SRC\" --rules-dir \"\$TOOLS_DIR/java-guard/rules\" --config \"\$JAVA_CONFIG\" --gate --gate-config \"\$GATE_CONFIG\" --diff HEAD -f console || exit 1
+JAVAGUARD="$TOOLS_DIR/java-guard/bin/java-guard"
+JAVA_CONFIG="$TOOLS_DIR/java-guard/java-guard.yml"
+GATE_CONFIG="$TOOLS_DIR/java-guard/gate-config.yml"
+if [ -f "$JAVAGUARD.exe" ]; then JAVAGUARD="$JAVAGUARD.exe"; fi
+MODULES="__MODULES_LIST__"
+for MOD in $MODULES; do
+  SRC="$PROJECT_ROOT/$MOD/src/main/java"
+  [ ! -d "$SRC" ] && continue
+  echo "  scanning $MOD ..."
+  "$JAVAGUARD" scan "$SRC" --rules-dir "$TOOLS_DIR/java-guard/rules" --config "$JAVA_CONFIG" --gate --gate-config "$GATE_CONFIG" --diff HEAD -f console || {
+    echo "✗ JavaGuard 门禁未通过（$MOD），提交已被阻止。修复后重试；确认跳过: git commit --no-verify" >&2
+    exit 1
+  }
 done
-echo \"✓ JavaGuard passed\"
-"@
+echo "✓ JavaGuard passed"
+'@
+    $javaBlock = $javaBlock.Replace('__MODULES_LIST__', $modulesList)
 
     $hookTpl = $hookTpl.Replace("{{FALLBACK_SQL_BLOCK}}", $sqlBlock)
     $hookTpl = $hookTpl.Replace("{{FALLBACK_JAVA_BLOCK}}", $javaBlock)
@@ -452,6 +569,18 @@ fi
 '@
 $gatecheckSh | Write-TextFileUtf8NoBom "$toolsDir/gatecheck.sh"
 
+# 写入 toolkit 指纹（staleness 检测：pre-commit hook 重算比对，不一致时提示重跑 setup）
+Write-Host "==> 写入 toolkit 指纹"
+$toolkitFingerprint = Get-ToolkitFingerprint
+if ($toolkitFingerprint) {
+    $metaContent = "# 由 gates-toolkit setup-gates 生成；pre-commit hook 用于 staleness 检测`n"
+    $metaContent += "toolkit_fingerprint=$toolkitFingerprint`n"
+    $metaContent += "setup_at=$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`n"
+    $metaContent | Write-TextFileUtf8NoBom "$toolsDir/.meta"
+} else {
+    Write-Warning "toolkit 指纹计算失败，跳过 .meta 写入"
+}
+
 # 生成 README
 Write-Host "==> 生成 gates-tools/README.md"
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -507,18 +636,63 @@ if ($existingGitignore -notmatch "(?m)^gates-tools/?$") {
     Write-Host "    已存在，跳过"
 }
 
+# hook 是否由本工具生成（依据模板头部 marker 判断，避免误备份/覆盖第三方 hook）
+function Test-ToolkitHook([string]$Path) {
+    if (-not (Test-Path $Path)) { return $true }
+    return (Read-TextFileUtf8 $Path) -match 'Generated by gates-toolkit'
+}
+
+# 安装单个 hook：非本工具生成且已存在时，先备份（保留 .bak，冲突时追加时间戳）再覆盖
+function Install-HookFile([string]$Name) {
+    $src = Join-Path $toolsDir "hooks/$Name"
+    $dst = Join-Path $GitDir "hooks/$Name"
+    if (Test-Path $dst) {
+        if (Test-ToolkitHook $dst) {
+            Write-Host "    $Name 已存在（gates-toolkit 生成），直接覆盖"
+        } else {
+            if (-not $Force -and $Interactive) {
+                $ans = Read-Host "    检测到已有 $Name hook（非 gates-toolkit 生成），将备份后覆盖。继续? (y/N)"
+                if ($ans -ne "y") { exit 1 }
+            }
+            $bak = "$dst.bak"
+            if (Test-Path $bak) { $bak = "$dst.bak.$(Get-Date -Format 'yyyyMMddHHmmss')" }
+            Copy-Item $dst $bak -Force
+            Write-Host "    检测到已有 $Name hook（非 gates-toolkit 生成），已备份: $bak"
+        }
+    }
+    Copy-Item $src $dst -Force
+    Write-Host "    -> $dst"
+}
+
 # 安装 hook
 if ($InstallHook -and (Test-Path $GitDir)) {
+    # core.hooksPath 检测：已配置指向其它目录时，git 不会执行 .git/hooks/ 下的 hook，安装将不生效
+    $hooksPath = (& git config --get core.hooksPath 2>$null)
+    if ($hooksPath) {
+        Write-Warning "检测到 core.hooksPath=$hooksPath ，git 将只执行该目录下的 hook，.git/hooks/ 安装将不生效。"
+        if (-not $Force -and $Interactive) {
+            $ans = Read-Host "继续安装到 .git/hooks/ ? (y/N)"
+            if ($ans -ne "y") { exit 1 }
+        }
+    }
+
     Write-Host "==> 安装 git pre-commit hook"
-    $hookTarget = Join-Path $GitDir "hooks/pre-commit"
-    Copy-Item "$toolsDir/hooks/pre-commit" $hookTarget -Force
-    Write-Host "    -> $hookTarget"
+    Install-HookFile "pre-commit"
 
     Write-Host "==> 安装 git commit 信息 hooks（prepare-commit-msg / commit-msg）"
-    foreach ($h in @("prepare-commit-msg", "commit-msg")) {
-        $t = Join-Path $GitDir "hooks/$h"
-        Copy-Item "$toolsDir/hooks/$h" $t -Force
-        Write-Host "    -> $t"
+    Install-HookFile "prepare-commit-msg"
+    Install-HookFile "commit-msg"
+}
+
+# 配置 commit.template：VSCode 提交输入框 / IntelliJ 提交对话框据此预填模板
+# （IDE 不执行 prepare-commit-msg，只有 git 原生 commit.template 才能在 IDE 输入框预填；
+#   用绝对路径——各成员仓库克隆位置不同，相对路径会因 git 执行目录而失效）
+if (Test-Path $GitDir) {
+    $templateFile = (Join-Path $toolsDir "commit-message/commit.template").Replace('\', '/')
+    if (Test-Path $templateFile) {
+        & git -C $Target config --local commit.template $templateFile
+        Write-Host "==> 配置 git commit.template（IDE 提交框预填模板）"
+        Write-Host "    -> $templateFile"
     }
 }
 

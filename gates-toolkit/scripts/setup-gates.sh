@@ -34,6 +34,42 @@ find_git_root() {
   return 1
 }
 
+# 从 versions.toml 读取工具配置版本（与 ci-setup.sh 相同算法）
+read_config_version() {
+  awk -v sec="$1" '
+    $0 ~ "^\\[" sec "\\]" { f=1; next }
+    f && $0 ~ "^\\[" { f=0 }
+    f && /^version/ { gsub(/.*= *"/, ""); gsub(/".*/, ""); print; exit }
+  ' "$TOOLKIT_ROOT/versions.toml" 2>/dev/null
+}
+
+# 版本比较：version_lt a b → 返回 0 当且仅当 a < b
+version_lt() {
+  local a="$1" b="$2" first
+  [ -n "$a" ] && [ -n "$b" ] || return 1
+  first="$(printf '%s\n%s\n' "$a" "$b" | sort -V | head -1)"
+  [ "$first" = "$a" ] && [ "$a" != "$b" ]
+}
+
+# 计算 toolkit 内容指纹（staleness 检测用，pre-commit hook 用相同算法重算比对）
+# 覆盖所有会流入 gates-tools 的输入：versions.toml + templates/** + bin/**/rules/**
+# 字节流 = versions.toml 字节 + 按相对路径序排列的(":" + 相对路径 + ":" + 文件字节)
+# 注意：与 templates/hooks/pre-commit.template 中的指纹算法必须保持一致
+gates_toolkit_fingerprint() {
+  (
+    cd "$1" 2>/dev/null || exit 0
+    if command -v sha256sum >/dev/null 2>&1; then H="sha256sum"; else H="shasum -a 256"; fi
+    {
+      cat versions.toml 2>/dev/null
+      { find templates -type f 2>/dev/null; find bin -type f -path '*/rules/*' 2>/dev/null; } \
+        | LC_ALL=C sort | while IFS= read -r f; do
+            printf ':%s:' "$f"
+            cat "$f" 2>/dev/null
+          done
+    } | $H | awk '{print $1}'
+  )
+}
+
 print_banner
 echo "工具集: $TOOLKIT_ROOT"
 
@@ -207,16 +243,41 @@ else
 fi
 
 if [ -f "$FETCH_SCRIPT" ]; then
+  # 检查是否需要下载：二进制缺失，或本地 .version 落后于 versions.toml 配置版本
   need_fetch=false
+  fetch_reason=""
   for b in \
     "$TOOLKIT_ROOT/bin/wan/$WAN_BIN" \
     "$TOOLKIT_ROOT/bin/sql-guard/$SQL_BIN" \
     "$TOOLKIT_ROOT/bin/java-guard/$JG_BIN" \
     "$TOOLKIT_ROOT/bin/java-guard/java-parser/java-parser.jar"; do
-    [ -f "$b" ] || need_fetch=true
+    if [ ! -f "$b" ]; then
+      need_fetch=true
+      fetch_reason="二进制缺失"
+      break
+    fi
   done
+
+  # 版本落后检查：覆盖"管理员升级 toolkit（versions.toml 变更）后，成员本地二进制落后"的场景，
+  # 重跑一次 setup 即完成配置+规则+二进制整体升级。
+  # 仅在 .version 存在时比较；二进制在而 .version 缺失（如手工交叉编译覆盖）视为未落后，
+  # 避免误覆盖手工放置的二进制。
+  if [ "$need_fetch" = "false" ]; then
+    for tool in wan sql-guard java-guard; do
+      cfg_ver="$(read_config_version "$tool" || true)"
+      ver_file="$TOOLKIT_ROOT/bin/$tool/.version"
+      [ -n "$cfg_ver" ] && [ -f "$ver_file" ] || continue
+      local_ver="$(sed '1s/^\xEF\xBB\xBF//' "$ver_file" | tr -d '[:space:]')"
+      if [ -n "$local_ver" ] && version_lt "$local_ver" "$cfg_ver"; then
+        need_fetch=true
+        fetch_reason="$tool 本地 v$local_ver < 配置 v$cfg_ver"
+        break
+      fi
+    done
+  fi
+
   if [ "$need_fetch" = "true" ]; then
-    echo "  二进制不完整，执行下载..."
+    echo "  二进制不完整或版本落后（$fetch_reason），执行下载..."
     set +e
     bash "$FETCH_SCRIPT" "$FETCH_PLATFORM"
     fetch_rc=$?
@@ -226,7 +287,7 @@ if [ -f "$FETCH_SCRIPT" ]; then
       exit 1
     fi
   else
-    echo "  二进制已存在，跳过下载"
+    echo "  二进制已存在且版本匹配配置，跳过下载"
   fi
 fi
 
@@ -323,7 +384,10 @@ SQLGUARD="$TOOLS_DIR/sql-guard/bin/sqlguard"
 SQL_CONFIG="$TOOLS_DIR/sql-guard/sqlguard.toml"
 SQL_TARGET="$PROJECT_ROOT/'"$BACKEND_DIR"'/src/main/resources"
 if [ -f "$SQLGUARD.exe" ]; then SQLGUARD="$SQLGUARD.exe"; fi
-"$SQLGUARD" check-diff --base HEAD -c "$SQL_CONFIG" -f plain "$SQL_TARGET" || exit 1
+"$SQLGUARD" check-diff --base HEAD -c "$SQL_CONFIG" -f plain "$SQL_TARGET" || {
+  echo "✗ SqlGuard 门禁未通过，提交已被阻止。修复后重试；确认跳过: git commit --no-verify" >&2
+  exit 1
+}
 echo "✓ SqlGuard passed"'
   JAVA_BLOCK='echo ""
 echo "=== JavaGuard Check ==="
@@ -333,7 +397,10 @@ GATE_CONFIG="$TOOLS_DIR/java-guard/gate-config.yml"
 if [ -f "$JAVAGUARD.exe" ]; then JAVAGUARD="$JAVAGUARD.exe"; fi
 JAVA_TARGET="$PROJECT_ROOT/'"$BACKEND_DIR"'/src/main/java"
 [ ! -d "$JAVA_TARGET" ] && { echo "skip: source dir not found"; exit 0; }
-"$JAVAGUARD" scan "$JAVA_TARGET" --rules-dir "$TOOLS_DIR/java-guard/rules" --config "$JAVA_CONFIG" --gate --gate-config "$GATE_CONFIG" --diff HEAD -f console || exit 1
+"$JAVAGUARD" scan "$JAVA_TARGET" --rules-dir "$TOOLS_DIR/java-guard/rules" --config "$JAVA_CONFIG" --gate --gate-config "$GATE_CONFIG" --diff HEAD -f console || {
+  echo "✗ JavaGuard 门禁未通过，提交已被阻止。修复后重试；确认跳过: git commit --no-verify" >&2
+  exit 1
+}
 echo "✓ JavaGuard passed"'
   HOOK_TPL="${HOOK_TPL//\{\{FALLBACK_SQL_BLOCK\}\}/$SQL_BLOCK}"
   HOOK_TPL="${HOOK_TPL//\{\{FALLBACK_JAVA_BLOCK\}\}/$JAVA_BLOCK}"
@@ -344,7 +411,10 @@ SQLGUARD="$TOOLS_DIR/sql-guard/bin/sqlguard"
 SQL_CONFIG="$TOOLS_DIR/sql-guard/sqlguard.toml"
 SQL_TARGET="$PROJECT_ROOT/'"$SQL_MODULE"'/src/main/resources"
 if [ -f "$SQLGUARD.exe" ]; then SQLGUARD="$SQLGUARD.exe"; fi
-"$SQLGUARD" check-diff --base HEAD -c "$SQL_CONFIG" -f plain "$SQL_TARGET" || exit 1
+"$SQLGUARD" check-diff --base HEAD -c "$SQL_CONFIG" -f plain "$SQL_TARGET" || {
+  echo "✗ SqlGuard 门禁未通过，提交已被阻止。修复后重试；确认跳过: git commit --no-verify" >&2
+  exit 1
+}
 echo "✓ SqlGuard passed"'
   MODULES_LIST="${JAVA_MODULES[*]}"
   JAVA_BLOCK="echo \"\"
@@ -358,7 +428,10 @@ for MOD in \$MODULES; do
   SRC=\"\$PROJECT_ROOT/\$MOD/src/main/java\"
   [ ! -d \"\$SRC\" ] && continue
   echo \"  scanning \$MOD ...\"
-  \"\$JAVAGUARD\" scan \"\$SRC\" --rules-dir \"\$TOOLS_DIR/java-guard/rules\" --config \"\$JAVA_CONFIG\" --gate --gate-config \"\$GATE_CONFIG\" --diff HEAD -f console || exit 1
+  \"\$JAVAGUARD\" scan \"\$SRC\" --rules-dir \"\$TOOLS_DIR/java-guard/rules\" --config \"\$JAVA_CONFIG\" --gate --gate-config \"\$GATE_CONFIG\" --diff HEAD -f console || {
+    echo \"✗ JavaGuard 门禁未通过（\$MOD），提交已被阻止。修复后重试；确认跳过: git commit --no-verify\" >&2
+    exit 1
+  }
 done
 echo \"✓ JavaGuard passed\""
   HOOK_TPL="${HOOK_TPL//\{\{FALLBACK_SQL_BLOCK\}\}/$SQL_BLOCK}"
@@ -419,6 +492,19 @@ fi
 EOF
 chmod +x "$TOOLS_DIR/gatecheck.sh" 2>/dev/null || true
 
+# 写入 toolkit 指纹（staleness 检测：pre-commit hook 重算比对，不一致时提示重跑 setup）
+echo "==> 写入 toolkit 指纹"
+TOOLKIT_FINGERPRINT="$(gates_toolkit_fingerprint "$TOOLKIT_ROOT")"
+if [ -n "$TOOLKIT_FINGERPRINT" ]; then
+  {
+    echo "# 由 gates-toolkit setup-gates 生成；pre-commit hook 用于 staleness 检测"
+    echo "toolkit_fingerprint=$TOOLKIT_FINGERPRINT"
+    echo "setup_at=$(date '+%Y-%m-%d %H:%M:%S')"
+  } > "$TOOLS_DIR/.meta"
+else
+  echo "Warning: toolkit 指纹计算失败，跳过 .meta 写入" >&2
+fi
+
 # 生成 README
 echo "==> 生成 gates-tools/README.md"
 {
@@ -477,19 +563,66 @@ else
   echo "    -> $GITIGNORE_FILE"
 fi
 
+# hook 是否由本工具生成（依据模板头部 marker 判断，避免误备份/覆盖第三方 hook）
+hook_is_toolkit() {
+  grep -q 'Generated by gates-toolkit' "$1" 2>/dev/null
+}
+
+# 备份已存在的非本工具 hook（保留 .bak，冲突时追加时间戳）
+backup_existing_hook() {
+  local dst="$1"
+  local bak="$dst.bak"
+  if [ -f "$bak" ]; then bak="$dst.bak.$(date +%Y%m%d%H%M%S)"; fi
+  cp "$dst" "$bak"
+  echo "    检测到已有 hook（非 gates-toolkit 生成），已备份: $bak"
+}
+
+# 安装单个 hook：非本工具生成且已存在时，先备份再覆盖
+install_hook_file() {
+  local name="$1"
+  local src="$TOOLS_DIR/hooks/$name"
+  local dst="$GIT_DIR/hooks/$name"
+  if [ -f "$dst" ] && ! hook_is_toolkit "$dst"; then
+    if [ -t 0 ]; then
+      printf "    检测到已有 %s hook（非 gates-toolkit 生成），将备份后覆盖。继续? (y/N) " "$name"
+      read -r ans
+      [ "$ans" != "y" ] && { echo "Aborted." >&2; exit 1; }
+    fi
+    backup_existing_hook "$dst"
+  fi
+  cp "$src" "$dst"
+  chmod +x "$dst"
+  echo "    -> $dst"
+}
+
 # 安装 hook
 if [ -d "$GIT_DIR" ]; then
+  # core.hooksPath 检测：已配置指向其它目录时，git 不会执行 .git/hooks/ 下的 hook，安装将不生效
+  HOOKS_PATH="$(git -C "$TARGET" config --get core.hooksPath 2>/dev/null || true)"
+  if [ -n "$HOOKS_PATH" ]; then
+    echo "Warning: 检测到 core.hooksPath=$HOOKS_PATH ，git 将只执行该目录下的 hook，.git/hooks/ 安装将不生效。" >&2
+    if [ -t 0 ]; then
+      printf "继续安装到 .git/hooks/ ? (y/N) "
+      read -r ans
+      [ "$ans" != "y" ] && { echo "Aborted." >&2; exit 1; }
+    fi
+  fi
+
   echo "==> 安装 git pre-commit hook"
-  cp "$TOOLS_DIR/hooks/pre-commit" "$GIT_DIR/hooks/pre-commit"
-  chmod +x "$GIT_DIR/hooks/pre-commit"
-  echo "    -> $GIT_DIR/hooks/pre-commit"
+  install_hook_file pre-commit
 
   echo "==> 安装 git commit 信息 hooks（prepare-commit-msg / commit-msg）"
-  for h in prepare-commit-msg commit-msg; do
-    cp "$TOOLS_DIR/hooks/$h" "$GIT_DIR/hooks/$h"
-    chmod +x "$GIT_DIR/hooks/$h"
-    echo "    -> $GIT_DIR/hooks/$h"
-  done
+  install_hook_file prepare-commit-msg
+  install_hook_file commit-msg
+
+  # 配置 commit.template：VSCode 提交输入框 / IntelliJ 提交对话框据此预填模板
+  # （IDE 不执行 prepare-commit-msg，只有 git 原生 commit.template 才能在 IDE 输入框预填；
+  #   用绝对路径——各成员仓库克隆位置不同，相对路径会因 git 执行目录而失效）
+  TEMPLATE_FILE="$TOOLS_DIR/commit-message/commit.template"
+  if [ -f "$TEMPLATE_FILE" ]; then
+    git -C "$TARGET" config --local commit.template "$TEMPLATE_FILE"
+    echo "    -> git config commit.template = $TEMPLATE_FILE"
+  fi
 fi
 
 # 验证

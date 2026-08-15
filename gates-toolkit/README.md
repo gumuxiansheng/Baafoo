@@ -64,14 +64,19 @@ bash gates-toolkit/scripts/setup-gates.sh
 1. 目标项目 = 当前目录（自动向上找 git 仓库根，无需 `-Target`）
 2. 自动检测项目类型（spring-boot / multi-module）与 SQL/Java 模块
    （多个 SQL 模块时交互式选择；检测不到时会询问后手动输入）
-3. `bin/` 二进制缺失时自动下载（首次需联网；版本一致后自动跳过）
-4. 渲染配置 → 生成 `gates-tools/` 并自动加入目标项目 `.gitignore` → 安装 `.git/hooks/pre-commit`
-5. 验证安装并打印各工具版本
+3. `bin/` 二进制缺失**或本地版本落后于 `versions.toml`** 时自动下载（首次需联网；版本一致后自动跳过）
+4. 渲染配置 → 生成 `gates-tools/` 并自动加入目标项目 `.gitignore` → 安装 `.git/hooks/` 三个 hook（pre-commit / prepare-commit-msg / commit-msg）+ 写入 `commit.template` git 配置（IDE 提交框预填模板）
+5. 写入 toolkit 指纹到 `gates-tools/.meta`（供 pre-commit hook 做 staleness 检测）
+6. 验证安装并打印各工具版本
 
 之后 `git commit` 自动跑门禁。想手动触发：
 - Windows：`gates-tools\gatecheck.cmd`（双击即可）
 - Linux：`bash gates-tools/gatecheck.sh`
 - 跳过本次门禁：`git commit --no-verify`
+
+> **工具集更新提示（staleness 检测）**：管理员更新 `gates-toolkit`（规则/模板/版本配置）并提交后，
+> 成员 `git pull` 下来，下次 `git commit` 时 hook 会检测到指纹不一致并提示重跑 setup
+> （只提示不阻断）。重跑一次 setup 即完成配置+规则+二进制整体升级（二进制版本落后时自动下载）。
 
 > 只需维护者（管理员）在首次使用前填写 `versions.toml` 的下载 URL，成员无需感知。
 
@@ -163,10 +168,11 @@ bash scripts/setup-gates.sh /path/to/project auto
 3. **检查/下载二进制** —— 若 `bin/` 中缺二进制，自动从 `versions.toml` 配置的 URL 下载
 4. **复制工具** —— 二进制 + 规则文件到目标项目 `gates-tools/`
 5. **渲染配置** —— 把模板里的 `{{BACKEND_DIR}}` / `{{SQL_MODULE}}` / `{{MODULES_LIST}}` 替换成实际值
-6. **生成 hook** —— 渲染 `pre-commit` 脚本，加入 `.git/hooks/`
+6. **生成 hook** —— 渲染 `pre-commit` 脚本，加入 `.git/hooks/`；同时安装 `prepare-commit-msg` / `commit-msg`，并写入 `git config commit.template`（IDE 提交框预填模板）
 7. **生成快捷脚本** —— `gates-tools/gatecheck.cmd` / `gatecheck.sh`，一键手动触发门禁
 8. **生成 README** —— 自动生成 `gates-tools/README.md`
-9. **验证** —— 运行每个工具的 `--version` 和 wan workflow 校验
+9. **写入指纹** —— 计算 toolkit 内容指纹（versions.toml + templates + rules）写入 `gates-tools/.meta`
+10. **验证** —— 运行每个工具的 `--version` 和 wan workflow 校验
 
 ## 项目类型
 
@@ -232,10 +238,11 @@ pom.xml
     │   ├── commit.template           # 提交信息模板正文
     │   └── commit-msg.config         # 校验规则（type/长度/必填段落）
     ├── gatecheck.cmd / gatecheck.sh   # 手动一键触发门禁（双击/一条命令）
+    ├── .meta                          # toolkit 指纹（pre-commit hook staleness 检测用）
     └── README.md
 ```
 
-`.git/hooks/pre-commit` 自动安装，git commit 时自动跑门禁；`gates-tools/gatecheck.*` 用于手动触发。
+`.git/hooks/pre-commit` 自动安装，git commit 时自动跑门禁（门禁失败时错误摘要会输出到 stderr 首行，VSCode / IntelliJ 的失败弹窗直接显示该错误）；本地 git 配置 `commit.template` 指向 `gates-tools/commit-message/commit.template`，供 IDE 提交框预填模板；`gates-tools/gatecheck.*` 用于手动触发。
 
 ## 二进制管理策略
 
@@ -246,12 +253,23 @@ pom.xml
   - 本地版本 < 配置版本 → 更新
   - 本地版本 = 配置版本 → 跳过
   - `--force` → 强制重新下载
+- `setup-gates` 同样按上述规则触发下载（缺失**或版本落后**时才下载，其余情况跳过、不联网）；
+  二进制存在但 `.version` 缺失时（如手工交叉编译覆盖）视为不落后，不会误覆盖手工放置的二进制
 
 ### 升级工具版本
 
+**管理员**：
+
 1. 在 `versions.toml` 中更新 `version` 字段和各平台 `url`
-2. 运行 `fetch-binaries.ps1 -Force`（或 `fetch-binaries.sh --force`）
-3. 对已集成的项目重新跑 `setup-gates` 覆盖安装
+2. 运行 `fetch-binaries.ps1 -Force`（或 `fetch-binaries.sh --force`）刷新本地 `bin/`
+3. 提交 `versions.toml`（及规则/模板改动）
+
+**成员**（配置+规则+二进制一条命令整体升级）：
+
+1. `git pull` 拉到新版 `gates-toolkit`
+2. 下次 `git commit` 时 pre-commit hook 会提示"toolkit 已更新，请重跑 setup"（指纹比对 `gates-tools/.meta`）
+3. 重跑 `gates-toolkit\scripts\setup-gates.cmd`（Linux 为 `setup-gates.sh`）——
+   二进制版本落后会自动下载，无需手动 `fetch-binaries`
 
 ## 门禁规则
 
@@ -295,13 +313,15 @@ P1（默认关闭，按需启用）：DML005/007/008/011/012/013/014/015/016、D
 
 ## 提交信息模板
 
-setup 同时安装 `prepare-commit-msg` / `commit-msg` 两个 hook，配合提交信息模板：
+setup 同时安装 `prepare-commit-msg` / `commit-msg` 两个 hook，并配置 `git config commit.template` 指向模板文件：
 
-- **模板预填**：`git commit`（打开编辑器）且提交信息为空时，自动预填模板；已通过 `-m` / `-F` / IDE 填写的内容不会被覆盖。
+- **模板预填**：
+  - **IDE**：VSCode 源代码管理的提交输入框、IntelliJ 提交对话框均读取 `commit.template` 配置自动预填（VSCode 会自动忽略 `#` 注释行）；setup 已写入本地 git 配置，无需手工设置。
+  - **CLI**：`git commit`（打开编辑器）时由 git 原生预填，`prepare-commit-msg` hook 兜底；已通过 `-m` / `-F` / IDE 输入的内容不会被覆盖。
 - **兜底校验**：`commit-msg` 校验 type 白名单、subject 非空与长度、必填段落（改动说明/测试情况/影响范围），缺失时打印警告。
 - **警告模式**（默认）：不阻断提交，仅提示。需升级为硬拦截时，把 `gates-tools/hooks/commit-msg` 末尾的 `exit 0` 改为 `exit 1` 即可。
 - **豁免**：Merge / Revert 自动消息、`wip:` 开头的草稿、以及 `git commit --no-verify` 均跳过校验。
-- **IDE 兼容**：git hook 在 git 层执行，`commit-msg` 校验对所有 IDE（IntelliJ / VSCode / Eclipse / VS / Sourcetree / CLI）生效；预填仅对 CLI 编辑器可见，IDE 空提交时由校验提示兜底。
+- **IDE 兼容**：git hook 在 git 层执行，`commit-msg` 校验对所有 IDE（IntelliJ / VSCode / Eclipse / VS / Sourcetree / CLI）生效。
 
 自定义模板与规则：编辑 `gates-tools/commit-message/commit.template`（模板正文）和 `gates-tools/commit-message/commit-msg.config`（type 白名单、subject 长度上限、必填段落）。
 
