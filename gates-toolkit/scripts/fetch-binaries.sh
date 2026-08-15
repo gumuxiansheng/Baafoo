@@ -63,22 +63,25 @@ if ! command -v curl >/dev/null 2>&1; then
     exit 1
 fi
 
-# 下载文件（重试 + IPv4 兜底）
-# cnb.cool Release 下载会 302 到 CDN 域名 asset.cnb.cool，
-# 该域名偶发只解析出 IPv6(AAAA) 记录，无 IPv6 链路的机器
-# （如 GitHub Actions runner / 部分内网）会 "Could not resolve host"，下载失败。
-# 对策：失败后强制 IPv4 重试。
+# 下载文件（重试 + IPv4 兜底 + DNS 直连兜底）
+# cnb.cool Release 下载偶发走 IPv6/CDN 重定向链（302 到 asset.cnb.cool），
+# 无 IPv6 链路的机器（GitHub Actions runner / CNB 构建容器 / 部分内网）会
+# "Could not resolve host" 下载失败；IPv4 直连 cnb.cool 则直接返回 200 无需重定向。
+# 对策：失败后强制 IPv4 重试，仍失败再用 --resolve 直连（绕开 DNS）。
 download_file() {
     local url="$1" dest="$2"
-    local attempt
+    local attempt rc out
     for attempt in 1 2 3; do
-        if curl -fsSL --connect-timeout 20 --retry 2 "$url" -o "$dest"; then
+        if out=$(curl -fsSL --connect-timeout 20 --retry 2 "$url" -o "$dest" 2>&1); then
             return 0
         fi
-        echo "  (第 $attempt 次尝试失败，改用 IPv4 重试)"
-        if curl -fsSL -4 --connect-timeout 20 --retry 2 "$url" -o "$dest"; then
+        rc=$?
+        echo "  (第 $attempt 次尝试失败: curl exit $rc ${out##*$'\n'})"
+        if out=$(curl -fsSL -4 --connect-timeout 20 --retry 2 "$url" -o "$dest" 2>&1); then
             return 0
         fi
+        rc=$?
+        echo "  (IPv4 重试失败: curl exit $rc ${out##*$'\n'})"
         sleep 2
     done
     return 1
@@ -124,7 +127,9 @@ read_local_version() {
     local bin_dir="$1"
     local vf="$bin_dir/.version"
     # 去掉 BOM（Windows 写入的 .version 可能带 EF BB BF）与空白
-    [ -f "$vf" ] && sed '1s/^\xEF\xBB\xBF//' "$vf" | tr -d '[:space:]'
+    # 注意：文件不存在时必须返回 0，否则脚本 set -e 会在赋值处直接退出
+    [ -f "$vf" ] || return 0
+    sed '1s/^\xEF\xBB\xBF//' "$vf" | tr -d '[:space:]'
 }
 
 write_local_version() {

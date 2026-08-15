@@ -57,7 +57,8 @@ for b in "$TOOLKIT_ROOT/bin/wan/$WAN_BIN" \
          "$TOOLKIT_ROOT/bin/java-guard/java-parser/java-parser.jar"; do
   if [ ! -f "$b" ]; then
     echo "Error: 必需二进制缺失且无法兜底: $b" >&2
-    echo "       请检查 versions.toml 中的 URL 是否有效" >&2
+    echo "       请检查 versions.toml 中的 URL 是否有效（上方 fetch-binaries 输出含失败原因）" >&2
+    echo "       网络/DNS 瞬态问题可重跑一次（脚本已内置 IPv4 兜底重试）" >&2
     exit 1
   fi
 done
