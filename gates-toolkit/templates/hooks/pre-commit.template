@@ -33,7 +33,10 @@ export JAVAGUARD_PARSER_JAR="$TOOLS_DIR/java-guard/java-parser/java-parser.jar"
 
 # 优先用 wan 编排（传 -C 让 wan 以项目根为工作目录，workflow 内用相对路径）
 WAN_BIN="$TOOLS_DIR/wan/bin/wan"
-if [ -x "$WAN_BIN" ] || [ -x "$WAN_BIN.exe" ]; then
+if [ ! -x "$WAN_BIN" ] && [ -x "$WAN_BIN.exe" ]; then
+  WAN_BIN="$WAN_BIN.exe"
+fi
+if [ -x "$WAN_BIN" ]; then
   # Windows 用 pwsh workflow，Linux/macOS 用 bash workflow
   WORKFLOW_FILE="$TOOLS_DIR/wan/workflows/pre-commit-unix.yml"
   if [ -f "$TOOLS_DIR/wan/workflows/pre-commit-win.yml" ] && command -v pwsh >/dev/null 2>&1; then
@@ -51,6 +54,6 @@ fi
 {{FALLBACK_JAVA_BLOCK}}
 
 echo ""
-echo "? All gate checks passed"
+echo "✓ All gate checks passed"
 echo ""
 exit 0

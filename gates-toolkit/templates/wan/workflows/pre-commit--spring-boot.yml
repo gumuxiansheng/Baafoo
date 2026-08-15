@@ -32,10 +32,11 @@ jobs:
           $javaguard = "tools/java-guard/bin/java-guard.exe"
           $config = "tools/java-guard/java-guard.yml"
           $gateConfig = "tools/java-guard/gate-config.yml"
+          $rulesDir = "tools/java-guard/rules"
           $srcPath = "{{BACKEND_DIR}}/src/main/java"
           if (-not (Test-Path $srcPath)) { Write-Host "跳过: 源码目录不存在"; exit 0 }
           Write-Host "==> JavaGuard 增量扫描 (diff: HEAD)"
-          & $javaguard scan $srcPath --config $config --gate --gate-config $gateConfig --diff HEAD -f console
+          & $javaguard scan $srcPath --rules-dir $rulesDir --config $config --gate --gate-config $gateConfig --diff HEAD -f console
           if ($LASTEXITCODE -ne 0) {
             Write-Host ""
             Write-Host "✗ JavaGuard 门禁未通过" -ForegroundColor Red

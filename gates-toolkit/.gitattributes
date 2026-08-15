@@ -1,0 +1,29 @@
+# gates-toolkit .gitattributes
+# 统一 LF：所有脚本/配置/模板以 LF 存储与检出（Linux CI 必需）
+
+* text=auto
+
+# shell 脚本必须 LF（CRLF 会导致 Linux bash 语法错误）
+*.sh text eol=lf
+*.ps1 text eol=lf
+*.cmd text eol=lf
+
+# YAML/TOML/模板统一 LF
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.template text eol=lf
+
+# hook 脚本必须 LF（#!/bin/sh）
+hooks/** text eol=lf
+
+# 规则文件统一 LF
+*.rhai text eol=lf
+
+# 文本标记文件
+*.md text eol=lf
+.gitignore text eol=lf
+
+# 实际二进制文件（避免误判为文本）
+*.exe binary
+*.jar binary

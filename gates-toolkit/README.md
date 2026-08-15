@@ -25,8 +25,10 @@ gates-toolkit/
 │
 ├── scripts/                                   # 安装与下载入口
 │   ├── setup-gates.ps1                        # PowerShell 安装器
+│   ├── setup-gates.cmd                        # Windows cmd 入口（PS5 兼容，自动调 ps1）
 │   ├── setup-gates.sh                         # Bash 安装器
 │   ├── fetch-binaries.ps1                     # PowerShell 二进制下载器
+│   ├── fetch-binaries.cmd                     # Windows cmd 入口（PS5 兼容，自动调 ps1）
 │   └── fetch-binaries.sh                      # Bash 二进制下载器
 │
 ├── versions.toml                              # 版本配置（人工填写下载 URL）
@@ -34,9 +36,46 @@ gates-toolkit/
 └── README.md
 ```
 
+> **二进制链接方式**：
+> - `sqlguard-linux-*`：**musl 静态链接**（`statically linked`），任意 Linux 发行版（含 Alpine）可直接运行；
+> - `wan-linux-*` / `java-guard-linux-*`：自 v0.1.1 / v0.1.0 起已改为 **musl 静态链接**（上游 `.cargo/config.toml` + `.cnb.yml` 切换 `-musl` target），任意 Linux 发行版可直接运行；
+> - 若本地用 `aarch64-unknown-linux-musl` 交叉编译出静态版，可覆盖 `bin/` 下的同名文件（`fetch-binaries` 仅在版本不一致或文件缺失时重新下载，不会无故覆盖）。
+
 ## 快速开始
 
-### 1. 配置下载地址
+### 成员一键安装（零参数，推荐）
+
+把 `gates-toolkit/` 目录随项目仓库提交（二进制已被 `.gitignore` 排除，无需提交），
+成员 `git pull` 后在**项目根目录**打开终端，执行一条命令：
+
+```bat
+rem Windows（cmd 窗口或资源管理器地址栏输入 cmd）
+gates-toolkit\scripts\setup-gates.cmd
+```
+
+```bash
+# Linux（macOS 暂无预编译产物，脚本会提示）
+bash gates-toolkit/scripts/setup-gates.sh
+```
+
+也可以直接用 pwsh：`pwsh gates-toolkit/scripts/setup-gates.ps1`（零参数同样有效）。
+
+**什么都不用配** —— 脚本自动完成：
+1. 目标项目 = 当前目录（自动向上找 git 仓库根，无需 `-Target`）
+2. 自动检测项目类型（spring-boot / multi-module）与 SQL/Java 模块
+   （多个 SQL 模块时交互式选择；检测不到时会询问后手动输入）
+3. `bin/` 二进制缺失时自动下载（首次需联网；版本一致后自动跳过）
+4. 渲染配置 → 生成 `tools/` → 安装 `.git/hooks/pre-commit`
+5. 验证安装并打印各工具版本
+
+之后 `git commit` 自动跑门禁。想手动触发：
+- Windows：`tools\gatecheck.cmd`（双击即可）
+- Linux：`bash tools/gatecheck.sh`
+- 跳过本次门禁：`git commit --no-verify`
+
+> 只需维护者（管理员）在首次使用前填写 `versions.toml` 的下载 URL，成员无需感知。
+
+### 首次配置下载地址（维护者）
 
 编辑 `versions.toml`，填写各工具各平台的下载 URL：
 
@@ -54,8 +93,9 @@ version = "0.1.0"
 ```
 
 URL 可以是任意可公开访问的直链（CNB Release 附件、GitHub Release Asset、对象存储等）。
+`filename` 字段仅作展示参考，脚本按平台硬编码文件名下载，请勿修改。
 
-### 2. 下载二进制
+### 下载二进制（可选，脚本会自动执行）
 
 ```powershell
 # Windows
@@ -68,7 +108,9 @@ bash scripts/fetch-binaries.sh
 pwsh scripts/fetch-binaries.ps1 -Platform all
 ```
 
-### 3. 集成到项目
+### 参数化安装（可选）
+
+需要跨目录安装或手动指定模块时：
 
 #### Windows
 
@@ -86,31 +128,45 @@ pwsh scripts/setup-gates.ps1 -Target C:/my/project `
   -JavaModules baafoo-core,baafoo-server,baafoo-agent
 ```
 
-#### Linux / macOS
+> **没有 pwsh（PowerShell 7）？** 直接用系统自带的 Windows PowerShell 5.1（cmd 或双击）：
+
+```bat
+rem 脚本与 .ps1 同目录，参数原样透传（内部自动调 powershell.exe 5.1）
+scripts\setup-gates.cmd -Target C:\my\project -ProjectType spring-boot
+scripts\fetch-binaries.cmd -Platform all
+```
+
+`.ps1` 脚本已做 PS5 兼容：显式 UTF-8 读写、无 BOM 写入（PS5 的 `Set-Content -Encoding UTF8` 会写 BOM 导致 wan 解析 YAML 失败）。
+
+#### Linux
 
 ```bash
 # Spring Boot 单模块
 bash scripts/setup-gates.sh /path/to/project spring-boot
 
-# 多模块 Maven
-bash scripts/setup-gates.sh /path/to/project multi-module baafoo-server baafoo-core baafoo-server baafoo-agent
+# 多模块 Maven（第二个参数后依次为 SQL 模块、Java 模块）
+bash scripts/setup-gates.sh /path/to/project multi-module baafoo-server baafoo-core baafoo-agent
 
 # 自动检测
 bash scripts/setup-gates.sh /path/to/project auto
 ```
 
-安装脚本会自动检测 `bin/` 中是否已有二进制，不存在时自动调 `fetch-binaries` 下载。
+> macOS 暂无预编译二进制（未发布 darwin 产物），`fetch-binaries` / `setup-gates` 会直接报错，请在 Linux/Windows 或 CI 中使用。
+
+安装脚本会自动检测 `bin/` 中是否已有二进制，不存在时自动调 `fetch-binaries` 下载
+（不会在目标项目是工具集自身时报错退出，请先 `cd` 到目标项目）。
 
 ## 安装流程
 
 1. **检测项目类型** —— 检查 `backend/src/main/java` 或根 `pom.xml`
-2. **检测模块** —— 自动找 SQL/Mapper 所在模块和 Java 模块
+2. **检测模块** —— 自动找 SQL/Mapper 所在模块和 Java 模块（多个 SQL 模块时交互选择）
 3. **检查/下载二进制** —— 若 `bin/` 中缺二进制，自动从 `versions.toml` 配置的 URL 下载
 4. **复制工具** —— 二进制 + 规则文件到目标项目 `tools/`
 5. **渲染配置** —— 把模板里的 `{{BACKEND_DIR}}` / `{{SQL_MODULE}}` / `{{MODULES_LIST}}` 替换成实际值
 6. **生成 hook** —— 渲染 `pre-commit` 脚本，加入 `.git/hooks/`
-7. **生成 README** —— 自动生成 `tools/README.md`
-8. **验证** —— 运行每个工具的 `--version` 和 wan workflow 校验
+7. **生成快捷脚本** —— `tools/gatecheck.cmd` / `gatecheck.sh`，一键手动触发门禁
+8. **生成 README** —— 自动生成 `tools/README.md`
+9. **验证** —— 运行每个工具的 `--version` 和 wan workflow 校验
 
 ## 项目类型
 
@@ -170,10 +226,16 @@ pom.xml
     │       ├── pre-commit-win.yml
     │       └── pre-commit-unix.yml
     ├── hooks/pre-commit
+    ├── hooks/prepare-commit-msg      # 提交信息模板预填
+    ├── hooks/commit-msg              # 提交信息校验（警告模式）
+    ├── commit-message/
+    │   ├── commit.template           # 提交信息模板正文
+    │   └── commit-msg.config         # 校验规则（type/长度/必填段落）
+    ├── gatecheck.cmd / gatecheck.sh   # 手动一键触发门禁（双击/一条命令）
     └── README.md
 ```
 
-`.git/hooks/pre-commit` 自动安装，git commit 时自动跑门禁。
+`.git/hooks/pre-commit` 自动安装，git commit 时自动跑门禁；`tools/gatecheck.*` 用于手动触发。
 
 ## 二进制管理策略
 
@@ -193,7 +255,7 @@ pom.xml
 
 ## 门禁规则
 
-### SqlGuard（默认 7 条 P0 + 5 条 P1 可选）
+### SqlGuard（默认 8 条 P0 + 13 条 P1 可选）
 
 P0（必跑，CI 阻断）：
 - DDL001 no_drop_table
@@ -203,11 +265,13 @@ P0（必跑，CI 阻断）：
 - DML003 insert_columns_required
 - DML004 subquery_alias_required
 - DML006 no_join_without_condition
+- DML108 no_constant_where
 
 P1（默认关闭，按需启用）：DML005/007/008/011/012/013/014/015/016、DDL003/004/005/006
 
-### JavaGuard（12 条规则）
+### JavaGuard（14 条规则）
 
+默认启用（12 条）：
 - J001 no_system_out
 - J003 no_wildcard_import
 - J004 class_naming
@@ -217,19 +281,38 @@ P1（默认关闭，按需启用）：DML005/007/008/011/012/013/014/015/016、D
 - J010/J011/J012 fastjson 检测
 - J013 Spring Controller 禁止 Map 传参
 
+默认关闭（2 条，按需启用，解除 `java-guard.yml` 中 `rules.disable` 注释即可）：
+- J014 禁止引入非 jackson 的 JSON 框架（Import 检查）
+- J015 禁止使用非 jackson 的 JSON 框架（使用点检查，与 J014 互补）
+
+> 注：J014/J015 为 major 级且门禁阈值 `max_major: 0`，直接启用会让存在存量违规的项目 CI 全红；建议先用 `--baseline` 抑制已知存量后再启用。
+
 门禁阈值：
 - critical: 0
 - major: 0
 - minor: 20
 - info: 100
 
+## 提交信息模板
+
+setup 同时安装 `prepare-commit-msg` / `commit-msg` 两个 hook，配合提交信息模板：
+
+- **模板预填**：`git commit`（打开编辑器）且提交信息为空时，自动预填模板；已通过 `-m` / `-F` / IDE 填写的内容不会被覆盖。
+- **兜底校验**：`commit-msg` 校验 type 白名单、subject 非空与长度、必填段落（改动说明/测试情况/影响范围），缺失时打印警告。
+- **警告模式**（默认）：不阻断提交，仅提示。需升级为硬拦截时，把 `tools/hooks/commit-msg` 末尾的 `exit 0` 改为 `exit 1` 即可。
+- **豁免**：Merge / Revert 自动消息、`wip:` 开头的草稿、以及 `git commit --no-verify` 均跳过校验。
+- **IDE 兼容**：git hook 在 git 层执行，`commit-msg` 校验对所有 IDE（IntelliJ / VSCode / Eclipse / VS / Sourcetree / CLI）生效；预填仅对 CLI 编辑器可见，IDE 空提交时由校验提示兜底。
+
+自定义模板与规则：编辑 `tools/commit-message/commit.template`（模板正文）和 `tools/commit-message/commit-msg.config`（type 白名单、subject 长度上限、必填段落）。
+
 ## 修改配置
 
 集成后想调整：
 - 改阈值：编辑 `tools/java-guard/gate-config.yml`
 - 改 SQL 规则：编辑 `tools/sql-guard/sqlguard.rules.toml`（取消注释启用 P1 规则）
+- 改提交信息模板/校验：编辑 `tools/commit-message/commit.template` 与 `commit-msg.config`
 - 改扫描路径：编辑 `tools/sql-guard/sqlguard.toml` 或 `tools/java-guard/java-guard.yml`
-- 改 hook：编辑 `tools/hooks/pre-commit` 然后 `cp tools/hooks/pre-commit .git/hooks/pre-commit`
+- 改 hook：编辑 `tools/hooks/pre-commit` 然后 `cp tools/hooks/pre-commit .git/hooks/pre-commit`（commit-msg / prepare-commit-msg 同理）
 
 ## CI 集成建议
 
@@ -275,7 +358,7 @@ P1（默认关闭，按需启用）：DML005/007/008/011/012/013/014/015/016、D
     java-version: '8'
 
 - name: Prepare gates
-  run: bash gates-toolkit/scripts/ci-setup.sh . multi-module baafoo-server baafoo-core baafoo-server baafoo-agent
+  run: bash gates-toolkit/scripts/ci-setup.sh . multi-module baafoo-server baafoo-core baafoo-agent
 
 - name: Resolve PR base ref
   if: github.event_name == 'pull_request'
@@ -295,7 +378,7 @@ P1（默认关闭，按需启用）：DML005/007/008/011/012/013/014/015/016、D
     - /root/.cargo:copy-on-write
   stages:
     - name: setup-gates
-      script: bash gates-toolkit/scripts/ci-setup.sh . multi-module baafoo-server baafoo-core baafoo-server baafoo-agent
+      script: bash gates-toolkit/scripts/ci-setup.sh . multi-module baafoo-server baafoo-core baafoo-agent
     - name: run-gates
       stage: check
       script: tools/wan/bin/wan run tools/wan/workflows/ci-unix.yml -C . --quiet
@@ -309,6 +392,7 @@ PR 场景在 `run-gates` 前加 `export BASE_REF="origin/${{ cnb.pull_request.ba
 - `sql-guard` v0.2.0 Release 未上传 `linux-amd64` 产物，`ci-setup.sh` 会自动从
   源码兜底构建（需要 cargo）。Release 补齐附件后在 `versions.toml` 填入 URL 即
   可切回下载模式。
+- **macOS**：暂无 darwin 预编译产物，`fetch-binaries` / `setup-gates` 会直接报错（不要用 linux-* 二进制替代，无法运行）。
 - 完整可运行示例见 Baafoo 项目：`.github/workflows/ci.yml`（gates job）与
   `.cnb.yml`（code-gate / pr-code-gate pipeline）。
 
@@ -320,9 +404,9 @@ PR 场景在 `run-gates` 前加 `export BASE_REF="origin/${{ cnb.pull_request.ba
 
 ## 版本
 
-- wan 0.1.0
-- sql-guard 0.2.0
-- java-guard 0.1.0
+- wan 0.1.2（本地 musl 静态构建，上游源码 20b4480；CNB release 最新 v0.1.1）
+- sql-guard 0.2.1
+- java-guard 0.1.1（本地 musl 静态构建，上游源码 d644eb3；CNB release 最新 v0.1.0）
 
 ## 许可
 

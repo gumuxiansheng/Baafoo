@@ -14,9 +14,15 @@ bin/java-guard/java-guard-linux-arm64
 bin/java-guard/java-guard-linux-amd64
 bin/java-guard/java-guard
 bin/java-guard/java-parser/java-parser.jar
-
+bin/java-guard/java-parser.jar
 # 版本标记文件（由 fetch-binaries 生成）
 bin/**/.version
+
+# 本地交叉编译产物（非 CI 发布）
+bin/sql-guard/sqlguard-mine*
+
+# 打包产物
+*.zip
 
 # OS 临时文件
 .DS_Store

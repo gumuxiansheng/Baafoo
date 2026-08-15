@@ -70,6 +70,8 @@ if [ ! -f "$TOOLKIT_ROOT/bin/sql-guard/$SQL_BIN" ]; then
 
   SQLGUARD_VERSION=$(awk '/^\[sql-guard\]/{f=1;next} /^\[/{f=0} f && /^version/{gsub(/.*= *"/,""); gsub(/".*/,""); print; exit}' "$TOOLKIT_ROOT/versions.toml")
   SRC_DIR="$(mktemp -d)/sql-guard"
+  # 确保脚本退出时清理临时构建目录
+  trap 'rm -rf "$(dirname "$SRC_DIR")"' EXIT
   if [ -n "$SQLGUARD_VERSION" ]; then
     git clone --depth 1 --branch "v$SQLGUARD_VERSION" "$SQL_GUARD_REPO" "$SRC_DIR" 2>/dev/null \
       || git clone --depth 1 "$SQL_GUARD_REPO" "$SRC_DIR"

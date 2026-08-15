@@ -1,7 +1,11 @@
 #!/bin/bash
 # gates-toolkit 一键安装脚本 (Linux/macOS)
 #
-# 用法:
+# 零参数模式（推荐，在项目根目录运行）:
+#   bash scripts/setup-gates.sh
+#   自动使用当前 git 仓库根为目标项目，自动检测项目类型与模块。
+#
+# 参数化模式（可选）:
 #   bash scripts/setup-gates.sh /path/to/project spring-boot
 #   bash scripts/setup-gates.sh /path/to/project multi-module "sql-module" "mod1" "mod2" ...
 #
@@ -20,21 +24,44 @@ EXTRA_ARGS=("$@")
 
 print_banner() { printf '\033[0;36m=========================================\n  gates-toolkit 一键安装\n=========================================\033[0m\n'; }
 
+# 从当前目录向上找 git 仓库根（零参数模式用）
+find_git_root() {
+  local d="$1"
+  while [ -n "$d" ] && [ "$d" != "/" ]; do
+    if [ -d "$d/.git" ]; then echo "$d"; return 0; fi
+    d="$(dirname "$d")"
+  done
+  return 1
+}
+
 print_banner
 echo "工具集: $TOOLKIT_ROOT"
-echo "目标项目: $TARGET"
-echo ""
 
 # 校验
+case "$TARGET" in
+  help|-h|--help)
+    echo "Usage: $0 [target-project] [project-type] [extra-args...]"
+    echo ""
+    echo "零参数（推荐）: 在项目根目录直接运行，自动检测一切"
+    echo "  $0"
+    echo ""
+    echo "参数化:"
+    echo "  $0 /path/to/project spring-boot"
+    echo "  $0 /path/to/project multi-module baafoo-server mod1 mod2 mod3"
+    echo "  $0 /path/to/project auto"
+    exit 0
+    ;;
+esac
+
+# 目标项目：未指定时自动使用当前 git 仓库根（零参数模式）
 if [ -z "$TARGET" ]; then
-  echo "Usage: $0 <target-project> [project-type] [extra-args...]"
-  echo ""
-  echo "Examples:"
-  echo "  $0 /path/to/project spring-boot"
-  echo "  $0 /path/to/project multi-module baafoo-server mod1 mod2 mod3"
-  echo "  $0 /path/to/project auto"
-  exit 1
+  TARGET="$(find_git_root "$PWD")"
+  if [ -z "$TARGET" ]; then TARGET="$PWD"; fi
+  echo "未指定目标项目，自动使用: $TARGET"
 fi
+
+echo "目标项目: $TARGET"
+echo ""
 
 if [ ! -d "$TARGET" ]; then
   echo "Error: target project not found: $TARGET" >&2
@@ -42,6 +69,10 @@ if [ ! -d "$TARGET" ]; then
 fi
 
 TARGET="$(cd "$TARGET" && pwd)"
+if [ "$TARGET" = "$TOOLKIT_ROOT" ]; then
+  echo "Error: 目标项目不能是工具集自身（$TOOLKIT_ROOT）。请先 cd 到目标项目目录再运行。" >&2
+  exit 1
+fi
 GIT_DIR="$TARGET/.git"
 if [ ! -d "$GIT_DIR" ]; then
   echo "Warning: target is not a git repo: $TARGET"
@@ -66,25 +97,56 @@ SQL_MODULE=""
 JAVA_MODULES=()
 
 if [ "$PROJECT_TYPE" = "multi-module" ]; then
+  # 是否交互式终端（CI / 重定向输入时不弹提示）
+  if [ -t 0 ]; then INTERACTIVE=true; else INTERACTIVE=false; fi
   if [ ${#EXTRA_ARGS[@]} -gt 0 ]; then
     SQL_MODULE="${EXTRA_ARGS[0]}"
     JAVA_MODULES=("${EXTRA_ARGS[@]:1}")
   else
-    # 自动猜测 SQL 模块
-    SQL_MODULE="$(find "$TARGET" -maxdepth 2 -type d -name 'src' -path '*/main/resources/*' -printf '%h\n' 2>/dev/null \
-      | xargs -I{} dirname {} 2>/dev/null \
-      | xargs -I{} dirname {} 2>/dev/null \
-      | while read m; do
-          if [ -d "$m/src/main/resources/mapper" ]; then echo "$(basename "$m")"; break; fi
-        done | head -1)"
-    [ -n "$SQL_MODULE" ] && echo "[auto] SQL 模块: $SQL_MODULE"
+    # 自动猜测 SQL 模块：找 */src/main/resources/mapper 目录，从路径中提取模块名
+    # find 返回 .../module-name/src/main/resources/mapper，取往上第三层即为模块名
+    # （mapper→resources→main→module-name）
+    SQL_CANDIDATES=()
+    while IFS= read -r p; do
+      # 从 mapper 路径上溯 3 层得到模块目录
+      mod_dir="$(dirname "$(dirname "$(dirname "$p")")")"
+      # 确保模块目录在 TARGET 下（避免误选 TARGET 自身）
+      if [ "$mod_dir" != "$TARGET" ] && [ "$(dirname "$mod_dir")" = "$TARGET" ]; then
+        SQL_CANDIDATES+=("$(basename "$mod_dir")")
+      fi
+    done < <(find "$TARGET" -maxdepth 7 -type d -path '*/src/main/resources/mapper' 2>/dev/null)
+    SQL_CANDIDATES=($(printf '%s\n' "${SQL_CANDIDATES[@]}" | sort -u))
+
+    if [ ${#SQL_CANDIDATES[@]} -gt 0 ]; then
+      if [ ${#SQL_CANDIDATES[@]} -gt 1 ] && [ "$INTERACTIVE" = "true" ]; then
+        echo "[auto] 发现多个可能的 SQL 模块:"
+        for i in "${!SQL_CANDIDATES[@]}"; do echo "  [$((i + 1))] ${SQL_CANDIDATES[$i]}"; done
+        printf "选择序号（默认 1）: "
+        read -r sel
+        idx=0
+        case "$sel" in
+          ''|*[!0-9]*) idx=0 ;;
+          *) if [ "$sel" -ge 1 ] && [ "$sel" -le "${#SQL_CANDIDATES[@]}" ]; then idx=$((sel - 1)); else idx=0; fi ;;
+        esac
+        SQL_MODULE="${SQL_CANDIDATES[$idx]}"
+      else
+        SQL_MODULE="${SQL_CANDIDATES[0]}"
+      fi
+      echo "[auto] SQL 模块: $SQL_MODULE"
+    elif [ "$INTERACTIVE" = "true" ]; then
+      printf "未自动检测到 SQL 模块，请输入 SQL/Mapper 所在模块名: "
+      read -r SQL_MODULE
+    fi
 
     # 自动猜测 Java 模块
-    while IFS= read -r d; do
-      [ -d "$d/src/main/java" ] && JAVA_MODULES+=("$(basename "$d")")
-    done < <(find "$TARGET" -maxdepth 2 -type d -name 'src' -path '*/main/java' -printf '%h\n' 2>/dev/null \
-      | xargs -I{} dirname {} 2>/dev/null \
-      | sort -u)
+    # find 返回 .../module-name/src/main/java，取往上第二层即为模块名
+    # （java→main→module-name）
+    while IFS= read -r p; do
+      mod_dir="$(dirname "$(dirname "$p")")"
+      if [ "$mod_dir" != "$TARGET" ] && [ "$(dirname "$mod_dir")" = "$TARGET" ]; then
+        JAVA_MODULES+=("$(basename "$mod_dir")")
+      fi
+    done < <(find "$TARGET" -maxdepth 7 -type d -path '*/src/main/java' 2>/dev/null | sort -u)
     echo "[auto] Java 模块: ${JAVA_MODULES[*]}"
   fi
 
@@ -93,8 +155,16 @@ if [ "$PROJECT_TYPE" = "multi-module" ]; then
     exit 1
   fi
   if [ ${#JAVA_MODULES[@]} -eq 0 ]; then
-    echo "Error: 未找到 Java 模块" >&2
-    exit 1
+    if [ "$INTERACTIVE" = "true" ]; then
+      printf "未检测到 Java 模块，请输入模块名（多个用空格分隔）: "
+      read -r raw
+      JAVA_MODULES=($raw)
+      echo "[auto] Java 模块: ${JAVA_MODULES[*]}"
+    fi
+    if [ ${#JAVA_MODULES[@]} -eq 0 ]; then
+      echo "Error: 未找到 Java 模块" >&2
+      exit 1
+    fi
   fi
 fi
 
@@ -104,7 +174,7 @@ if [ -d "$TOOLS_DIR" ]; then
   echo "Warning: $TOOLS_DIR 已存在，将覆盖"
   rm -rf "$TOOLS_DIR"
 fi
-mkdir -p "$TOOLS_DIR"/{sql-guard/bin,sql-guard/config/rules/{ddl,dml,lib},java-guard/bin,java-guard/java-parser,java-guard/rules/rhai,wan/bin,wan/workflows,hooks}
+mkdir -p "$TOOLS_DIR"/{sql-guard/bin,sql-guard/config/rules/{ddl,dml,lib},java-guard/bin,java-guard/java-parser,java-guard/rules/rhai,wan/bin,wan/workflows,hooks,commit-message}
 
 # 确保工具二进制存在（必要时从配置 URL 下载）
 echo "==> 检查工具二进制"
@@ -125,6 +195,9 @@ if [ "$OS_TYPE" = "Linux" ]; then
     SQL_BIN="sqlguard-linux-amd64"
     JG_BIN="java-guard-linux-amd64"
   fi
+elif [ "$OS_TYPE" = "Darwin" ]; then
+  echo "Error: macOS 暂无预编译二进制（未发布 darwin 产物），请在 Linux/Windows 或 CI 中使用" >&2
+  exit 1
 else
   # Windows (Git Bash / MSYS)
   FETCH_PLATFORM="windows-amd64"
@@ -144,8 +217,11 @@ if [ -f "$FETCH_SCRIPT" ]; then
   done
   if [ "$need_fetch" = "true" ]; then
     echo "  二进制不完整，执行下载..."
+    set +e
     bash "$FETCH_SCRIPT" "$FETCH_PLATFORM"
-    if [ $? -ne 0 ]; then
+    fetch_rc=$?
+    set -e
+    if [ "$fetch_rc" -ne 0 ]; then
       echo "Error: 二进制下载失败，请检查 versions.toml 中的 URL 配置" >&2
       exit 1
     fi
@@ -159,6 +235,7 @@ echo "==> 复制工具二进制"
 # 格式: 工具目录名:源二进制名:输出目录:输出文件名
 # 注意 sql-guard 的输出名必须是 sqlguard（wan workflow / hook / 验证步骤均使用该名）
 BIN_MAP="wan:$WAN_BIN:wan/bin:wan sql-guard:$SQL_BIN:sql-guard/bin:sqlguard java-guard:$JG_BIN:java-guard/bin:java-guard"
+MISSING_BINS=""
 for entry in $BIN_MAP; do
   tool_dir="$(echo "$entry" | cut -d: -f1)"
   bin_name="$(echo "$entry" | cut -d: -f2)"
@@ -170,12 +247,17 @@ for entry in $BIN_MAP; do
     cp "$src" "$dst"
     chmod +x "$dst" 2>/dev/null || true
   else
-    echo "Error: 二进制不存在: $src" >&2
-    exit 1
+    echo "Warning: 二进制不存在，跳过: $src" >&2
+    MISSING_BINS="$MISSING_BINS $tool_dir"
   fi
 done
 # java-parser.jar
-cp "$TOOLKIT_ROOT/bin/java-guard/java-parser/java-parser.jar" "$TOOLS_DIR/java-guard/java-parser/"
+if [ -f "$TOOLKIT_ROOT/bin/java-guard/java-parser/java-parser.jar" ]; then
+  cp "$TOOLKIT_ROOT/bin/java-guard/java-parser/java-parser.jar" "$TOOLS_DIR/java-guard/java-parser/"
+else
+  echo "Warning: java-parser.jar 不存在，跳过" >&2
+  MISSING_BINS="$MISSING_BINS java-parser"
+fi
 # 规则文件
 cp "$TOOLKIT_ROOT/bin/sql-guard/rules/ddl/"*.rhai "$TOOLS_DIR/sql-guard/config/rules/ddl/"
 cp "$TOOLKIT_ROOT/bin/sql-guard/rules/dml/"*.rhai "$TOOLS_DIR/sql-guard/config/rules/dml/"
@@ -241,8 +323,8 @@ SQLGUARD="$TOOLS_DIR/sql-guard/bin/sqlguard"
 SQL_CONFIG="$TOOLS_DIR/sql-guard/sqlguard.toml"
 SQL_TARGET="$PROJECT_ROOT/'"$BACKEND_DIR"'/src/main/resources"
 if [ -f "$SQLGUARD.exe" ]; then SQLGUARD="$SQLGUARD.exe"; fi
-"$SQLGUARD" check-diff --base HEAD -c "$SQL_CONFIG" -f plain "$SQL_TARGET"
-echo "? SqlGuard passed"'
+"$SQLGUARD" check-diff --base HEAD -c "$SQL_CONFIG" -f plain "$SQL_TARGET" || exit 1
+echo "✓ SqlGuard passed"'
   JAVA_BLOCK='echo ""
 echo "=== JavaGuard Check ==="
 JAVAGUARD="$TOOLS_DIR/java-guard/bin/java-guard"
@@ -251,8 +333,8 @@ GATE_CONFIG="$TOOLS_DIR/java-guard/gate-config.yml"
 if [ -f "$JAVAGUARD.exe" ]; then JAVAGUARD="$JAVAGUARD.exe"; fi
 JAVA_TARGET="$PROJECT_ROOT/'"$BACKEND_DIR"'/src/main/java"
 [ ! -d "$JAVA_TARGET" ] && { echo "skip: source dir not found"; exit 0; }
-"$JAVAGUARD" scan "$JAVA_TARGET" --config "$JAVA_CONFIG" --gate --gate-config "$GATE_CONFIG" --diff HEAD -f console
-echo "? JavaGuard passed"'
+"$JAVAGUARD" scan "$JAVA_TARGET" --rules-dir "$TOOLS_DIR/java-guard/rules" --config "$JAVA_CONFIG" --gate --gate-config "$GATE_CONFIG" --diff HEAD -f console || exit 1
+echo "✓ JavaGuard passed"'
   HOOK_TPL="${HOOK_TPL//\{\{FALLBACK_SQL_BLOCK\}\}/$SQL_BLOCK}"
   HOOK_TPL="${HOOK_TPL//\{\{FALLBACK_JAVA_BLOCK\}\}/$JAVA_BLOCK}"
 else
@@ -262,8 +344,8 @@ SQLGUARD="$TOOLS_DIR/sql-guard/bin/sqlguard"
 SQL_CONFIG="$TOOLS_DIR/sql-guard/sqlguard.toml"
 SQL_TARGET="$PROJECT_ROOT/'"$SQL_MODULE"'/src/main/resources"
 if [ -f "$SQLGUARD.exe" ]; then SQLGUARD="$SQLGUARD.exe"; fi
-"$SQLGUARD" check-diff --base HEAD -c "$SQL_CONFIG" -f plain "$SQL_TARGET"
-echo "? SqlGuard passed"'
+"$SQLGUARD" check-diff --base HEAD -c "$SQL_CONFIG" -f plain "$SQL_TARGET" || exit 1
+echo "✓ SqlGuard passed"'
   MODULES_LIST="${JAVA_MODULES[*]}"
   JAVA_BLOCK="echo \"\"
 echo \"=== JavaGuard Check ===\"
@@ -276,13 +358,66 @@ for MOD in \$MODULES; do
   SRC=\"\$PROJECT_ROOT/\$MOD/src/main/java\"
   [ ! -d \"\$SRC\" ] && continue
   echo \"  scanning \$MOD ...\"
-  \"\$JAVAGUARD\" scan \"\$SRC\" --config \"\$JAVA_CONFIG\" --gate --gate-config \"\$GATE_CONFIG\" --diff HEAD -f console
+  \"\$JAVAGUARD\" scan \"\$SRC\" --rules-dir \"\$TOOLS_DIR/java-guard/rules\" --config \"\$JAVA_CONFIG\" --gate --gate-config \"\$GATE_CONFIG\" --diff HEAD -f console || exit 1
 done
-echo \"? JavaGuard passed\""
+echo \"✓ JavaGuard passed\""
   HOOK_TPL="${HOOK_TPL//\{\{FALLBACK_SQL_BLOCK\}\}/$SQL_BLOCK}"
   HOOK_TPL="${HOOK_TPL//\{\{FALLBACK_JAVA_BLOCK\}\}/$JAVA_BLOCK}"
 fi
 printf '%s' "$HOOK_TPL" > "$TOOLS_DIR/hooks/pre-commit"
+
+# 生成 commit 信息模板与校验规则（独立文件，后续可单独编辑）
+echo "==> 生成 commit 信息模板与校验规则"
+cp "$TOOLKIT_ROOT/templates/commit-message/commit.template" "$TOOLS_DIR/commit-message/commit.template"
+cp "$TOOLKIT_ROOT/templates/commit-message/commit-msg.config" "$TOOLS_DIR/commit-message/commit-msg.config"
+
+# 生成 prepare-commit-msg / commit-msg hook（无占位符，直接按模板复制）
+echo "==> 生成 prepare-commit-msg / commit-msg hook"
+cp "$TOOLKIT_ROOT/templates/hooks/prepare-commit-msg.template" "$TOOLS_DIR/hooks/prepare-commit-msg"
+cp "$TOOLKIT_ROOT/templates/hooks/commit-msg.template" "$TOOLS_DIR/hooks/commit-msg"
+
+# 生成手动运行脚本（一键触发门禁，无需记长命令）
+echo "==> 生成 gatecheck 快捷脚本"
+cat > "$TOOLS_DIR/gatecheck.cmd" <<'EOF'
+@echo off
+rem gatecheck.cmd - run code gates manually (generated by gates-toolkit)
+rem Usage: tools\gatecheck.cmd
+rem NOTE: ASCII only on purpose (cmd parses batch files using OEM codepage,
+rem       UTF-8 comments before chcp can corrupt line endings)
+chcp 65001 >nul
+setlocal
+cd /d "%~dp0.."
+set "WAN=tools\wan\bin\wan.exe"
+if not exist "%WAN%" (
+  echo [ERROR] wan binary not found: %WAN%
+  exit /b 1
+)
+rem Prefer Windows workflow when pwsh exists, else fall back to bash workflow
+rem (same logic as the pre-commit hook)
+set "WF=tools\wan\workflows\pre-commit-unix.yml"
+where pwsh >nul 2>nul
+if not errorlevel 1 set "WF=tools\wan\workflows\pre-commit-win.yml"
+"%WAN%" run -C . "%WF%"
+exit /b %ERRORLEVEL%
+EOF
+cat > "$TOOLS_DIR/gatecheck.sh" <<'EOF'
+#!/bin/sh
+# 手动运行代码门禁（由 gates-toolkit 自动生成）
+# 用法: bash tools/gatecheck.sh
+cd "$(dirname "$0")/.." || exit 1
+WAN="tools/wan/bin/wan"
+if [ ! -x "$WAN" ] && [ -x "$WAN.exe" ]; then WAN="$WAN.exe"; fi
+if [ ! -x "$WAN" ]; then
+  echo "[ERROR] wan binary not found: $WAN" >&2
+  exit 1
+fi
+WF="tools/wan/workflows/pre-commit-unix.yml"
+if [ -f "tools/wan/workflows/pre-commit-win.yml" ] && command -v pwsh >/dev/null 2>&1; then
+  WF="tools/wan/workflows/pre-commit-win.yml"
+fi
+"$WAN" run -C . "$WF"
+EOF
+chmod +x "$TOOLS_DIR/gatecheck.sh" 2>/dev/null || true
 
 # 生成 README
 echo "==> 生成 tools/README.md"
@@ -309,13 +444,18 @@ echo "==> 生成 tools/README.md"
   echo '`git commit` 时自动检查。如需跳过: `git commit --no-verify`'
   echo ""
   echo "### 手动运行"
+  echo "一键触发全部门禁:"
+  echo "- Windows: \`tools\\gatecheck.cmd\`（双击即可）"
+  echo "- Linux/macOS: \`bash tools/gatecheck.sh\`"
+  echo ""
+  echo "等价于以下完整命令（也可单独执行）:"
   echo '```bash'
   echo "# SqlGuard"
-  echo "tools/sql-guard/bin/sqlguard check -c tools/sql-guard/sqlguard.toml -f plain $BACKEND_DIR/src/main/resources"
+  echo "tools/sql-guard/bin/sqlguard check-diff --base HEAD -c tools/sql-guard/sqlguard.toml -f plain $BACKEND_DIR/src/main/resources"
   echo ""
   echo "# JavaGuard"
   echo "export JAVAGUARD_PARSER_JAR=tools/java-guard/java-parser/java-parser.jar"
-  echo "tools/java-guard/bin/java-guard scan $BACKEND_DIR/src/main/java --config tools/java-guard/java-guard.yml --gate --gate-config tools/java-guard/gate-config.yml --diff HEAD -f console"
+  echo "tools/java-guard/bin/java-guard scan $BACKEND_DIR/src/main/java --rules-dir tools/java-guard/rules --config tools/java-guard/java-guard.yml --gate --gate-config tools/java-guard/gate-config.yml --diff HEAD -f console"
   echo ""
   echo "# wan 编排"
   echo "tools/wan/bin/wan run pre-commit-unix -C ."
@@ -328,9 +468,21 @@ if [ -d "$GIT_DIR" ]; then
   cp "$TOOLS_DIR/hooks/pre-commit" "$GIT_DIR/hooks/pre-commit"
   chmod +x "$GIT_DIR/hooks/pre-commit"
   echo "    -> $GIT_DIR/hooks/pre-commit"
+
+  echo "==> 安装 git commit 信息 hooks（prepare-commit-msg / commit-msg）"
+  for h in prepare-commit-msg commit-msg; do
+    cp "$TOOLS_DIR/hooks/$h" "$GIT_DIR/hooks/$h"
+    chmod +x "$GIT_DIR/hooks/$h"
+    echo "    -> $GIT_DIR/hooks/$h"
+  done
 fi
 
 # 验证
+if [ -n "$MISSING_BINS" ]; then
+  echo ""
+  echo "Warning: 以下工具二进制缺失，门禁不完整: $MISSING_BINS" >&2
+  echo "         Linux amd64 场景请使用 scripts/ci-setup.sh（会自动从源码构建 sql-guard）" >&2
+fi
 echo ""
 echo "==> 验证安装"
 WAN_BIN_FILE="$TOOLS_DIR/wan/bin/wan"
@@ -344,8 +496,8 @@ for tool in "$WAN_BIN_FILE" "$SQL_BIN_FILE" "$JG_BIN_FILE"; do
     echo "  ✗ $tool : 未找到"
   fi
 done
-"$WAN_BIN_FILE" validate "$TOOLS_DIR/wan/workflows/pre-commit-unix.yml" 2>&1 || true
-[ -f "$TOOLS_DIR/wan/workflows/ci-unix.yml" ] && "$WAN_BIN_FILE" validate "$TOOLS_DIR/wan/workflows/ci-unix.yml" 2>&1 || true
+[ -f "$WAN_BIN_FILE" ] && "$WAN_BIN_FILE" validate "$TOOLS_DIR/wan/workflows/pre-commit-unix.yml" 2>&1 || true
+[ -f "$TOOLS_DIR/wan/workflows/ci-unix.yml" ] && [ -f "$WAN_BIN_FILE" ] && "$WAN_BIN_FILE" validate "$TOOLS_DIR/wan/workflows/ci-unix.yml" 2>&1 || true
 
 echo ""
 printf '\033[0;32m=========================================\n  安装完成\n=========================================\033[0m\n'

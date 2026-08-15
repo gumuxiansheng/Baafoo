@@ -29,7 +29,7 @@ jobs:
           BASE="${BASE_REF:-HEAD~1}"
           echo "==> SqlGuard incremental check (base: $BASE)"
           "$SQLGUARD" check-diff --base "$BASE" -c "$CONFIG" -f plain "$TARGET"
-          echo "OK SqlGuard passed"
+          echo "✓ SqlGuard passed"
 
   java-guard-check:
     needs: []
@@ -41,15 +41,16 @@ jobs:
           JAVAGUARD="tools/java-guard/bin/java-guard"
           CONFIG="tools/java-guard/java-guard.yml"
           GATE="tools/java-guard/gate-config.yml"
+RULES_DIR="tools/java-guard/rules"
           MODULES="{{MODULES_LIST}}"
           BASE="${BASE_REF:-HEAD~1}"
           for MOD in $MODULES; do
             SRC="$MOD/src/main/java"
             [ ! -d "$SRC" ] && continue
             echo "==> JavaGuard incremental scan $MOD (diff: $BASE..HEAD)"
-            "$JAVAGUARD" scan "$SRC" --config "$CONFIG" --gate --gate-config "$GATE" --diff "$BASE..HEAD" -f console
+            "$JAVAGUARD" scan "$SRC" --rules-dir "$RULES_DIR" --config "$CONFIG" --gate --gate-config "$GATE" --diff "$BASE..HEAD" -f console
           done
-          echo "OK JavaGuard passed"
+          echo "✓ JavaGuard passed"
 
   gate-summary:
     needs: [sql-guard-check, java-guard-check]
@@ -59,5 +60,5 @@ jobs:
         shell: bash
         run: |
           echo "========================================"
-          echo "  OK All CI gate checks passed"
+          echo "  ✓ All CI gate checks passed"
           echo "========================================"

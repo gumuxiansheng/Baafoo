@@ -1,5 +1,8 @@
 # SqlGuard 规则配置 — 默认规则集
-# 包含 9 条 P0 规则（CI 门禁）和 13 条 P1 规则（默认关闭，按需启用）
+# 包含 8 条 P0 规则（CI 门禁）和 13 条 P1 规则（默认关闭，按需启用）
+#
+# 规则 ID 与上游 sql-guard v0.2.1 编号体系对齐（DML101-DML107 等），
+# 便于按上游文档启用规则。
 
 # ================================================================================
 # P0 规则（默认启用，CI 门禁必跑）
@@ -87,6 +90,7 @@ severity = "warning"
 
 # ================================================================================
 # P1 规则（默认关闭，按需取消注释启用）
+# 编号与上游 sql-guard v0.2.1 对齐
 # ================================================================================
 
 # [[rules]]
@@ -101,78 +105,38 @@ severity = "warning"
 
 # [[rules]]
 # id = "DML007"
-# name = "no_nested_case"
-# group = "dml-style"
-# description = "Avoid nested CASE expressions"
-# enabled = true
-# script_path = "config/rules/dml/no_nested_case.rhai"
-# applies_to = ["dml"]
-# severity = "warning"
-
-# [[rules]]
-# id = "DML008"
-# name = "no_order_by_in_subquery"
-# group = "dml-style"
-# description = "ORDER BY in subquery is ambiguous"
-# enabled = true
-# script_path = "config/rules/dml/no_order_by_in_subquery.rhai"
-# applies_to = ["dml"]
-# severity = "warning"
-
-# [[rules]]
-# id = "DML011"
-# name = "no_unused_cte"
-# group = "dml-style"
-# description = "WITH clause CTEs must be referenced"
-# enabled = true
-# script_path = "config/rules/dml/no_unused_cte.rhai"
-# applies_to = ["dml"]
-# severity = "warning"
-
-# [[rules]]
-# id = "DML012"
-# name = "no_unused_join"
-# group = "dml-style"
-# description = "Joined tables must be referenced in WHERE/SELECT"
-# enabled = true
-# script_path = "config/rules/dml/no_unused_join.rhai"
-# applies_to = ["dml"]
-# severity = "warning"
-
-# [[rules]]
-# id = "DML013"
 # name = "order_by_required_for_pagination"
-# group = "dml-style"
-# description = "Pagination queries should have ORDER BY"
+# group = "dml-safety"
+# description = "Pagination queries (LIMIT/OFFSET/FETCH) must have ORDER BY"
 # enabled = true
 # script_path = "config/rules/dml/order_by_required_for_pagination.rhai"
 # applies_to = ["dml"]
 # severity = "warning"
 
 # [[rules]]
-# id = "DML014"
-# name = "union_all_preferred"
-# group = "dml-style"
-# description = "Prefer UNION ALL over UNION when duplicates are acceptable"
+# id = "DML101"
+# name = "no_unused_join"
+# group = "dml-performance"
+# description = "Detect potentially unused JOINs"
 # enabled = true
-# script_path = "config/rules/dml/union_all_preferred.rhai"
+# script_path = "config/rules/dml/no_unused_join.rhai"
 # applies_to = ["dml"]
 # severity = "warning"
 
 # [[rules]]
-# id = "DML015"
-# name = "use_coalesce"
-# group = "dml-style"
-# description = "Use COALESCE instead of ISNULL/CASE for null handling"
+# id = "DML102"
+# name = "no_unused_cte"
+# group = "dml-performance"
+# description = "Detect unused CTEs (WITH clauses)"
 # enabled = true
-# script_path = "config/rules/dml/use_coalesce.rhai"
+# script_path = "config/rules/dml/no_unused_cte.rhai"
 # applies_to = ["dml"]
 # severity = "warning"
 
 # [[rules]]
-# id = "DML016"
+# id = "DML103"
 # name = "use_is_null"
-# group = "dml-style"
+# group = "dml-convention"
 # description = "Use IS NULL instead of = NULL"
 # enabled = true
 # script_path = "config/rules/dml/use_is_null.rhai"
@@ -180,27 +144,47 @@ severity = "warning"
 # severity = "warning"
 
 # [[rules]]
+# id = "DML104"
+# name = "use_coalesce"
+# group = "dml-convention"
+# description = "Use COALESCE instead of NVL/ISNULL"
+# enabled = true
+# script_path = "config/rules/dml/use_coalesce.rhai"
+# applies_to = ["dml"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DML105"
+# name = "no_order_by_in_subquery"
+# group = "dml-performance"
+# description = "ORDER BY in subquery is typically ignored"
+# enabled = true
+# script_path = "config/rules/dml/no_order_by_in_subquery.rhai"
+# applies_to = ["dml"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DML106"
+# name = "union_all_preferred"
+# group = "dml-performance"
+# description = "Prefer UNION ALL over UNION unless dedup needed"
+# enabled = true
+# script_path = "config/rules/dml/union_all_preferred.rhai"
+# applies_to = ["dml"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DML107"
+# name = "no_nested_case"
+# group = "dml-convention"
+# description = "Avoid nested CASE expressions"
+# enabled = true
+# script_path = "config/rules/dml/no_nested_case.rhai"
+# applies_to = ["dml"]
+# severity = "warning"
+
+# [[rules]]
 # id = "DDL003"
-# name = "index_naming_convention"
-# group = "ddl-safety"
-# description = "Index names must follow naming convention"
-# enabled = true
-# script_path = "config/rules/ddl/index_naming_convention.rhai"
-# applies_to = ["ddl"]
-# severity = "warning"
-
-# [[rules]]
-# id = "DDL004"
-# name = "table_name_naming"
-# group = "ddl-safety"
-# description = "Table names must follow naming convention"
-# enabled = true
-# script_path = "config/rules/ddl/table_name_naming.rhai"
-# applies_to = ["ddl"]
-# severity = "warning"
-
-# [[rules]]
-# id = "DDL005"
 # name = "no_reserved_keyword_naming"
 # group = "ddl-safety"
 # description = "Identifiers must not use reserved keywords"
@@ -210,11 +194,41 @@ severity = "warning"
 # severity = "warning"
 
 # [[rules]]
+# id = "DDL004"
+# name = "backup_table_naming"
+# group = "ddl-convention"
+# description = "Backup tables must be prefixed with bks_"
+# enabled = true
+# script_path = "config/rules/ddl/backup_table_naming.rhai"
+# applies_to = ["ddl"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DDL005"
+# name = "index_naming_convention"
+# group = "ddl-convention"
+# description = "Index names must follow naming convention"
+# enabled = true
+# script_path = "config/rules/ddl/index_naming_convention.rhai"
+# applies_to = ["ddl"]
+# severity = "warning"
+
+# [[rules]]
 # id = "DDL006"
 # name = "no_redundant_index"
-# group = "ddl-safety"
+# group = "ddl-performance"
 # description = "Avoid redundant indexes (left-prefix overlap)"
 # enabled = true
 # script_path = "config/rules/ddl/no_redundant_index.rhai"
+# applies_to = ["ddl"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DDL007"
+# name = "table_name_naming"
+# group = "ddl-convention"
+# description = "Table names must follow naming convention"
+# enabled = true
+# script_path = "config/rules/ddl/table_name_naming.rhai"
 # applies_to = ["ddl"]
 # severity = "warning"

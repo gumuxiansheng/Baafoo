@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # gates-toolkit 二进制下载/更新脚本
 #
 # 读取 versions.toml 配置，下载各平台二进制到 bin/。
@@ -14,7 +14,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
-    [ValidateSet("auto", "all", "windows-amd64", "linux-arm64")]
+    [ValidateSet("auto", "all", "windows-amd64", "linux-arm64", "linux-amd64")]
     [string]$Platform = "auto",
 
     [switch]$Force,
@@ -47,6 +47,9 @@ if ($Platform -eq "auto") {
         } else {
             $Platform = "linux-amd64"
         }
+    } elseif ((uname -s 2>$null) -match "Darwin") {
+        Write-Error "macOS 暂无预编译二进制（未发布 darwin 产物），请在 Linux/Windows 或 CI 中使用"
+        exit 1
     } else {
         $Platform = "windows-amd64"
         Write-Warning "无法检测平台，默认使用 windows-amd64"
@@ -61,7 +64,8 @@ Write-Host "平台: $Platform"
 Write-Host ""
 
 # 简易 TOML 解析（versions.toml 结构固定，无需完整解析器）
-$raw = Get-Content $ConfigFile -Raw
+# 用显式 UTF-8 读取：PS5 的 Get-Content 按 ANSI 读 no-BOM UTF-8 会吞换行/乱码
+$raw = [System.IO.File]::ReadAllText($ConfigFile, [System.Text.Encoding]::UTF8)
 $config = @{}
 
 # 匹配 [section] 和 key = "value"
@@ -130,28 +134,59 @@ function Get-VersionFile($binDir) {
 function Read-LocalVersion($binDir) {
     $vf = Get-VersionFile $binDir
     if (Test-Path $vf) {
-        return (Get-Content $vf -Raw).Trim()
+        return [System.IO.File]::ReadAllText($vf, [System.Text.Encoding]::UTF8).Trim()
     }
     return $null
 }
 
 function Write-LocalVersion($binDir, $version) {
     $vf = Get-VersionFile $binDir
-    Set-Content $vf $version -Encoding UTF8
+    [System.IO.File]::WriteAllText($vf, $version, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+# 下载文件（重试兜底）
+# cnb.cool Release 下载会 302 到 CDN 域名 asset.cnb.cool，偶发解析/IPv6 链路问题导致失败，
+# 重试 + 失败后尝试强制 IPv4（Invoke-WebRequest 无 -4 参数，通过临时 Hosts 之外的
+# .NET 解析器无法直接指定，重试即可覆盖大部分瞬态失败）。
+function Invoke-Download($url, $destPath) {
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try {
+            Invoke-WebRequest -Uri $url -OutFile $destPath -ErrorAction Stop
+            return $true
+        } catch {
+            if ($attempt -lt 3) {
+                Write-Host "  (第 $attempt 次尝试失败，重试...)" -ForegroundColor Yellow
+                Start-Sleep -Seconds 2
+            } else {
+                throw
+            }
+        }
+    }
+    return $false
 }
 
 # 比较版本号: 返回 -1 (a<b), 0 (a==b), 1 (a>b)
 function Compare-Version($a, $b) {
     if (-not $a) { return -1 }
     if (-not $b) { return 1 }
-    $aParts = $a.Split('.') | ForEach-Object { [int]$_ }
-    $bParts = $b.Split('.') | ForEach-Object { [int]$_ }
+    $aParts = $a.Split('.')
+    $bParts = $b.Split('.')
     $maxLen = [Math]::Max($aParts.Count, $bParts.Count)
     for ($i = 0; $i -lt $maxLen; $i++) {
-        $av = if ($i -lt $aParts.Count) { $aParts[$i] } else { 0 }
-        $bv = if ($i -lt $bParts.Count) { $bParts[$i] } else { 0 }
-        if ($av -lt $bv) { return -1 }
-        if ($av -gt $bv) { return 1 }
+        $avRaw = if ($i -lt $aParts.Count) { $aParts[$i] } else { "0" }
+        $bvRaw = if ($i -lt $bParts.Count) { $bParts[$i] } else { "0" }
+        $av = 0; $bv = 0
+        $avOk = [int]::TryParse($avRaw, [ref]$av)
+        $bvOk = [int]::TryParse($bvRaw, [ref]$bv)
+        if ($avOk -and $bvOk) {
+            if ($av -lt $bv) { return -1 }
+            if ($av -gt $bv) { return 1 }
+        } else {
+            # 非纯数字段（如 0.2.0-rc1）退化为字符串比较，避免 [int] 转换抛异常
+            $cmp = [string]::Compare($avRaw, $bvRaw, [System.StringComparison]::OrdinalIgnoreCase)
+            if ($cmp -lt 0) { return -1 }
+            if ($cmp -gt 0) { return 1 }
+        }
     }
     return 0
 }
@@ -161,6 +196,7 @@ $skipped = 0
 $failed = 0
 
 foreach ($tool in $tools) {
+    $toolFailed = 0
     $section = $tool.Section
     $configVersion = $config[$section]["version"]
 
@@ -251,7 +287,7 @@ foreach ($tool in $tools) {
 
         if (-not $url -or $url -eq "") {
             Write-Host "  $pf : URL 未配置，跳过" -ForegroundColor Yellow
-            $failed++
+            $failed++; $toolFailed++
             continue
         }
 
@@ -259,13 +295,14 @@ foreach ($tool in $tools) {
         Write-Host "  $pf : $url" -ForegroundColor DarkGray
 
         try {
-            Invoke-WebRequest -Uri $url -OutFile $destPath -ErrorAction Stop
+            $null = Invoke-Download -url $url -destPath $destPath
+            if ($IsLinux) { & chmod +x $destPath 2>$null }
             $fileSize = (Get-Item $destPath).Length
             Write-Host "  ✓ $filename ($([math]::Round($fileSize / 1MB, 1)) MB)" -ForegroundColor Green
             $downloaded++
         } catch {
             Write-Host "  ✗ 下载失败: $($_.Exception.Message)" -ForegroundColor Red
-            $failed++
+            $failed++; $toolFailed++
             continue
         }
     }
@@ -280,7 +317,7 @@ foreach ($tool in $tools) {
 
             if (-not $url -or $url -eq "") {
                 Write-Host "  $($ef.SubSection) : URL 未配置，跳过" -ForegroundColor Yellow
-                $failed++
+                $failed++; $toolFailed++
                 continue
             }
 
@@ -288,20 +325,25 @@ foreach ($tool in $tools) {
             Write-Host "  $($ef.SubSection) : $url" -ForegroundColor DarkGray
 
             try {
-                Invoke-WebRequest -Uri $url -OutFile $destPath -ErrorAction Stop
+                $null = Invoke-Download -url $url -destPath $destPath
                 $fileSize = (Get-Item $destPath).Length
                 Write-Host "  ✓ $filename ($([math]::Round($fileSize / 1MB, 1)) MB)" -ForegroundColor Green
                 $downloaded++
             } catch {
                 Write-Host "  ✗ 下载失败: $($_.Exception.Message)" -ForegroundColor Red
-                $failed++
+                $failed++; $toolFailed++
                 continue
             }
         }
     }
 
-    # 写入版本号
-    Write-LocalVersion $binDir $configVersion
+    # 只在当前工具请求的文件都下载成功时才写入版本号
+    # （部分失败时 .version 不更新，下次运行会重新尝试下载）
+    if ($toolFailed -eq 0) {
+        Write-LocalVersion $binDir $configVersion
+    } else {
+        Write-Warning "  $($tool.Name): 有 $toolFailed 个文件下载失败，.version 未更新"
+    }
 }
 
 Write-Host ""

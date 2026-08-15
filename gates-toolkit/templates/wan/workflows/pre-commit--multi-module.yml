@@ -32,13 +32,14 @@ jobs:
           $javaguard = "tools/java-guard/bin/java-guard.exe"
           $config = "tools/java-guard/java-guard.yml"
           $gateConfig = "tools/java-guard/gate-config.yml"
+          $rulesDir = "tools/java-guard/rules"
           $modules = @({{MODULES_ARRAY_PS}})
 
           foreach ($mod in $modules) {
             $srcPath = "$mod/src/main/java"
             if (-not (Test-Path $srcPath)) { continue }
             Write-Host "==> JavaGuard 增量扫描 $mod (diff: HEAD)"
-            & $javaguard scan $srcPath --config $config --gate --gate-config $gateConfig --diff HEAD -f console
+            & $javaguard scan $srcPath --rules-dir $rulesDir --config $config --gate --gate-config $gateConfig --diff HEAD -f console
             if ($LASTEXITCODE -ne 0) {
               Write-Host ""
               Write-Host "✗ JavaGuard 门禁未通过: $mod" -ForegroundColor Red

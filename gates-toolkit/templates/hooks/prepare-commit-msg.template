@@ -1,0 +1,40 @@
+#!/bin/sh
+# prepare-commit-msg hook — 预填 commit 信息模板（由 gates-toolkit 生成）
+# 仅在提交信息为空时预填；不覆盖 -m / -F / IDE 已输入的内容
+# 参数: $1=提交信息文件  $2=来源(merge/squash/commit/template/...)
+
+MESSAGE_FILE="$1"
+SOURCE="${2:-}"
+
+# 合并 / 压缩 / 复用已有提交信息（-c/-C/--amend）时跳过预填
+case "$SOURCE" in
+  merge|squash|commit) exit 0 ;;
+esac
+
+# 消息已有实际内容时不预填（避免覆盖任何 IDE / -m 输入）
+# 注意：git 会预写 # 注释行（# Please enter... / # On branch...），
+#       模板文件可能带 UTF-8 BOM / CRLF，须先剔除 BOM、CR 与注释行再判断
+if [ -f "$MESSAGE_FILE" ]; then
+  if sed -e '1s/^\xEF\xBB\xBF//' -e 's/\r$//' "$MESSAGE_FILE" 2>/dev/null \
+       | grep -v '^[[:space:]]*#' \
+       | grep -q '[^[:space:]]'; then
+    exit 0
+  fi
+fi
+
+# 定位模板文件（tools/ 由 setup-gates 生成）
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+[ -z "$PROJECT_ROOT" ] && exit 0
+TEMPLATE="$PROJECT_ROOT/tools/commit-message/commit.template"
+[ ! -f "$TEMPLATE" ] && exit 0
+
+# 预填模板（git 提交时会自动剔除 # 注释行）
+cat "$TEMPLATE" > "$MESSAGE_FILE" 2>/dev/null || exit 0
+[ -s "$MESSAGE_FILE" ] || exit 0
+
+echo ""
+echo "[prepare-commit-msg] 已预填提交信息模板，请填写必填项："
+echo "    <type>(<scope>): <subject>  +  改动说明 / 测试情况 / 影响范围"
+echo ""
+
+exit 0

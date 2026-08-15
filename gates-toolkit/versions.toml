@@ -9,38 +9,34 @@
 # version 字段用于版本比较：本地存在同版本时跳过下载，低于配置版本时自动更新。
 
 [wan]
-version = "0.1.0"
+version = "0.1.1"
 
   [wan.windows_amd64]
-  url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.0/wan-windows-amd64.exe"
+  url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.1/wan-windows-amd64.exe"
   # 例: "https://cnb.cool/mikezhu/wan/-/releases/tag/v0.1.0/downloads/wan-windows-amd64.exe"
   filename = "wan.exe"
 
   [wan.linux_arm64]
-  url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.0/wan-linux-arm64"
+  url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.1/wan-linux-arm64"
   filename = "wan-linux-arm64"
 
   [wan.linux_amd64]
-  url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.0/wan-linux-amd64"
+  url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.1/wan-linux-amd64"
   filename = "wan-linux-amd64"
 
 [sql-guard]
-version = "0.2.0"
+version = "0.2.1"
 
   [sql-guard.windows_amd64]
-  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.0/sqlguard.exe"
+  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.1/sqlguard-x86_64-pc-windows-gnu.exe"
   filename = "sqlguard.exe"
 
   [sql-guard.linux_arm64]
-  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.0/sqlguard-linux-arm64"
+  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.1/sqlguard-aarch64-unknown-linux-musl"
   filename = "sqlguard-linux-arm64"
 
-  # 注意：sql-guard v0.2.0 Release 暂未上传 linux-amd64 产物（已确认 404）。
-  # 留空暂不提供；CI 中由 scripts/ci-setup.sh 从源码兜底构建。
-  # 待 Release 补齐 sqlguard-linux-amd64 附件后，填入 URL 即可切换为下载模式：
-  # url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.0/sqlguard-linux-amd64"
   [sql-guard.linux_amd64]
-  url = ""
+  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.1/sqlguard-x86_64-unknown-linux-musl"
   filename = "sqlguard-linux-amd64"
 
 [java-guard]

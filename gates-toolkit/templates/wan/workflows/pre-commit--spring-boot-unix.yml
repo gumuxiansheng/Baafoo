@@ -17,7 +17,7 @@ jobs:
           TARGET="{{BACKEND_DIR}}/src/main/resources"
           echo "==> SqlGuard incremental check (base: HEAD)"
           "$SQLGUARD" check-diff --base HEAD -c "$CONFIG" -f plain "$TARGET"
-          echo "? SqlGuard passed"
+          echo "✓ SqlGuard passed"
 
   java-guard-check:
     needs: []
@@ -29,11 +29,12 @@ jobs:
           JAVAGUARD="tools/java-guard/bin/java-guard"
           CONFIG="tools/java-guard/java-guard.yml"
           GATE="tools/java-guard/gate-config.yml"
+RULES_DIR="tools/java-guard/rules"
           SRC="{{BACKEND_DIR}}/src/main/java"
           [ ! -d "$SRC" ] && { echo "skip: source dir not found"; exit 0; }
           echo "==> JavaGuard incremental scan (diff: HEAD)"
-          "$JAVAGUARD" scan "$SRC" --config "$CONFIG" --gate --gate-config "$GATE" --diff HEAD -f console
-          echo "? JavaGuard passed"
+          "$JAVAGUARD" scan "$SRC" --rules-dir "$RULES_DIR" --config "$CONFIG" --gate --gate-config "$GATE" --diff HEAD -f console
+          echo "✓ JavaGuard passed"
 
   gate-summary:
     needs: [sql-guard-check, java-guard-check]
@@ -43,5 +44,5 @@ jobs:
         shell: bash
         run: |
           echo "========================================"
-          echo "  ? All gate checks passed, commit allowed"
+          echo "  ✓ All gate checks passed, commit allowed"
           echo "========================================"

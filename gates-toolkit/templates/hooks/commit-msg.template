@@ -1,0 +1,136 @@
+#!/bin/sh
+# commit-msg hook — 校验 commit 信息（警告模式，不阻断）
+# 由 gates-toolkit 生成；规则见 tools/commit-message/commit-msg.config
+# 参数: $1=提交信息文件
+#
+# 如需升级为硬拦截：把文件末尾的 exit 0 改为 exit 1 即可。
+
+MESSAGE_FILE="$1"
+[ -f "$MESSAGE_FILE" ] || exit 0
+
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+CONFIG_FILE="$PROJECT_ROOT/tools/commit-message/commit-msg.config"
+
+# 默认规则（config 存在时覆盖）
+TYPES="feat fix docs style refactor perf test build ci chore revert"
+SUBJECT_MAX="50"
+REQUIRED_SECTIONS="改动说明 测试情况 影响范围"
+
+if [ -n "$CONFIG_FILE" ] && [ -f "$CONFIG_FILE" ]; then
+  . "$CONFIG_FILE" 2>/dev/null || true
+fi
+
+# 去除 BOM、行尾 CR、注释行与空行后的有效消息
+MSG="$(sed -e '1s/^\xEF\xBB\xBF//' -e 's/\r$//' -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$/d' "$MESSAGE_FILE" 2>/dev/null)"
+if [ -z "$MSG" ]; then
+  echo ""
+  echo "[commit-msg] 提交信息为空，请按模板填写："
+  echo "    <type>(<scope>): <subject>"
+  echo "    必填段落：$REQUIRED_SECTIONS"
+  echo ""
+  exit 0
+fi
+
+SUBJECT="$(printf '%s\n' "$MSG" | head -n 1)"
+
+# 豁免：合并 / 还原 / 草稿提交
+case "$SUBJECT" in
+  Merge*|merge*|Revert*|revert*|wip:*|WIP:*) exit 0 ;;
+esac
+
+WARN=0
+
+# 解析 <type>(<scope>): <subject>
+TYPE=""
+SUBJ=""
+case "$SUBJECT" in
+  *:*)
+    HEAD="$(printf '%s' "$SUBJECT" | cut -d: -f1 | tr -d '[:space:]')"
+    SUBJ="$(printf '%s' "$SUBJECT" | sed -e 's/^[^:]*:[[:space:]]*//')"
+    case "$HEAD" in
+      *\(*\)*)
+        TYPE="$(printf '%s' "$HEAD" | sed -e 's/(.*//')"
+        ;;
+      *)
+        TYPE="$HEAD"
+        ;;
+    esac
+    ;;
+  *)
+    echo "[commit-msg] 提交信息格式应为 <type>(<scope>): <subject>（缺少 ':'）"
+    WARN=1
+    SUBJ="$SUBJECT"
+    ;;
+esac
+
+# 校验 type 白名单
+if [ -n "$TYPE" ]; then
+  type_ok=0
+  for t in $TYPES; do
+    [ "$t" = "$TYPE" ] && type_ok=1
+  done
+  if [ "$type_ok" -eq 0 ]; then
+    echo "[commit-msg] type \"$TYPE\" 无效，应为：$TYPES"
+    WARN=1
+  fi
+else
+  echo "[commit-msg] 缺少 type，格式应为 <type>(<scope>): <subject>"
+  WARN=1
+fi
+
+# 校验 subject 非空
+if [ -z "$SUBJ" ]; then
+  echo "[commit-msg] subject 为空，请在冒号后填写摘要"
+  WARN=1
+fi
+
+# 校验 subject 长度（字符数）
+SUBJ_LEN="$(printf '%s' "$SUBJ" | wc -m | tr -d '[:space:]')"
+if [ -n "$SUBJ" ] && [ "$SUBJ_LEN" -gt "$SUBJECT_MAX" ]; then
+  echo "[commit-msg] subject 过长（${SUBJ_LEN} > ${SUBJECT_MAX} 字符）"
+  WARN=1
+fi
+
+# 校验必填段落（段落内需有实际内容，空列表项不计）
+section_filled() {
+  sec="$1"
+  printf '%s\n' "$MSG" | awk -v s="$sec" '
+    $0 ~ "^" s "[:：]" {
+      r = index($0, ":")
+      if (r == 0) r = index($0, "：")
+      rest = substr($0, r + 1)
+      gsub(/^[[:space:]]*/, "", rest)
+      if (rest != "") filled = 1
+      on = 1
+      next
+    }
+    on && $0 ~ "^(改动说明|测试情况|影响范围)[:：]" { exit }
+    on {
+      line = $0
+      sub(/^[[:space:]]*[-*+][[:space:]]*/, "", line)
+      sub(/^[[:space:]]*/, "", line)
+      if (line != "" && line !~ /^#/) filled = 1
+    }
+    END { exit (filled ? 0 : 1) }
+  '
+  return $?
+}
+
+for sec in $REQUIRED_SECTIONS; do
+  if ! section_filled "$sec"; then
+    echo "[commit-msg] 必填段落 \"$sec\" 尚未填写"
+    WARN=1
+  fi
+done
+
+# 警告模式：汇总提示，不阻断
+if [ "$WARN" -ne 0 ]; then
+  echo ""
+  echo "[commit-msg] 提交信息不完整（已放行，警告模式）。建议按模板完善："
+  echo "    <type>(<scope>): <subject>"
+  echo "    必填段落：$REQUIRED_SECTIONS"
+  echo "    修改后再提交将不再提示。"
+  echo ""
+fi
+
+exit 0

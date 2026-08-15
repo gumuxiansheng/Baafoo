@@ -38,8 +38,8 @@ if [ "$PLATFORM" = "auto" ]; then
     elif [ "$OS" = "Linux" ] && [ "$ARCH" = "x86_64" ]; then
         PLATFORM="linux-amd64"
     elif [ "$OS" = "Darwin" ]; then
-        PLATFORM="linux-arm64"
-        echo "warn: macOS 暂无预编译二进制，使用 linux-arm64 作为 fallback"
+        echo "Error: macOS 暂无预编译二进制（未发布 darwin 产物），请在 Linux/Windows 或 CI 中使用" >&2
+        exit 1
     else
         PLATFORM="linux-arm64"
         echo "warn: 未知平台 $OS/$ARCH，默认使用 linux-arm64"
@@ -62,6 +62,27 @@ if ! command -v curl >/dev/null 2>&1; then
     echo "Error: 需要 curl" >&2
     exit 1
 fi
+
+# 下载文件（重试 + IPv4 兜底）
+# cnb.cool Release 下载会 302 到 CDN 域名 asset.cnb.cool，
+# 该域名偶发只解析出 IPv6(AAAA) 记录，无 IPv6 链路的机器
+# （如 GitHub Actions runner / 部分内网）会 "Could not resolve host"，下载失败。
+# 对策：失败后强制 IPv4 重试。
+download_file() {
+    local url="$1" dest="$2"
+    local attempt
+    for attempt in 1 2 3; do
+        if curl -fsSL --connect-timeout 20 --retry 2 "$url" -o "$dest"; then
+            return 0
+        fi
+        echo "  (第 $attempt 次尝试失败，改用 IPv4 重试)"
+        if curl -fsSL -4 --connect-timeout 20 --retry 2 "$url" -o "$dest"; then
+            return 0
+        fi
+        sleep 2
+    done
+    return 1
+}
 
 # 简易 TOML 解析
 parse_toml_value() {
@@ -102,7 +123,8 @@ compare_version() {
 read_local_version() {
     local bin_dir="$1"
     local vf="$bin_dir/.version"
-    [ -f "$vf" ] && cat "$vf" | tr -d '[:space:]'
+    # 去掉 BOM（Windows 写入的 .version 可能带 EF BB BF）与空白
+    [ -f "$vf" ] && sed '1s/^\xEF\xBB\xBF//' "$vf" | tr -d '[:space:]'
 }
 
 write_local_version() {
@@ -184,7 +206,7 @@ for tool_entry in "${TOOLS[@]}"; do
         # 检查文件是否完整
         all_present=true
         if [ "$PLATFORM" = "all" ]; then
-            for pf in windows-amd64 linux-arm64; do
+            for pf in windows-amd64 linux-arm64 linux-amd64; do
                 info=$(get_platform_info "$tool_name" "$pf")
                 filename="${info#*|}"
                 [ -f "$bin_dir/$filename" ] || all_present=false
@@ -216,7 +238,7 @@ for tool_entry in "${TOOLS[@]}"; do
 
     # 下载二进制
     if [ "$PLATFORM" = "all" ]; then
-        platforms=("windows-amd64" "linux-arm64")
+        platforms=("windows-amd64" "linux-arm64" "linux-amd64")
     else
         platforms=("$PLATFORM")
     fi
@@ -229,16 +251,16 @@ for tool_entry in "${TOOLS[@]}"; do
         url=$(parse_toml_value "$sub_section" "url")
         if [ -z "$url" ]; then
             echo "  $pf : URL 未配置，跳过"
-            FAILED=$((FAILED + 1))
+            SKIPPED=$((SKIPPED + 1))
             continue
         fi
 
         dest="$bin_dir/$filename"
         echo "  $pf : $url"
-        if curl -fsSL "$url" -o "$dest"; then
+        if download_file "$url" "$dest"; then
             chmod +x "$dest" 2>/dev/null || true
             size=$(stat -c%s "$dest" 2>/dev/null || stat -f%z "$dest" 2>/dev/null || echo 0)
-            size_mb=$(echo "scale=1; $size / 1048576" | bc 2>/dev/null || echo "?")
+            size_mb=$(awk "BEGIN {printf \"%.1f\", $size/1048576}")
             echo "  ✓ $filename ($size_mb MB)"
             DOWNLOADED=$((DOWNLOADED + 1))
         else
@@ -254,9 +276,9 @@ for tool_entry in "${TOOLS[@]}"; do
         if [ -n "$url" ]; then
             dest="$bin_dir/java-parser/java-parser.jar"
             echo "  java-parser : $url"
-            if curl -fsSL "$url" -o "$dest"; then
+            if download_file "$url" "$dest"; then
                 size=$(stat -c%s "$dest" 2>/dev/null || stat -f%z "$dest" 2>/dev/null || echo 0)
-                size_mb=$(echo "scale=1; $size / 1048576" | bc 2>/dev/null || echo "?")
+                size_mb=$(awk "BEGIN {printf \"%.1f\", $size/1048576}")
                 echo "  ✓ java-parser.jar ($size_mb MB)"
                 DOWNLOADED=$((DOWNLOADED + 1))
             else
@@ -265,7 +287,7 @@ for tool_entry in "${TOOLS[@]}"; do
             fi
         else
             echo "  java-parser : URL 未配置，跳过"
-            FAILED=$((FAILED + 1))
+            SKIPPED=$((SKIPPED + 1))
         fi
     fi
 
