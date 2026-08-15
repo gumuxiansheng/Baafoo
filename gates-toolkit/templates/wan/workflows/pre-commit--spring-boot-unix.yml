@@ -3,7 +3,7 @@
 # 增量检查：仅扫描 git diff HEAD 改动的文件
 version: 1
 env:
-  JAVAGUARD_PARSER_JAR: tools/java-guard/java-parser/java-parser.jar
+  JAVAGUARD_PARSER_JAR: gates-tools/java-guard/java-parser/java-parser.jar
 
 jobs:
   sql-guard-check:
@@ -12,8 +12,8 @@ jobs:
         shell: bash
         run: |
           set -e
-          SQLGUARD="tools/sql-guard/bin/sqlguard"
-          CONFIG="tools/sql-guard/sqlguard.toml"
+          SQLGUARD="gates-tools/sql-guard/bin/sqlguard"
+          CONFIG="gates-tools/sql-guard/sqlguard.toml"
           TARGET="{{BACKEND_DIR}}/src/main/resources"
           echo "==> SqlGuard incremental check (base: HEAD)"
           "$SQLGUARD" check-diff --base HEAD -c "$CONFIG" -f plain "$TARGET"
@@ -26,10 +26,10 @@ jobs:
         shell: bash
         run: |
           set -e
-          JAVAGUARD="tools/java-guard/bin/java-guard"
-          CONFIG="tools/java-guard/java-guard.yml"
-          GATE="tools/java-guard/gate-config.yml"
-          RULES_DIR="tools/java-guard/rules"
+          JAVAGUARD="gates-tools/java-guard/bin/java-guard"
+          CONFIG="gates-tools/java-guard/java-guard.yml"
+          GATE="gates-tools/java-guard/gate-config.yml"
+          RULES_DIR="gates-tools/java-guard/rules"
           SRC="{{BACKEND_DIR}}/src/main/java"
           [ ! -d "$SRC" ] && { echo "skip: source dir not found"; exit 0; }
           echo "==> JavaGuard incremental scan (diff: HEAD)"

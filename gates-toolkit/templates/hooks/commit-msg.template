@@ -1,6 +1,6 @@
 #!/bin/sh
 # commit-msg hook — 校验 commit 信息（警告模式，不阻断）
-# 由 gates-toolkit 生成；规则见 tools/commit-message/commit-msg.config
+# 由 gates-toolkit 生成；规则见 gates-tools/commit-message/commit-msg.config
 # 参数: $1=提交信息文件
 #
 # 如需升级为硬拦截：把文件末尾的 exit 0 改为 exit 1 即可。
@@ -9,7 +9,7 @@ MESSAGE_FILE="$1"
 [ -f "$MESSAGE_FILE" ] || exit 0
 
 PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
-CONFIG_FILE="$PROJECT_ROOT/tools/commit-message/commit-msg.config"
+CONFIG_FILE="$PROJECT_ROOT/gates-tools/commit-message/commit-msg.config"
 
 # 默认规则（config 存在时覆盖）
 TYPES="feat fix docs style refactor perf test build ci chore revert"

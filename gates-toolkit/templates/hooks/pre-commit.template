@@ -5,7 +5,7 @@
 set -e
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-TOOLS_DIR="$PROJECT_ROOT/tools"
+TOOLS_DIR="$PROJECT_ROOT/gates-tools"
 
 # 快速跳过：没有 staged 改动时不跑门禁
 CHANGED="$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)"

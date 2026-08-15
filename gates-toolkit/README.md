@@ -65,12 +65,12 @@ bash gates-toolkit/scripts/setup-gates.sh
 2. 自动检测项目类型（spring-boot / multi-module）与 SQL/Java 模块
    （多个 SQL 模块时交互式选择；检测不到时会询问后手动输入）
 3. `bin/` 二进制缺失时自动下载（首次需联网；版本一致后自动跳过）
-4. 渲染配置 → 生成 `tools/` → 安装 `.git/hooks/pre-commit`
+4. 渲染配置 → 生成 `gates-tools/` 并自动加入目标项目 `.gitignore` → 安装 `.git/hooks/pre-commit`
 5. 验证安装并打印各工具版本
 
 之后 `git commit` 自动跑门禁。想手动触发：
-- Windows：`tools\gatecheck.cmd`（双击即可）
-- Linux：`bash tools/gatecheck.sh`
+- Windows：`gates-tools\gatecheck.cmd`（双击即可）
+- Linux：`bash gates-tools/gatecheck.sh`
 - 跳过本次门禁：`git commit --no-verify`
 
 > 只需维护者（管理员）在首次使用前填写 `versions.toml` 的下载 URL，成员无需感知。
@@ -161,11 +161,11 @@ bash scripts/setup-gates.sh /path/to/project auto
 1. **检测项目类型** —— 检查 `backend/src/main/java` 或根 `pom.xml`
 2. **检测模块** —— 自动找 SQL/Mapper 所在模块和 Java 模块（多个 SQL 模块时交互选择）
 3. **检查/下载二进制** —— 若 `bin/` 中缺二进制，自动从 `versions.toml` 配置的 URL 下载
-4. **复制工具** —— 二进制 + 规则文件到目标项目 `tools/`
+4. **复制工具** —— 二进制 + 规则文件到目标项目 `gates-tools/`
 5. **渲染配置** —— 把模板里的 `{{BACKEND_DIR}}` / `{{SQL_MODULE}}` / `{{MODULES_LIST}}` 替换成实际值
 6. **生成 hook** —— 渲染 `pre-commit` 脚本，加入 `.git/hooks/`
-7. **生成快捷脚本** —— `tools/gatecheck.cmd` / `gatecheck.sh`，一键手动触发门禁
-8. **生成 README** —— 自动生成 `tools/README.md`
+7. **生成快捷脚本** —— `gates-tools/gatecheck.cmd` / `gatecheck.sh`，一键手动触发门禁
+8. **生成 README** —— 自动生成 `gates-tools/README.md`
 9. **验证** —— 运行每个工具的 `--version` 和 wan workflow 校验
 
 ## 项目类型
@@ -206,7 +206,7 @@ pom.xml
 
 ```
 目标项目/
-└── tools/
+└── gates-tools/
     ├── sql-guard/
     │   ├── bin/sqlguard(.exe)
     │   ├── config/rules/ddl/    # 7 条 DDL 规则
@@ -235,7 +235,7 @@ pom.xml
     └── README.md
 ```
 
-`.git/hooks/pre-commit` 自动安装，git commit 时自动跑门禁；`tools/gatecheck.*` 用于手动触发。
+`.git/hooks/pre-commit` 自动安装，git commit 时自动跑门禁；`gates-tools/gatecheck.*` 用于手动触发。
 
 ## 二进制管理策略
 
@@ -299,20 +299,20 @@ setup 同时安装 `prepare-commit-msg` / `commit-msg` 两个 hook，配合提�
 
 - **模板预填**：`git commit`（打开编辑器）且提交信息为空时，自动预填模板；已通过 `-m` / `-F` / IDE 填写的内容不会被覆盖。
 - **兜底校验**：`commit-msg` 校验 type 白名单、subject 非空与长度、必填段落（改动说明/测试情况/影响范围），缺失时打印警告。
-- **警告模式**（默认）：不阻断提交，仅提示。需升级为硬拦截时，把 `tools/hooks/commit-msg` 末尾的 `exit 0` 改为 `exit 1` 即可。
+- **警告模式**（默认）：不阻断提交，仅提示。需升级为硬拦截时，把 `gates-tools/hooks/commit-msg` 末尾的 `exit 0` 改为 `exit 1` 即可。
 - **豁免**：Merge / Revert 自动消息、`wip:` 开头的草稿、以及 `git commit --no-verify` 均跳过校验。
 - **IDE 兼容**：git hook 在 git 层执行，`commit-msg` 校验对所有 IDE（IntelliJ / VSCode / Eclipse / VS / Sourcetree / CLI）生效；预填仅对 CLI 编辑器可见，IDE 空提交时由校验提示兜底。
 
-自定义模板与规则：编辑 `tools/commit-message/commit.template`（模板正文）和 `tools/commit-message/commit-msg.config`（type 白名单、subject 长度上限、必填段落）。
+自定义模板与规则：编辑 `gates-tools/commit-message/commit.template`（模板正文）和 `gates-tools/commit-message/commit-msg.config`（type 白名单、subject 长度上限、必填段落）。
 
 ## 修改配置
 
 集成后想调整：
-- 改阈值：编辑 `tools/java-guard/gate-config.yml`
-- 改 SQL 规则：编辑 `tools/sql-guard/sqlguard.rules.toml`（取消注释启用 P1 规则）
-- 改提交信息模板/校验：编辑 `tools/commit-message/commit.template` 与 `commit-msg.config`
-- 改扫描路径：编辑 `tools/sql-guard/sqlguard.toml` 或 `tools/java-guard/java-guard.yml`
-- 改 hook：编辑 `tools/hooks/pre-commit` 然后 `cp tools/hooks/pre-commit .git/hooks/pre-commit`（commit-msg / prepare-commit-msg 同理）
+- 改阈值：编辑 `gates-tools/java-guard/gate-config.yml`
+- 改 SQL 规则：编辑 `gates-tools/sql-guard/sqlguard.rules.toml`（取消注释启用 P1 规则）
+- 改提交信息模板/校验：编辑 `gates-tools/commit-message/commit.template` 与 `commit-msg.config`
+- 改扫描路径：编辑 `gates-tools/sql-guard/sqlguard.toml` 或 `gates-tools/java-guard/java-guard.yml`
+- 改 hook：编辑 `gates-tools/hooks/pre-commit` 然后 `cp gates-tools/hooks/pre-commit .git/hooks/pre-commit`（commit-msg / prepare-commit-msg 同理）
 
 ## CI 集成建议
 
@@ -320,10 +320,11 @@ setup 同时安装 `prepare-commit-msg` / `commit-msg` 两个 hook，配合提�
 
 把 `gates-toolkit/` 目录随项目提交（二进制由 `.gitignore` 排除），CI 中通过
 `scripts/ci-setup.sh` 一键准备（下载二进制 → 缺失兜底源码构建 → setup-gates 安装），
-再用 wan 执行 CI 专用 workflow `tools/wan/workflows/ci-unix.yml`。
+再用 wan 执行 CI 专用 workflow `gates-tools/wan/workflows/ci-unix.yml`。
 
-**不要把 setup 产物 `tools/` 提交到 git** —— 它是模板渲染产物，提交后会与
-`templates/` 形成双写漂移；目标项目的 `.gitignore` 应忽略 `tools/`。
+**不要把 setup 产物 `gates-tools/` 提交到 git** —— 它是模板渲染产物（含二进制），提交后会与
+`templates/` 形成双写漂移；setup 已自动把 `gates-tools/` 写入目标项目的 `.gitignore`，无需也不应提交。
+工具与规则建议整包引入 `gates-toolkit/`（git submodule 或随仓库提交），升级时重跑 setup-gates 即可。
 
 ### CI 门禁行为
 
@@ -365,7 +366,7 @@ setup 同时安装 `prepare-commit-msg` / `commit-msg` 两个 hook，配合提�
   run: echo "BASE_REF=origin/${{ github.base_ref }}" >> "$GITHUB_ENV"
 
 - name: Run gates
-  run: tools/wan/bin/wan run tools/wan/workflows/ci-unix.yml -C . --quiet
+  run: gates-tools/wan/bin/wan run gates-tools/wan/workflows/ci-unix.yml -C . --quiet
 ```
 
 ### CNB
@@ -381,7 +382,7 @@ setup 同时安装 `prepare-commit-msg` / `commit-msg` 两个 hook，配合提�
       script: bash gates-toolkit/scripts/ci-setup.sh . multi-module baafoo-server baafoo-core baafoo-agent
     - name: run-gates
       stage: check
-      script: tools/wan/bin/wan run tools/wan/workflows/ci-unix.yml -C . --quiet
+      script: gates-tools/wan/bin/wan run gates-tools/wan/workflows/ci-unix.yml -C . --quiet
 ```
 
 PR 场景在 `run-gates` 前加 `export BASE_REF="origin/${{ cnb.pull_request.base_ref }}"`

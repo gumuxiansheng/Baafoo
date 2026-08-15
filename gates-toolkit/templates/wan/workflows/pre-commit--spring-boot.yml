@@ -3,7 +3,7 @@
 # 增量检查：仅扫描 git diff HEAD 改动的文件
 version: 1
 env:
-  JAVAGUARD_PARSER_JAR: tools/java-guard/java-parser/java-parser.jar
+  JAVAGUARD_PARSER_JAR: gates-tools/java-guard/java-parser/java-parser.jar
 
 jobs:
   sql-guard-check:
@@ -11,8 +11,8 @@ jobs:
       - name: SqlGuard 检查
         shell: pwsh
         run: |
-          $sqlguard = "tools/sql-guard/bin/sqlguard.exe"
-          $config = "tools/sql-guard/sqlguard.toml"
+          $sqlguard = "gates-tools/sql-guard/bin/sqlguard.exe"
+          $config = "gates-tools/sql-guard/sqlguard.toml"
           $target = "{{BACKEND_DIR}}/src/main/resources"
           Write-Host "==> SqlGuard 增量检查 (base: HEAD)"
           & $sqlguard check-diff --base HEAD -c $config -f plain $target
@@ -29,10 +29,10 @@ jobs:
       - name: JavaGuard 扫描
         shell: pwsh
         run: |
-          $javaguard = "tools/java-guard/bin/java-guard.exe"
-          $config = "tools/java-guard/java-guard.yml"
-          $gateConfig = "tools/java-guard/gate-config.yml"
-          $rulesDir = "tools/java-guard/rules"
+          $javaguard = "gates-tools/java-guard/bin/java-guard.exe"
+          $config = "gates-tools/java-guard/java-guard.yml"
+          $gateConfig = "gates-tools/java-guard/gate-config.yml"
+          $rulesDir = "gates-tools/java-guard/rules"
           $srcPath = "{{BACKEND_DIR}}/src/main/java"
           if (-not (Test-Path $srcPath)) { Write-Host "跳过: 源码目录不存在"; exit 0 }
           Write-Host "==> JavaGuard 增量扫描 (diff: HEAD)"

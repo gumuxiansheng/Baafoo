@@ -22,10 +22,10 @@ if [ -f "$MESSAGE_FILE" ]; then
   fi
 fi
 
-# 定位模板文件（tools/ 由 setup-gates 生成）
+# 定位模板文件（gates-tools/ 由 setup-gates 生成）
 PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 [ -z "$PROJECT_ROOT" ] && exit 0
-TEMPLATE="$PROJECT_ROOT/tools/commit-message/commit.template"
+TEMPLATE="$PROJECT_ROOT/gates-tools/commit-message/commit.template"
 [ ! -f "$TEMPLATE" ] && exit 0
 
 # 预填模板（git 提交时会自动剔除 # 注释行）
