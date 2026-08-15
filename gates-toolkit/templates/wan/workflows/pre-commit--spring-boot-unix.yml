@@ -29,7 +29,7 @@ jobs:
           JAVAGUARD="tools/java-guard/bin/java-guard"
           CONFIG="tools/java-guard/java-guard.yml"
           GATE="tools/java-guard/gate-config.yml"
-RULES_DIR="tools/java-guard/rules"
+          RULES_DIR="tools/java-guard/rules"
           SRC="{{BACKEND_DIR}}/src/main/java"
           [ ! -d "$SRC" ] && { echo "skip: source dir not found"; exit 0; }
           echo "==> JavaGuard incremental scan (diff: HEAD)"

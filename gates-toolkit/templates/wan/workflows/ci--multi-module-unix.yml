@@ -41,7 +41,7 @@ jobs:
           JAVAGUARD="tools/java-guard/bin/java-guard"
           CONFIG="tools/java-guard/java-guard.yml"
           GATE="tools/java-guard/gate-config.yml"
-RULES_DIR="tools/java-guard/rules"
+          RULES_DIR="tools/java-guard/rules"
           MODULES="{{MODULES_LIST}}"
           BASE="${BASE_REF:-HEAD~1}"
           for MOD in $MODULES; do
