@@ -9,19 +9,23 @@
 # version 字段用于版本比较：本地存在同版本时跳过下载，低于配置版本时自动更新。
 
 [wan]
-version = "0.1.3"
+version = "0.1.5"
 
   [wan.windows_amd64]
-  url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.3/wan-windows-amd64.exe"
+  url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.5/wan-windows-amd64.exe"
   # 例: "https://cnb.cool/mikezhu/wan/-/releases/tag/v0.1.0/downloads/wan-windows-amd64.exe"
   filename = "wan.exe"
 
+  [wan.windows_amd64_shim]
+  url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.5/wan-shim-windows-amd64.exe"
+  filename = "wan-shim.exe"
+
   [wan.linux_arm64]
-  url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.3/wan-linux-arm64"
+  url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.5/wan-linux-arm64"
   filename = "wan-linux-arm64"
 
   [wan.linux_amd64]
-  url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.3/wan-linux-amd64"
+  url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.5/wan-linux-amd64"
   filename = "wan-linux-amd64"
 
 [sql-guard]
@@ -40,21 +44,21 @@ version = "0.2.2"
   filename = "sqlguard-linux-amd64"
 
 [java-guard]
-version = "0.1.1"
+version = "0.1.2"
 
   [java-guard.windows_amd64]
-  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.1/java-guard-windows-amd64.exe"
+  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.2/java-guard-windows-amd64.exe"
   filename = "java-guard.exe"
 
   [java-guard.linux_arm64]
-  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.1/java-guard-linux-arm64"
+  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.2/java-guard-linux-arm64"
   filename = "java-guard-linux-arm64"
 
   [java-guard.linux_amd64]
-  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.1/java-guard-linux-amd64"
+  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.2/java-guard-linux-amd64"
   filename = "java-guard-linux-amd64"
 
   # java-parser.jar 是平台无关的，只列一次
   [java-guard.java_parser]
-  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.0/java-parser.jar"
+  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.2/java-parser.jar"
   filename = "java-parser.jar"

@@ -98,6 +98,9 @@ $tools = @(
             "linux-arm64"   = @{ SubSection = "wan.linux_arm64";   Filename = "wan-linux-arm64" }
             "linux-amd64"   = @{ SubSection = "wan.linux_amd64";   Filename = "wan-linux-amd64" }
         }
+        ExtraFiles = @(
+            @{ SubSection = "wan.windows_amd64_shim"; Filename = "wan-shim.exe"; SubDir = "" }
+        )
     },
     @{
         Name = "sql-guard"

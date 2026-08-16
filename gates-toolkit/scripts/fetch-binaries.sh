@@ -227,6 +227,11 @@ for tool_entry in "${TOOLS[@]}"; do
             [ -f "$bin_dir/java-parser/java-parser.jar" ] || all_present=false
         fi
 
+        # wan-shim.exe
+        if [ "$tool_name" = "wan" ]; then
+            [ -f "$bin_dir/wan-shim.exe" ] || all_present=false
+        fi
+
         if [ "$all_present" = "true" ]; then
             echo "  → 跳过（版本一致且文件完整）"
             SKIPPED=$((SKIPPED + 1))
@@ -273,6 +278,27 @@ for tool_entry in "${TOOLS[@]}"; do
             FAILED=$((FAILED + 1))
         fi
     done
+
+    # wan-shim.exe (Windows only, also downloaded on Linux for all-platform completeness)
+    if [ "$tool_name" = "wan" ]; then
+        url=$(parse_toml_value "wan.windows_amd64_shim" "url")
+        if [ -n "$url" ]; then
+            dest="$bin_dir/wan-shim.exe"
+            echo "  wan-shim : $url"
+            if download_file "$url" "$dest"; then
+                size=$(stat -c%s "$dest" 2>/dev/null || stat -f%z "$dest" 2>/dev/null || echo 0)
+                size_mb=$(awk "BEGIN {printf \"%.1f\", $size/1048576}")
+                echo "  ✓ wan-shim.exe ($size_mb MB)"
+                DOWNLOADED=$((DOWNLOADED + 1))
+            else
+                echo "  ✗ 下载失败"
+                FAILED=$((FAILED + 1))
+            fi
+        else
+            echo "  wan-shim : URL 未配置，跳过"
+            SKIPPED=$((SKIPPED + 1))
+        fi
+    fi
 
     # java-parser.jar
     if [ "$tool_name" = "java-guard" ]; then
