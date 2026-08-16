@@ -194,6 +194,8 @@ if [ "${CI_SETUP_SKIP_JAVA:-}" != "1" ] && ! command -v java >/dev/null 2>&1; th
 fi
 
 # 4) setup-gates 安装到目标项目（参数透传）
+# CI 容器无常驻调度：显式跳过 toolkit-update 每日自动更新注册
+export GATES_NO_SCHEDULE=1
 echo "==> 安装门禁到项目"
 bash "$SCRIPT_DIR/setup-gates.sh" "$@"
 

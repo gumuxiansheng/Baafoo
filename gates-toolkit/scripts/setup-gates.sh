@@ -654,19 +654,17 @@ echo "==> 生成 gates-tools/README.md"
   echo "gates-tools/wan/bin/wan run pre-commit-unix -C ."
   echo '```'
   echo ""
-  echo "### 每日自动更新（可选）"
+  echo "### 每日自动更新"
   echo ""
-  echo "注册 wan 定时调度，每日自动刷新 gates-tools（在项目根运行，时间可自定义）:"
+  echo "setup 已自动注册 wan 定时调度（每日 09:00 刷新 gates-tools）并安装系统服务，无需手动操作。"
   echo '```'
-  echo "# 1. 注册调度（每天 09:00）"
-  echo "gates-tools/wan/bin/wan schedule add toolkit-update \"0 9 * * *\" gates-tools/wan/workflows/toolkit-update-unix.yml -C ."
-  echo ""
-  echo "# 2. 安装为系统服务（开机自启，可能需管理员权限）"
-  echo "gates-tools/wan/bin/wan schedule service install -C ."
-  echo ""
-  echo "# 手动触发一次 / 查看执行历史"
-  echo "bash gates-tools/gatecheck.sh toolkit-update"
+  echo "# 查看执行历史 / 手动触发一次"
   echo "gates-tools/wan/bin/wan schedule history toolkit-update -C ."
+  echo "bash gates-tools/gatecheck.sh toolkit-update"
+  echo ""
+  echo "# 如未注册（GATES_NO_SCHEDULE=1 / CI 环境跳过），手动开启:"
+  echo "gates-tools/wan/bin/wan schedule add toolkit-update \"0 9 * * *\" gates-tools/wan/workflows/toolkit-update-unix.yml -C ."
+  echo "gates-tools/wan/bin/wan schedule service install -C ."
   echo '```'
 } > "$TOOLS_DIR/README.md"
 
@@ -719,19 +717,20 @@ mkdir -p "$TARGET/.github/workflows"
 update_ci_file "$TARGET/.github/workflows/ci.yml" "$GHA_CONTENT" 0
 
 # gates-tools 为生成产物：自动加入目标项目 .gitignore，避免误提交
-echo "==> 更新目标项目 .gitignore（忽略生成的 gates-tools/）"
+# .wan/ 为 wan 调度状态（含机器相关绝对路径），同样不入库
+echo "==> 更新目标项目 .gitignore（忽略生成的 gates-tools/ 与 .wan/）"
 GITIGNORE_FILE="$TARGET/.gitignore"
+GITIGNORE_NEW=0
 if [ -f "$GITIGNORE_FILE" ]; then
-  if grep -qE '^gates-tools/?$' "$GITIGNORE_FILE"; then
-    echo "    已存在，跳过"
-  else
-    printf '\n# gates-toolkit 门禁产物（由 setup-gates 生成，不入库）\ngates-tools/\n' >> "$GITIGNORE_FILE"
-    echo "    -> $GITIGNORE_FILE"
-  fi
+  grep -qE '^gates-tools/?$' "$GITIGNORE_FILE" \
+    || { printf '\n# gates-toolkit 门禁产物（由 setup-gates 生成，不入库）\ngates-tools/\n' >> "$GITIGNORE_FILE"; GITIGNORE_NEW=1; }
+  grep -qE '^\.wan/?$' "$GITIGNORE_FILE" \
+    || { printf '.wan/\n' >> "$GITIGNORE_FILE"; GITIGNORE_NEW=1; }
 else
-  printf '# gates-toolkit 门禁产物（由 setup-gates 生成，不入库）\ngates-tools/\n' > "$GITIGNORE_FILE"
-  echo "    -> $GITIGNORE_FILE"
+  printf '# gates-toolkit 门禁产物（由 setup-gates 生成，不入库）\ngates-tools/\n.wan/\n' > "$GITIGNORE_FILE"
+  GITIGNORE_NEW=1
 fi
+[ "$GITIGNORE_NEW" = "1" ] && echo "    -> $GITIGNORE_FILE" || echo "    已存在，跳过"
 
 # hook 是否由本工具生成（依据模板头部 marker 判断，避免误备份/覆盖第三方 hook）
 hook_is_toolkit() {
@@ -818,19 +817,62 @@ done
 [ -f "$TOOLS_DIR/wan/workflows/ci-unix.yml" ] && [ -f "$WAN_BIN_FILE" ] && "$WAN_BIN_FILE" validate "$TOOLS_DIR/wan/workflows/ci-unix.yml" 2>&1 || true
 [ -f "$TOOLS_DIR/wan/workflows/toolkit-update-unix.yml" ] && [ -f "$WAN_BIN_FILE" ] && "$WAN_BIN_FILE" validate "$TOOLS_DIR/wan/workflows/toolkit-update-unix.yml" 2>&1 || true
 
+# 注册每日自动更新调度（toolkit-update）：setup 直接完成注册，成员无需手动执行
+#  - CI 环境自动跳过；GATES_NO_SCHEDULE=1 可显式关闭
+#  - schedule add 幂等：schedule list 已含 toolkit-update 时跳过（重复 add 会报错）
+#  - service install 幂等：安装系统服务（开机自启），失败仅告警不阻断安装
+#  - 注意：schedule add 的 workflow 相对路径按进程 CWD 解析（非 -C 目录），须切到目标项目根执行
+SCHEDULE_STATE="registered"
+if [ "${GATES_NO_SCHEDULE:-}" = "1" ] || [ "${CI:-}" = "true" ] || [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+  SCHEDULE_STATE="skipped"
+  echo "==> 跳过每日自动更新调度注册 (GATES_NO_SCHEDULE / CI 环境)"
+elif [ -f "$TOOLS_DIR/wan/workflows/toolkit-update-unix.yml" ] && [ -f "$WAN_BIN_FILE" ]; then
+  echo "==> 注册每日自动更新调度 (toolkit-update, 每日 09:00)"
+  # 子 shell 切到目标项目根执行（schedule add 的 workflow 相对路径按进程 CWD 解析）；
+  # 注册失败通过非零退出码传出（set -e 下需整体置于 if 条件中）
+  if (
+    cd "$TARGET" || exit 1
+    if "$WAN_BIN_FILE" schedule list -C . 2>/dev/null | grep -qE '^[[:space:]]*toolkit-update([[:space:]]|$)'; then
+      echo "    调度 toolkit-update 已注册，跳过"
+    else
+      "$WAN_BIN_FILE" schedule add toolkit-update "0 9 * * *" gates-tools/wan/workflows/toolkit-update-unix.yml -C . \
+        || { echo "    warn: schedule add 失败（不影响门禁安装），可稍后手动重试" >&2; exit 2; }
+    fi
+    svc_out="$("$WAN_BIN_FILE" schedule service install -C . 2>&1)" \
+      && echo "    ✓ $svc_out" \
+      || {
+        echo "    service install: $svc_out" >&2
+        echo "    warn: 调度服务安装失败（可能需要权限），可稍后手动: $WAN_BIN_FILE schedule service install -C ." >&2
+      }
+  ); then
+    :
+  else
+    SCHEDULE_STATE="failed"
+  fi
+else
+  SCHEDULE_STATE="missing"
+  echo "==> 未找到 toolkit-update workflow 或 wan 二进制，跳过调度注册"
+fi
+
 echo ""
 printf '\033[0;32m=========================================\n  安装完成\n=========================================\033[0m\n'
 echo ""
 echo "gates-tools/ 为 setup 生成的产物（含二进制），已加入目标项目 .gitignore，无需（也不应）提交到 git。"
 echo "门禁工具与规则建议整包引入 gates-toolkit（git submodule 或随仓库提交），升级时重跑本脚本即可。"
 echo ""
-echo "每日自动更新（可选，在项目根运行，时间可自定义）:"
-if [ "$OS_TYPE" = "Linux" ]; then
-  echo "  gates-tools/wan/bin/wan schedule add toolkit-update \"0 9 * * *\" gates-tools/wan/workflows/toolkit-update-unix.yml -C ."
-  echo "  gates-tools/wan/bin/wan schedule service install -C .   # 安装为系统服务（开机自启，可能需管理员权限）"
+if [ "$SCHEDULE_STATE" = "registered" ]; then
+  echo "每日自动更新: 已注册 toolkit-update 调度（每日 09:00）并安装系统服务。"
+  echo "  查看运行记录: gates-tools/wan/bin/wan schedule history toolkit-update -C ."
   echo "  手动触发一次: bash gates-tools/gatecheck.sh toolkit-update"
 else
-  echo "  gates-tools\\wan\\bin\\wan.exe schedule add toolkit-update \"0 9 * * *\" gates-tools/wan/workflows/toolkit-update-win.yml -C ."
-  echo "  gates-tools\\wan\\bin\\wan.exe schedule service install -C .   # 安装为系统服务（开机自启，可能需管理员权限）"
-  echo "  手动触发一次: gates-tools\\gatecheck.cmd toolkit-update"
+  echo "每日自动更新: 本次未注册。如需开启（在项目根运行，时间可自定义）:"
+  if [ "$OS_TYPE" = "Linux" ]; then
+    echo "  gates-tools/wan/bin/wan schedule add toolkit-update \"0 9 * * *\" gates-tools/wan/workflows/toolkit-update-unix.yml -C ."
+    echo "  gates-tools/wan/bin/wan schedule service install -C .   # 安装为系统服务（开机自启，可能需管理员权限）"
+    echo "  手动触发一次: bash gates-tools/gatecheck.sh toolkit-update"
+  else
+    echo "  gates-tools\\wan\\bin\\wan.exe schedule add toolkit-update \"0 9 * * *\" gates-tools/wan/workflows/toolkit-update-win.yml -C ."
+    echo "  gates-tools\\wan\\bin\\wan.exe schedule service install -C .   # 安装为系统服务（开机自启，可能需管理员权限）"
+    echo "  手动触发一次: gates-tools\\gatecheck.cmd toolkit-update"
+  fi
 fi

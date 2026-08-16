@@ -32,7 +32,11 @@ param(
     [switch]$InstallHook = $true,
 
     [Parameter(Mandatory = $false)]
-    [switch]$Force
+    [switch]$Force,
+
+    [Parameter(Mandatory = $false)]
+    # 跳过每日自动更新调度注册（默认 setup 自动注册 toolkit-update 调度 + 系统服务）
+    [switch]$NoSchedule
 )
 
 $ErrorActionPreference = "Stop"
@@ -717,25 +721,23 @@ $readme += "gates-tools/java-guard/bin/java-guard.exe scan $BackendDir/src/main/
 $readme += "# wan 编排`n"
 $readme += "gates-tools/wan/bin/wan.exe run pre-commit-win -C .`n"
 $readme += '```' + "`n`n"
-$readme += "### 每日自动更新（可选）`n`n"
-$readme += "注册 wan 定时调度，每日自动刷新 gates-tools（在项目根运行，时间可自定义）:`n"
+$readme += "### 每日自动更新`n`n"
+$readme += "setup 已自动注册 wan 定时调度（每日 09:00 刷新 gates-tools）并安装系统服务，无需手动操作。`n"
 $readme += '```' + "`n"
 if ($IsLinux) {
-    $readme += "# 1. 注册调度（每天 09:00）`n"
-    $readme += "gates-tools/wan/bin/wan schedule add toolkit-update `"0 9 * * *`" gates-tools/wan/workflows/toolkit-update-unix.yml -C .`n`n"
-    $readme += "# 2. 安装为系统服务（开机自启，可能需管理员权限）`n"
-    $readme += "gates-tools/wan/bin/wan schedule service install -C .`n`n"
-    $readme += "# 手动触发一次 / 查看执行历史`n"
-    $readme += "bash gates-tools/gatecheck.sh toolkit-update`n"
+    $readme += "# 查看执行历史 / 手动触发一次`n"
     $readme += "gates-tools/wan/bin/wan schedule history toolkit-update -C .`n"
+    $readme += "bash gates-tools/gatecheck.sh toolkit-update`n`n"
+    $readme += "# 如未注册（-NoSchedule / CI 环境跳过），手动开启:`n"
+    $readme += "gates-tools/wan/bin/wan schedule add toolkit-update `"0 9 * * *`" gates-tools/wan/workflows/toolkit-update-unix.yml -C .`n"
+    $readme += "gates-tools/wan/bin/wan schedule service install -C .`n"
 } else {
-    $readme += "# 1. 注册调度（每天 09:00）`n"
-    $readme += "gates-tools\wan\bin\wan.exe schedule add toolkit-update `"0 9 * * *`" gates-tools/wan/workflows/toolkit-update-win.yml -C .`n`n"
-    $readme += "# 2. 安装为系统服务（开机自启，可能需管理员权限）`n"
-    $readme += "gates-tools\wan\bin\wan.exe schedule service install -C .`n`n"
-    $readme += "# 手动触发一次 / 查看执行历史`n"
-    $readme += "gates-tools\gatecheck.cmd toolkit-update`n"
+    $readme += "# 查看执行历史 / 手动触发一次`n"
     $readme += "gates-tools\wan\bin\wan.exe schedule history toolkit-update -C .`n"
+    $readme += "gates-tools\gatecheck.cmd toolkit-update`n`n"
+    $readme += "# 如未注册（-NoSchedule / CI 环境跳过），手动开启:`n"
+    $readme += "gates-tools\wan\bin\wan.exe schedule add toolkit-update `"0 9 * * *`" gates-tools/wan/workflows/toolkit-update-win.yml -C .`n"
+    $readme += "gates-tools\wan\bin\wan.exe schedule service install -C .`n"
 }
 $readme += '```' + "`n`n"
 $readme += "### CI 集成`n参考生成的 ``.cnb.yml`` 与 ``.github/workflows/ci.yml`` (由 setup 自动生成/更新，code-gate job)。`n"
@@ -800,14 +802,22 @@ if (-not (Test-Path $ghaDir)) { New-Item -ItemType Directory -Force $ghaDir | Ou
 Update-CiWorkflowFile -Path (Join-Path $ghaDir "ci.yml") -Content $ghaContent
 
 # gates-tools 为生成产物：自动加入目标项目 .gitignore，避免误提交
-Write-Host "==> 更新目标项目 .gitignore（忽略生成的 gates-tools/）"
+# .wan/ 为 wan 调度状态（含机器相关绝对路径），同样不入库
+Write-Host "==> 更新目标项目 .gitignore（忽略生成的 gates-tools/ 与 .wan/）"
 $targetGitignore = Join-Path $Target ".gitignore"
-$gatesToolsIgnore = "gates-tools/"
 $existingGitignore = ""
 if (Test-Path $targetGitignore) { $existingGitignore = Read-TextFileUtf8 $targetGitignore }
+if ($existingGitignore -and -not $existingGitignore.EndsWith("`n")) { $existingGitignore += "`n" }
+$gitignoreChanged = $false
 if ($existingGitignore -notmatch "(?m)^gates-tools/?$") {
-    if ($existingGitignore -and -not $existingGitignore.EndsWith("`n")) { $existingGitignore += "`n" }
-    $existingGitignore += "# gates-toolkit 门禁产物（由 setup-gates 生成，不入库）`n$gatesToolsIgnore`n"
+    $existingGitignore += "# gates-toolkit 门禁产物（由 setup-gates 生成，不入库）`ngates-tools/`n"
+    $gitignoreChanged = $true
+}
+if ($existingGitignore -notmatch "(?m)^\.wan/?$") {
+    $existingGitignore += ".wan/`n"
+    $gitignoreChanged = $true
+}
+if ($gitignoreChanged) {
     $existingGitignore | Write-TextFileUtf8NoBom $targetGitignore
     Write-Host "    -> $targetGitignore"
 } else {
@@ -911,6 +921,47 @@ if (Test-Path $wfUpdate) {
     & $toolsDir/wan/bin/$WanOut validate $wfUpdate 2>&1 | ForEach-Object { Write-Host "  $_" }
 }
 
+# 注册每日自动更新调度（toolkit-update）：setup 直接完成注册，成员无需手动执行
+#  - CI 环境自动跳过；-NoSchedule / GATES_NO_SCHEDULE=1 可显式关闭
+#  - schedule add 幂等：schedule list 已含 toolkit-update 时跳过（重复 add 会报错）
+#  - service install 幂等：安装系统服务（开机自启），失败仅告警不阻断安装
+#  - 注意：schedule add 的 workflow 相对路径按进程 CWD 解析（非 -C 目录），须切到目标项目根执行
+$scheduleState = "registered"
+if ($NoSchedule -or $env:GATES_NO_SCHEDULE -eq "1" -or $env:CI -eq "true" -or $env:GITHUB_ACTIONS -eq "true") {
+    $scheduleState = "skipped"
+    Write-Host "==> 跳过每日自动更新调度注册 (-NoSchedule / GATES_NO_SCHEDULE / CI 环境)"
+} elseif (Test-Path $wfUpdate) {
+    Write-Host "==> 注册每日自动更新调度 (toolkit-update, 每日 09:00)"
+    $wanBin = "$toolsDir/wan/bin/$WanOut"
+    $updateWfRel = "gates-tools/wan/workflows/toolkit-update-win.yml"
+    if ($IsLinux) { $updateWfRel = "gates-tools/wan/workflows/toolkit-update-unix.yml" }
+    Push-Location $Target
+    try {
+        $registered = (& $wanBin schedule list -C . 2>$null) -match '(?m)^\s*toolkit-update(\s|$)'
+        if ($registered) {
+            Write-Host "    调度 toolkit-update 已注册，跳过"
+        } else {
+            & $wanBin schedule add toolkit-update "0 9 * * *" $updateWfRel -C .
+            if ($LASTEXITCODE -ne 0) {
+                $scheduleState = "failed"
+                Write-Warning "schedule add 失败（不影响门禁安装），可稍后手动重试"
+            }
+        }
+        $svcOut = (& $wanBin schedule service install -C . 2>&1) -join "`n"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "    service install: $svcOut"
+            Write-Warning "调度服务安装失败（可能需要权限），可稍后手动: $wanBin schedule service install -C ."
+        } else {
+            Write-Host "    ✓ $svcOut"
+        }
+    } finally {
+        Pop-Location
+    }
+} else {
+    $scheduleState = "missing"
+    Write-Host "==> 未找到 toolkit-update workflow，跳过调度注册"
+}
+
 Write-Host ""
 Write-Host "=========================================" -ForegroundColor Green
 Write-Host "  安装完成" -ForegroundColor Green
@@ -919,13 +970,24 @@ Write-Host ""
 Write-Host "gates-tools/ 为 setup 生成的产物（含二进制），已加入目标项目 .gitignore，无需（也不应）提交到 git。" -ForegroundColor Yellow
 Write-Host "门禁工具与规则建议整包引入 gates-toolkit（git submodule 或随仓库提交），升级时重跑本脚本即可。" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "每日自动更新（可选，在项目根运行，时间可自定义）:" -ForegroundColor Cyan
-if ($IsLinux) {
-    Write-Host "  gates-tools/wan/bin/wan schedule add toolkit-update `"0 9 * * *`" gates-tools/wan/workflows/toolkit-update-unix.yml -C ."
-    Write-Host "  gates-tools/wan/bin/wan schedule service install -C .   # 安装为系统服务（开机自启，可能需管理员权限）"
-    Write-Host "  手动触发一次: bash gates-tools/gatecheck.sh toolkit-update"
+if ($scheduleState -eq "registered") {
+    Write-Host "每日自动更新: 已注册 toolkit-update 调度（每日 09:00）并安装系统服务。" -ForegroundColor Cyan
+    if ($IsLinux) {
+        Write-Host "  查看运行记录: gates-tools/wan/bin/wan schedule history toolkit-update -C ."
+        Write-Host "  手动触发一次: bash gates-tools/gatecheck.sh toolkit-update"
+    } else {
+        Write-Host "  查看运行记录: gates-tools\wan\bin\wan.exe schedule history toolkit-update -C ."
+        Write-Host "  手动触发一次: gates-tools\gatecheck.cmd toolkit-update"
+    }
 } else {
-    Write-Host "  gates-tools\wan\bin\wan.exe schedule add toolkit-update `"0 9 * * *`" gates-tools/wan/workflows/toolkit-update-win.yml -C ."
-    Write-Host "  gates-tools\wan\bin\wan.exe schedule service install -C .   # 安装为系统服务（开机自启，可能需管理员权限）"
-    Write-Host "  手动触发一次: gates-tools\gatecheck.cmd toolkit-update"
+    Write-Host "每日自动更新: 本次未注册。如需开启（在项目根运行，时间可自定义）:" -ForegroundColor Cyan
+    if ($IsLinux) {
+        Write-Host "  gates-tools/wan/bin/wan schedule add toolkit-update `"0 9 * * *`" gates-tools/wan/workflows/toolkit-update-unix.yml -C ."
+        Write-Host "  gates-tools/wan/bin/wan schedule service install -C .   # 安装为系统服务（开机自启，可能需管理员权限）"
+        Write-Host "  手动触发一次: bash gates-tools/gatecheck.sh toolkit-update"
+    } else {
+        Write-Host "  gates-tools\wan\bin\wan.exe schedule add toolkit-update `"0 9 * * *`" gates-tools\wan/workflows/toolkit-update-win.yml -C ."
+        Write-Host "  gates-tools\wan\bin\wan.exe schedule service install -C .   # 安装为系统服务（开机自启，可能需管理员权限）"
+        Write-Host "  手动触发一次: gates-tools\gatecheck.cmd toolkit-update"
+    }
 }

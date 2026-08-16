@@ -24,6 +24,7 @@ bin/sql-guard/sqlguard-mine*
 # 测试项目内的工具集联接与生成产物（测试环境残留，不入库）
 tests/projects/*/gates-toolkit/
 tests/projects/*/gates-tools/
+tests/projects/*/.wan/
 
 # 测试项目构建产物（maven target 等）
 tests/projects/*/target/

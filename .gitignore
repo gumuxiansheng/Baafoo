@@ -75,3 +75,4 @@ proxy/proxy.test
 
 # gates-toolkit 门禁产物（由 setup-gates 生成，不入库）
 gates-tools/
+.wan/

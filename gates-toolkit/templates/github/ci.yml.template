@@ -1,6 +1,6 @@
 # 由 gates-toolkit setup-gates 生成（code-gate）
 # 门禁流程：setup-gates 安装工具集 + wan 运行 CI workflow。
-# 若仓库已有 ci.yml，setup 会自动修正其中 Run gates 的 tools/ 路径为 gates-tools/。
+# 若仓库已有 ci.yml，setup 会自动修正其中 Run gates 的旧 tools 目录路径为 gates-tools。
 name: code-gate
 
 on:

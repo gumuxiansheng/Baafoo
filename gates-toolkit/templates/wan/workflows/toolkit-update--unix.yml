@@ -2,9 +2,8 @@
 # 由 setup-gates 生成，工作目录为项目根（通过 wan -C 传入）
 # 用途: 自动更新 toolkit 源（submodule / 独立仓库）并重跑 setup 刷新 gates-tools；
 #       setup 参数从 gates-tools/.meta 恢复（首次 setup 时固化），全程非交互。
-# 注册每日调度（在项目根运行，时间可自定义）:
-#   gates-tools/wan/bin/wan schedule add toolkit-update "0 9 * * *" gates-tools/wan/workflows/toolkit-update-unix.yml -C .
-#   gates-tools/wan/bin/wan schedule service install -C .   # 安装为系统服务（开机自启，可能需管理员权限）
+# 每日调度已由 setup 自动注册（09:00）并安装为系统服务，无需手动操作。
+# 查看执行历史: gates-tools/wan/bin/wan schedule history toolkit-update -C .
 # 手动触发一次: bash gates-tools/gatecheck.sh toolkit-update
 version: 1
 
