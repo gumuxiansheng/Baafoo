@@ -1,0 +1,38 @@
+# 由 gates-toolkit setup-gates 生成（code-gate）
+# 门禁流程：setup-gates 安装工具集 + wan 运行 CI workflow。
+# 若仓库已有 ci.yml，setup 会自动修正其中 Run gates 的 tools/ 路径为 gates-tools/。
+name: code-gate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 二进制缓存：versions.toml 变更自动失效
+      - uses: actions/cache@v4
+        with:
+          path: gates-toolkit/bin
+          key: gates-bin-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gates-toolkit/versions.toml') }}
+
+      # java-guard 的 java-parser.jar 需要 JRE 8+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Prepare gates
+        run: bash gates-toolkit/scripts/ci-setup.sh . {{PROJECT_TYPE}} {{CISETUP_ARGS}}
+
+      - name: Resolve PR base ref
+        if: github.event_name == 'pull_request'
+        run: echo "BASE_REF=origin/${{ github.base_ref }}" >> "$GITHUB_ENV"
+
+      - name: Run gates
+        run: gates-tools/wan/bin/wan run gates-tools/wan/workflows/ci-unix.yml -C . --quiet

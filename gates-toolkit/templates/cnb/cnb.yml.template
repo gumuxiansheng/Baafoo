@@ -1,0 +1,17 @@
+# 由 gates-toolkit setup-gates 生成（code-gate pipeline）
+# 门禁流程：setup-gates 安装工具集 + wan 运行 CI workflow。
+# 若仓库已有 .cnb.yml，setup 会自动修正其中 run-gates 的 tools/ 路径为 gates-tools/。
+# PR 场景：在 run-gates 前加
+#   export BASE_REF="origin/${{ cnb.pull_request.base_ref }}"
+#   git fetch origin <base_ref>
+- name: code-gate
+  docker:
+    image: rust:1.77-bookworm
+  volumes:
+    - /root/.cargo:copy-on-write
+  stages:
+    - name: setup-gates
+      script: bash gates-toolkit/scripts/ci-setup.sh . {{PROJECT_TYPE}} {{CISETUP_ARGS}}
+    - name: run-gates
+      stage: check
+      script: gates-tools/wan/bin/wan run gates-tools/wan/workflows/ci-unix.yml -C . --quiet

@@ -670,6 +670,54 @@ echo "==> 生成 gates-tools/README.md"
   echo '```'
 } > "$TOOLS_DIR/README.md"
 
+# CI 集成：生成/更新 CI 编排文件（统一使用 gates-tools/ 路径，避免成员手写 tools/ 导致 CI 找不到产物）
+#  - 不存在            → 生成
+#  - 已含门禁门（wan run / ci-unix.yml）→ 自动修正裸 tools/ 路径为 gates-tools/（备份 .bak）
+#  - 存在但无门禁门    → allow_append=1 时追加，否则仅提示（不破坏现有 workflow 结构）
+update_ci_file() {
+  local path="$1" content="$2" allow_append="${3:-0}"
+  if [ ! -f "$path" ]; then
+    printf '%s\n' "$content" > "$path"
+    echo "    -> 已生成 $path"
+    return
+  fi
+  if grep -qE 'wan run|ci-unix\.yml' "$path"; then
+    if grep -qE '(^|[^a-z-])tools/' "$path"; then
+      cp "$path" "$path.bak"
+      sed -E 's/(^|[^a-z-])tools\//\1gates-tools\//g' "$path" > "$path.tmp" && mv "$path.tmp" "$path"
+      echo "    -> 已修正 $path 中 tools/ 路径为 gates-tools/ (原文件备份 .bak)"
+    else
+      echo "    -> $path 已含门禁门且路径正确，无需修改"
+    fi
+  elif [ "$allow_append" = "1" ]; then
+    cp "$path" "$path.bak"
+    { cat "$path"; printf '\n'; printf '%s\n' "$content"; } > "$path.tmp" && mv "$path.tmp" "$path"
+    echo "    -> 已追加门禁门到 $path (原文件备份 .bak)"
+  else
+    echo "    -> $path 已存在但无门禁门，请参照 README 在现有 workflow 中补充 gates 步骤 (未修改)"
+  fi
+}
+
+echo "==> 生成/更新 CI 编排 (code-gate)"
+CNB_ARGS=""
+PROJECT_ARG="$PROJECT_TYPE"
+if [ "$PROJECT_TYPE" = "multi-module" ]; then
+  SQL_ARG="$(printf '%s,' "${SQL_MODULES[@]}" | sed 's/,$//')"
+  JAVA_ARG="${JAVA_MODULES[*]}"
+  CNB_ARGS="\"$SQL_ARG\" $JAVA_ARG"
+fi
+
+# CNB pipeline (.cnb.yml)——顶层为 stages 数组，无门禁门时可安全追加
+CNB_TPL="$TOOLKIT_ROOT/templates/cnb/cnb.yml.template"
+CNB_CONTENT="$(sed -e "s|{{PROJECT_TYPE}}|$PROJECT_ARG|g" -e "s|{{CISETUP_ARGS}}|$CNB_ARGS|g" "$CNB_TPL")"
+update_ci_file "$TARGET/.cnb.yml" "$CNB_CONTENT" 1
+
+# GitHub Actions workflow (.github/workflows/ci.yml)——完整文件结构，存在但无门禁门时仅提示
+GHA_TPL="$TOOLKIT_ROOT/templates/github/ci.yml.template"
+GHA_CONTENT="$(sed -e "s|{{PROJECT_TYPE}}|$PROJECT_ARG|g" -e "s|{{CISETUP_ARGS}}|$CNB_ARGS|g" "$GHA_TPL")"
+mkdir -p "$TARGET/.github/workflows"
+update_ci_file "$TARGET/.github/workflows/ci.yml" "$GHA_CONTENT" 0
+
 # gates-tools 为生成产物：自动加入目标项目 .gitignore，避免误提交
 echo "==> 更新目标项目 .gitignore（忽略生成的 gates-tools/）"
 GITIGNORE_FILE="$TARGET/.gitignore"

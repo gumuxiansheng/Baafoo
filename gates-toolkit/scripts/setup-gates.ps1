@@ -738,9 +738,66 @@ if ($IsLinux) {
     $readme += "gates-tools\wan\bin\wan.exe schedule history toolkit-update -C .`n"
 }
 $readme += '```' + "`n`n"
-$readme += "### CI 集成`n参考 ``.cnb.yml`` (如已存在则手动添加 code-gate job)。`n"
+$readme += "### CI 集成`n参考生成的 ``.cnb.yml`` 与 ``.github/workflows/ci.yml`` (由 setup 自动生成/更新，code-gate job)。`n"
 
 $readme | Write-TextFileUtf8NoBom "$toolsDir/README.md"
+
+# CI 集成：生成/更新 CI 编排文件（统一使用 gates-tools/ 路径，避免成员手写 tools/ 导致 CI 找不到产物）
+#  - 不存在            → 生成
+#  - 已含门禁门（wan run / ci-unix.yml）→ 自动修正裸 tools/ 路径为 gates-tools/（备份 .bak）
+#  - 存在但无门禁门    → AllowAppend 时追加，否则仅提示（不破坏现有 workflow 结构）
+function Update-CiWorkflowFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Content,
+        [switch]$AllowAppend
+    )
+    if (-not (Test-Path $Path)) {
+        $Content | Write-TextFileUtf8NoBom $Path
+        Write-Host "    -> 已生成 $Path"
+        return
+    }
+    $existing = Read-TextFileUtf8 $Path
+    if ($existing -match 'wan run|ci-unix\.yml') {
+        # 已存在门禁门：自动修正 tools/ 路径为 gates-tools/（负后视排除 gates- 前缀）
+        $updated = $existing -replace '(?<!gates-)tools/', 'gates-tools/'
+        if ($updated -ne $existing) {
+            Copy-Item $Path "$Path.bak" -Force
+            $updated | Write-TextFileUtf8NoBom $Path
+            Write-Host "    -> 已修正 $Path 中 tools/ 路径为 gates-tools/ (原文件备份 .bak)"
+        } else {
+            Write-Host "    -> $Path 已含门禁门且路径正确，无需修改"
+        }
+    } elseif ($AllowAppend) {
+        Copy-Item $Path "$Path.bak" -Force
+        $sep = if ($existing.EndsWith("`n")) { "" } else { "`n" }
+        ($existing + $sep + $Content) | Write-TextFileUtf8NoBom $Path
+        Write-Host "    -> 已追加门禁门到 $Path (原文件备份 .bak)"
+    } else {
+        Write-Host "    -> $Path 已存在但无门禁门，请参照 README 在现有 workflow 中补充 gates 步骤 (未修改)"
+    }
+}
+
+Write-Host "==> 生成/更新 CI 编排 (code-gate)"
+$cnbArgs = ""
+$projectArg = $ProjectType
+if ($ProjectType -eq "multi-module") {
+    $sqlArg = ($SqlModules -join ",")
+    $javaArg = ($JavaModules -join " ")
+    $cnbArgs = '"' + $sqlArg + '" ' + $javaArg
+}
+
+# CNB pipeline (.cnb.yml)——顶层为 stages 数组，无门禁门时可安全追加
+$cnbTemplate = Read-TextFileUtf8 "$ToolkitRoot/templates/cnb/cnb.yml.template"
+$cnbContent = $cnbTemplate.Replace("{{PROJECT_TYPE}}", $projectArg).Replace("{{CISETUP_ARGS}}", $cnbArgs)
+Update-CiWorkflowFile -Path (Join-Path $Target ".cnb.yml") -Content $cnbContent -AllowAppend
+
+# GitHub Actions workflow (.github/workflows/ci.yml)——完整文件结构，存在但无门禁门时仅提示
+$ghaTemplate = Read-TextFileUtf8 "$ToolkitRoot/templates/github/ci.yml.template"
+$ghaContent = $ghaTemplate.Replace("{{PROJECT_TYPE}}", $projectArg).Replace("{{CISETUP_ARGS}}", $cnbArgs)
+$ghaDir = Join-Path $Target ".github/workflows"
+if (-not (Test-Path $ghaDir)) { New-Item -ItemType Directory -Force $ghaDir | Out-Null }
+Update-CiWorkflowFile -Path (Join-Path $ghaDir "ci.yml") -Content $ghaContent
 
 # gates-tools 为生成产物：自动加入目标项目 .gitignore，避免误提交
 Write-Host "==> 更新目标项目 .gitignore（忽略生成的 gates-tools/）"
