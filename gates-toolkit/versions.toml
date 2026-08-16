@@ -9,7 +9,7 @@
 # version 字段用于版本比较：本地存在同版本时跳过下载，低于配置版本时自动更新。
 
 [wan]
-version = "0.1.1"
+version = "0.1.2"
 
   [wan.windows_amd64]
   url = "https://cnb.cool/mikezhu/wan/-/releases/download/v0.1.2/wan-windows-amd64.exe"

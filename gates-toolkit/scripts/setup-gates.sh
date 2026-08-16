@@ -114,6 +114,27 @@ if [ ! -d "$GIT_DIR" ]; then
   echo "Warning: target is not a git repo: $TARGET"
 fi
 
+# 参数恢复：重跑 setup（手动升级或 toolkit-update 每日自动更新）时，
+# 复用首次 setup 固化到 gates-tools/.meta 的参数，避免非交互下自动检测漂移。
+# 显式传参（命令行参数）优先于 .meta。
+META_FILE="$TARGET/gates-tools/.meta"
+META_PROJECT_TYPE=""
+META_SQL_MODULES=""
+META_JAVA_MODULES=""
+META_BACKEND_DIR=""
+if [ -f "$META_FILE" ]; then
+  META_PROJECT_TYPE="$(sed -n 's/^project_type=//p' "$META_FILE" | head -1 | tr -d '[:space:]')"
+  # 仅恢复多模块键 sql_modules；旧版单数键 sql_module 不恢复——升级到多模块支持后
+  # 重跑 setup 会重新全量检测（全部含 mapper 的模块纳入），检测结果固化为新键。
+  META_SQL_MODULES="$(sed -n 's/^sql_modules=//p' "$META_FILE" | head -1 | tr -d '[:space:]')"
+  META_JAVA_MODULES="$(sed -n 's/^java_modules=//p' "$META_FILE" | head -1)"
+  META_BACKEND_DIR="$(sed -n 's/^backend_dir=//p' "$META_FILE" | head -1 | tr -d '[:space:]')"
+fi
+if [ "$PROJECT_TYPE" = "auto" ] && [ -n "$META_PROJECT_TYPE" ]; then
+  PROJECT_TYPE="$META_PROJECT_TYPE"
+  echo "[meta] 复用首次 setup 参数: project_type=$PROJECT_TYPE"
+fi
+
 # 自动检测
 if [ "$PROJECT_TYPE" = "auto" ]; then
   if [ -d "$TARGET/backend/src/main/java" ]; then
@@ -129,65 +150,84 @@ if [ "$PROJECT_TYPE" = "auto" ]; then
 fi
 
 BACKEND_DIR="backend"
-SQL_MODULE=""
+# SQL 模块（支持多个：含 src/main/resources/mapper 的模块全部纳入；
+# 位置参数/-.meta 传入时为逗号分隔字符串，统一解析为 SQL_MODULES 数组）
+SQL_MODULES_STR=""
+SQL_MODULES=()
 JAVA_MODULES=()
+
+# backend_dir 恢复（spring-boot 布局，无命令行参数时）
+if [ ${#EXTRA_ARGS[@]} -eq 0 ] && [ "$PROJECT_TYPE" != "multi-module" ] && [ -n "$META_BACKEND_DIR" ]; then
+  BACKEND_DIR="$META_BACKEND_DIR"
+fi
 
 if [ "$PROJECT_TYPE" = "multi-module" ]; then
   # 是否交互式终端（CI / 重定向输入时不弹提示）
   if [ -t 0 ]; then INTERACTIVE=true; else INTERACTIVE=false; fi
   if [ ${#EXTRA_ARGS[@]} -gt 0 ]; then
-    SQL_MODULE="${EXTRA_ARGS[0]}"
+    # 位置参数：第一个为 SQL 模块（逗号分隔可传多个），其余为 Java 模块
+    SQL_MODULES_STR="${EXTRA_ARGS[0]}"
     JAVA_MODULES=("${EXTRA_ARGS[@]:1}")
   else
-    # 自动猜测 SQL 模块：找 */src/main/resources/mapper 目录，从路径中提取模块名
-    # find 返回 .../module-name/src/main/resources/mapper，取往上第三层即为模块名
-    # （mapper→resources→main→module-name）
-    SQL_CANDIDATES=()
-    while IFS= read -r p; do
-      # 从 mapper 路径上溯 3 层得到模块目录
-      mod_dir="$(dirname "$(dirname "$(dirname "$p")")")"
-      # 确保模块目录在 TARGET 下（避免误选 TARGET 自身）
-      if [ "$mod_dir" != "$TARGET" ] && [ "$(dirname "$mod_dir")" = "$TARGET" ]; then
-        SQL_CANDIDATES+=("$(basename "$mod_dir")")
-      fi
-    done < <(find "$TARGET" -maxdepth 7 -type d -path '*/src/main/resources/mapper' 2>/dev/null)
-    SQL_CANDIDATES=($(printf '%s\n' "${SQL_CANDIDATES[@]}" | sort -u))
-
-    if [ ${#SQL_CANDIDATES[@]} -gt 0 ]; then
-      if [ ${#SQL_CANDIDATES[@]} -gt 1 ] && [ "$INTERACTIVE" = "true" ]; then
-        echo "[auto] 发现多个可能的 SQL 模块:"
-        for i in "${!SQL_CANDIDATES[@]}"; do echo "  [$((i + 1))] ${SQL_CANDIDATES[$i]}"; done
-        printf "选择序号（默认 1）: "
-        read -r sel
-        idx=0
-        case "$sel" in
-          ''|*[!0-9]*) idx=0 ;;
-          *) if [ "$sel" -ge 1 ] && [ "$sel" -le "${#SQL_CANDIDATES[@]}" ]; then idx=$((sel - 1)); else idx=0; fi ;;
-        esac
-        SQL_MODULE="${SQL_CANDIDATES[$idx]}"
-      else
-        SQL_MODULE="${SQL_CANDIDATES[0]}"
-      fi
-      echo "[auto] SQL 模块: $SQL_MODULE"
-    elif [ "$INTERACTIVE" = "true" ]; then
-      printf "未自动检测到 SQL 模块，请输入 SQL/Mapper 所在模块名: "
-      read -r SQL_MODULE
+    # .meta 参数恢复（重跑场景）：显式参数 > .meta > 自动检测
+    if [ -n "$META_SQL_MODULES" ]; then
+      SQL_MODULES_STR="$META_SQL_MODULES"
+      echo "[meta] 复用首次 setup 参数: sql_modules=$SQL_MODULES_STR"
+    fi
+    if [ -n "$META_JAVA_MODULES" ]; then
+      # 固化时逗号分隔，恢复转空格分词
+      # shellcheck disable=SC2206
+      JAVA_MODULES=($(printf '%s' "$META_JAVA_MODULES" | tr ',' ' '))
+      echo "[meta] 复用首次 setup 参数: java_modules=${JAVA_MODULES[*]}"
     fi
 
-    # 自动猜测 Java 模块
-    # find 返回 .../module-name/src/main/java，取往上第二层即为模块名
-    # （java→main→module-name）
-    while IFS= read -r p; do
-      mod_dir="$(dirname "$(dirname "$p")")"
-      if [ "$mod_dir" != "$TARGET" ] && [ "$(dirname "$mod_dir")" = "$TARGET" ]; then
-        JAVA_MODULES+=("$(basename "$mod_dir")")
+    # 自动猜测 SQL 模块（.meta 已恢复时跳过）：全部纳入
+    # find 返回 .../module-name/src/main/resources/mapper，取往上第三层即为模块名
+    # （mapper→resources→main→module-name）
+    if [ -z "$SQL_MODULES_STR" ]; then
+      SQL_CANDIDATES=()
+      while IFS= read -r p; do
+        # 从 mapper 路径上溯 3 层得到模块目录
+        mod_dir="$(dirname "$(dirname "$(dirname "$p")")")"
+        # 确保模块目录在 TARGET 下（避免误选 TARGET 自身）
+        if [ "$mod_dir" != "$TARGET" ] && [ "$(dirname "$mod_dir")" = "$TARGET" ]; then
+          SQL_CANDIDATES+=("$(basename "$mod_dir")")
+        fi
+      done < <(find "$TARGET" -maxdepth 7 -type d -path '*/src/main/resources/mapper' 2>/dev/null)
+      # shellcheck disable=SC2206
+      SQL_CANDIDATES=($(printf '%s\n' "${SQL_CANDIDATES[@]}" | sort -u))
+
+      if [ ${#SQL_CANDIDATES[@]} -gt 0 ]; then
+        SQL_MODULES=("${SQL_CANDIDATES[@]}")
+        echo "[auto] SQL 模块: ${SQL_MODULES[*]}"
+      elif [ "$INTERACTIVE" = "true" ]; then
+        printf "未自动检测到 SQL 模块，请输入 SQL/Mapper 所在模块名（多个用逗号分隔）: "
+        read -r SQL_MODULES_STR
       fi
-    done < <(find "$TARGET" -maxdepth 7 -type d -path '*/src/main/java' 2>/dev/null | sort -u)
-    echo "[auto] Java 模块: ${JAVA_MODULES[*]}"
+    fi
+
+    # 自动猜测 Java 模块（.meta 已恢复时跳过）
+    if [ ${#JAVA_MODULES[@]} -eq 0 ]; then
+      # find 返回 .../module-name/src/main/java，取往上第二层即为模块名
+      # （java→main→module-name）
+      while IFS= read -r p; do
+        mod_dir="$(dirname "$(dirname "$p")")"
+        if [ "$mod_dir" != "$TARGET" ] && [ "$(dirname "$mod_dir")" = "$TARGET" ]; then
+          JAVA_MODULES+=("$(basename "$mod_dir")")
+        fi
+      done < <(find "$TARGET" -maxdepth 7 -type d -path '*/src/main/java' 2>/dev/null | sort -u)
+      echo "[auto] Java 模块: ${JAVA_MODULES[*]}"
+    fi
   fi
 
-  if [ -z "$SQL_MODULE" ]; then
-    echo "Error: 未找到 SQL/Mapper 所在模块" >&2
+  # 逗号分隔字符串归一化为数组（显式传参/.meta/交互输入路径）
+  if [ ${#SQL_MODULES[@]} -eq 0 ] && [ -n "$SQL_MODULES_STR" ]; then
+    # shellcheck disable=SC2206
+    SQL_MODULES=($(printf '%s' "$SQL_MODULES_STR" | tr ',' ' '))
+  fi
+
+  if [ ${#SQL_MODULES[@]} -eq 0 ]; then
+    echo "Error: 未找到 SQL/Mapper 所在模块（多个模块用逗号分隔传入）" >&2
     exit 1
   fi
   if [ ${#JAVA_MODULES[@]} -eq 0 ]; then
@@ -331,7 +371,9 @@ echo "==> 生成 sql-guard 配置"
 if [ "$PROJECT_TYPE" = "spring-boot" ]; then
   cp "$TOOLKIT_ROOT/templates/sql-guard/sql-guard-spring-boot.toml" "$TOOLS_DIR/sql-guard/sqlguard.toml"
 else
-  sed "s|{{SQL_MODULE}}|$SQL_MODULE|g" \
+  # 多 SQL 模块：渲染为 "mod1/src/main/resources/mapper", "mod2/..." 列表
+  MAPPER_PATHS=$(printf '"%s/src/main/resources/mapper",' "${SQL_MODULES[@]}" | sed 's/,$//')
+  sed "s|{{MAPPER_PATHS}}|$MAPPER_PATHS|g" \
     "$TOOLKIT_ROOT/templates/sql-guard/sql-guard-multi-module.toml" \
     > "$TOOLS_DIR/sql-guard/sqlguard.toml"
 fi
@@ -362,17 +404,50 @@ else
   MODULES_LIST="${JAVA_MODULES[*]}"
   MODULES_ARRAY_PS=$(printf '"%s",' "${JAVA_MODULES[@]}" | sed 's/,$//')
 
-  sed -e "s|{{SQL_MODULE}}|$SQL_MODULE|g" -e "s|{{MODULES_ARRAY_PS}}|$MODULES_ARRAY_PS|g" \
+  sed -e "s|{{MODULES_ARRAY_PS}}|$MODULES_ARRAY_PS|g" \
     "$TOOLKIT_ROOT/templates/wan/workflows/pre-commit--multi-module.yml" \
     > "$TOOLS_DIR/wan/workflows/pre-commit-win.yml"
-  sed -e "s|{{SQL_MODULE}}|$SQL_MODULE|g" -e "s|{{MODULES_LIST}}|$MODULES_LIST|g" \
+  sed -e "s|{{MODULES_LIST}}|$MODULES_LIST|g" \
     "$TOOLKIT_ROOT/templates/wan/workflows/pre-commit--multi-module-unix.yml" \
     > "$TOOLS_DIR/wan/workflows/pre-commit-unix.yml"
   # CI 专用 workflow（BASE_REF 控制增量/全量，见模板头部注释）
-  sed -e "s|{{SQL_MODULE}}|$SQL_MODULE|g" -e "s|{{MODULES_LIST}}|$MODULES_LIST|g" \
+  sed -e "s|{{MODULES_LIST}}|$MODULES_LIST|g" \
     "$TOOLKIT_ROOT/templates/wan/workflows/ci--multi-module-unix.yml" \
     > "$TOOLS_DIR/wan/workflows/ci-unix.yml"
 fi
+
+# 渲染独立 workflow（sql-guard-only / java-guard-only）
+echo "==> 生成独立检查 workflow (sql-guard / java-guard)"
+for tool in sql-guard java-guard; do
+  if [ "$PROJECT_TYPE" = "spring-boot" ]; then
+    sed "s|{{BACKEND_DIR}}|$BACKEND_DIR|g" \
+      "$TOOLKIT_ROOT/templates/wan/workflows/${tool}--spring-boot.yml" \
+      > "$TOOLS_DIR/wan/workflows/${tool}-win.yml"
+    sed "s|{{BACKEND_DIR}}|$BACKEND_DIR|g" \
+      "$TOOLKIT_ROOT/templates/wan/workflows/${tool}--spring-boot-unix.yml" \
+      > "$TOOLS_DIR/wan/workflows/${tool}-unix.yml"
+  else
+    if [ "$tool" = "java-guard" ]; then
+      sed -e "s|{{MODULES_ARRAY_PS}}|$MODULES_ARRAY_PS|g" \
+        "$TOOLKIT_ROOT/templates/wan/workflows/${tool}--multi-module.yml" \
+        > "$TOOLS_DIR/wan/workflows/${tool}-win.yml"
+      sed -e "s|{{MODULES_LIST}}|$MODULES_LIST|g" \
+        "$TOOLKIT_ROOT/templates/wan/workflows/${tool}--multi-module-unix.yml" \
+        > "$TOOLS_DIR/wan/workflows/${tool}-unix.yml"
+    else
+      cp "$TOOLKIT_ROOT/templates/wan/workflows/${tool}--multi-module.yml" \
+        "$TOOLS_DIR/wan/workflows/${tool}-win.yml"
+      cp "$TOOLKIT_ROOT/templates/wan/workflows/${tool}--multi-module-unix.yml" \
+        "$TOOLS_DIR/wan/workflows/${tool}-unix.yml"
+    fi
+  fi
+done
+
+# 渲染 toolkit-update workflow（每日自动更新，注册调度见安装完成后的提示）
+# 无占位符：setup 脚本路径按约定固定为 gates-toolkit/scripts/，参数从 .meta 恢复
+echo "==> 生成 toolkit-update workflow (每日自动更新)"
+cp "$TOOLKIT_ROOT/templates/wan/workflows/toolkit-update--win.yml" "$TOOLS_DIR/wan/workflows/toolkit-update-win.yml"
+cp "$TOOLKIT_ROOT/templates/wan/workflows/toolkit-update--unix.yml" "$TOOLS_DIR/wan/workflows/toolkit-update-unix.yml"
 
 # 渲染 hook
 echo "==> 生成 pre-commit hook"
@@ -410,7 +485,7 @@ for MOD in \$MODULES; do
     exit 1
   }
 done
-echo "✓ JavaGuard passed\""
+echo \"✓ JavaGuard passed\""
   HOOK_TPL="${HOOK_TPL//\{\{FALLBACK_JAVA_BLOCK\}\}/$JAVA_BLOCK}"
 fi
 printf '%s' "$HOOK_TPL" > "$TOOLS_DIR/hooks/pre-commit"
@@ -430,7 +505,11 @@ echo "==> 生成 gatecheck 快捷脚本"
 cat > "$TOOLS_DIR/gatecheck.cmd" <<'EOF'
 @echo off
 rem gatecheck.cmd - run code gates manually (generated by gates-toolkit)
-rem Usage: gates-tools\gatecheck.cmd
+rem Usage: gates-tools\gatecheck.cmd [sql-guard^|java-guard^|toolkit-update]
+rem   no args       = run full pre-commit gate (sql-guard + java-guard)
+rem   sql-guard     = run SqlGuard only
+rem   java-guard    = run JavaGuard only
+rem   toolkit-update = refresh gates-tools from current toolkit source
 rem NOTE: ASCII only on purpose (cmd parses batch files using OEM codepage,
 rem       UTF-8 comments before chcp can corrupt line endings)
 chcp 65001 >nul
@@ -441,18 +520,37 @@ if not exist "%WAN%" (
   echo [ERROR] wan binary not found: %WAN%
   exit /b 1
 )
+set "TARGET=%1"
+if "%TARGET%"=="" set "TARGET=pre-commit"
+rem Validate target
+if "%TARGET%"=="sql-guard" goto :ok
+if "%TARGET%"=="java-guard" goto :ok
+if "%TARGET%"=="pre-commit" goto :ok
+if "%TARGET%"=="toolkit-update" goto :ok
+echo [ERROR] Unknown target: %TARGET%
+echo Usage: gates-tools\gatecheck.cmd [sql-guard^|java-guard^|toolkit-update]
+exit /b 2
+:ok
 rem Prefer Windows workflow when pwsh exists, else fall back to bash workflow
-rem (same logic as the pre-commit hook)
-set "WF=gates-tools\wan\workflows\pre-commit-unix.yml"
+rem (same logic as the pre-commit hook; toolkit-update also has win/unix variants)
+set "WF=gates-tools\wan\workflows\%TARGET%-unix.yml"
 where pwsh >nul 2>nul
-if not errorlevel 1 set "WF=gates-tools\wan\workflows\pre-commit-win.yml"
+if not errorlevel 1 set "WF=gates-tools\wan\workflows\%TARGET%-win.yml"
+if not exist "%WF%" (
+  echo [ERROR] workflow not found: %WF%
+  exit /b 1
+)
 "%WAN%" run -C . "%WF%"
 exit /b %ERRORLEVEL%
 EOF
 cat > "$TOOLS_DIR/gatecheck.sh" <<'EOF'
 #!/bin/sh
 # 手动运行代码门禁（由 gates-toolkit 自动生成）
-# 用法: bash gates-tools/gatecheck.sh
+# 用法: bash gates-tools/gatecheck.sh [sql-guard|java-guard|toolkit-update]
+#   无参数         = 运行完整 pre-commit 门禁 (sql-guard + java-guard)
+#   sql-guard      = 仅运行 SqlGuard
+#   java-guard     = 仅运行 JavaGuard
+#   toolkit-update = 刷新 gates-tools（从当前 toolkit 源重跑 setup）
 cd "$(dirname "$0")/.." || exit 1
 WAN="gates-tools/wan/bin/wan"
 if [ ! -x "$WAN" ] && [ -x "$WAN.exe" ]; then WAN="$WAN.exe"; fi
@@ -460,15 +558,30 @@ if [ ! -x "$WAN" ]; then
   echo "[ERROR] wan binary not found: $WAN" >&2
   exit 1
 fi
-WF="gates-tools/wan/workflows/pre-commit-unix.yml"
-if [ -f "gates-tools/wan/workflows/pre-commit-win.yml" ] && command -v pwsh >/dev/null 2>&1; then
-  WF="gates-tools/wan/workflows/pre-commit-win.yml"
+TARGET="${1:-pre-commit}"
+case "$TARGET" in
+  sql-guard|java-guard|pre-commit|toolkit-update) ;;
+  *)
+    echo "[ERROR] Unknown target: $TARGET" >&2
+    echo "Usage: bash gates-tools/gatecheck.sh [sql-guard|java-guard|toolkit-update]" >&2
+    exit 2
+    ;;
+esac
+WF="gates-tools/wan/workflows/${TARGET}-unix.yml"
+if [ -f "gates-tools/wan/workflows/${TARGET}-win.yml" ] && command -v pwsh >/dev/null 2>&1; then
+  WF="gates-tools/wan/workflows/${TARGET}-win.yml"
+fi
+if [ ! -f "$WF" ]; then
+  echo "[ERROR] workflow not found: $WF" >&2
+  exit 1
 fi
 "$WAN" run -C . "$WF"
 EOF
 chmod +x "$TOOLS_DIR/gatecheck.sh" 2>/dev/null || true
 
 # 写入 toolkit 指纹（staleness 检测：pre-commit hook 重算比对，不一致时提示重跑 setup）
+# 同时固化 setup 参数（project_type 等）：重跑 setup（手动或 toolkit-update 定时）时
+# 从 .meta 恢复，避免非交互下自动检测漂移。
 echo "==> 写入 toolkit 指纹"
 TOOLKIT_FINGERPRINT="$(gates_toolkit_fingerprint "$TOOLKIT_ROOT")"
 if [ -n "$TOOLKIT_FINGERPRINT" ]; then
@@ -476,6 +589,13 @@ if [ -n "$TOOLKIT_FINGERPRINT" ]; then
     echo "# 由 gates-toolkit setup-gates 生成；pre-commit hook 用于 staleness 检测"
     echo "toolkit_fingerprint=$TOOLKIT_FINGERPRINT"
     echo "setup_at=$(date '+%Y-%m-%d %H:%M:%S')"
+    echo "project_type=$PROJECT_TYPE"
+    if [ "$PROJECT_TYPE" = "multi-module" ]; then
+      echo "sql_modules=$(printf '%s,' "${SQL_MODULES[@]}" | sed 's/,$//')"
+      echo "java_modules=$(printf '%s,' "${JAVA_MODULES[@]}" | sed 's/,$//')"
+    else
+      echo "backend_dir=$BACKEND_DIR"
+    fi
   } > "$TOOLS_DIR/.meta"
 else
   echo "Warning: toolkit 指纹计算失败，跳过 .meta 写入" >&2
@@ -496,7 +616,7 @@ echo "==> 生成 gates-tools/README.md"
     echo "- SQL/Mapper: \`$BACKEND_DIR/src/main/resources\`"
     echo "- Java: \`$BACKEND_DIR/src/main/java\`"
   else
-    echo "- SQL/Mapper: \`$SQL_MODULE/src/main/resources\`"
+    echo "- SQL/Mapper: $(printf '`%s`, ' "${SQL_MODULES[@]}" | sed 's/, $//') (mapper 路径已全部写入 sqlguard.toml)"
     echo "- Java 模块: $(printf '`%s/src/main/java`, ' "${JAVA_MODULES[@]}" | sed 's/, $//')"
   fi
   echo ""
@@ -510,6 +630,17 @@ echo "==> 生成 gates-tools/README.md"
   echo "- Windows: \`gates-tools\\gatecheck.cmd\`（双击即可）"
   echo "- Linux/macOS: \`bash gates-tools/gatecheck.sh\`"
   echo ""
+  echo "单独运行某个检查工具:"
+  echo "```"
+  echo "# gatecheck 脚本带参数"
+  echo "gates-tools\gatecheck.cmd sql-guard    # Windows"
+  echo "bash gates-tools/gatecheck.sh java-guard # Linux"
+  echo ""
+  echo "# 或直接用 wan（需完整路径，wan 短名查找 .wan/workflows/）"
+  echo "\"gates-tools/wan/bin/wan\" run \"gates-tools/wan/workflows/sql-guard-unix.yml\" -C ."
+  echo "\"gates-tools/wan/bin/wan\" run \"gates-tools/wan/workflows/java-guard-unix.yml\" -C ."
+  echo "```"
+  echo ""
   echo "等价于以下完整命令（也可单独执行）:"
   echo '```bash'
   echo "# SqlGuard（pre-commit 自动增量检查未提交改动；手动全量在项目根运行）"
@@ -521,6 +652,21 @@ echo "==> 生成 gates-tools/README.md"
   echo ""
   echo "# wan 编排"
   echo "gates-tools/wan/bin/wan run pre-commit-unix -C ."
+  echo '```'
+  echo ""
+  echo "### 每日自动更新（可选）"
+  echo ""
+  echo "注册 wan 定时调度，每日自动刷新 gates-tools（在项目根运行，时间可自定义）:"
+  echo '```'
+  echo "# 1. 注册调度（每天 09:00）"
+  echo "gates-tools/wan/bin/wan schedule add toolkit-update \"0 9 * * *\" gates-tools/wan/workflows/toolkit-update-unix.yml -C ."
+  echo ""
+  echo "# 2. 安装为系统服务（开机自启，可能需管理员权限）"
+  echo "gates-tools/wan/bin/wan schedule service install -C ."
+  echo ""
+  echo "# 手动触发一次 / 查看执行历史"
+  echo "bash gates-tools/gatecheck.sh toolkit-update"
+  echo "gates-tools/wan/bin/wan schedule history toolkit-update -C ."
   echo '```'
 } > "$TOOLS_DIR/README.md"
 
@@ -622,9 +768,21 @@ for tool in "$WAN_BIN_FILE" "$SQL_BIN_FILE" "$JG_BIN_FILE"; do
 done
 [ -f "$WAN_BIN_FILE" ] && "$WAN_BIN_FILE" validate "$TOOLS_DIR/wan/workflows/pre-commit-unix.yml" 2>&1 || true
 [ -f "$TOOLS_DIR/wan/workflows/ci-unix.yml" ] && [ -f "$WAN_BIN_FILE" ] && "$WAN_BIN_FILE" validate "$TOOLS_DIR/wan/workflows/ci-unix.yml" 2>&1 || true
+[ -f "$TOOLS_DIR/wan/workflows/toolkit-update-unix.yml" ] && [ -f "$WAN_BIN_FILE" ] && "$WAN_BIN_FILE" validate "$TOOLS_DIR/wan/workflows/toolkit-update-unix.yml" 2>&1 || true
 
 echo ""
 printf '\033[0;32m=========================================\n  安装完成\n=========================================\033[0m\n'
 echo ""
 echo "gates-tools/ 为 setup 生成的产物（含二进制），已加入目标项目 .gitignore，无需（也不应）提交到 git。"
 echo "门禁工具与规则建议整包引入 gates-toolkit（git submodule 或随仓库提交），升级时重跑本脚本即可。"
+echo ""
+echo "每日自动更新（可选，在项目根运行，时间可自定义）:"
+if [ "$OS_TYPE" = "Linux" ]; then
+  echo "  gates-tools/wan/bin/wan schedule add toolkit-update \"0 9 * * *\" gates-tools/wan/workflows/toolkit-update-unix.yml -C ."
+  echo "  gates-tools/wan/bin/wan schedule service install -C .   # 安装为系统服务（开机自启，可能需管理员权限）"
+  echo "  手动触发一次: bash gates-tools/gatecheck.sh toolkit-update"
+else
+  echo "  gates-tools\\wan\\bin\\wan.exe schedule add toolkit-update \"0 9 * * *\" gates-tools/wan/workflows/toolkit-update-win.yml -C ."
+  echo "  gates-tools\\wan\\bin\\wan.exe schedule service install -C .   # 安装为系统服务（开机自启，可能需管理员权限）"
+  echo "  手动触发一次: gates-tools\\gatecheck.cmd toolkit-update"
+fi

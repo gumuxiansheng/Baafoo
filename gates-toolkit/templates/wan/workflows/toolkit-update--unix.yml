@@ -1,0 +1,64 @@
+# wan workflow: toolkit-update (每日自动更新工具集, Linux)
+# 由 setup-gates 生成，工作目录为项目根（通过 wan -C 传入）
+# 用途: 自动更新 toolkit 源（submodule / 独立仓库）并重跑 setup 刷新 gates-tools；
+#       setup 参数从 gates-tools/.meta 恢复（首次 setup 时固化），全程非交互。
+# 注册每日调度（在项目根运行，时间可自定义）:
+#   gates-tools/wan/bin/wan schedule add toolkit-update "0 9 * * *" gates-tools/wan/workflows/toolkit-update-unix.yml -C .
+#   gates-tools/wan/bin/wan schedule service install -C .   # 安装为系统服务（开机自启，可能需管理员权限）
+# 手动触发一次: bash gates-tools/gatecheck.sh toolkit-update
+version: 1
+
+jobs:
+  update-toolkit-source:
+    steps:
+      - name: 更新 toolkit 源
+        shell: bash
+        run: |
+          # 分发方式自动探测:
+          #  - .gitmodules 含 gates-toolkit → submodule 对齐父仓库记录的版本
+          #  - gates-toolkit/.git 存在      → 独立 git 仓库，pull 最新
+          #  - 其余                          → 随业务仓库分发，源随 git pull 更新，跳过
+          # 源更新失败仅告警不中断：用现有源继续刷新 gates-tools。
+          if [ -f .gitmodules ] && grep -q 'gates-toolkit' .gitmodules; then
+            echo "==> toolkit 为 git submodule，对齐父仓库版本..."
+            if git submodule update --init gates-toolkit; then
+              echo "✓ submodule 已对齐"
+            else
+              echo "Warning: submodule update 失败，使用现有源继续" >&2
+            fi
+          elif [ -e gates-toolkit/.git ]; then
+            echo "==> gates-toolkit 为独立 git 仓库，执行 git pull..."
+            if git -C gates-toolkit pull --ff-only; then
+              echo "✓ toolkit 源已更新"
+            else
+              echo "Warning: git pull 失败，使用现有源继续" >&2
+            fi
+          else
+            echo "==> toolkit 随业务仓库分发，源随 git pull 更新，跳过"
+          fi
+
+  rerun-setup:
+    needs: [update-toolkit-source]
+    steps:
+      - name: 重跑 setup 刷新 gates-tools
+        shell: bash
+        run: |
+          set -e
+          if [ ! -f gates-toolkit/scripts/setup-gates.sh ]; then
+            echo "Error: setup 脚本不存在: gates-toolkit/scripts/setup-gates.sh" >&2
+            exit 1
+          fi
+          echo "==> 重跑 setup（参数从 gates-tools/.meta 恢复，非交互）"
+          bash gates-toolkit/scripts/setup-gates.sh
+          echo "✓ gates-tools 已刷新"
+
+  update-summary:
+    needs: [rerun-setup]
+    if: success()
+    steps:
+      - name: 更新完成
+        shell: bash
+        run: |
+          echo "========================================"
+          echo "  ✓ gates-toolkit 工具集已更新"
+          echo "========================================"

@@ -1,0 +1,67 @@
+# wan workflow: toolkit-update (每日自动更新工具集, Windows)
+# 由 setup-gates 生成，工作目录为项目根（通过 wan -C 传入）
+# 用途: 自动更新 toolkit 源（submodule / 独立仓库）并重跑 setup 刷新 gates-tools；
+#       setup 参数从 gates-tools/.meta 恢复（首次 setup 时固化），全程非交互。
+# 注册每日调度（在项目根运行，时间可自定义）:
+#   gates-tools\wan\bin\wan.exe schedule add toolkit-update "0 9 * * *" gates-tools/wan/workflows/toolkit-update-win.yml -C .
+#   gates-tools\wan\bin\wan.exe schedule service install -C .   # 安装为系统服务（开机自启，可能需管理员权限）
+# 手动触发一次: gates-tools\gatecheck.cmd toolkit-update
+version: 1
+
+jobs:
+  update-toolkit-source:
+    steps:
+      - name: 更新 toolkit 源
+        shell: pwsh
+        run: |
+          # 分发方式自动探测:
+          #  - .gitmodules 含 gates-toolkit → submodule 对齐父仓库记录的版本
+          #  - gates-toolkit/.git 存在      → 独立 git 仓库，pull 最新
+          #  - 其余                          → 随业务仓库分发，源随 git pull 更新，跳过
+          # 源更新失败仅告警不中断：用现有源继续刷新 gates-tools。
+          [Console]::OutputEncoding = [Text.Encoding]::UTF8
+          if ((Test-Path .gitmodules) -and ((Get-Content .gitmodules -Raw) -match 'gates-toolkit')) {
+            Write-Host "==> toolkit 为 git submodule，对齐父仓库版本..."
+            git submodule update --init gates-toolkit
+            if ($LASTEXITCODE -ne 0) { Write-Warning "submodule update 失败，使用现有源继续" }
+            else { Write-Host "✓ submodule 已对齐" }
+          } elseif (Test-Path gates-toolkit/.git) {
+            Write-Host "==> gates-toolkit 为独立 git 仓库，执行 git pull..."
+            git -C gates-toolkit pull --ff-only
+            if ($LASTEXITCODE -ne 0) { Write-Warning "git pull 失败，使用现有源继续" }
+            else { Write-Host "✓ toolkit 源已更新" }
+          } else {
+            Write-Host "==> toolkit 随业务仓库分发，源随 git pull 更新，跳过"
+          }
+
+  rerun-setup:
+    needs: [update-toolkit-source]
+    steps:
+      - name: 重跑 setup 刷新 gates-tools
+        shell: pwsh
+        run: |
+          # -Force: 跳过覆盖确认等交互点（调度环境无人工应答）
+          [Console]::OutputEncoding = [Text.Encoding]::UTF8
+          $setup = "gates-toolkit/scripts/setup-gates.ps1"
+          if (-not (Test-Path $setup)) {
+            Write-Error "setup 脚本不存在: $setup"
+            exit 1
+          }
+          Write-Host "==> 重跑 setup（参数从 gates-tools/.meta 恢复，非交互）"
+          & $setup -Force
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "setup 重跑失败，gates-tools 保持原状，请手动检查"
+            exit 1
+          }
+          Write-Host "✓ gates-tools 已刷新"
+
+  update-summary:
+    needs: [rerun-setup]
+    if: success()
+    steps:
+      - name: 更新完成
+        shell: pwsh
+        run: |
+          Write-Host "========================================"
+          Write-Host "  ✓ gates-toolkit 工具集已更新"
+          Write-Host "========================================"

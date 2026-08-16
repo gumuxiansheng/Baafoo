@@ -1,0 +1,23 @@
+# wan workflow: 仅 JavaGuard 检查 (Spring Boot 单模块, Linux)
+# 由 setup-gates 生成，工作目录为项目根（通过 wan -C 传入）
+# 增量检查：仅扫描 git diff HEAD 改动的文件
+# 用法: gates-tools/wan/bin/wan run java-guard -C .
+version: 1
+env:
+  JAVAGUARD_PARSER_JAR: gates-tools/java-guard/java-parser/java-parser.jar
+jobs:
+  java-guard-check:
+    steps:
+      - name: JavaGuard scan
+        shell: bash
+        run: |
+          set -e
+          JAVAGUARD="gates-tools/java-guard/bin/java-guard"
+          CONFIG="gates-tools/java-guard/java-guard.yml"
+          GATE="gates-tools/java-guard/gate-config.yml"
+          RULES_DIR="gates-tools/java-guard/rules"
+          SRC="{{BACKEND_DIR}}/src/main/java"
+          [ ! -d "$SRC" ] && { echo "skip: source dir not found"; exit 0; }
+          echo "==> JavaGuard incremental scan (diff: HEAD)"
+          "$JAVAGUARD" scan "$SRC" --rules-dir "$RULES_DIR" --config "$CONFIG" --gate --gate-config "$GATE" --diff HEAD -f console
+          echo "✓ JavaGuard passed"

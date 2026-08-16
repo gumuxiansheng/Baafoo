@@ -1,6 +1,3 @@
-# 提交信息模板（gates-toolkit）
-# 合法 type: feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert
-# scope 可选，如 feat(用户模块): xxx；subject 建议 ≤ 50 字符
 <type>(<scope>): <subject>
 
 改动说明：
@@ -11,3 +8,9 @@
 
 影响范围：
 - 
+
+# 提交信息模板（gates-toolkit）
+# 合法 type: feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert
+# scope 可选，如 feat(用户模块): xxx；subject 建议 ≤ 50 字符
+# 说明：有效内容放首行，注释置后——部分 IDE（IntelliJ）对以 # 开头的模板
+# 会整体视为空而不预填；VSCode 会自动忽略 # 注释行。

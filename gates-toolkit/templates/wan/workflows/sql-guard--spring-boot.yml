@@ -1,0 +1,21 @@
+# wan workflow: 仅 SqlGuard 检查 (Spring Boot 单模块, Windows)
+# 由 setup-gates 生成，工作目录为项目根（通过 wan -C 传入）
+# 增量检查：仅扫描 git diff HEAD 改动的文件
+# 用法: gates-tools\wan\bin\wan.exe run sql-guard -C .
+version: 1
+jobs:
+  sql-guard-check:
+    steps:
+      - name: SqlGuard 检查
+        shell: pwsh
+        run: |
+          [Console]::OutputEncoding = [Text.Encoding]::UTF8
+          $sgBin = "gates-tools/sql-guard/bin/sqlguard.exe"
+          Write-Host "==> SqlGuard 增量检查 (base: HEAD, 含未提交改动)"
+          & $sgBin check-diff --base HEAD -c gates-tools/sql-guard/sqlguard.toml -f plain .
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host ""
+            Write-Host "✗ SqlGuard 门禁未通过" -ForegroundColor Red
+            exit 1
+          }
+          Write-Host "✓ SqlGuard 检查通过"

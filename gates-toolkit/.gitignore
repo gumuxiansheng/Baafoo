@@ -25,6 +25,10 @@ bin/sql-guard/sqlguard-mine*
 tests/projects/*/gates-toolkit/
 tests/projects/*/gates-tools/
 
+# 测试项目构建产物（maven target 等）
+tests/projects/*/target/
+tests/projects/*/*/target/
+
 # 打包产物
 *.zip
 

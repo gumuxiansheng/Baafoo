@@ -72,6 +72,23 @@ bash gates-toolkit/scripts/setup-gates.sh
 之后 `git commit` 自动跑门禁。想手动触发：
 - Windows：`gates-tools\gatecheck.cmd`（双击即可）
 - Linux：`bash gates-tools/gatecheck.sh`
+
+**单独运行某个检查工具**：
+```bat
+rem Windows
+gates-tools\gatecheck.cmd sql-guard
+gates-tools\gatecheck.cmd java-guard
+```
+```bash
+# Linux
+gates-tools/wan/bin/wan run sql-guard -C .
+gates-tools/wan/bin/wan run java-guard -C .
+```
+或直接用 wan：
+```powershell
+gates-tools\wan\bin\wan.exe run "gates-tools/wan/workflows/sql-guard-win.yml" -C .
+gates-tools\wan\bin\wan.exe run "gates-tools/wan/workflows/java-guard-win.yml" -C .
+```
 - 跳过本次门禁：`git commit --no-verify`
 
 > **工具集更新提示（staleness 检测）**：管理员更新 `gates-toolkit`（规则/模板/版本配置）并提交后，
@@ -229,8 +246,12 @@ pom.xml
     ├── wan/
     │   ├── bin/wan(.exe)
     │   └── workflows/
-    │       ├── pre-commit-win.yml
-    │       └── pre-commit-unix.yml
+    │       ├── pre-commit-win.yml           # 完整门禁 (sql-guard + java-guard)
+    │       ├── pre-commit-unix.yml
+    │       ├── sql-guard-win.yml            # 仅 SqlGuard
+    │       ├── sql-guard-unix.yml
+    │       ├── java-guard-win.yml           # 仅 JavaGuard
+    │       └── java-guard-unix.yml
     ├── hooks/pre-commit
     ├── hooks/prepare-commit-msg      # 提交信息模板预填
     ├── hooks/commit-msg              # 提交信息校验（警告模式）
@@ -316,7 +337,8 @@ P1（默认关闭，按需启用）：DML005/007/008/011/012/013/014/015/016、D
 setup 同时安装 `prepare-commit-msg` / `commit-msg` 两个 hook，并配置 `git config commit.template` 指向模板文件：
 
 - **模板预填**：
-  - **IDE**：VSCode 源代码管理的提交输入框、IntelliJ 提交对话框均读取 `commit.template` 配置自动预填（VSCode 会自动忽略 `#` 注释行）；setup 已写入本地 git 配置，无需手工设置。
+  - **IDE**：VSCode 源代码管理的提交输入框、IntelliJ 提交对话框均读取 `commit.template` 配置自动预填（VSCode 会自动忽略 `#` 注释行）；setup 已写入本地 git 配置，无需手工设置。模板有效内容放首行、注释置后，避免部分 IDE（IntelliJ）把以 `#` 开头的模板整体视为空而不预填。
+  - **IntelliJ 排障**：若 IntelliJ 提交框仍未预填，确认 ① 版本 ≥ 2021.3（此前不支持 `commit.template`）；② 修改配置后**重启 IDE 或重新打开 Commit 面板**（它在打开时读取配置）；③ 仍无效时手动指向模板文件：`Settings → Version Control → Commit → Use commit message template` 填写 `gates-tools/commit-message/commit.template` 的绝对路径。
   - **CLI**：`git commit`（打开编辑器）时由 git 原生预填，`prepare-commit-msg` hook 兜底；已通过 `-m` / `-F` / IDE 输入的内容不会被覆盖。
 - **兜底校验**：`commit-msg` 校验 type 白名单、subject 非空与长度、必填段落（改动说明/测试情况/影响范围），缺失时打印警告。
 - **警告模式**（默认）：不阻断提交，仅提示。需升级为硬拦截时，把 `gates-tools/hooks/commit-msg` 末尾的 `exit 0` 改为 `exit 1` 即可。

@@ -7,7 +7,7 @@
 #
 # 参数化模式（可选）：
 #   pwsh scripts/setup-gates.ps1 -Target C:/my/project -ProjectType spring-boot
-#   pwsh scripts/setup-gates.ps1 -Target C:/my/project -ProjectType multi-module -SqlModule baafoo-server
+#   pwsh scripts/setup-gates.ps1 -Target C:/my/project -ProjectType multi-module -SqlModule "baafoo-server,baafoo-report"
 
 [CmdletBinding()]
 param(
@@ -22,6 +22,7 @@ param(
     [string]$BackendDir = "backend",
 
     [Parameter(Mandatory = $false)]
+    # 支持多个 SQL 模块（逗号分隔），如: -SqlModule "baafoo-server,baafoo-report"
     [string]$SqlModule,
 
     [Parameter(Mandatory = $false)]
@@ -207,6 +208,38 @@ if (-not (Test-Path $GitDir)) {
     }
 }
 
+# 参数恢复：重跑 setup（手动升级或 toolkit-update 每日自动更新）时，
+# 复用首次 setup 固化到 gates-tools/.meta 的参数，避免非交互下自动检测漂移。
+# 显式传参（$PSBoundParameters）优先于 .meta。
+$MetaFile = Join-Path $Target "gates-tools/.meta"
+$MetaParams = @{}
+if (Test-Path $MetaFile) {
+    foreach ($line in ((Read-TextFileUtf8 $MetaFile) -split "`n")) {
+        if ($line -match '^(project_type|sql_modules|java_modules|backend_dir)=(.*)$') {
+            $MetaParams[$matches[1]] = $matches[2].Trim()
+        }
+    }
+}
+if ($ProjectType -eq "auto" -and $MetaParams.ContainsKey("project_type") -and $MetaParams["project_type"]) {
+    $ProjectType = $MetaParams["project_type"]
+    Write-Host "[meta] 复用首次 setup 参数: project_type=$ProjectType"
+}
+# 仅恢复多模块键 sql_modules；旧版单数键 sql_module 不恢复——升级到多模块支持后
+# 重跑 setup 会重新全量检测（全部含 mapper 的模块纳入），检测结果固化为新键。
+if (-not $SqlModule -and $MetaParams.ContainsKey("sql_modules") -and $MetaParams["sql_modules"]) {
+    $SqlModule = $MetaParams["sql_modules"]
+    Write-Host "[meta] 复用首次 setup 参数: sql_modules=$SqlModule"
+}
+if (-not $JavaModules -and $MetaParams.ContainsKey("java_modules") -and $MetaParams["java_modules"]) {
+    $JavaModules = @($MetaParams["java_modules"] -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ($JavaModules.Count -gt 0) {
+        Write-Host "[meta] 复用首次 setup 参数: java_modules=$($JavaModules -join ', ')"
+    }
+}
+if (-not $PSBoundParameters.ContainsKey("BackendDir") -and $MetaParams.ContainsKey("backend_dir") -and $MetaParams["backend_dir"]) {
+    $BackendDir = $MetaParams["backend_dir"]
+}
+
 # 自动检测项目类型
 if ($ProjectType -eq "auto") {
     $pom = Join-Path $Target "pom.xml"
@@ -225,32 +258,20 @@ if ($ProjectType -eq "auto") {
 
 # 检测参数
 if ($ProjectType -eq "multi-module") {
-    # 自动猜测 SQL 模块
+    # 自动猜测 SQL 模块（支持多模块：含 src/main/resources/mapper 的模块全部纳入）
     if (-not $SqlModule) {
-        $candidates = @(Get-ChildItem -Path $Target -Directory -ErrorAction SilentlyContinue |
+        $SqlModules = @(Get-ChildItem -Path $Target -Directory -ErrorAction SilentlyContinue |
             Where-Object { Test-Path (Join-Path $_.FullName "src/main/resources/mapper") } |
             Select-Object -ExpandProperty Name)
-        if ($candidates -and $candidates.Count -gt 0) {
-            if ($candidates.Count -gt 1 -and $Interactive) {
-                Write-Host "[auto] 发现多个可能的 SQL 模块:"
-                for ($i = 0; $i -lt $candidates.Count; $i++) {
-                    Write-Host "  [$($i + 1)] $($candidates[$i])"
-                }
-                $sel = Read-Host "选择序号（默认 1）"
-                $idx = 0
-                if ([int]::TryParse($sel, [ref]$idx) -and $idx -ge 1 -and $idx -le $candidates.Count) {
-                    $idx -= 1
-                } else {
-                    $idx = 0
-                }
-                $SqlModule = $candidates[$idx]
-            } else {
-                $SqlModule = $candidates[0]
-            }
-            Write-Host "[auto] SQL 模块: $SqlModule"
+        if ($SqlModules.Count -gt 0) {
+            Write-Host "[auto] SQL 模块: $($SqlModules -join ', ')"
         } elseif ($Interactive) {
-            $SqlModule = Read-Host "未自动检测到 SQL 模块，请输入 SQL/Mapper 所在模块名"
+            $raw = Read-Host "未自动检测到 SQL 模块，请输入 SQL/Mapper 所在模块名（多个用逗号分隔）"
+            $SqlModules = @($raw -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
         }
+    } else {
+        # 显式传参/-SqlModule（支持逗号分隔多个模块）
+        $SqlModules = @($SqlModule -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     }
 
     # 自动猜测 Java 模块
@@ -261,8 +282,8 @@ if ($ProjectType -eq "multi-module") {
         Write-Host "[auto] Java 模块: $($JavaModules -join ', ')"
     }
 
-    if (-not $SqlModule) {
-        Write-Error "未找到 SQL/Mapper 所在模块，请指定 -SqlModule"
+    if (-not $SqlModules -or $SqlModules.Count -eq 0) {
+        Write-Error "未找到 SQL/Mapper 所在模块，请指定 -SqlModule（多个模块用逗号分隔）"
         exit 1
     }
     if (-not $JavaModules -or $JavaModules.Count -eq 0) {
@@ -286,7 +307,32 @@ if (Test-Path $toolsDir) {
         $ans = Read-Host "覆盖? (y/N)"
         if ($ans -ne "y") { exit 1 }
     }
-    Remove-Item $toolsDir -Recurse -Force
+    # 清理历史遗留的 *.old-* 旧二进制（上次更新时被运行中的进程锁住未能删除；此时应已可删）
+    Get-ChildItem "$toolsDir/wan/bin" -Filter "*.old-*" -Force -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+    try {
+        Remove-Item $toolsDir -Recurse -Force -ErrorAction Stop
+    } catch {
+        # Windows 上正在运行的 exe 无法删除（wan schedule 执行 toolkit-update 时，
+        # wan.exe 进程锁住 gates-tools 内的自身副本）。就地重命名让位（Windows 允许
+        # 重命名运行中的 exe，新副本由后续复制步骤放入），.old 遗留待下次 setup 清理。
+        Write-Host "  目录被占用（wan 调度执行中？），就地重命名更新"
+        $wanLocked = Join-Path $toolsDir "wan/bin/$WanOut"
+        if (Test-Path $wanLocked) {
+            Rename-Item $wanLocked "$WanOut.old-$(Get-Date -Format 'yyyyMMddHHmmss')" -Force
+        }
+        # 宽容删除其余内容（被锁文件跳过，结构由后续步骤重建）
+        Get-ChildItem -LiteralPath $toolsDir -Force | ForEach-Object {
+            Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        Get-ChildItem -LiteralPath "$toolsDir/wan" -Force -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.Name -ne "bin") { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+        Get-ChildItem -LiteralPath "$toolsDir/wan/bin" -Force -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notlike "*.old-*" } | ForEach-Object {
+                Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            }
+    }
 }
 New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null
 New-Item -ItemType Directory -Path "$toolsDir/sql-guard/bin" -Force | Out-Null
@@ -379,8 +425,10 @@ Write-Host "==> 生成 sql-guard 配置"
 $sqlTpl = if ($ProjectType -eq "spring-boot") {
     Read-TextFileUtf8 "$ToolkitRoot/templates/sql-guard/sql-guard-spring-boot.toml"
 } else {
+    # 多 SQL 模块：渲染为 "mod1/src/main/resources/mapper", "mod2/..." 列表
+    $mapperPaths = ($SqlModules | ForEach-Object { '"' + $_ + '/src/main/resources/mapper"' }) -join ", "
     $tpl = Read-TextFileUtf8 "$ToolkitRoot/templates/sql-guard/sql-guard-multi-module.toml"
-    $tpl.Replace("{{SQL_MODULE}}", $SqlModule)
+    $tpl.Replace("{{MAPPER_PATHS}}", $mapperPaths)
 }
 $sqlTpl | Write-TextFileUtf8NoBom "$toolsDir/sql-guard/sqlguard.toml"
 Copy-Item "$ToolkitRoot/templates/sql-guard/sqlguard.rules.toml" "$toolsDir/sql-guard/" -Force
@@ -412,21 +460,50 @@ if ($ProjectType -eq "spring-boot") {
     $modulesArrayPs = ($JavaModules | ForEach-Object { '"' + $_ + '"' }) -join ", "
 
     $winTpl = Read-TextFileUtf8 "$ToolkitRoot/templates/wan/workflows/pre-commit--multi-module.yml"
-    $winTpl = $winTpl.Replace("{{SQL_MODULE}}", $SqlModule)
     $winTpl = $winTpl.Replace("{{MODULES_ARRAY_PS}}", $modulesArrayPs)
     $winTpl | Write-TextFileUtf8NoBom "$toolsDir/wan/workflows/pre-commit-win.yml"
 
     $unixTpl = Read-TextFileUtf8 "$ToolkitRoot/templates/wan/workflows/pre-commit--multi-module-unix.yml"
-    $unixTpl = $unixTpl.Replace("{{SQL_MODULE}}", $SqlModule)
     $unixTpl = $unixTpl.Replace("{{MODULES_LIST}}", $modulesList)
     $unixTpl | Write-TextFileUtf8NoBom "$toolsDir/wan/workflows/pre-commit-unix.yml"
 
     # CI 专用 workflow（BASE_REF 控制增量/全量，见模板头部注释）
     $ciTpl = Read-TextFileUtf8 "$ToolkitRoot/templates/wan/workflows/ci--multi-module-unix.yml"
-    $ciTpl = $ciTpl.Replace("{{SQL_MODULE}}", $SqlModule)
     $ciTpl = $ciTpl.Replace("{{MODULES_LIST}}", $modulesList)
     $ciTpl | Write-TextFileUtf8NoBom "$toolsDir/wan/workflows/ci-unix.yml"
 }
+
+# 渲染独立 workflow（sql-guard-only / java-guard-only）
+Write-Host "==> 生成独立检查 workflow (sql-guard / java-guard)"
+foreach ($tool in @("sql-guard", "java-guard")) {
+    if ($ProjectType -eq "spring-boot") {
+        $winTpl = Read-TextFileUtf8 "$ToolkitRoot/templates/wan/workflows/${tool}--spring-boot.yml"
+        $winTpl = $winTpl.Replace("{{BACKEND_DIR}}", $BackendDir)
+        $winTpl | Write-TextFileUtf8NoBom "$toolsDir/wan/workflows/${tool}-win.yml"
+
+        $unixTpl = Read-TextFileUtf8 "$ToolkitRoot/templates/wan/workflows/${tool}--spring-boot-unix.yml"
+        $unixTpl = $unixTpl.Replace("{{BACKEND_DIR}}", $BackendDir)
+        $unixTpl | Write-TextFileUtf8NoBom "$toolsDir/wan/workflows/${tool}-unix.yml"
+    } else {
+        $winTpl = Read-TextFileUtf8 "$ToolkitRoot/templates/wan/workflows/${tool}--multi-module.yml"
+        if ($tool -eq "java-guard") {
+            $winTpl = $winTpl.Replace("{{MODULES_ARRAY_PS}}", $modulesArrayPs)
+        }
+        $winTpl | Write-TextFileUtf8NoBom "$toolsDir/wan/workflows/${tool}-win.yml"
+
+        $unixTpl = Read-TextFileUtf8 "$ToolkitRoot/templates/wan/workflows/${tool}--multi-module-unix.yml"
+        if ($tool -eq "java-guard") {
+            $unixTpl = $unixTpl.Replace("{{MODULES_LIST}}", $modulesList)
+        }
+        $unixTpl | Write-TextFileUtf8NoBom "$toolsDir/wan/workflows/${tool}-unix.yml"
+    }
+}
+
+# 渲染 toolkit-update workflow（每日自动更新，注册调度见安装完成后的提示）
+# 无占位符：setup 脚本路径按约定固定为 gates-toolkit/scripts/，参数从 .meta 恢复
+Write-Host "==> 生成 toolkit-update workflow (每日自动更新)"
+Copy-Item "$ToolkitRoot/templates/wan/workflows/toolkit-update--win.yml" "$toolsDir/wan/workflows/toolkit-update-win.yml" -Force
+Copy-Item "$ToolkitRoot/templates/wan/workflows/toolkit-update--unix.yml" "$toolsDir/wan/workflows/toolkit-update-unix.yml" -Force
 
 # 渲染 hook
 Write-Host "==> 生成 pre-commit hook"
@@ -497,7 +574,11 @@ Write-Host "==> 生成 gatecheck 快捷脚本"
 $gatecheckCmd = @'
 @echo off
 rem gatecheck.cmd - run code gates manually (generated by gates-toolkit)
-rem Usage: gates-tools\gatecheck.cmd
+rem Usage: gates-tools\gatecheck.cmd [sql-guard^|java-guard^|toolkit-update]
+rem   no args       = run full pre-commit gate (sql-guard + java-guard)
+rem   sql-guard     = run SqlGuard only
+rem   java-guard    = run JavaGuard only
+rem   toolkit-update = refresh gates-tools from current toolkit source
 rem NOTE: ASCII only on purpose (cmd parses batch files using OEM codepage,
 rem       UTF-8 comments before chcp can corrupt line endings)
 chcp 65001 >nul
@@ -508,11 +589,26 @@ if not exist "%WAN%" (
   echo [ERROR] wan binary not found: %WAN%
   exit /b 1
 )
+set "TARGET=%1"
+if "%TARGET%"=="" set "TARGET=pre-commit"
+rem Validate target
+if "%TARGET%"=="sql-guard" goto :ok
+if "%TARGET%"=="java-guard" goto :ok
+if "%TARGET%"=="pre-commit" goto :ok
+if "%TARGET%"=="toolkit-update" goto :ok
+echo [ERROR] Unknown target: %TARGET%
+echo Usage: gates-tools\gatecheck.cmd [sql-guard^|java-guard^|toolkit-update]
+exit /b 2
+:ok
 rem Prefer Windows workflow when pwsh exists, else fall back to bash workflow
-rem (same logic as the pre-commit hook)
-set "WF=gates-tools\wan\workflows\pre-commit-unix.yml"
+rem (same logic as the pre-commit hook; toolkit-update also has win/unix variants)
+set "WF=gates-tools\wan\workflows\%TARGET%-unix.yml"
 where pwsh >nul 2>nul
-if not errorlevel 1 set "WF=gates-tools\wan\workflows\pre-commit-win.yml"
+if not errorlevel 1 set "WF=gates-tools\wan\workflows\%TARGET%-win.yml"
+if not exist "%WF%" (
+  echo [ERROR] workflow not found: %WF%
+  exit /b 1
+)
 "%WAN%" run -C . "%WF%"
 exit /b %ERRORLEVEL%
 '@
@@ -521,7 +617,11 @@ $gatecheckCmd | Write-TextFileUtf8NoBom "$toolsDir/gatecheck.cmd"
 $gatecheckSh = @'
 #!/bin/sh
 # 手动运行代码门禁（由 gates-toolkit 自动生成）
-# 用法: bash gates-tools/gatecheck.sh
+# 用法: bash gates-tools/gatecheck.sh [sql-guard|java-guard|toolkit-update]
+#   无参数         = 运行完整 pre-commit 门禁 (sql-guard + java-guard)
+#   sql-guard      = 仅运行 SqlGuard
+#   java-guard     = 仅运行 JavaGuard
+#   toolkit-update = 刷新 gates-tools（从当前 toolkit 源重跑 setup）
 cd "$(dirname "$0")/.." || exit 1
 WAN="gates-tools/wan/bin/wan"
 if [ ! -x "$WAN" ] && [ -x "$WAN.exe" ]; then WAN="$WAN.exe"; fi
@@ -529,21 +629,43 @@ if [ ! -x "$WAN" ]; then
   echo "[ERROR] wan binary not found: $WAN" >&2
   exit 1
 fi
-WF="gates-tools/wan/workflows/pre-commit-unix.yml"
-if [ -f "gates-tools/wan/workflows/pre-commit-win.yml" ] && command -v pwsh >/dev/null 2>&1; then
-  WF="gates-tools/wan/workflows/pre-commit-win.yml"
+TARGET="${1:-pre-commit}"
+case "$TARGET" in
+  sql-guard|java-guard|pre-commit|toolkit-update) ;;
+  *)
+    echo "[ERROR] Unknown target: $TARGET" >&2
+    echo "Usage: bash gates-tools/gatecheck.sh [sql-guard|java-guard|toolkit-update]" >&2
+    exit 2
+    ;;
+esac
+WF="gates-tools/wan/workflows/${TARGET}-unix.yml"
+if [ -f "gates-tools/wan/workflows/${TARGET}-win.yml" ] && command -v pwsh >/dev/null 2>&1; then
+  WF="gates-tools/wan/workflows/${TARGET}-win.yml"
+fi
+if [ ! -f "$WF" ]; then
+  echo "[ERROR] workflow not found: $WF" >&2
+  exit 1
 fi
 "$WAN" run -C . "$WF"
 '@
 $gatecheckSh | Write-TextFileUtf8NoBom "$toolsDir/gatecheck.sh"
 
 # 写入 toolkit 指纹（staleness 检测：pre-commit hook 重算比对，不一致时提示重跑 setup）
+# 同时固化 setup 参数（project_type 等）：重跑 setup（手动或 toolkit-update 定时）时
+# 从 .meta 恢复，避免非交互下自动检测漂移。
 Write-Host "==> 写入 toolkit 指纹"
 $toolkitFingerprint = Get-ToolkitFingerprint
 if ($toolkitFingerprint) {
     $metaContent = "# 由 gates-toolkit setup-gates 生成；pre-commit hook 用于 staleness 检测`n"
     $metaContent += "toolkit_fingerprint=$toolkitFingerprint`n"
     $metaContent += "setup_at=$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`n"
+    $metaContent += "project_type=$ProjectType`n"
+    if ($ProjectType -eq "multi-module") {
+        $metaContent += "sql_modules=$($SqlModules -join ',')`n"
+        $metaContent += "java_modules=$($JavaModules -join ',')`n"
+    } else {
+        $metaContent += "backend_dir=$BackendDir`n"
+    }
     $metaContent | Write-TextFileUtf8NoBom "$toolsDir/.meta"
 } else {
     Write-Warning "toolkit 指纹计算失败，跳过 .meta 写入"
@@ -564,7 +686,7 @@ if ($ProjectType -eq "spring-boot") {
 } else {
     $modulesStr = (($JavaModules | ForEach-Object { "``$_/src/main/java``" }) -join ", ")
     $readme += "## 扫描路径`n"
-    $readme += "- SQL/Mapper: ``$SqlModule/src/main/resources```n"
+    $readme += "- SQL/Mapper: ``$($SqlModules -join ', ')`` (mapper 路径已全部写入 sqlguard.toml)`n"
     $readme += "- Java 模块: $modulesStr`n`n"
 }
 
@@ -575,6 +697,16 @@ $readme += "### 手动运行`n`n"
 $readme += "一键触发全部门禁:`n"
 $readme += "- Windows: ``gates-tools\gatecheck.cmd``（双击即可）`n"
 $readme += "- Linux/macOS: ``bash gates-tools/gatecheck.sh```n`n"
+$readme += "单独运行某个检查工具:`n"
+$readme += '```' + "`n"
+$readme += "# gatecheck 脚本带参数`n"
+$readme += "gates-tools\gatecheck.cmd sql-guard    # Windows`n"
+$readme += "bash gates-tools/gatecheck.sh java-guard # Linux`n"
+$readme += "`n"
+$readme += "# 或直接用 wan（需完整路径，wan 短名查找 .wan/workflows/）`n"
+$readme += '"gates-tools/wan/bin/wan.exe" run "gates-tools/wan/workflows/sql-guard-win.yml" -C .' + "`n"
+$readme += '"gates-tools/wan/bin/wan.exe" run "gates-tools/wan/workflows/java-guard-win.yml" -C .' + "`n"
+$readme += '```' + "`n`n"
 $readme += "等价于以下完整命令（也可单独执行）:`n`n"
 $readme += '```powershell' + "`n"
 $readme += "# SqlGuard（pre-commit 自动增量检查未提交改动；手动全量在项目根运行）`n"
@@ -584,7 +716,28 @@ $readme += "`$env:JAVAGUARD_PARSER_JAR = `"gates-tools/java-guard/java-parser/ja
 $readme += "gates-tools/java-guard/bin/java-guard.exe scan $BackendDir/src/main/java --rules-dir gates-tools/java-guard/rules --config gates-tools/java-guard/java-guard.yml --gate --gate-config gates-tools/java-guard/gate-config.yml --diff HEAD -f console`n`n"
 $readme += "# wan 编排`n"
 $readme += "gates-tools/wan/bin/wan.exe run pre-commit-win -C .`n"
-$readme += "````n`n"
+$readme += '```' + "`n`n"
+$readme += "### 每日自动更新（可选）`n`n"
+$readme += "注册 wan 定时调度，每日自动刷新 gates-tools（在项目根运行，时间可自定义）:`n"
+$readme += '```' + "`n"
+if ($IsLinux) {
+    $readme += "# 1. 注册调度（每天 09:00）`n"
+    $readme += "gates-tools/wan/bin/wan schedule add toolkit-update `"0 9 * * *`" gates-tools/wan/workflows/toolkit-update-unix.yml -C .`n`n"
+    $readme += "# 2. 安装为系统服务（开机自启，可能需管理员权限）`n"
+    $readme += "gates-tools/wan/bin/wan schedule service install -C .`n`n"
+    $readme += "# 手动触发一次 / 查看执行历史`n"
+    $readme += "bash gates-tools/gatecheck.sh toolkit-update`n"
+    $readme += "gates-tools/wan/bin/wan schedule history toolkit-update -C .`n"
+} else {
+    $readme += "# 1. 注册调度（每天 09:00）`n"
+    $readme += "gates-tools\wan\bin\wan.exe schedule add toolkit-update `"0 9 * * *`" gates-tools/wan/workflows/toolkit-update-win.yml -C .`n`n"
+    $readme += "# 2. 安装为系统服务（开机自启，可能需管理员权限）`n"
+    $readme += "gates-tools\wan\bin\wan.exe schedule service install -C .`n`n"
+    $readme += "# 手动触发一次 / 查看执行历史`n"
+    $readme += "gates-tools\gatecheck.cmd toolkit-update`n"
+    $readme += "gates-tools\wan\bin\wan.exe schedule history toolkit-update -C .`n"
+}
+$readme += '```' + "`n`n"
 $readme += "### CI 集成`n参考 ``.cnb.yml`` (如已存在则手动添加 code-gate job)。`n"
 
 $readme | Write-TextFileUtf8NoBom "$toolsDir/README.md"
@@ -693,6 +846,13 @@ $wfCi = "$toolsDir/wan/workflows/ci-unix.yml"
 if (Test-Path $wfCi) {
     & $toolsDir/wan/bin/$WanOut validate $wfCi 2>&1 | ForEach-Object { Write-Host "  $_" }
 }
+$wfUpdate = "$toolsDir/wan/workflows/toolkit-update-win.yml"
+if ($IsLinux) {
+    $wfUpdate = "$toolsDir/wan/workflows/toolkit-update-unix.yml"
+}
+if (Test-Path $wfUpdate) {
+    & $toolsDir/wan/bin/$WanOut validate $wfUpdate 2>&1 | ForEach-Object { Write-Host "  $_" }
+}
 
 Write-Host ""
 Write-Host "=========================================" -ForegroundColor Green
@@ -701,3 +861,14 @@ Write-Host "=========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "gates-tools/ 为 setup 生成的产物（含二进制），已加入目标项目 .gitignore，无需（也不应）提交到 git。" -ForegroundColor Yellow
 Write-Host "门禁工具与规则建议整包引入 gates-toolkit（git submodule 或随仓库提交），升级时重跑本脚本即可。" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "每日自动更新（可选，在项目根运行，时间可自定义）:" -ForegroundColor Cyan
+if ($IsLinux) {
+    Write-Host "  gates-tools/wan/bin/wan schedule add toolkit-update `"0 9 * * *`" gates-tools/wan/workflows/toolkit-update-unix.yml -C ."
+    Write-Host "  gates-tools/wan/bin/wan schedule service install -C .   # 安装为系统服务（开机自启，可能需管理员权限）"
+    Write-Host "  手动触发一次: bash gates-tools/gatecheck.sh toolkit-update"
+} else {
+    Write-Host "  gates-tools\wan\bin\wan.exe schedule add toolkit-update `"0 9 * * *`" gates-tools/wan/workflows/toolkit-update-win.yml -C ."
+    Write-Host "  gates-tools\wan\bin\wan.exe schedule service install -C .   # 安装为系统服务（开机自启，可能需管理员权限）"
+    Write-Host "  手动触发一次: gates-tools\gatecheck.cmd toolkit-update"
+}

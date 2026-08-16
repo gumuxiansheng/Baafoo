@@ -1,0 +1,31 @@
+# wan workflow: 仅 JavaGuard 检查 (多模块, Windows)
+# 由 setup-gates 生成，工作目录为项目根（通过 wan -C 传入）
+# 增量检查：仅扫描 git diff HEAD 改动的文件
+# 用法: gates-tools\wan\bin\wan.exe run java-guard -C .
+version: 1
+env:
+  JAVAGUARD_PARSER_JAR: gates-tools/java-guard/java-parser/java-parser.jar
+jobs:
+  java-guard-check:
+    steps:
+      - name: JavaGuard 扫描
+        shell: pwsh
+        run: |
+          $javaguard = "gates-tools/java-guard/bin/java-guard.exe"
+          $config = "gates-tools/java-guard/java-guard.yml"
+          $gateConfig = "gates-tools/java-guard/gate-config.yml"
+          $rulesDir = "gates-tools/java-guard/rules"
+          $modules = @({{MODULES_ARRAY_PS}})
+
+          foreach ($mod in $modules) {
+            $srcPath = "$mod/src/main/java"
+            if (-not (Test-Path $srcPath)) { continue }
+            Write-Host "==> JavaGuard 增量扫描 $mod (diff: HEAD)"
+            & $javaguard scan $srcPath --rules-dir $rulesDir --config $config --gate --gate-config $gateConfig --diff HEAD -f console
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host ""
+              Write-Host "✗ JavaGuard 门禁未通过: $mod" -ForegroundColor Red
+              exit 1
+            }
+          }
+          Write-Host "✓ JavaGuard 检查通过"
