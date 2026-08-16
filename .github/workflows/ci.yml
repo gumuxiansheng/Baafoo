@@ -151,7 +151,7 @@ jobs:
           fi
 
       - name: Run gates
-        run: tools/wan/bin/wan run tools/wan/workflows/ci-unix.yml -C . --quiet
+        run: gates-tools/wan/bin/wan run gates-tools/wan/workflows/ci-unix.yml -C . --quiet
 
   # ---------------------------------------------------------------------------
   # Frontend: install and build the Vue 3 console (web/).

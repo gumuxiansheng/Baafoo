@@ -10,7 +10,7 @@ master:
         # 缓存 cargo  registry，加速 sql-guard 源码兜底构建
         - /root/.cargo:copy-on-write
       stages:
-        # gates-toolkit：下载预编译二进制（缺失则源码兜底）→ setup-gates 安装到 tools/
+        # gates-toolkit：下载预编译二进制（缺失则源码兜底）→ setup-gates 安装到 gates-tools/
         - name: setup-gates
           script: |
             bash gates-toolkit/scripts/ci-setup.sh . multi-module \
@@ -20,7 +20,7 @@ master:
         - name: run-gates
           stage: check
           script: |
-            tools/wan/bin/wan run tools/wan/workflows/ci-unix.yml -C . --quiet
+            gates-tools/wan/bin/wan run gates-tools/wan/workflows/ci-unix.yml -C . --quiet
 
     - name: test-and-build
       runner:
@@ -110,7 +110,7 @@ master:
           stage: check
           script: |
             export BASE_REF="origin/${{ cnb.pull_request.base_ref }}"
-            tools/wan/bin/wan run tools/wan/workflows/ci-unix.yml -C . --quiet
+            gates-tools/wan/bin/wan run gates-tools/wan/workflows/ci-unix.yml -C . --quiet
 
     - name: pr-check
       runner:
