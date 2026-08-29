@@ -2,6 +2,7 @@
 
 # 二进制产物 — 不提交到 git，由 fetch-binaries 脚本从配置的 URL 下载
 bin/wan/wan.exe
+bin/wan/wan-shim.exe
 bin/wan/wan-linux-arm64
 bin/wan/wan-linux-amd64
 bin/wan/wan
@@ -20,6 +21,9 @@ bin/**/.version
 
 # 本地交叉编译产物（非 CI 发布）
 bin/sql-guard/sqlguard-mine*
+
+# java-guard AST 解析缓存（scan 运行时在 cwd 生成，可随时删除重建）
+.java-guard-cache/
 
 # 测试项目内的工具集联接与生成产物（测试环境残留，不入库）
 tests/projects/*/gates-toolkit/

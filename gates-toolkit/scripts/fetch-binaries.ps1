@@ -10,6 +10,10 @@
 #   pwsh scripts/fetch-binaries.ps1                  # 下载当前平台
 #   pwsh scripts/fetch-binaries.ps1 -Platform all    # 下载所有平台
 #   pwsh scripts/fetch-binaries.ps1 -Force           # 强制重新下载
+# 私有库: 在 versions.toml [download] 段配置 token（或设环境变量 CNB_TOKEN），
+# 内网自签 CA 设 insecure_skip_verify = "true" 跳过证书校验。
+# 下载优先使用系统自带 curl.exe（与 fetch-binaries.sh 相同的实现，规避 PS5.1
+# Invoke-WebRequest 内网 TLS/代理问题），无 curl.exe 时回退 Invoke-WebRequest。
 
 [CmdletBinding()]
 param(
@@ -86,6 +90,29 @@ foreach ($line in ($raw -split "`n")) {
     }
 }
 
+# ---- 下载认证/TLS 配置（可选） ----
+# versions.toml [download] 段：
+#   username            认证用户名，默认 "cnb"
+#   token               私有库 token；未配置时回退读环境变量 CNB_TOKEN，都没有则匿名下载
+#   insecure_skip_verify 内网自签 CA 时跳过 TLS 证书校验（"true" 开启）
+$downloadConfig = $config["download"]
+if (-not $downloadConfig) { $downloadConfig = @{} }
+$downloadUsername = $downloadConfig["username"]
+if (-not $downloadUsername) { $downloadUsername = "cnb" }
+$downloadToken = $downloadConfig["token"]
+if (-not $downloadToken) { $downloadToken = $env:CNB_TOKEN }
+$skipCertVerify = $downloadConfig["insecure_skip_verify"] -eq "true"
+
+$authHeader = $null
+if ($downloadToken) {
+    $authHeader = "Basic " + [Convert]::ToBase64String(
+        [System.Text.Encoding]::UTF8.GetBytes("$downloadUsername`:$downloadToken"))
+    Write-Host "认证: 已配置 token（用户名 $downloadUsername），用于私有库下载" -ForegroundColor DarkGray
+}
+if ($skipCertVerify) {
+    Write-Host "TLS: insecure_skip_verify=true，跳过证书校验（仅限内网自签证书场景）" -ForegroundColor Yellow
+}
+
 # 工具定义
 $tools = @(
     @{
@@ -147,14 +174,51 @@ function Write-LocalVersion($binDir, $version) {
     [System.IO.File]::WriteAllText($vf, $version, (New-Object System.Text.UTF8Encoding($false)))
 }
 
-# 下载文件（重试兜底）
-# cnb.cool Release 下载会 302 到 CDN 域名 asset.cnb.cool，偶发解析/IPv6 链路问题导致失败，
-# 重试 + 失败后尝试强制 IPv4（Invoke-WebRequest 无 -4 参数，通过临时 Hosts 之外的
-# .NET 解析器无法直接指定，重试即可覆盖大部分瞬态失败）。
+# 查找可用的 curl（Windows 10 1803+ 自带 C:\Windows\System32\curl.exe）。
+# 注意：不能直接用别名 "curl"（PS 里 curl 是 Invoke-WebRequest 的别名）。
+function Get-Curl {
+    $candidates = @("$env:SystemRoot\System32\curl.exe", "curl.exe")
+    foreach ($c in $candidates) {
+        if ($c -and (Test-Path $c)) { return (Resolve-Path $c).Path }
+        $found = Get-Command $c -CommandType Application -ErrorAction SilentlyContinue
+        if ($found) { return $found.Source }
+    }
+    return $null
+}
+
+# 下载文件（重试兜底，与 fetch-binaries.sh 相同的 curl 实现）
+# 优先用系统自带 curl.exe（-4 IPv4 兜底、-u token 认证、-k 跳过证书校验），
+# 与 sh 脚本行为一致，规避 PS5.1 Invoke-WebRequest 在内网的 TLS/代理问题。
+# curl.exe 不存在时回退 Invoke-WebRequest。
 function Invoke-Download($url, $destPath) {
+    $curl = Get-Curl
+    if ($curl) {
+        return Invoke-DownloadWithCurl $curl $url $destPath
+    }
+
+    # ---- 回退：Invoke-WebRequest（无 curl 的旧系统）----
+    # cnb.cool Release 下载会 302 到 CDN 域名 asset.cnb.cool，偶发解析/IPv6 链路问题导致失败，
+    # 重试 + 失败后尝试强制 IPv4（Invoke-WebRequest 无 -4 参数，重试即可覆盖大部分瞬态失败）。
     for ($attempt = 1; $attempt -le 3; $attempt++) {
         try {
-            Invoke-WebRequest -Uri $url -OutFile $destPath -ErrorAction Stop
+            $params = @{
+                Uri         = $url
+                OutFile     = $destPath
+                ErrorAction = "Stop"
+            }
+            if ($authHeader) {
+                $params.Headers = @{ Authorization = $authHeader }
+            }
+            if ($skipCertVerify) {
+                if ($PSVersionTable.PSVersion.Major -ge 6) {
+                    $params.SkipCertificateCheck = $true
+                } else {
+                    # PS5.1 (.NET Framework) 无 -SkipCertificateCheck，用 ServicePoint 回调跳过证书校验
+                    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+                    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { return $true }
+                }
+            }
+            Invoke-WebRequest @params
             return $true
         } catch {
             if ($attempt -lt 3) {
@@ -163,6 +227,35 @@ function Invoke-Download($url, $destPath) {
             } else {
                 throw
             }
+        }
+    }
+    return $false
+}
+
+# curl.exe 实现（与 fetch-binaries.sh 的 download_file 一致）：
+# 每次尝试失败后强制 IPv4（-4）再试一次，绕开 IPv6/CDN 重定向链问题。
+function Invoke-DownloadWithCurl($curl, $url, $destPath) {
+    $baseArgs = @("-fsSL", "--connect-timeout", "20", "--retry", "2")
+    if ($downloadToken) {
+        $baseArgs += @("-u", "$downloadUsername`:$downloadToken")
+    }
+    if ($skipCertVerify) {
+        $baseArgs += "-k"
+    }
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        $errOut = & $curl @($baseArgs + @($url, "-o", $destPath)) 2>&1
+        if ($LASTEXITCODE -eq 0) { return $true }
+
+        $args4 = @("-4") + $baseArgs + @($url, "-o", $destPath)
+        $err4Out = & $curl $args4 2>&1
+        if ($LASTEXITCODE -eq 0) { return $true }
+
+        if ($attempt -lt 3) {
+            $msg = "curl exit $LASTEXITCODE $(($err4Out | Where-Object { $_ -is [string] }) -join ' ')"
+            Write-Host "  (第 $attempt 次尝试失败: $msg，重试...)" -ForegroundColor Yellow
+            Start-Sleep -Seconds 2
+        } else {
+            throw "curl 下载失败: $url (exit $LASTEXITCODE $(($err4Out | Where-Object { $_ -is [string] }) -join ' '))"
         }
     }
     return $false
@@ -241,7 +334,12 @@ foreach ($tool in $tools) {
         foreach ($pf in $platformsToCheck) {
             if ($pf -eq "extra") {
                 foreach ($ef in $tool.ExtraFiles) {
-                    $efPath = Join-Path $binDir (Join-Path $ef.SubDir $ef.Filename)
+                    # SubDir 可能为空（如 wan-shim.exe），PS5.1 的 Join-Path 不允许 Path 为空字符串，需分支处理
+                    $efPath = if ($ef.SubDir) {
+                        Join-Path $binDir (Join-Path $ef.SubDir $ef.Filename)
+                    } else {
+                        Join-Path $binDir $ef.Filename
+                    }
                     if (-not (Test-Path $efPath)) { $allPresent = $false; break }
                 }
             } else {

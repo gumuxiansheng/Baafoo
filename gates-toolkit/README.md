@@ -13,13 +13,13 @@ gates-toolkit/
 │   ├── java-guard/
 │   │   ├── java-guard.exe / java-guard-linux-* # 按平台下载
 │   │   ├── java-parser.jar                    # 按平台下载
-│   │   └── rules/                             # 12 条 YAML/Rhai 规则（随仓库提交）
+│   │   └── rules/                             # 13 条 YAML/Rhai 规则脚本（随仓库提交）
 │   └── wan/
 │       └── wan.exe / wan-linux-*              # 按平台下载
 │
 ├── templates/                                 # 配置模板
 │   ├── sql-guard/                             # sqlguard.toml / sqlguard.rules.toml
-│   ├── java-guard/                            # java-guard.yml / gate-config.yml
+│   ├── java-guard/                            # java-guard.toml / javaguard.rules.toml / gate-config.yml
 │   ├── wan/workflows/                         # pre-commit.yml (Windows / Linux)
 │   └── hooks/                                 # pre-commit 模板
 │
@@ -117,6 +117,20 @@ version = "0.1.0"
 URL 可以是任意可公开访问的直链（CNB Release 附件、GitHub Release Asset、对象存储等）。
 `filename` 字段仅作展示参考，脚本按平台硬编码文件名下载，请勿修改。
 
+#### 私有库 / 内网下载（可选）
+
+私有库需要 token 认证、或内网自签 CA 导致 TLS 证书校验失败时，在 `versions.toml` 顶部增加 `[download]` 段（两者都不配置则匿名下载、正常校验证书）：
+
+```toml
+[download]
+username = "cnb"              # 认证用户名，默认 "cnb"（等价 curl -u cnb:<token>）
+token = "xxxxxxxx"            # 私有库 token；不填则回退读环境变量 CNB_TOKEN
+insecure_skip_verify = "true" # 内网自签 CA 跳过 TLS 证书校验（curl -k / Invoke-WebRequest 跳过校验）
+```
+
+- 内网报「未能为SSL/TLS安全通道建立信任关系」通常是自签/内网 CA 不受信任，设 `insecure_skip_verify = "true"` 即可（仅建议在内网使用）。
+- token 会写入 `versions.toml`，若该文件随仓库提交，建议改为设环境变量 `CNB_TOKEN`（Linux: `export CNB_TOKEN=xxx`；Windows: `setx CNB_TOKEN xxx` 后重开终端），脚本自动读取。
+
 ### 下载二进制（可选，脚本会自动执行）
 
 ```powershell
@@ -148,6 +162,9 @@ pwsh scripts/setup-gates.ps1 -Target C:/my/project `
   -ProjectType multi-module `
   -SqlModule baafoo-server `
   -JavaModules baafoo-core,baafoo-server,baafoo-agent
+
+# 生成 CI 编排文件 (.cnb.yml / .github/workflows/ci.yml)，默认不生成
+pwsh scripts/setup-gates.ps1 -Target C:/my/project -ProjectType spring-boot -Ci
 ```
 
 > **没有 pwsh（PowerShell 7）？** 直接用系统自带的 Windows PowerShell 5.1（cmd 或双击）：
@@ -171,7 +188,15 @@ bash scripts/setup-gates.sh /path/to/project multi-module baafoo-server baafoo-c
 
 # 自动检测
 bash scripts/setup-gates.sh /path/to/project auto
+
+# 生成 CI 编排文件 (.cnb.yml / .github/workflows/ci.yml)，默认不生成
+GATES_CI=1 bash scripts/setup-gates.sh /path/to/project spring-boot
 ```
+
+> CI 编排文件（`.cnb.yml` / `.github/workflows/ci.yml`）**默认不生成**，需要时显式开启：
+> Windows 用 `-Ci`（PowerShell），Linux/macOS 用 `GATES_CI=1`。
+> 该选择会固化到 `gates-tools/.meta`（`ci_files=yes`），后续重跑 setup（含每日自动更新）自动保持；
+> 强制关闭传 `-Ci:$false`（PowerShell）或 `GATES_CI=0`（bash）即可。
 
 > macOS 暂无预编译二进制（未发布 darwin 产物），`fetch-binaries` / `setup-gates` 会直接报错，请在 Linux/Windows 或 CI 中使用。
 
@@ -240,8 +265,9 @@ pom.xml
     ├── java-guard/
     │   ├── bin/java-guard(.exe)
     │   ├── java-parser/java-parser.jar
-    │   ├── rules/                # 12 条规则（含 J013）
-    │   ├── java-guard.yml
+    │   ├── rules/                # 13 条规则脚本（含 J013/J017）
+    │   ├── java-guard.toml
+    │   ├── javaguard.rules.toml
     │   └── gate-config.yml
     ├── wan/
     │   ├── bin/wan(.exe)
@@ -294,7 +320,9 @@ pom.xml
 
 ## 门禁规则
 
-### SqlGuard（默认 8 条 P0 + 13 条 P1 可选）
+### SqlGuard（默认 8 条 P0 + 16 条 P1 可选，随 sql-guard v0.2.3）
+
+> 每条规则的**校验原因、检测逻辑、正/反案例**与**启用/失效配置**详见 [docs/sql-guard-rules.md](./docs/sql-guard-rules.md)。
 
 P0（必跑，CI 阻断）：
 - DDL001 no_drop_table
@@ -306,9 +334,11 @@ P0（必跑，CI 阻断）：
 - DML006 no_join_without_condition
 - DML108 no_constant_where
 
-P1（默认关闭，按需启用）：DML005/007/008/011/012/013/014/015/016、DDL003/004/005/006
+P1（默认关闭，按需启用）：DML005/007/101/102/103/104/105/106/107、DML109 join_type_required、DML110 max_join_tables、DDL003/004/005/006/007
 
 ### JavaGuard（14 条规则）
+
+> 每条规则的**校验原因、检测逻辑、正/反案例**与**启用/失效配置**详见 [docs/java-guard-rules.md](./docs/java-guard-rules.md)。
 
 默认启用（12 条）：
 - J001 no_system_out
@@ -317,12 +347,16 @@ P1（默认关闭，按需启用）：DML005/007/008/011/012/013/014/015/016、D
 - J005 method_naming
 - J006 long_method (max 50 行)
 - J007 constant_naming
+- J008 empty_catch（内置 Rust 规则，吞异常）
+- J009 infinite_loop（内置 Rust 规则，死循环）
 - J010/J011/J012 fastjson 检测
 - J013 Spring Controller 禁止 Map 传参
 
-默认关闭（2 条，按需启用，解除 `java-guard.yml` 中 `rules.disable` 注释即可）：
+默认关闭（4 条，按需启用，删除 `java-guard.toml` 中 `rules.disable` 对应 ID 即可）：
 - J014 禁止引入非 jackson 的 JSON 框架（Import 检查）
 - J015 禁止使用非 jackson 的 JSON 框架（使用点检查，与 J014 互补）
+- J016 catch 抛异常前必须记录日志（v0.1.3 新增，内置 Rust 规则）
+- J017 禁止直接 import 日志实现（JUL / Log4j / Logback，v0.1.3 新增）
 
 > 注：J014/J015 为 major 级且门禁阈值 `max_major: 0`，直接启用会让存在存量违规的项目 CI 全红；建议先用 `--baseline` 抑制已知存量后再启用。
 
@@ -353,7 +387,7 @@ setup 同时安装 `prepare-commit-msg` / `commit-msg` 两个 hook，并配置 `
 - 改阈值：编辑 `gates-tools/java-guard/gate-config.yml`
 - 改 SQL 规则：编辑 `gates-tools/sql-guard/sqlguard.rules.toml`（取消注释启用 P1 规则）
 - 改提交信息模板/校验：编辑 `gates-tools/commit-message/commit.template` 与 `commit-msg.config`
-- 改扫描路径：编辑 `gates-tools/sql-guard/sqlguard.toml` 或 `gates-tools/java-guard/java-guard.yml`
+- 改扫描路径：编辑 `gates-tools/sql-guard/sqlguard.toml` 或 `gates-tools/java-guard/java-guard.toml`
 - 改 hook：编辑 `gates-tools/hooks/pre-commit` 然后 `cp gates-tools/hooks/pre-commit .git/hooks/pre-commit`（commit-msg / prepare-commit-msg 同理）
 
 ## CI 集成建议
@@ -449,7 +483,7 @@ PR 场景在 `run-gates` 前加 `export BASE_REF="origin/${{ cnb.pull_request.ba
 
 - wan 0.1.2（本地 musl 静态构建，上游源码 20b4480；CNB release 最新 v0.1.1）
 - sql-guard 0.2.1
-- java-guard 0.1.1（本地 musl 静态构建，上游源码 d644eb3；CNB release 最新 v0.1.0）
+- java-guard 0.1.4（实现 J016/J017 规则；CNB release v0.1.4）
 
 ## 许可
 

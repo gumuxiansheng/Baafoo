@@ -8,6 +8,7 @@
 # 参数化模式（可选）：
 #   pwsh scripts/setup-gates.ps1 -Target C:/my/project -ProjectType spring-boot
 #   pwsh scripts/setup-gates.ps1 -Target C:/my/project -ProjectType multi-module -SqlModule "baafoo-server,baafoo-report"
+# 生成 CI 编排文件 (.cnb.yml / .github/workflows/ci.yml)：-Ci（或环境变量 GATES_CI=1，重跑时自动复用），默认不生成
 
 [CmdletBinding()]
 param(
@@ -36,7 +37,11 @@ param(
 
     [Parameter(Mandatory = $false)]
     # 跳过每日自动更新调度注册（默认 setup 自动注册 toolkit-update 调度 + 系统服务）
-    [switch]$NoSchedule
+    [switch]$NoSchedule,
+
+    [Parameter(Mandatory = $false)]
+    # 生成 CI 编排文件 (.cnb.yml / .github/workflows/ci.yml)，默认不生成
+    [switch]$Ci
 )
 
 $ErrorActionPreference = "Stop"
@@ -219,7 +224,7 @@ $MetaFile = Join-Path $Target "gates-tools/.meta"
 $MetaParams = @{}
 if (Test-Path $MetaFile) {
     foreach ($line in ((Read-TextFileUtf8 $MetaFile) -split "`n")) {
-        if ($line -match '^(project_type|sql_modules|java_modules|backend_dir)=(.*)$') {
+        if ($line -match '^(project_type|sql_modules|java_modules|backend_dir|ci_files)=(.*)$') {
             $MetaParams[$matches[1]] = $matches[2].Trim()
         }
     }
@@ -242,6 +247,16 @@ if (-not $JavaModules -and $MetaParams.ContainsKey("java_modules") -and $MetaPar
 }
 if (-not $PSBoundParameters.ContainsKey("BackendDir") -and $MetaParams.ContainsKey("backend_dir") -and $MetaParams["backend_dir"]) {
     $BackendDir = $MetaParams["backend_dir"]
+}
+# CI 编排文件生成开关：显式 -Ci 优先；其次 GATES_CI=1；最后复用 .meta 固化值（ci_files=yes）
+# （-Ci:$false 可显式关闭，覆盖 .meta 的 ci_files=yes）
+if (-not $PSBoundParameters.ContainsKey("Ci")) {
+    if ($env:GATES_CI -eq "1") {
+        $Ci = $true
+    } elseif ($MetaParams.ContainsKey("ci_files") -and $MetaParams["ci_files"] -eq "yes") {
+        $Ci = $true
+        Write-Host "[meta] 复用首次 setup 参数: ci_files=yes (生成 CI 编排文件)"
+    }
 }
 
 # 自动检测项目类型
@@ -363,6 +378,10 @@ if (Test-Path $fetchScript) {
         "$ToolkitRoot/bin/java-guard/$JgBin",
         "$ToolkitRoot/bin/java-guard/java-parser/java-parser.jar"
     )
+    if ($InstallPlatform -eq "windows-amd64") {
+        # Windows 调度服务依赖与 wan.exe 同目录的 wan-shim.exe（无窗口启动器），缺失时补齐下载
+        $bins += "$ToolkitRoot/bin/wan/wan-shim.exe"
+    }
     foreach ($b in $bins) {
         if (-not (Test-Path $b)) { $needFetch = $true; break }
     }
@@ -408,6 +427,11 @@ $binFiles = @(
     @{ Src = "$ToolkitRoot/bin/java-guard/$JgBin"; Dst = "$toolsDir/java-guard/bin/$JgOut" },
     @{ Src = "$ToolkitRoot/bin/java-guard/java-parser/java-parser.jar"; Dst = "$toolsDir/java-guard/java-parser/java-parser.jar" }
 )
+if ($InstallPlatform -eq "windows-amd64") {
+    # wan-shim.exe：Windows 调度服务经它启动 wan.exe（GUI 子系统无控制台窗口），
+    # 且服务不直接持有 wan.exe，避免每日 toolkit-update 更新时被占用锁住无法替换。
+    $binFiles += @{ Src = "$ToolkitRoot/bin/wan/wan-shim.exe"; Dst = "$toolsDir/wan/bin/wan-shim.exe" }
+}
 foreach ($bf in $binFiles) {
     if (Test-Path $bf.Src) {
         Copy-Item $bf.Src $bf.Dst -Force
@@ -440,13 +464,11 @@ Copy-Item "$ToolkitRoot/templates/sql-guard/sqlguard.rules.toml" "$toolsDir/sql-
 # 渲染 java-guard 配置
 Write-Host "==> 生成 java-guard 配置"
 if ($ProjectType -eq "spring-boot") {
-    Copy-Item "$ToolkitRoot/templates/java-guard/java-guard--spring-boot.yml" "$toolsDir/java-guard/java-guard.yml" -Force
+    Copy-Item "$ToolkitRoot/templates/java-guard/java-guard--spring-boot.toml" "$toolsDir/java-guard/java-guard.toml" -Force
 } else {
-    $modulesList = ($JavaModules -join " ")
-    $tpl = Read-TextFileUtf8 "$ToolkitRoot/templates/java-guard/java-guard--multi-module.yml"
-    $tpl = $tpl.Replace("{{MODULES_LIST}}", $modulesList)
-    $tpl | Write-TextFileUtf8NoBom "$toolsDir/java-guard/java-guard.yml"
+    Copy-Item "$ToolkitRoot/templates/java-guard/java-guard--multi-module.toml" "$toolsDir/java-guard/java-guard.toml" -Force
 }
+Copy-Item "$ToolkitRoot/templates/java-guard/javaguard.rules.toml" "$toolsDir/java-guard/" -Force
 Copy-Item "$ToolkitRoot/templates/java-guard/gate-config.yml" "$toolsDir/java-guard/" -Force
 
 # 渲染 wan workflow
@@ -517,12 +539,13 @@ if ($ProjectType -eq "spring-boot") {
 echo ""
 echo "=== JavaGuard Check ==="
 JAVAGUARD="$TOOLS_DIR/java-guard/bin/java-guard"
-JAVA_CONFIG="$TOOLS_DIR/java-guard/java-guard.yml"
+JAVA_CONFIG="$TOOLS_DIR/java-guard/java-guard.toml"
+RULES_FILE="$TOOLS_DIR/java-guard/javaguard.rules.toml"
 GATE_CONFIG="$TOOLS_DIR/java-guard/gate-config.yml"
 if [ -f "$JAVAGUARD.exe" ]; then JAVAGUARD="$JAVAGUARD.exe"; fi
 JAVA_TARGET="$PROJECT_ROOT/__BACKEND__/src/main/java"
 [ ! -d "$JAVA_TARGET" ] && { echo "skip: source dir not found"; exit 0; }
-"$JAVAGUARD" scan "$JAVA_TARGET" --rules-dir "$TOOLS_DIR/java-guard/rules" --config "$JAVA_CONFIG" --gate --gate-config "$GATE_CONFIG" --diff HEAD -f console || {
+"$JAVAGUARD" scan "$JAVA_TARGET" --rules-file "$RULES_FILE" --config "$JAVA_CONFIG" --gate --gate-config "$GATE_CONFIG" --diff HEAD -f console || {
   echo "✗ JavaGuard 门禁未通过，提交已被阻止。修复后重试；确认跳过: git commit --no-verify" >&2
   exit 1
 }
@@ -540,7 +563,8 @@ echo "✓ JavaGuard passed"
 echo ""
 echo "=== JavaGuard Check ==="
 JAVAGUARD="$TOOLS_DIR/java-guard/bin/java-guard"
-JAVA_CONFIG="$TOOLS_DIR/java-guard/java-guard.yml"
+JAVA_CONFIG="$TOOLS_DIR/java-guard/java-guard.toml"
+RULES_FILE="$TOOLS_DIR/java-guard/javaguard.rules.toml"
 GATE_CONFIG="$TOOLS_DIR/java-guard/gate-config.yml"
 if [ -f "$JAVAGUARD.exe" ]; then JAVAGUARD="$JAVAGUARD.exe"; fi
 MODULES="__MODULES_LIST__"
@@ -548,7 +572,7 @@ for MOD in $MODULES; do
   SRC="$PROJECT_ROOT/$MOD/src/main/java"
   [ ! -d "$SRC" ] && continue
   echo "  scanning $MOD ..."
-  "$JAVAGUARD" scan "$SRC" --rules-dir "$TOOLS_DIR/java-guard/rules" --config "$JAVA_CONFIG" --gate --gate-config "$GATE_CONFIG" --diff HEAD -f console || {
+  "$JAVAGUARD" scan "$SRC" --rules-file "$RULES_FILE" --config "$JAVA_CONFIG" --gate --gate-config "$GATE_CONFIG" --diff HEAD -f console || {
     echo "✗ JavaGuard 门禁未通过（$MOD），提交已被阻止。修复后重试；确认跳过: git commit --no-verify" >&2
     exit 1
   }
@@ -670,6 +694,11 @@ if ($toolkitFingerprint) {
     } else {
         $metaContent += "backend_dir=$BackendDir`n"
     }
+    if ($Ci) {
+        $metaContent += "ci_files=yes`n"
+    } else {
+        $metaContent += "ci_files=no`n"
+    }
     $metaContent | Write-TextFileUtf8NoBom "$toolsDir/.meta"
 } else {
     Write-Warning "toolkit 指纹计算失败，跳过 .meta 写入"
@@ -717,7 +746,7 @@ $readme += "# SqlGuard（pre-commit 自动增量检查未提交改动；手动�
 $readme += "gates-tools/sql-guard/bin/sqlguard.exe check -c gates-tools/sql-guard/sqlguard.toml -f plain .`n`n"
 $readme += "# JavaGuard`n"
 $readme += "`$env:JAVAGUARD_PARSER_JAR = `"gates-tools/java-guard/java-parser/java-parser.jar`"`n"
-$readme += "gates-tools/java-guard/bin/java-guard.exe scan $BackendDir/src/main/java --rules-dir gates-tools/java-guard/rules --config gates-tools/java-guard/java-guard.yml --gate --gate-config gates-tools/java-guard/gate-config.yml --diff HEAD -f console`n`n"
+$readme += "gates-tools/java-guard/bin/java-guard.exe scan $BackendDir/src/main/java --rules-file gates-tools/java-guard/javaguard.rules.toml --config gates-tools/java-guard/java-guard.toml --gate --gate-config gates-tools/java-guard/gate-config.yml --diff HEAD -f console`n`n"
 $readme += "# wan 编排`n"
 $readme += "gates-tools/wan/bin/wan.exe run pre-commit-win -C .`n"
 $readme += '```' + "`n`n"
@@ -740,7 +769,11 @@ if ($IsLinux) {
     $readme += "gates-tools\wan\bin\wan.exe schedule service install -C .`n"
 }
 $readme += '```' + "`n`n"
-$readme += "### CI 集成`n参考生成的 ``.cnb.yml`` 与 ``.github/workflows/ci.yml`` (由 setup 自动生成/更新，code-gate job)。`n"
+if ($Ci) {
+    $readme += "### CI 集成`n参考生成的 ``.cnb.yml`` 与 ``.github/workflows/ci.yml`` (由 setup 自动生成/更新，code-gate job)。`n"
+} else {
+    $readme += "### CI 集成`n本次未生成 CI 编排文件（默认不生成）。如需启用：重跑 setup 时加 -Ci / GATES_CI=1。`n"
+}
 
 $readme | Write-TextFileUtf8NoBom "$toolsDir/README.md"
 
@@ -781,25 +814,29 @@ function Update-CiWorkflowFile {
 }
 
 Write-Host "==> 生成/更新 CI 编排 (code-gate)"
-$cnbArgs = ""
-$projectArg = $ProjectType
-if ($ProjectType -eq "multi-module") {
-    $sqlArg = ($SqlModules -join ",")
-    $javaArg = ($JavaModules -join " ")
-    $cnbArgs = '"' + $sqlArg + '" ' + $javaArg
+if ($Ci) {
+    $cnbArgs = ""
+    $projectArg = $ProjectType
+    if ($ProjectType -eq "multi-module") {
+        $sqlArg = ($SqlModules -join ",")
+        $javaArg = ($JavaModules -join " ")
+        $cnbArgs = '"' + $sqlArg + '" ' + $javaArg
+    }
+
+    # CNB pipeline (.cnb.yml)——顶层为 stages 数组，无门禁门时可安全追加
+    $cnbTemplate = Read-TextFileUtf8 "$ToolkitRoot/templates/cnb/cnb.yml.template"
+    $cnbContent = $cnbTemplate.Replace("{{PROJECT_TYPE}}", $projectArg).Replace("{{CISETUP_ARGS}}", $cnbArgs)
+    Update-CiWorkflowFile -Path (Join-Path $Target ".cnb.yml") -Content $cnbContent -AllowAppend
+
+    # GitHub Actions workflow (.github/workflows/ci.yml)——完整文件结构，存在但无门禁门时仅提示
+    $ghaTemplate = Read-TextFileUtf8 "$ToolkitRoot/templates/github/ci.yml.template"
+    $ghaContent = $ghaTemplate.Replace("{{PROJECT_TYPE}}", $projectArg).Replace("{{CISETUP_ARGS}}", $cnbArgs)
+    $ghaDir = Join-Path $Target ".github/workflows"
+    if (-not (Test-Path $ghaDir)) { New-Item -ItemType Directory -Force $ghaDir | Out-Null }
+    Update-CiWorkflowFile -Path (Join-Path $ghaDir "ci.yml") -Content $ghaContent
+} else {
+    Write-Host "    -> 已跳过（默认不生成；如需生成：-Ci / GATES_CI=1，已存在时保留原文件）"
 }
-
-# CNB pipeline (.cnb.yml)——顶层为 stages 数组，无门禁门时可安全追加
-$cnbTemplate = Read-TextFileUtf8 "$ToolkitRoot/templates/cnb/cnb.yml.template"
-$cnbContent = $cnbTemplate.Replace("{{PROJECT_TYPE}}", $projectArg).Replace("{{CISETUP_ARGS}}", $cnbArgs)
-Update-CiWorkflowFile -Path (Join-Path $Target ".cnb.yml") -Content $cnbContent -AllowAppend
-
-# GitHub Actions workflow (.github/workflows/ci.yml)——完整文件结构，存在但无门禁门时仅提示
-$ghaTemplate = Read-TextFileUtf8 "$ToolkitRoot/templates/github/ci.yml.template"
-$ghaContent = $ghaTemplate.Replace("{{PROJECT_TYPE}}", $projectArg).Replace("{{CISETUP_ARGS}}", $cnbArgs)
-$ghaDir = Join-Path $Target ".github/workflows"
-if (-not (Test-Path $ghaDir)) { New-Item -ItemType Directory -Force $ghaDir | Out-Null }
-Update-CiWorkflowFile -Path (Join-Path $ghaDir "ci.yml") -Content $ghaContent
 
 # gates-tools 为生成产物：自动加入目标项目 .gitignore，避免误提交
 # .wan/ 为 wan 调度状态（含机器相关绝对路径），同样不入库
@@ -892,11 +929,26 @@ $bindings = @{
     "sqlguard" = "$toolsDir/sql-guard/bin/$SqlOut"
     "java-guard" = "$toolsDir/java-guard/bin/$JgOut"
 }
+# versions.toml 段名映射（显示名 -> 配置段名）
+$sectionOf = @{ "wan" = "wan"; "sqlguard" = "sql-guard"; "java-guard" = "java-guard" }
 foreach ($name in $bindings.Keys) {
     $bin = $bindings[$name]
     if (Test-Path $bin) {
+        $cfgVer = Get-ConfigVersion $sectionOf[$name]
         $ver = & $bin --version 2>&1 | Select-Object -First 1
-        Write-Host "  ✓ $name : $ver" -ForegroundColor Green
+        if ($cfgVer) {
+            # 上游二进制自报版本可能滞后于发布 tag（发布时未同步 Cargo.toml 版本号），
+            # 以 versions.toml 配置版本为安装版本，自报版本不一致时仅告警不阻断。
+            $reported = if ($ver -match '(\d+(\.\d+)+)') { $matches[1] } else { $null }
+            if ($reported -and ((Compare-VersionString $reported $cfgVer) -ne 0)) {
+                Write-Host "  ✓ $name : v$cfgVer（$ver）" -ForegroundColor Green
+                Write-Warning "$name 二进制自报 v$reported，与配置 v$cfgVer 不一致（上游发布未同步内部版本号，以配置为准）"
+            } else {
+                Write-Host "  ✓ $name : v$cfgVer（$ver）" -ForegroundColor Green
+            }
+        } else {
+            Write-Host "  ✓ $name : $ver" -ForegroundColor Green
+        }
     } else {
         Write-Host "  ✗ $name : 未找到" -ForegroundColor Red
     }
@@ -970,6 +1022,9 @@ Write-Host ""
 Write-Host "gates-tools/ 为 setup 生成的产物（含二进制），已加入目标项目 .gitignore，无需（也不应）提交到 git。" -ForegroundColor Yellow
 Write-Host "门禁工具与规则建议整包引入 gates-toolkit（git submodule 或随仓库提交），升级时重跑本脚本即可。" -ForegroundColor Yellow
 Write-Host ""
+if (-not $Ci) {
+    Write-Host "CI 编排文件: 未生成（默认不生成 .cnb.yml / .github/workflows/ci.yml）。如需生成，重跑 setup 时加 -Ci / GATES_CI=1。" -ForegroundColor Cyan
+}
 if ($scheduleState -eq "registered") {
     Write-Host "每日自动更新: 已注册 toolkit-update 调度（每日 09:00）并安装系统服务。" -ForegroundColor Cyan
     if ($IsLinux) {

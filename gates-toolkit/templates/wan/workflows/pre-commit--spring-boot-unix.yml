@@ -29,13 +29,13 @@ jobs:
         run: |
           set -e
           JAVAGUARD="gates-tools/java-guard/bin/java-guard"
-          CONFIG="gates-tools/java-guard/java-guard.yml"
+          CONFIG="gates-tools/java-guard/java-guard.toml"
           GATE="gates-tools/java-guard/gate-config.yml"
-          RULES_DIR="gates-tools/java-guard/rules"
+          RULES_FILE="gates-tools/java-guard/javaguard.rules.toml"
           SRC="{{BACKEND_DIR}}/src/main/java"
           [ ! -d "$SRC" ] && { echo "skip: source dir not found"; exit 0; }
           echo "==> JavaGuard incremental scan (diff: HEAD)"
-          "$JAVAGUARD" scan "$SRC" --rules-dir "$RULES_DIR" --config "$CONFIG" --gate --gate-config "$GATE" --diff HEAD -f console
+          "$JAVAGUARD" scan "$SRC" --rules-file "$RULES_FILE" --config "$CONFIG" --gate --gate-config "$GATE" --diff HEAD -f console
           echo "✓ JavaGuard passed"
 
   gate-summary:

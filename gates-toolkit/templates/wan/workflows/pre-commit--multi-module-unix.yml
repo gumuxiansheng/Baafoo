@@ -29,15 +29,15 @@ jobs:
         run: |
           set -e
           JAVAGUARD="gates-tools/java-guard/bin/java-guard"
-          CONFIG="gates-tools/java-guard/java-guard.yml"
+          CONFIG="gates-tools/java-guard/java-guard.toml"
           GATE="gates-tools/java-guard/gate-config.yml"
-          RULES_DIR="gates-tools/java-guard/rules"
+          RULES_FILE="gates-tools/java-guard/javaguard.rules.toml"
           MODULES="{{MODULES_LIST}}"
           for MOD in $MODULES; do
             SRC="${MOD}/src/main/java"
             [ ! -d "$SRC" ] && continue
             echo "==> JavaGuard incremental scan $MOD (diff: HEAD)"
-            "$JAVAGUARD" scan "$SRC" --rules-dir "$RULES_DIR" --config "$CONFIG" --gate --gate-config "$GATE" --diff HEAD -f console
+            "$JAVAGUARD" scan "$SRC" --rules-file "$RULES_FILE" --config "$CONFIG" --gate --gate-config "$GATE" --diff HEAD -f console
           done
           echo "✓ JavaGuard passed"
 

@@ -1,0 +1,14 @@
+# JavaGuard 项目配置 — 多模块 Maven 项目
+# 各模块 src/main/java 由 workflow / hook 循环扫描
+# 规则元数据与脚本路径见 javaguard.rules.toml（v0.1.3 起规则配置迁移到 TOML）
+
+[rules]
+rules_file = "javaguard.rules.toml"
+min_severity = "info"
+# J014/J015（非 jackson JSON 框架检测）、J016/J017（v0.1.3 新增）默认关闭，
+# 避免存量违规使门禁全红。如需启用：删除 disable 中对应 ID，
+# 并先用 --baseline 抑制已知存量。
+disable = ["J014", "J015", "J016", "J017"]
+
+[scan]
+exclude = ["generated", "target", "test"]

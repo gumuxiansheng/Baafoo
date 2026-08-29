@@ -7,6 +7,26 @@
 # 留空 "" 表示该平台暂不提供，下载时会跳过并告警。
 #
 # version 字段用于版本比较：本地存在同版本时跳过下载，低于配置版本时自动更新。
+#
+# ---- 下载认证/TLS 配置（可选，私有库/内网场景） ----
+# [download]
+#   token                # 私有库下载 token（如 CNB 私有空间的 token）。
+#                        未配置时回退读环境变量 CNB_TOKEN，两者都没有则匿名下载。
+#   username             # 认证用户名，默认 "cnb"（等价 curl -u cnb:<token>）
+#   insecure_skip_verify # 内网自签 CA 时跳过 TLS 证书校验，设 "true" 开启（curl -k / IWR 跳过校验）
+#
+# 示例（内网私有库）：
+#   [download]
+#   username = "cnb"
+#   token = "xxxxxxxx"
+#   insecure_skip_verify = "true"
+#
+# 注意：token 会写入本文件，若 versions.toml 随仓库提交，建议改用环境变量 CNB_TOKEN。
+
+[download]
+username = "cnb"
+token = ""
+insecure_skip_verify = "false"
 
 [wan]
 version = "0.1.6"
@@ -29,36 +49,36 @@ version = "0.1.6"
   filename = "wan-linux-amd64"
 
 [sql-guard]
-version = "0.2.2"
+version = "0.2.3"
 
   [sql-guard.windows_amd64]
-  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.2/sqlguard-x86_64-pc-windows-gnu.exe"
+  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.3/sqlguard-x86_64-pc-windows-gnu.exe"
   filename = "sqlguard.exe"
 
   [sql-guard.linux_arm64]
-  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.2/sqlguard-aarch64-unknown-linux-musl"
+  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.3/sqlguard-aarch64-unknown-linux-musl"
   filename = "sqlguard-linux-arm64"
 
   [sql-guard.linux_amd64]
-  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.2/sqlguard-x86_64-unknown-linux-musl"
+  url = "https://cnb.cool/mikezhu/sql-guard/-/releases/download/v0.2.3/sqlguard-x86_64-unknown-linux-musl"
   filename = "sqlguard-linux-amd64"
 
 [java-guard]
-version = "0.1.2"
+version = "0.1.4"
 
   [java-guard.windows_amd64]
-  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.2/java-guard-windows-amd64.exe"
+  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.4/java-guard-windows-amd64.exe"
   filename = "java-guard.exe"
 
   [java-guard.linux_arm64]
-  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.2/java-guard-linux-arm64"
+  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.4/java-guard-linux-arm64"
   filename = "java-guard-linux-arm64"
 
   [java-guard.linux_amd64]
-  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.2/java-guard-linux-amd64"
+  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.4/java-guard-linux-amd64"
   filename = "java-guard-linux-amd64"
 
   # java-parser.jar 是平台无关的，只列一次
   [java-guard.java_parser]
-  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.2/java-parser.jar"
+  url = "https://cnb.cool/mikezhu/java-guard/-/releases/download/v0.1.4/java-parser.jar"
   filename = "java-parser.jar"

@@ -11,6 +11,8 @@
 #   bash scripts/fetch-binaries.sh all              # 下载所有平台
 #   bash scripts/fetch-binaries.sh --force          # 强制重新下载
 #   bash scripts/fetch-binaries.sh all --force      # 强制下载所有平台
+# 私有库: 在 versions.toml [download] 段配置 token（或设环境变量 CNB_TOKEN），
+# 内网自签 CA 设 insecure_skip_verify = "true" 跳过证书校验。
 
 set -e
 
@@ -68,16 +70,21 @@ fi
 # 无 IPv6 链路的机器（GitHub Actions runner / CNB 构建容器 / 部分内网）会
 # "Could not resolve host" 下载失败；IPv4 直连 cnb.cool 则直接返回 200 无需重定向。
 # 对策：失败后强制 IPv4 重试，仍失败再用 --resolve 直连（绕开 DNS）。
+# 私有库认证：配置 token 时带 -u <username>:<token>（等价 curl -u cnb:<token>）。
+# TLS：内网自签 CA 报证书校验失败时，insecure_skip_verify=true 加 -k 跳过校验。
 download_file() {
     local url="$1" dest="$2"
     local attempt rc out
+    local curl_args=(-fsSL --connect-timeout 20 --retry 2)
+    [ -n "$DOWNLOAD_TOKEN" ] && curl_args+=(-u "$DOWNLOAD_USERNAME:$DOWNLOAD_TOKEN")
+    [ "$INSECURE_SKIP_VERIFY" = "true" ] && curl_args+=(-k)
     for attempt in 1 2 3; do
-        if out=$(curl -fsSL --connect-timeout 20 --retry 2 "$url" -o "$dest" 2>&1); then
+        if out=$(curl "${curl_args[@]}" "$url" -o "$dest" 2>&1); then
             return 0
         fi
         rc=$?
         echo "  (第 $attempt 次尝试失败: curl exit $rc ${out##*$'\n'})"
-        if out=$(curl -fsSL -4 --connect-timeout 20 --retry 2 "$url" -o "$dest" 2>&1); then
+        if out=$(curl -4 "${curl_args[@]}" "$url" -o "$dest" 2>&1); then
             return 0
         fi
         rc=$?
@@ -102,6 +109,24 @@ parse_toml_value() {
         }
     ' "$CONFIG_FILE"
 }
+
+# ---- 下载认证/TLS 配置（可选） ----
+# versions.toml [download] 段：
+#   username              认证用户名，默认 "cnb"
+#   token                 私有库 token；未配置时回退读环境变量 CNB_TOKEN，都没有则匿名下载
+#   insecure_skip_verify  内网自签 CA 时跳过 TLS 证书校验（"true" 开启，curl -k）
+DOWNLOAD_TOKEN="$(parse_toml_value "download" "token")"
+[ -z "$DOWNLOAD_TOKEN" ] && DOWNLOAD_TOKEN="${CNB_TOKEN:-}"
+DOWNLOAD_USERNAME="$(parse_toml_value "download" "username")"
+[ -z "$DOWNLOAD_USERNAME" ] && DOWNLOAD_USERNAME="cnb"
+INSECURE_SKIP_VERIFY="$(parse_toml_value "download" "insecure_skip_verify")"
+
+if [ -n "$DOWNLOAD_TOKEN" ]; then
+    echo "认证: 已配置 token（用户名 $DOWNLOAD_USERNAME），用于私有库下载"
+fi
+if [ "$INSECURE_SKIP_VERIFY" = "true" ]; then
+    echo "TLS: insecure_skip_verify=true，跳过证书校验（仅限内网自签证书场景）"
+fi
 
 # 版本比较: echo -1/0/1
 compare_version() {

@@ -1,7 +1,7 @@
 # SqlGuard 规则配置 — 默认规则集
-# 包含 8 条 P0 规则（CI 门禁）和 13 条 P1 规则（默认关闭，按需启用）
+# 包含 8 条 P0 规则（CI 门禁）和 16 条 P1 规则（默认关闭，按需启用）
 #
-# 规则 ID 与上游 sql-guard v0.2.1 编号体系对齐（DML101-DML107 等），
+# 规则 ID 与上游 sql-guard v0.2.3 编号体系对齐（DML101-DML107、DML109-DML110 等），
 # 便于按上游文档启用规则。
 
 # ================================================================================
@@ -180,6 +180,26 @@ severity = "warning"
 # description = "Avoid nested CASE expressions"
 # enabled = true
 # script_path = "config/rules/dml/no_nested_case.rhai"
+# applies_to = ["dml"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DML109"
+# name = "join_type_required"
+# group = "dml-style"
+# description = "JOIN must specify an explicit type (e.g. LEFT JOIN or INNER JOIN); bare JOIN is not allowed"
+# enabled = true
+# script_path = "config/rules/dml/join_type_required.rhai"
+# applies_to = ["dml"]
+# severity = "warning"
+
+# [[rules]]
+# id = "DML110"
+# name = "max_join_tables"
+# group = "dml-performance"
+# description = "A query must not join more than 5 tables"
+# enabled = true
+# script_path = "config/rules/dml/max_join_tables.rhai"
 # applies_to = ["dml"]
 # severity = "warning"
 

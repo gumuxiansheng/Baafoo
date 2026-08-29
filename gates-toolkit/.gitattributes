@@ -6,7 +6,8 @@
 # shell 脚本必须 LF（CRLF 会导致 Linux bash 语法错误）
 *.sh text eol=lf
 *.ps1 text eol=lf
-*.cmd text eol=lf
+# cmd 批处理必须 CRLF（LF 行尾在部分 Windows 环境下触发 "was unexpected at this time" 解析错误）
+*.cmd text eol=crlf
 
 # YAML/TOML/模板统一 LF
 *.yml text eol=lf
