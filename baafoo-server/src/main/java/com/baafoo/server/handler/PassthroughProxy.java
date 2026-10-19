@@ -15,10 +15,12 @@ import io.netty.util.concurrent.Promise;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Non-blocking HTTP passthrough proxy using Netty HttpClient.
@@ -53,6 +55,52 @@ public class PassthroughProxy {
         HOP_BY_HOP_HEADERS.add("upgrade");
     }
 
+    /**
+     * Default overall timeout (seconds) for a single passthrough attempt.
+     * Backstop so the client always gets a bounded response (502) instead of
+     * waiting forever. Overridable via the {@code baafoo.passthrough.timeoutSec}
+     * system property (e.g. {@code -Dbaafoo.passthrough.timeoutSec=60}).
+     */
+    public static final int DEFAULT_PASSTHROUGH_TIMEOUT_SEC = 30;
+
+    /**
+     * Shared executor for outbound connect setup, <b>including DNS resolution</b>.
+     *
+     * <p>Netty's default {@code AddressResolver} performs a blocking
+     * {@code InetAddress} lookup on the thread that calls {@code connect()}.
+     * {@code HttpStubHandler} invokes {@link #forward} from a Netty EventLoop,
+     * so resolving an unresolvable or slow-to-resolve backend hostname — a
+     * common intranet situation where the server cannot resolve app-side
+     * service names — would freeze that EventLoop for the entire DNS timeout,
+     * stalling every other connection served by it (agent heartbeats and
+     * other stubs share the same worker group). Note that
+     * {@code CONNECT_TIMEOUT_MILLIS} does NOT cover the DNS phase.</p>
+     *
+     * <p>Must be static/shared: a {@code PassthroughProxy} instance is created
+     * per inbound connection by {@code HttpStubHandler}.</p>
+     */
+    private static final ExecutorService CONNECT_EXECUTOR = Executors.newFixedThreadPool(8, new ThreadFactory() {
+        @Override
+        public Thread newThread(Runnable r) {
+            Thread t = new Thread(r, "baafoo-passthrough-connect");
+            t.setDaemon(true);
+            return t;
+        }
+    });
+
+    /** Shared scheduler for the overall passthrough timeout backstop. */
+    private static final ScheduledExecutorService TIMEOUT_SCHEDULER =
+            Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
+                @Override
+                public Thread newThread(Runnable r) {
+                    Thread t = new Thread(r, "baafoo-passthrough-timeout");
+                    t.setDaemon(true);
+                    return t;
+                }
+            });
+
+    private final int passthroughTimeoutSec;
+
     private final EventLoopGroup eventLoopGroup;
     private final Bootstrap bootstrap;
     private volatile SslContext sslContext;
@@ -64,8 +112,15 @@ public class PassthroughProxy {
     }
 
     public PassthroughProxy(EventLoopGroup eventLoopGroup, boolean sslVerifyDisabled) {
+        this(eventLoopGroup, sslVerifyDisabled,
+                Integer.getInteger("baafoo.passthrough.timeoutSec", DEFAULT_PASSTHROUGH_TIMEOUT_SEC));
+    }
+
+    public PassthroughProxy(EventLoopGroup eventLoopGroup, boolean sslVerifyDisabled, int passthroughTimeoutSec) {
         this.eventLoopGroup = eventLoopGroup;
         this.sslVerifyDisabled = sslVerifyDisabled;
+        this.passthroughTimeoutSec = passthroughTimeoutSec > 0
+                ? passthroughTimeoutSec : DEFAULT_PASSTHROUGH_TIMEOUT_SEC;
         if (sslVerifyDisabled) {
             log.warn("PassthroughProxy initialized with SSL verification DISABLED — this is insecure for production use");
         }
@@ -117,7 +172,27 @@ public class PassthroughProxy {
         boolean isHttps = "https".equals(protocol);
         int targetPort = port > 0 ? port : (isHttps ? 443 : 80);
 
-        CompletableFuture<PassthroughResult> future = new CompletableFuture<PassthroughResult>();
+        final CompletableFuture<PassthroughResult> future = new CompletableFuture<PassthroughResult>();
+        // Backend channel reference so the timeout backstop can release it.
+        final AtomicReference<Channel> backendChannelRef = new AtomicReference<Channel>();
+
+        // Backstop: never leave the caller (and ultimately the client) waiting
+        // forever — e.g. when connect setup is queued behind stuck DNS lookups
+        // on CONNECT_EXECUTOR, or any unforeseen stall slips past the 5s connect
+        // timeout and the 10s read timeout.
+        final ScheduledFuture<?> timeoutTask = TIMEOUT_SCHEDULER.schedule(new Runnable() {
+            @Override
+            public void run() {
+                if (future.completeExceptionally(new PassthroughTimeoutException(
+                        "Passthrough to " + host + ":" + targetPort
+                                + " timed out after " + passthroughTimeoutSec + "s"))) {
+                    Channel backend = backendChannelRef.get();
+                    if (backend != null) {
+                        backend.close();
+                    }
+                }
+            }
+        }, passthroughTimeoutSec, TimeUnit.SECONDS);
 
         try {
             Promise<PassthroughResult> promise = eventLoopGroup.next().newPromise();
@@ -184,23 +259,56 @@ public class PassthroughProxy {
                 request.headers().set(HttpHeaderNames.CONTENT_LENGTH, 0);
             }
 
-            // Connect and send
-            ChannelFuture connectFuture = b.connect(host, targetPort);
-            connectFuture.addListener(new ChannelFutureListener() {
+            // Connect and send. The whole connect setup (including DNS
+            // resolution, which Netty performs synchronously on the calling
+            // thread) runs on CONNECT_EXECUTOR to keep it off the Netty
+            // EventLoop — see the field's javadoc.
+            final FullHttpRequest sendRequest = request;
+            CONNECT_EXECUTOR.execute(new Runnable() {
                 @Override
-                public void operationComplete(ChannelFuture cf) throws Exception {
-                    if (cf.isSuccess()) {
-                        cf.channel().writeAndFlush(request);
-                    } else {
-                        // M10: release request ByteBuf on connect failure to prevent leak
-                        request.release();
-                        Throwable cause = cf.cause();
-                        if (cause == null) {
-                            // Connection failed without explicit cause - likely network issue
-                            cause = new Exception("Connection to " + host + ":" + targetPort + " failed (no additional details)");
+                public void run() {
+                    if (future.isDone()) {
+                        // Already timed out while queued — nothing to send.
+                        sendRequest.release();
+                        return;
+                    }
+                    try {
+                        ChannelFuture connectFuture = b.connect(host, targetPort);
+                        connectFuture.addListener(new ChannelFutureListener() {
+                            @Override
+                            public void operationComplete(ChannelFuture cf) throws Exception {
+                                if (cf.isSuccess()) {
+                                    backendChannelRef.set(cf.channel());
+                                    // Propagate write failures — otherwise a failed
+                                    // write would leave the promise (and the client
+                                    // request) pending forever.
+                                    ChannelFuture writeFuture = cf.channel().writeAndFlush(sendRequest);
+                                    writeFuture.addListener(new ChannelFutureListener() {
+                                        @Override
+                                        public void operationComplete(ChannelFuture wf) {
+                                            if (!wf.isSuccess() && !promise.isDone()) {
+                                                promise.setFailure(wf.cause());
+                                            }
+                                        }
+                                    });
+                                } else {
+                                    // release request ByteBuf on connect failure to prevent leak
+                                    sendRequest.release();
+                                    Throwable cause = cf.cause();
+                                    if (cause == null) {
+                                        // Connection failed without explicit cause - likely network issue
+                                        cause = new Exception("Connection to " + host + ":" + targetPort + " failed (no additional details)");
+                                    }
+                                    log.error("Passthrough connection failed: {}:{} - {}", host, targetPort, cause.getMessage());
+                                    promise.setFailure(cause);
+                                }
+                            }
+                        });
+                    } catch (Throwable t) {
+                        if (!promise.isDone()) {
+                            sendRequest.release();
+                            promise.setFailure(t);
                         }
-                        log.error("Passthrough connection failed: {}:{} - {}", host, targetPort, cause.getMessage());
-                        promise.setFailure(cause);
                     }
                 }
             });
@@ -208,6 +316,7 @@ public class PassthroughProxy {
             promise.addListener(new GenericFutureListener<Future<PassthroughResult>>() {
                 @Override
                 public void operationComplete(Future<PassthroughResult> f) throws Exception {
+                    timeoutTask.cancel(false);
                     if (f.isSuccess()) {
                         future.complete(f.get());
                     } else {
@@ -217,6 +326,7 @@ public class PassthroughProxy {
             });
 
         } catch (Exception e) {
+            timeoutTask.cancel(false);
             future.completeExceptionally(e);
         }
 
@@ -276,8 +386,26 @@ public class PassthroughProxy {
         }
 
         @Override
+        public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+            // The backend closed the connection before a complete response
+            // arrived (it crashed mid-request, a middlebox dropped the
+            // connection, or the target is not an HTTP service). Fail the
+            // promise so the client gets a timely 502 instead of waiting
+            // forever. ReadTimeoutHandler cannot cover this: IdleStateHandler
+            // cancels its task on channelInactive, so no exception is raised.
+            if (!promise.isDone()) {
+                log.warn("Passthrough backend closed connection before responding: {}",
+                        ctx.channel().remoteAddress());
+                promise.setFailure(new IOException("Backend closed connection before responding"));
+            }
+            ctx.fireChannelInactive();
+        }
+
+        @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-            promise.setFailure(cause);
+            if (!promise.isDone()) {
+                promise.setFailure(cause);
+            }
             ctx.close();
         }
     }
@@ -296,6 +424,17 @@ public class PassthroughProxy {
             this.responseHeaders = responseHeaders;
             this.responseBody = responseBody;
             this.responseTimeMs = responseTimeMs;
+        }
+    }
+
+    /**
+     * Raised when a passthrough attempt exceeds the overall timeout backstop
+     * (default 30s, see {@link #DEFAULT_PASSTHROUGH_TIMEOUT_SEC}). Surfaces to
+     * the client as a 502 BAD_GATEWAY.
+     */
+    public static class PassthroughTimeoutException extends IOException {
+        public PassthroughTimeoutException(String message) {
+            super(message);
         }
     }
 }
