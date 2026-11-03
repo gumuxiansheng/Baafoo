@@ -1,0 +1,46 @@
+# DocGuard 配置 —— Baafoo
+#
+# 为什么存在：本仓库把 gates-toolkit 工具仓整仓（含其 docs/、templates/wan/、vendor/、
+# 自带 tests/ 用例）作为副本提交在 gates-toolkit/ 下；doc-guard 会把这些**工具仓自带结构**
+# 当成 Baafoo 自己的散落文档，逐条报 PLC001。本文件把这类结构性噪声排除，
+# 同时保留对 Baafoo 自身文档的真实约束。
+#
+# 契约与字段说明见 gates-toolkit/docs/rules/doc-guard-rules.md（doc-guard v0.1.0）。
+# 注意：配置文件只能放仓库根并以 .doc-guard.toml 命名——doc-guard 的发现顺序是
+#       `--config` > 环境变量 DOC_GUARD_CONFIG > 从 cwd 向上找 .doc-guard.toml（止于 git root）
+#       > 内置默认；放 .gates/ 不会被发现。
+
+schema_version = 1
+
+[docs]
+root = "docs"
+categories = ["architecture", "api", "guides", "design", "decisions", "proposals", "assets"]
+max_depth = 3
+allow_at_root = ["index.md"]
+
+[placement]
+enabled = true
+# docs/ 外的 .md 仍按 error 判定（本配置稳定后可把 registry 的 035-docguard 升为 block）
+severity = "error"
+# 例外清单按**文件名**匹配（不是路径），故目录级排除只能靠 [ignore].patterns。
+# 指定该字段会整体替换内置默认，故此处完整列出默认项 + 本仓库根级门面文件。
+outside_allowlist = ["README.md", "README_EN.md", "AGENTS.md", "CHANGELOG.md",
+                     "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "LICENSE*",
+                     "THIRD-PARTY-NOTICES.md"]
+# 非 .md 的“文档类型”扩展名（yml/yaml/json/csv/txt…）散落在 docs/ 外时默认只告警。
+# 工程仓库里这类文件基本都是 CI 配置、构建清单、测试数据，不属于“文档放错格子”，
+# 默认口径会把它们全部刷出来（本仓库实测 131 条）。故关闭该类告警。
+check_non_md_outside = "off"
+
+[ignore]
+use_gitignore = true
+patterns = [
+  # 工具仓整仓副本：自带 docs/templates/vendor/tests 结构，不受 Baafoo 文档规范约束
+  "**/gates-toolkit/**",
+  # setup-gates 安装产物（已在 .gitignore，此处显式声明以保证 --no-ignore 场景同样生效）
+  "gates-tools/**",
+  # vendored 第三方发布包：原样内置，不参与宿主文档规范
+  "vendor/**",
+  # workflow / 规则模板：模板文件不是文档
+  "templates/**",
+]
